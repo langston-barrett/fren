@@ -64,7 +64,28 @@ entry.
 pub mod spec
 pub mod spec::names
 
-use spec::types::{ArmF, BinaryOp, Ctx, Entry, ExprF, Form, ItemId, ItemKind, Sig, Snoc, Symb, Ty, UnaryOp, entry, length, lookup, shift, shift_form, symb_ok?}
+use spec::types::{
+    ArmF,
+    BinaryOp,
+    Ctx,
+    Entry,
+    ExprF,
+    Form,
+    ItemId,
+    ItemKind,
+    Sig,
+    Snoc,
+    Symb,
+    Ty,
+    UnaryOp,
+    entry,
+    length,
+    lookup,
+    shift,
+    shift_form,
+    symb_ok?,
+}
+
 use spec::types::Snoc::{Empty, Extend}
 
 pub type Scope := Snoc<String>
@@ -130,7 +151,7 @@ pub proc local_weakening(scope: Scope, cutoff: Int, extra: String, name: String)
     ensure output: holds?
     ensure shifted: when 0 <= cutoff <= length(scope) and name != extra,
         resolve_local(insert_name(scope, cutoff, extra), name)
-            = shifted(resolve_local(scope, name), cutoff)
+        = shifted(resolve_local(scope, name), cutoff)
 }
 ```
 
@@ -539,7 +560,7 @@ pub proc layer_weakening(env: Env, scope: Scope, form: SrcF<Int>, cutoff: Int, e
     ensure output: holds?
     ensure shifted: when 0 <= cutoff <= length(scope) and not mentions?(form, extra),
         resolve_layer(env, insert_name(scope, cutoff, extra), form)
-            = shifted_form(resolve_layer(env, scope, form), cutoff)
+        = shifted_form(resolve_layer(env, scope, form), cutoff)
 }
 ```
 
@@ -554,11 +575,10 @@ fails.
 ```fren
 pub struct SrcRow { form: SrcF<Int>, scope: Scope }
 
-pub fn has_scope?(rows: Snoc<SrcRow>, position: Int, scope: Scope) :=
-    match lookup(rows, position) {
-        Some(row) => row.scope = scope,
-        None => false,
-    }
+pub fn has_scope?(rows: Snoc<SrcRow>, position: Int, scope: Scope) := match lookup(rows, position) {
+    Some(row) => row.scope = scope,
+    None => false,
+}
 
 pub fn arguments_scoped?(rows: Snoc<SrcRow>, args: Snoc<Int>, scope: Scope) := match args {
     Empty => true,
@@ -755,7 +775,10 @@ pub fn bind_constructors(symb: Symb, owner: ItemId, variants: Snoc<String>): Sym
         Empty => symb,
         Extend(earlier, variant) => Extend(
             bind_constructors(symb, owner, earlier),
-            Entry { item := child(owner, variant), kind := ItemKind::Constructor(owner) }
+            Entry {
+                item := child(owner, variant),
+                kind := ItemKind::Constructor(owner),
+            }
         ),
     }
 
@@ -818,7 +841,10 @@ pub fn collect_functions(env: Env, decls: Snoc<SrcDecl>): Option<Symb> := match 
                 Some(symb), Some(sig) => Some(
                     Extend(
                         symb,
-                        Entry { item := child(module_of(env), name), kind := ItemKind::Function(sig) }
+                        Entry {
+                            item := child(module_of(env), name),
+                            kind := ItemKind::Function(sig),
+                        }
                     )
                 ),
                 _, _ => None,
@@ -828,7 +854,11 @@ pub fn collect_functions(env: Env, decls: Snoc<SrcDecl>): Option<Symb> := match 
 
 pub fn collect(parent: ItemId, name: String, decls: Snoc<SrcDecl>): Option<Symb> :=
     if names_ok?(decls) then collect_functions(
-        Env { parent, name, symb := collect_types(child(parent, name), decls) },
+        Env {
+            parent,
+            name,
+            symb := collect_types(child(parent, name), decls),
+        },
         decls
     )
     else None
@@ -868,7 +898,11 @@ pub proc rejected(
             SrcDecl::Enumeration(name, Extend(Extend(Empty, variant), variant))
         )
     ) = None
-    ensure reserved_name: collect(parent, module, Extend(Empty, SrcDecl::Enumeration("Bool", first)))
+    ensure reserved_name: collect(
+        parent,
+        module,
+        Extend(Empty, SrcDecl::Enumeration("Bool", first))
+    )
         = None
     ensure repeated_parameter: collect(
         parent,
@@ -1012,15 +1046,30 @@ pub const GREEN_PATH: Path := Path::Member(LIGHT_PATH, "Green")
 pub const NEXT_BODY: Snoc<SrcRow> := Extend(
     Extend(
         Extend(
-            Extend(Empty, SrcRow { form := SrcF::Name(Path::Name("l")), scope := one("l") }),
-            SrcRow { form := SrcF::Name(GREEN_PATH), scope := one("l") }
+            Extend(
+                Empty,
+                SrcRow {
+                    form := SrcF::Name(Path::Name("l")),
+                    scope := one("l"),
+                }
+            ),
+            SrcRow {
+                form := SrcF::Name(GREEN_PATH),
+                scope := one("l"),
+            }
         ),
-        SrcRow { form := SrcF::Name(RED_PATH), scope := one("l") }
+        SrcRow {
+            form := SrcF::Name(RED_PATH),
+            scope := one("l"),
+        }
     ),
     SrcRow {
         form := SrcF::Match(
             0,
-            two(SrcArm { pattern := RED_PATH, body := 1 }, SrcArm { pattern := GREEN_PATH, body := 2 })
+            two(
+                SrcArm { pattern := RED_PATH, body := 1 },
+                SrcArm { pattern := GREEN_PATH, body := 2 }
+            )
         ),
         scope := one("l"),
     }
@@ -1030,7 +1079,12 @@ pub const NEXT_DECLS: Snoc<SrcDecl> := two(
     SrcDecl::Enumeration("Light", two("Red", "Green")),
     SrcDecl::Function(
         "next",
-        one(Param { name := "l", ty := TypeName::Named(LIGHT_PATH) }),
+        one(
+            Param {
+                name := "l",
+                ty := TypeName::Named(LIGHT_PATH),
+            }
+        ),
         TypeName::Named(LIGHT_PATH),
         NEXT_BODY
     )
@@ -1041,25 +1095,44 @@ pub const NEXT_SYMB: Symb := Extend(
         Extend(
             Extend(
                 Empty,
-                Entry { item := LIGHT, kind := ItemKind::Enumeration(two(LIGHT_RED, LIGHT_GREEN)) }
+                Entry {
+                    item := LIGHT,
+                    kind := ItemKind::Enumeration(two(LIGHT_RED, LIGHT_GREEN)),
+                }
             ),
-            Entry { item := LIGHT_RED, kind := ItemKind::Constructor(LIGHT) }
+            Entry {
+                item := LIGHT_RED,
+                kind := ItemKind::Constructor(LIGHT),
+            }
         ),
-        Entry { item := LIGHT_GREEN, kind := ItemKind::Constructor(LIGHT) }
+        Entry {
+            item := LIGHT_GREEN,
+            kind := ItemKind::Constructor(LIGHT),
+        }
     ),
     Entry {
         item := ["M", "next"],
         kind := ItemKind::Function(
-            Sig { params := one(Ty::Nominal(LIGHT)), result := Ty::Nominal(LIGHT) }
+            Sig {
+                params := one(Ty::Nominal(LIGHT)),
+                result := Ty::Nominal(LIGHT),
+            }
         ),
     }
 )
 
-pub const NEXT_ENV: Env := Env { parent := ROOT, name := "M", symb := NEXT_SYMB }
+pub const NEXT_ENV: Env := Env {
+    parent := ROOT,
+    name := "M",
+    symb := NEXT_SYMB,
+}
 
 pub const NEXT_FORMS: Snoc<Form> := Extend(
     Extend(
-        Extend(Extend(Empty, ExprF::Local(0)), ExprF::Constructor(LIGHT_GREEN)),
+        Extend(
+            Extend(Empty, ExprF::Local(0)),
+            ExprF::Constructor(LIGHT_GREEN)
+        ),
         ExprF::Constructor(LIGHT_RED)
     ),
     ExprF::Match(
@@ -1079,41 +1152,81 @@ pub const SHADOW_ROWS: Snoc<SrcRow> := Extend(
     Extend(
         Extend(
             Extend(
-                Extend(Empty, SrcRow { form := SrcF::IntegerLiteral(1), scope := Empty }),
-                SrcRow { form := SrcF::BooleanLiteral(true), scope := one("x") }
+                Extend(
+                    Empty,
+                    SrcRow {
+                        form := SrcF::IntegerLiteral(1),
+                        scope := Empty,
+                    }
+                ),
+                SrcRow {
+                    form := SrcF::BooleanLiteral(true),
+                    scope := one("x"),
+                }
             ),
-            SrcRow { form := SrcF::Name(Path::Name("x")), scope := two("x", "x") }
+            SrcRow {
+                form := SrcF::Name(Path::Name("x")),
+                scope := two("x", "x"),
+            }
         ),
-        SrcRow { form := SrcF::Let("x", None, 1, 2), scope := one("x") }
+        SrcRow {
+            form := SrcF::Let("x", None, 1, 2),
+            scope := one("x"),
+        }
     ),
-    SrcRow { form := SrcF::Let("x", None, 0, 3), scope := Empty }
+    SrcRow {
+        form := SrcF::Let("x", None, 0, 3),
+        scope := Empty,
+    }
 )
 
-pub const SHADOW_EXAMPLE: Bool := resolve_expression(NEXT_ENV, Empty, SHADOW_ROWS) = Some(
-    Extend(
+pub const SHADOW_EXAMPLE: Bool :=
+    resolve_expression(NEXT_ENV, Empty, SHADOW_ROWS) = Some(
         Extend(
             Extend(
-                Extend(Extend(Empty, ExprF::IntegerLiteral(1)), ExprF::BooleanLiteral(true)),
-                ExprF::Local(1)
+                Extend(
+                    Extend(
+                        Extend(Empty, ExprF::IntegerLiteral(1)),
+                        ExprF::BooleanLiteral(true)
+                    ),
+                    ExprF::Local(1)
+                ),
+                ExprF::Let(None, 1, 2)
             ),
-            ExprF::Let(None, 1, 2)
-        ),
-        ExprF::Let(None, 0, 3)
+            ExprF::Let(None, 0, 3)
+        )
     )
-)
 
 pub const SIBLING_ROWS: Snoc<SrcRow> := Extend(
     Extend(
         Extend(
             Extend(
-                Extend(Empty, SrcRow { form := SrcF::IntegerLiteral(1), scope := Empty }),
-                SrcRow { form := SrcF::Name(Path::Name("x")), scope := one("x") }
+                Extend(
+                    Empty,
+                    SrcRow {
+                        form := SrcF::IntegerLiteral(1),
+                        scope := Empty,
+                    }
+                ),
+                SrcRow {
+                    form := SrcF::Name(Path::Name("x")),
+                    scope := one("x"),
+                }
             ),
-            SrcRow { form := SrcF::Let("x", None, 0, 1), scope := Empty }
+            SrcRow {
+                form := SrcF::Let("x", None, 0, 1),
+                scope := Empty,
+            }
         ),
-        SrcRow { form := SrcF::Name(Path::Name("x")), scope := Empty }
+        SrcRow {
+            form := SrcF::Name(Path::Name("x")),
+            scope := Empty,
+        }
     ),
-    SrcRow { form := SrcF::Binary(BinaryOp::Add, 2, 3), scope := Empty }
+    SrcRow {
+        form := SrcF::Binary(BinaryOp::Add, 2, 3),
+        scope := Empty,
+    }
 )
 
 pub const SIBLING_EXAMPLE: Bool := resolve_expression(NEXT_ENV, Empty, SIBLING_ROWS) = None

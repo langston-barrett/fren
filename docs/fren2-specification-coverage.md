@@ -36,7 +36,7 @@ trusted: `spec::types::expression_uniqueness`
 
 The one `trusted` procedure is the open `types.derivation.unique-expression`,
 whose claim's reason starts `open:`. Types.md, Expressions.md,
-LexicalStructure.md, Syntax.md, AstAndParsing.md,
+NamesAndScope.md, LexicalStructure.md, Syntax.md, AstAndParsing.md,
 [PropertiesAndChecks.md](#definedness-and-verification-correspondence) and the THIR
 chapter are the converted chapters: their wrappers trace with `trusted` as the required
 level, so a property that loses its evidence fails `lake build --wfail`,
@@ -1118,23 +1118,32 @@ prerequisite to extend Fren's recursive specification features.
 
 ## Retained record: src/Spec/Language/NamesAndScope.md
 
-The full lookup and traversal properties need evidence over the actual
-resolver, not a roundtrip or agreement between two copies of lookup.
+The chapter is converted: it defines resolution in Fren as total functions
+from source forms to the item identities, scopes of de Bruijn levels and
+symbol environment of Core typing, and its wrapper traces its evidence.
+The wrapper proves in Lean the laws of local lookup, weakening by an
+unmentioned name, the resolved table's scoping and alignment, the item
+kinds that each resolved position names, sibling scopes and the parallel
+parameter context, and it binds the production resolver's nearest-name
+search and name equality (`FrenAstToHir.nearest`, `FrenAstToHir.sameName`)
+to their rules.
 
-- [ ] Bind the future nearest-name primitive to the finite facts and the
-  wrapper's arbitrary-context law, with a genuine Lean proof where cheap.
-- [ ] Test actual collection under declaration permutations, including
-  forward type, function and expectation references and all duplicate kinds.
-- [ ] Test actual lexical traversal on parameters, nested lets, each arm and
-  siblings, including unknown names in let values and uses outside a let.
-- [ ] Use direct Plausible on actual lookup and resolution, with accepted and
-  rejected inputs and counts for successful parse, walking-domain membership,
-  duplicate-free collection and lookup-hit/miss premises. No sampled test is
-  classified as a universal proof or discharged with `impl ... by plausible`.
+- [x] Bind the nearest-name primitive to its rule with a genuine Lean
+  proof over every scope.
+- [ ] Prove in Lean that collection yields a well-formed symbol
+  environment (`names.handoff.environment`), which is what
+  `types.symbols.resolution` assumes; it is `trusted` as open.
+- [ ] Prove the exchange law of collection (`names.collection.order`) and
+  state the law for every permutation; the exchange law is `trusted` as
+  open.
+- [ ] Bind path-head and member lookup and collection to the production
+  resolver, whose functions read production scope and token structures
+  that Fren does not yet state.
+- [ ] State the correspondence between source text and the source table
+  that this chapter resolves, once the Syntax chapter defines the table.
 - [ ] Extend this chapter before imports, multiple modules, visibility across
   modules, payload binders, generics, recursion policy or body visibility are
-  implemented. These are remaining obligations, not prerequisites for the
-  single-file resolver.
+  implemented.
 
 ## Retained record: src/Spec/Compiler/Thir.md
 

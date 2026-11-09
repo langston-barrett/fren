@@ -4,7 +4,9 @@ A Fren specification declares values and functions, states assumptions and
 asks whether its expectations follow. This part defines the source forms,
 their meanings, and the obligations that checking them produces.
 
-Start with source text and [syntax](Syntax.md), then [names and scope](NamesAndScope.md).
+Start with source text and [syntax](Syntax.md). [Resolution](NamesAndScope.md)
+maps the names of source forms to canonical item identities and local
+levels, and collects a module's declarations into the symbol environment.
 The typed Core in [Core typing](Types.md) defines
 canonical item identities, Boolean, integer and nominal enum types, local
 contexts indexed by de Bruijn level, a symbol environment of signatures,
