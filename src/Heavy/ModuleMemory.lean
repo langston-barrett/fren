@@ -1,10 +1,32 @@
-import Std
+import Heavy.Process
 
 /-! Selected-module policy and raw application checks; no Fren or OS imports.
 The IO caller supplies canonical source paths and raw kernel readbacks. -/
 namespace Heavy.ModuleMemory
 
 def defaultBytes : Nat := 1073741824
+
+/-- Audited native zero-operand options may precede an unambiguous mode flag.
+Other options remain uncertain even when native Lean happens to accept them. -/
+def directPlainFlag (arg : String) : Bool :=
+  Heavy.Process.plainFlag arg || arg == "--quiet" || arg == "--profile" || arg == "-P" ||
+    arg == "--deps" || arg == "-d" || arg == "--src-deps" || arg == "--deps-json" ||
+    arg == "--exitOnPanic" || arg == "-e" || arg == "-a" || arg == "--server" || arg == "--worker"
+
+/-- Ordinary direct compilation excludes query, stdin and program execution.
+Consume known option operands first, so an output named --run cannot bypass it.
+After a genuine -- terminator, every remaining argument is a literal operand.
+Stop at unknown options: their operands may look like later exclusion flags.
+Eligibility is conservative; it does not assert supported compiler metadata. -/
+def directFile : List String → Bool
+  | [] => true
+  | arg :: rest =>
+    if Heavy.Process.valueFlag arg then
+      match rest with | [] => true | _ :: tail => directFile tail
+    else if arg == "--" then true
+    else if arg == "--run" || arg == "-r" || arg == "--stdin" || Heavy.Process.queryFlag arg then false
+    else if Heavy.Process.optionLike arg && !directPlainFlag arg then true
+    else directFile rest
 
 def inRoot (root source owner : String) : Bool :=
   source == root ++ "/" ++ owner ++ ".lean" || (root ++ "/" ++ owner ++ "/").toList.isPrefixOf source.toList
@@ -77,6 +99,14 @@ def selected (root source : String) : Bool :=
     inRoot root source "FrenTest/Fren2Typing" ||
     inRoot root source "FrenTest/Fren2Mir" ||
     inRoot root source "FrenTest/Fren2Lir")
+
+/-- Scan every canonical argv candidate. Its raw spelling/extension never
+excludes a resolved selected source; later selected candidates take precedence.
+The IO caller resolves every raw argument before invoking this function. -/
+def ambiguousSource (root : String) : List String → String → String
+  | [], source => source
+  | canonical :: rest, source =>
+    ambiguousSource root rest (if selected root canonical then canonical else source)
 
 def limit (root source kind : String) (configured : Nat) : Option Nat :=
   if kind == "query" || kind == "stdin" then some 0

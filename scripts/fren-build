@@ -11,8 +11,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def lake_build(command):
-    """Effective build configuration under the pinned Lake CLI grammar.
+def lake_route(command):
+    """Effective build configuration or env command under pinned Lake grammar.
 
     Mirror Util/Cli's token insertion and Main's two leading-option passes,
     then build's collectArgs pass. Only this private token copy is rewritten.
@@ -86,6 +86,10 @@ def lake_build(command):
     if not args:
         return None
     verb = args.pop(0)
+    if verb == 'env' and not help_requested and args[:1] == ['lean']:
+        # env forwards its entire tail, without another option pass. Its
+        # command is an untouched suffix even after leading token insertion.
+        return Path(directory).absolute().resolve(), config, len(command) - len(args)
     if verb != 'build':
         return None
     leading()
@@ -95,15 +99,32 @@ def lake_build(command):
         arg = args.pop(0)
         if len(arg) > 1 and arg.startswith('-'):
             option(arg)
-    return Path(directory).absolute().resolve(), config
+    return Path(directory).absolute().resolve(), config, None
+
+
+def lake_build(command):
+    route = lake_route(command)
+    return route[:2] if route is not None and route[2] is None else None
 
 
 def heavy_command(command, cap):
     """Adapter called after Heavy admission, before its offline wrapper."""
-    selected = lake_build(command)
+    selected = lake_route(command)
     if selected is None:
         return command
-    directory, config = selected
+    directory, config, direct = selected
+    if direct is not None:
+        classifier = ROOT / 'tools/heavy-observe/.lake/build/bin/heavy_observe'
+        try:
+            classification = subprocess.check_output([str(classifier), '--classify-direct',
+                str(ROOT / 'src'), *command[direct + 1:]])
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ValueError(f'direct Lean classifier unavailable: {error}') from error
+        if classification == b'unselected\n':
+            return command
+        if classification != b'selected\n':
+            raise ValueError('invalid direct Lean classification')
+        return [str(ROOT / 'scripts/fren-build'), '--heavy-direct', str(cap), str(direct), *command]
     tools = (ROOT / 'tools/heavy-observe').resolve()
     if directory == tools and (directory / config).resolve() == tools / 'lakefile.lean':
         return command
@@ -169,17 +190,27 @@ def selected_lake(command, env):
 
 
 def main():
-    ordinary = sys.argv[1:2] == ['--heavy-lake']
+    direct = sys.argv[1:2] == ['--heavy-direct']
+    ordinary = direct or sys.argv[1:2] == ['--heavy-lake']
     if not ordinary and (len(sys.argv) < 2 or sys.argv[1] in ('-h', '--help')):
         print('Usage: scripts/fren-build LAKE_BUILD_ARGUMENT...', file=sys.stderr)
         return 0 if len(sys.argv) > 1 else 2
     tools = ROOT / 'tools/heavy-observe/.lake/build/bin'
-    if any(not os.access(tools / name, os.X_OK) for name in ('heavy_observe', 'budget_session')):
+    if not os.access(tools / 'heavy_observe', os.X_OK):
         print('fren-build: missing prebuilt tools; from this checkout run: '
               'scripts/heavy lake -d tools/heavy-observe build heavy_observe budget_session --wfail', file=sys.stderr)
         return 125
     try:
         env = os.environ.copy()
+        direct_index = None
+        if direct:
+            direct_index = int(sys.argv[3])
+            original = sys.argv[4:]
+            route = lake_route(original)
+            if route is None or route[2] != direct_index:
+                raise ValueError('invalid direct Lean route')
+        if not os.access(tools / 'budget_session', os.X_OK):
+            raise ValueError('missing prebuilt budget_session')
         wall = env.get('HEAVY_COMPILER_WALL_MS')
         if wall is not None and (not wall.isascii() or not wall.isdecimal() or not 0 < int(wall) <= 2147483647):
             raise ValueError('HEAVY_COMPILER_WALL_MS must be a positive integer at most 2147483647')
@@ -193,7 +224,11 @@ def main():
                 raise ValueError('existing Lean override: use the explicit heavy-lean-build entrypoint')
             cap = int(sys.argv[2])
             allowance = outer_allowance(cap)
-            real, command = selected_lake(sys.argv[3:], env)
+            real, command = selected_lake(sys.argv[4:] if direct else sys.argv[3:], env)
+            if direct:
+                # selected_lake removes elan's +toolchain token when resolving
+                # its shim. Reparse the resulting native command's suffix.
+                direct_index = lake_route(command)[2]
         else:
             cwd = Path.cwd()
             pin_file = next((p / 'lean-toolchain' for p in (cwd, *cwd.parents)
@@ -236,6 +271,7 @@ def main():
         print(f'fren-build: retained private state: {work}', file=sys.stderr, flush=True)
         entry = ROOT / 'scripts/heavy-lean-build'
         os.execve(str(entry), [str(entry), '--state', str(work / 'state'), '--real-lean', str(real),
+                  *(['--direct-lean-index', str(direct_index)] if direct else []),
                   '--allowance-kib', str(requested),
                   '--headroom-kib', env.get('FREN_BUILD_HEADROOM_KIB', '100000'),
                   '--fallback-kib', env.get('FREN_BUILD_FALLBACK_KIB', '600000'),

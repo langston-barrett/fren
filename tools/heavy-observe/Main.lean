@@ -149,6 +149,17 @@ def memoryPath (path : String) : IO String := do
       return (parent / (p.fileName.getD "")).toString
     catch _ => return ""
 
+def memorySourcePath (root : String) (args : List String) : IO String := do
+  let parsed := parseMetadata args
+  let source ← match parsed.bind (·.source) with
+    | some s => memoryPath s
+    | none => pure ""
+  -- Resolve every raw argument before selection, including aliases without
+  -- a .lean suffix. An unsupported metadata option must not hide one.
+  if parsed.isNone then
+    return Heavy.ModuleMemory.ambiguousSource root (← args.mapM memoryPath) source
+  return source
+
 def run (args : List String) : IO UInt32 := do
   let self ← IO.FS.realPath (← IO.appPath)
   let root := self.parent.getD "." |>.parent.getD "."
@@ -204,15 +215,7 @@ def run (args : List String) : IO UInt32 := do
     | none => Heavy.ModuleMemory.defaultBytes
     | some text => if text.length > 16 then 0 else text.toNat?.getD 0
   let memoryRoot := (← IO.getEnv "HEAVY_MODULE_SOURCE_ROOT").getD ""
-  let mut memorySource ← match source with
-    | some s => memoryPath s
-    | none => pure ""
-  -- Ambiguous metadata must not silently bypass a possible selected source.
-  if parsed.isNone then
-    for arg in args do
-      if arg.endsWith ".lean" then
-        let candidate ← memoryPath arg
-        if Heavy.ModuleMemory.selected memoryRoot candidate then memorySource := candidate
+  let memorySource ← memorySourcePath memoryRoot args
   let memoryKind := (parsed.map (·.kind)).getD "unknown"
   let memoryPlan := Heavy.ModuleMemory.limit memoryRoot memorySource memoryKind memoryConfigured
   let memoryLimit := memoryPlan.getD (2^50 + 1)
@@ -430,6 +433,14 @@ def run (args : List String) : IO UInt32 := do
   return outcome.shellCode.toUInt32
 
 def main (args : List String) : IO UInt32 := do
+  -- Only the standalone tool classifies the ordinary wrapper's raw Lean tail;
+  -- an overlay named lean always forwards even these same arguments.
+  if (← IO.appPath).fileName == some "heavy_observe" then
+    if let "--classify-direct" :: root :: tail := args then
+      let selected := Heavy.ModuleMemory.directFile tail &&
+        Heavy.ModuleMemory.selected root (← memorySourcePath root tail)
+      IO.println (if selected then "selected" else "unselected")
+      return 0
   -- Only overlay.py's short-lived private copy can select preparation. Even
   -- identical arguments to bin/lean continue to reach the actual compiler.
   if (← IO.appPath).fileName == some ".prepare-compiler-metadata" then

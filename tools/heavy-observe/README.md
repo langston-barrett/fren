@@ -447,6 +447,36 @@ That short command retains its nearest caller `lean-toolchain` pin selection and
 passes each argument literally after `lake build`. Neither entrypoint builds
 missing tools automatically.
 
+`scripts/heavy lake env lean FILE.lean` also uses the selected Fren2 family
+memory bound. The standalone observer classifies the raw Lean arguments and
+canonical source path before Heavy chooses its control mode. Selected calls
+reuse the private overlay and session, replacing only env's bare `lean`
+executable; the compiler's arguments, cwd, streams and physical status are
+retained. Queries, stdin, `--run`/`-r` and nonselected legacy sources keep their
+existing route. Known option operands are consumed before excluding those
+modes, so an output named `--run` does not bypass the bound. Filenames after a
+genuine `--` are literal operands, even when named like run/query flags;
+an option operand named `--` does not terminate flag interpretation. Selected files
+after that boundary enter the same route. Unsupported selected syntax and missing
+required setup fail closed. Ambiguous discovery resolves every argument before
+selection, including suffixless/differently suffixed aliases
+to selected sources. The pure scan is bound to a Fren requirement; real compiler
+controls cover resolution and complete argv traversal. The metadata subset is
+not a complete native arity table: an unknown option stops mode scanning with
+file eligibility, because a later apparent query/run flag may be its operand.
+Possible selected invocations are then refused as unsupported metadata, including
+incremental snapshot and diagnostic options. This covers bare `lean`
+after `lake env`, not arbitrary executable paths or shell commands. Source
+paths must remain stable between classification and execution. The registered
+`entrypoint` partition includes raw argument, setup denial and real direct
+compilation controls in `module_memory_test.py direct`; the `cohort` partition
+checks that `--run` and `-r` bypass compiler admission in `directRun`, while
+`directTerminator0` and `directTerminator1` check literal selected aliases for
+every excluded flag in two bounded batches.
+`directOperands0` (entrypoint) and `directOperands1` (cohort) check native snapshot
+and diagnostic operands in their long and short forms. The raw controls cover all
+operand-taking options in the pinned native table, plus unknown future options.
+
 Each invocation prints and retains a new private temporary directory containing
 the overlay, session and records under `state`. Remove it when no longer
 needed. By default it also contains an empty request manifest. Compiler

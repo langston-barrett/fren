@@ -1607,6 +1607,33 @@ FrenTestMain, Impls and unrelated legacy modules and queries are not selected.
 An ambiguous argv containing a possible selected source fails closed; missing
 sources retain their compiler diagnostic when the requested scope can be set up.
 
+The ordinary `scripts/heavy lake env lean FILE.lean` route uses the same selected
+source policy, observer and budget session as Lake builds. Leading Lake options
+and installed elan toolchain selection retain their meaning. The wrapper replaces
+only env's bare `lean` executable with the private observer; compiler argv, cwd
+and inherited streams are preserved. Its raw argument scan consumes known option
+operands before excluding queries, stdin and `--run`/`-r`; those and nonselected
+legacy sources keep their ordinary route. Unsupported selected file syntax fails closed.
+This route covers bare `lean` after `lake env`, not arbitrary executable paths or
+shell commands. Missing classifier/session tools fail setup rather than launching
+a possibly selected compiler uncapped. Canonical path selection assumes source
+paths remain stable between classification and launch, as for the build route.
+When metadata is ambiguous, every raw argument is canonicalized before the
+source-candidate scan: a suffixless or differently suffixed alias to a selected
+source cannot bypass selection. The pure scan below consumes those canonical
+paths without filtering their original spellings; actual resolution and complete
+argv traversal remain IO obligations covered by real compiler alias controls.
+A genuine `--` terminates mode/query flag interpretation after known option
+operands have been consumed. A selected alias named like a mode or query flag
+after that boundary must enter the selected route; unsupported metadata then
+fails before compiler exec. An option operand named `--` is not that boundary.
+The metadata option subset is not a native arity table. Mode scanning continues
+through known operands and audited native zero-operand prefixes. Any other option
+stops the scan with file eligibility instead of treating a later token as a
+definitive mode/query flag: that token may be an operand.
+Possible selected sources then stay on the fail-closed route, including native
+incremental snapshot, diagnostic, numeric and plugin options and their aliases.
+
 Before the first selected compiler executes, the wrapper requires an owned,
 finite aggregate cgroup-v2 scope. It does not create sibling scopes. In a dedicated
 transient job scope containing only this launch chain, preparation moves only its
@@ -1883,6 +1910,22 @@ pub proc heavy_process_fingerprint(mode: Nat, bytes: Nat): (det read?) {
 
 pub enum ProcessArguments { Nil, Cons(String, ProcessArguments) }
 
+pub fn module_memory_source(root: String, candidates: ProcessArguments, source: String): String :=
+    match candidates {
+        ProcessArguments::Nil => source,
+        ProcessArguments::Cons(canonical, rest) => module_memory_source(
+            root,
+            rest,
+            if module_memory_selected?(root, canonical) then canonical else source
+        ),
+    }
+
+pub proc heavy_module_memory_source(root: String, candidates: ProcessArguments): (
+    det source: String,
+) {
+    out source := module_memory_source(root, candidates, "")
+}
+
 pub struct ProcessMetadata {
     kind: String, source: Option<String>, olean: Option<String>, ilean: Option<String>,
     c: Option<String>, bc: Option<String>, setup: Option<String>,
@@ -1953,6 +1996,26 @@ pub proc heavy_process_arguments(args: ProcessArguments): (det parsed: Option<Pr
     out parsed := process_metadata_loop(args, process_empty_metadata("file"))
 }
 
+pub fn direct_plain_flag?(arg: String) :=
+    process_plain_flag?(arg) or arg is "--quiet" | "--profile" | "-P" | "--deps" | "-d" | "--src-deps" | "--deps-json" | "--exitOnPanic" | "-e" | "-a" | "--server" | "--worker"
+
+pub fn direct_lean_file?(args: ProcessArguments) := match args {
+    ProcessArguments::Nil => true,
+    ProcessArguments::Cons(arg, rest) =>
+        if process_value_flag?(arg) then match rest {
+            ProcessArguments::Nil => true,
+            ProcessArguments::Cons(_, tail) => direct_lean_file?(tail),
+        }
+        else if arg = "--" then true
+        else if arg is "--run" | "-r" | "--stdin" or process_query_flag?(arg) then false
+        else if arg.starts_with?("-") and not direct_plain_flag?(arg) then true
+        else direct_lean_file?(rest),
+}
+
+pub proc heavy_direct_lean_file(args: ProcessArguments): (det file?) {
+    out file? := direct_lean_file?(args)
+}
+
 pub fn identity_part?(part: Option<String>) := match part {
     Option::Some(value) => value != "",
     Option::None => false,
@@ -1992,6 +2055,8 @@ pub proc heavy_process_metadata_reuse(
 #fren_check heavy_compiler_cpu_observation
 #fren_check heavy_process_fingerprint
 #fren_check heavy_process_arguments
+#fren_check heavy_module_memory_source
+#fren_check heavy_direct_lean_file
 #fren_check heavy_process_identity
 #fren_check heavy_process_metadata_reuse
 ```

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Actual selected-module scope/readback/physical controls; no numerical model."""
 import json
+from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -28,9 +30,10 @@ if args==['--githash']: print('f'*40);sys.exit(0)
 relative=next(s[3:] for s in pathlib.Path('/proc/self/cgroup').read_text().splitlines() if s.startswith('0::'))
 cg=pathlib.Path('/sys/fs/cgroup')/relative.lstrip('/')
 mode=os.environ['MODE'];marker=pathlib.Path(os.environ['MARKER'])
-info=dict(pid=os.getpid(),parent=os.getppid(),scope=str(cg),inode=cg.stat().st_ino,maximum=(cg/'memory.max').read_text().strip(),swap=(cg/'memory.swap.max').read_text().strip())
+info=dict(args=args,cwd=os.getcwd(),pid=os.getpid(),parent=os.getppid(),scope=str(cg),inode=cg.stat().st_ino,maximum=(cg/'memory.max').read_text().strip(),swap=(cg/'memory.swap.max').read_text().strip())
 marker.write_text(json.dumps(info))
 print('fixture stdout',flush=True);print('fixture stderr',file=sys.stderr,flush=True)
+if mode=='term':os.kill(os.getpid(),signal.SIGTERM)
 if mode in ('oom','cancel','leftover'):
  child=os.fork()
  if child==0:
@@ -47,7 +50,7 @@ if mode in ('oom','cancel','leftover'):
   deadline=time.monotonic()+2
   while not pathlib.Path(str(marker)+'.child').exists() and time.monotonic()<deadline:time.sleep(.005)
   assert pathlib.Path(str(marker)+'.child').exists()
-  if '-o' in args:pathlib.Path(args[args.index('-o')+1]).write_bytes(b'fixture artifact')
+  if '-o' in args and os.environ.get('NO_ARTIFACT')!='1':pathlib.Path(args[args.index('-o')+1]).write_bytes(b'fixture artifact')
   sys.exit(0)
  if mode=='cancel':
   signal.signal(signal.SIGTERM,signal.SIG_IGN)
@@ -58,7 +61,7 @@ if mode in ('oom','cancel','leftover'):
 else:
  data=bytearray(16*1024*1024)
  for i in range(0,len(data),4096):data[i]=1
- if '-o' in args:pathlib.Path(args[args.index('-o')+1]).write_bytes(b'fixture artifact')
+ if '-o' in args and os.environ.get('NO_ARTIFACT')!='1':pathlib.Path(args[args.index('-o')+1]).write_bytes(b'fixture artifact')
  sys.exit(7 if mode=='exit7' else 0)
 ''')
     compiler.chmod(0o755)
@@ -241,6 +244,13 @@ static int target(int fd,const char *file) {
  ssize_t n=readlink(link,path,sizeof(path)-1);if(n<0)return 0;path[n]=0;
  return strstr(path,"/heavy-modules-")&&strstr(path,"/m-")&&strstr(path,file);
 }
+int mkdir(const char *path,mode_t mode) {
+ const char *fault=getenv("MODULE_FAULT");
+ if(fault&&!strcmp(fault,"prepare")&&strstr(path,"/heavy-modules-")&&strstr(path,"/build-")) {
+  errno=EACCES;return -1;
+ }
+ return syscall(SYS_mkdir,path,mode);
+}
 ssize_t write(int fd,const void *p,size_t n) {
  const char *mode=getenv("MODULE_FAULT");
  static int held=0;
@@ -288,6 +298,214 @@ int unlinkat(int dir,const char *name,int flags) {
     return library
 
 
+def direct_controls(work):
+    """Ordinary Heavy/Lake env dispatch with actual session/kernel readbacks."""
+    from owned_test import _build
+    _build.direct_routes(work)
+    start=time.monotonic()
+    compiler,_,home,_=fixture(work)
+    lake=compiler.parent/'lake'
+    lake.write_text('#!'+sys.executable+'\n'+r'''
+import os,pathlib,subprocess,sys
+args=sys.argv[1:];tail=args[args.index('env')+1:]
+exe=str(pathlib.Path(__file__).parent/'lean') if tail[0]=='lean' else tail[0]
+p=subprocess.run([exe,*tail[1:]])
+sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
+''')
+    lake.chmod(0o755)
+    env=dict(os.environ,HOME=str(home),TMPDIR=str(work),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off')
+    for k in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG',
+              'HEAVY_COMPILER_CPU_SECONDS','HEAVY_COMPILER_WALL_MS','HEAVY_COMPILER_MEMORY_BYTES',
+              'FREN_BUILD_REQUESTS_FILE','FREN_BUILD_ALLOWANCE_KIB','FREN_BUILD_HEADROOM_KIB',
+              'FREN_BUILD_FALLBACK_KIB','FREN_BUILD_TIMEOUT_MS'):
+        env.pop(k,None)
+    results=[]
+    def case(label,args,mode='below',executable=lake,script=ROOT/'scripts/heavy',extra=None):
+        marker=work/(label+'.marker')
+        command=[str(script),'--offline',str(executable),'env','lean',*map(str,args)]
+        p=run(command,directory=work,label=label,cwd=ROOT,
+              env=dict(env,MODE=mode,MARKER=str(marker),NO_ARTIFACT='1',**(extra or {})),timeout=8,grace=3)
+        match=re.search(rb'fren-build: retained private state: ([^\n]+)',p.stderr)
+        state=Path(os.fsdecode(match[1]))/'state' if match else None
+        rows=[json.loads(f.read_text()) for f in (state/'overlay/records').glob('process-*.json')] if state else []
+        row=dict(case=label,command=command,status=p.returncode,stdout=p.stdout.decode(),stderr=p.stderr.decode(),
+                 marker=json.loads(marker.read_text()) if marker.exists() else None,records=rows,state=str(state))
+        if state:
+            row['setup']=json.loads((state/'module-memory-setup.json').read_text())
+            row['session']=json.loads((state/'session/module-memory-result.json').read_text())
+        results.append(row);(work/'direct-results.json').write_text(json.dumps(results,indent=2)+'\n')
+        return row
+    selected=ROOT/'src/FrenBase/Identity.lean'
+    # Real mkdir denial at the mandatory per-build delegation boundary, also
+    # when this job has already prepared its aggregate for another partition.
+    library=faults(work)
+    r=case('direct-unavailable',[selected],extra={'LD_PRELOAD':str(library),'MODULE_FAULT':'prepare'})
+    assert r['status']==125 and r['marker'] is None,r
+    assert r['setup']['status']=='unavailable' and 'PermissionError' in r['setup']['error'],r
+    assert r['records'][0]['child_present'] is False,r
+    # direct_routes checks exact unchanged argv for every excluded mode using
+    # the actual native classifier and wrapper adapter. One legacy process
+    # witnesses the unchanged end-to-end path; avoid repeating that transport.
+    r=case('direct-legacy',[ROOT/'src/FrenTestMain.lean'])
+    assert r['status']==0 and not r['records'] and r['state']=='None',r
+    args=['-o','--run','src/FrenBase/Identity.lean']
+    r=case('direct-selected',args,'exit7')
+    assert r['status']==7 and r['stdout']=='fixture stdout\n',r
+    assert r['stderr'].endswith('fixture stderr\n') and r['marker']['cwd']==str(ROOT),r
+    assert r['marker']['args']==list(map(str,args)),r
+    record=r['records'][0];marker=r['marker']
+    assert record['raw_wait_status']==7*256 and record['real_compiler']==str(compiler),r
+    assert record['compiler_memory_ack_pid']==record['child_pid']==marker['pid'],r
+    assert record['compiler_memory_expected_inode']==record['compiler_memory_observed_inode']==marker['inode'],r
+    assert record['compiler_memory_applied_bytes']==record['compiler_memory_readback_bytes']==1073741824,r
+    assert record['compiler_memory_effective_bytes']==1073741824 and marker['swap']=='0',r
+    assert record['compiler_memory_cleanup_errno']==0 and record['compiler_memory_populated_after']==0,r
+    assert r['session']['module_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
+    r=case('direct-signal',[selected],mode='term')
+    assert r['status']==143 and r['records'][0]['raw_wait_status']==15,r
+    assert r['records'][0]['compiler_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
+    missing=work/'missing/scripts';missing.mkdir(parents=True)
+    for name in ('heavy','fren-build','heavy-lean-build'):
+        p=missing/name;p.write_bytes((ROOT/'scripts'/name).read_bytes());p.chmod(0o755)
+    r=case('direct-missing-tools',[selected],script=missing/'heavy')
+    assert r['status']==125 and r['marker'] is None and not r['records'],r
+    real=Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())/'bin/lean'
+    alias=work/'source-alias';alias.symlink_to(selected)
+    alternate=work/'source-alias.txt';alternate.symlink_to(selected)
+    for path in (alias,alternate):
+        # -j1 is valid Lean syntax outside the conservative metadata subset.
+        # Both the standalone verdict and the observer must see through aliases.
+        verdict=run([str(HERE/'.lake/build/bin/heavy_observe'),'--classify-direct',str(ROOT/'src'),'-j1',str(path)],
+                    directory=work,label='classify-'+path.name,env=env,timeout=3)
+        assert verdict.returncode==0 and verdict.stdout==b'selected\n',verdict
+    native=run([str(real),'-j1',str(alias)],directory=work,label='native-alias-threads',env=env,timeout=5)
+    assert native.returncode==0 and native.stdout==native.stderr==b'',native
+    r=case('direct-ambiguous',['-j1',alias],executable=real.parent/'lake')
+    records=[v for v in r['records'] if v.get('compiler_memory_selected')]
+    assert r['status']==125 and len(records)==1 and not records[0]['child_present'],r
+    assert records[0]['compiler_memory_source']==str(selected) and records[0]['input_kind']=='unknown',r
+    assert r['session']['module_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
+    artifact=work/'Identity λ $literal.olean'
+    r=case('direct-actual-lean',[alias,'-o',artifact],executable=real.parent/'lake')
+    records=[v for v in r['records'] if v.get('compiler_memory_selected')]
+    assert r['status']==0 and artifact.is_file() and len(records)==1,r
+    record=records[0]
+    assert record['args']==[str(alias),'-o',str(artifact)] and record['cwd']==str(ROOT),r
+    assert record['compiler_memory_source']==str(selected),r
+    assert record['compiler_memory_applied_bytes']==record['compiler_memory_effective_bytes']==1073741824,r
+    assert record['compiler_memory_ack_pid']==record['child_pid'] and record['compiler_memory_expected_inode']==record['compiler_memory_observed_inode'],r
+    assert record['raw_wait_status']==0 and record['compiler_memory_cleanup_errno']==0 and record['compiler_memory_populated_after']==0,r
+    assert not Path(record['compiler_memory_scope']).exists() and not Path(r['setup']['modules']).exists(),r
+    (work/'direct-summary.json').write_text(json.dumps(dict(status='passed',cases=len(results),
+        control_wall_seconds=time.monotonic()-start,results=str(work/'direct-results.json')),indent=2)+'\n')
+    print(f'direct Lean controls passed: {work}')
+
+
+def direct_run_controls(work):
+    """Program execution bypasses compiler admission in both native spellings."""
+    from owned_test import _build
+    build=_build.load(ROOT/'scripts/fren-build')
+    real=Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())/'bin/lean'
+    selected=ROOT/'src/FrenBase/Identity.lean'
+    home=work/'home';home.mkdir()
+    env=dict(os.environ,HOME=str(home),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off')
+    for key in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG'):
+        env.pop(key,None)
+    start=time.monotonic();results=[]
+    for flag in ('-r','--run'):
+        native_command=[str(real.parent/'lake'),'env','lean',flag,str(selected)]
+        assert build.heavy_command(native_command,1300000)==native_command
+        native=run(native_command,directory=work,label='native-'+flag.lstrip('-'),cwd=ROOT,env=env,timeout=5)
+        wrapped_command=[str(ROOT/'scripts/heavy'),'--offline',*native_command]
+        wrapped=run(wrapped_command,directory=work,label='heavy-'+flag.lstrip('-'),cwd=ROOT,env=env,timeout=5)
+        row=dict(flag=flag,native_command=native_command,wrapped_command=wrapped_command,
+                 native_status=native.returncode,status=wrapped.returncode,
+                 native_stdout=native.stdout.decode(),stdout=wrapped.stdout.decode(),
+                 native_stderr=native.stderr.decode(),stderr=wrapped.stderr.decode())
+        results.append(row);(work/'run-results.json').write_text(json.dumps(results,indent=2)+'\n')
+        assert native.returncode==wrapped.returncode==1,row
+        assert native.stdout==wrapped.stdout and native.stderr==wrapped.stderr,row
+        assert b"unknown declaration 'main'" in wrapped.stderr,row
+    (work/'run-summary.json').write_text(json.dumps(dict(status='passed',control_wall_seconds=time.monotonic()-start,
+        cgroup=Path('/proc/self/cgroup').read_text(),results=str(work/'run-results.json')),indent=2)+'\n')
+    print(f'direct Lean run controls passed: {work}')
+
+
+def direct_option_controls(work, shard, operand=False):
+    """Apparent mode flags can instead be filenames or option operands."""
+    real=Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())/'bin/lean'
+    selected=ROOT/'src/FrenBase/Identity.lean'
+    home=work/'home';home.mkdir()
+    env=dict(os.environ,HOME=str(home),TMPDIR=str(work),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off',HEAVY_SLOTS='2')
+    for key in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG'):
+        env.pop(key,None)
+    prefix='operand' if operand else 'terminator'
+    if operand:
+        cases=[('long-save',['--incr-save','--version',str(selected)],'--version'),
+               ('long-header',['--incr-header-save','--run',str(selected)],'--run'),
+               ('long-error',['--error','--run',str(selected)],None),
+               ('short-save',['-Y','--version',str(selected)],'--version'),
+               ('short-header',['-H','--run',str(selected)],'--run'),
+               ('short-error',['-E','--run',str(selected)],None)][3*shard:3*shard+3]
+    else:
+        flags=('--run','-r','--stdin','--version','-v','--short-version','-V',
+               '--githash','-g','--help','-h','--features','--print-prefix','--print-libdir')
+        cases=[(flag,['--',flag],None) for flag in flags[shard::2]]
+    start=time.monotonic();results=[]
+    if not operand:
+        for flag,_,_ in cases:(work/flag).symlink_to(selected)
+    def case(item):
+        flag,args,snapshot_name=item
+        cwd=work/flag if operand else work
+        if operand:cwd.mkdir()
+        native_command=[str(real.parent/'lake'),'-d',str(ROOT),'--offline','env','lean',*args]
+        # The existing owned dispatch owns this helper and all descendants.
+        # Each subprocess waits for its exact child; an exception
+        # leaves the outer dispatch responsible for bounded family cleanup.
+        native=subprocess.run(native_command,cwd=cwd,env=env,capture_output=True,timeout=5)
+        snapshot=cwd/snapshot_name if snapshot_name else None
+        snapshot_bytes=snapshot.read_bytes() if snapshot and snapshot.exists() else None
+        wrapped_command=[str(ROOT/'scripts/heavy'),'--offline',*native_command]
+        wrapped=subprocess.run(wrapped_command,cwd=cwd,env=env,capture_output=True,timeout=5)
+        match=re.search(rb'fren-build: retained private state: ([^\n]+)',wrapped.stderr)
+        state=Path(os.fsdecode(match[1]))/'state' if match else None
+        records=[json.loads(p.read_text()) for p in (state/'overlay/records').glob('process-*.json')] if state else []
+        row=dict(flag=flag,args=args,native_command=native_command,wrapped_command=wrapped_command,cwd=str(cwd),
+                 native_status=native.returncode,status=wrapped.returncode,
+                 native_stdout=native.stdout.decode(),native_stderr=native.stderr.decode(),
+                 stdout=wrapped.stdout.decode(),stderr=wrapped.stderr.decode(),records=records)
+        if snapshot_name:
+            row['snapshot']=dict(path=str(snapshot),bytes=len(snapshot_bytes) if snapshot_bytes is not None else 0,
+                sha256=hashlib.sha256(snapshot_bytes).hexdigest() if snapshot_bytes is not None else None)
+        if state:
+            row['setup']=json.loads((state/'module-memory-setup.json').read_text())
+            row['session']=json.loads((state/'session/module-memory-result.json').read_text())
+        (work/(prefix+'-'+flag+'.json')).write_text(json.dumps(row,indent=2)+'\n')
+        assert native.returncode==0 and native.stdout==native.stderr==b'',row
+        if snapshot_name:assert snapshot_bytes and snapshot.read_bytes()==snapshot_bytes,row
+        selected_records=[r for r in records if r.get('compiler_memory_selected')]
+        assert wrapped.returncode==125 and len(selected_records)==1,row
+        r=selected_records[0]
+        assert r['args']==args and r['compiler_memory_source']==str(selected),row
+        assert r['input_kind']=='unknown' and not r['child_present'] and r['compiler_memory_applied_bytes'] is None,row
+        assert row['setup']['status']=='available' and row['session']['module_memory_cleanup_errno']==0,row
+        assert not Path(row['setup']['modules']).exists(),row
+        return row
+    # Prepare the owned hierarchy before concurrent callers exist. Each later
+    # caller has a private build root; ordinary Heavy admission still applies.
+    results.append(case(cases[0]))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        for row in pool.map(case,cases[1:]):
+            results.append(row)
+            (work/(prefix+'-results.json')).write_text(json.dumps(results,indent=2)+'\n')
+    logs=[json.loads(line) for line in (home/'.cache/heavy/log.jsonl').read_text().splitlines()]
+    assert len(logs)==len(cases) and all(r['compiler_budget'] and r['exit_status']==125 for r in logs),logs
+    (work/(prefix+'-summary.json')).write_text(json.dumps(dict(status='passed',shard=shard,cases=len(results),
+        control_wall_seconds=time.monotonic()-start,cgroup=Path('/proc/self/cgroup').read_text(),
+        results=str(work/(prefix+'-results.json'))),indent=2)+'\n')
+    print(f'direct Lean {prefix} controls passed: {work}')
+
+
 def actual_compile(work):
     """One existing small Fren2 module; only owned outputs/cache are cold."""
     package=work/'real-package';package.mkdir()
@@ -317,7 +535,13 @@ def actual_compile(work):
 
 
 if __name__=='__main__':
-    part=sys.argv[1];assert part in ('producer','negative','lifecycle')
+    part=sys.argv[1];assert part in ('producer','negative','lifecycle','direct','directRun',
+        'directTerminator0','directTerminator1','directOperands0','directOperands1')
     parent=Path(os.environ.get('HEAVY_MODULE_TEST_ROOT',HERE/'test-work'));parent.mkdir(parents=True,exist_ok=True)
-    work=Path(tempfile.mkdtemp(prefix='module-'+part+'-',dir=parent));controls(work,part)
+    work=Path(tempfile.mkdtemp(prefix='module-'+part+'-',dir=parent))
+    if part=='direct':direct_controls(work)
+    elif part=='directRun':direct_run_controls(work)
+    elif part.startswith('directTerminator'):direct_option_controls(work,int(part[-1]))
+    elif part.startswith('directOperands'):direct_option_controls(work,int(part[-1]),operand=True)
+    else:controls(work,part)
     if part=='producer':actual_compile(work)
