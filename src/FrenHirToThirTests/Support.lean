@@ -1,6 +1,6 @@
 module
 
-public import FrenHirToThir
+public import FrenWalking
 
 public section
 namespace FrenHirToThirTests

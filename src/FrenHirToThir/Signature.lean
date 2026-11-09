@@ -1,7 +1,7 @@
 module
 
 public import FrenModule.Typed
-public import FrenAstToHir
+public import FrenDiag
 
 public section
 namespace FrenHirToThir

@@ -1,6 +1,6 @@
 module
 
-public import FrenHirToThir
+public import FrenWalking
 public import FrenTextTests
 
 public section

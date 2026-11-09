@@ -1,6 +1,6 @@
 import Fren.Impl
 import Fren.Literate
-import FrenHirToThir
+import FrenWalking
 
 open Fren.Lang
 

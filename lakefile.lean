@@ -185,6 +185,12 @@ input_dir fren_typecheck_inputs where
   text := false
   filter := .extension #["fren"]
 
+-- The walking skeleton's whole-pipeline adapter (parse, resolve, admit, type,
+-- validate) over the legacy `Resolved` representation, kept out of the passes.
+lean_lib FrenWalking
+
+lean_lib FrenWalkingTests
+
 lean_lib FrenThirDesugar
 
 lean_lib FrenThirDesugarTests
@@ -1193,7 +1199,7 @@ lean_exe fren_test where
     `@/FrenAstTests, `@/FrenModule, `@/FrenModuleTests, `@/FrenExpr, `@/FrenExprTests, `@/FrenMir,
     `@/FrenMirTests, `@/FrenLir, `@/FrenLirTests, `@/FrenOir, `@/FrenOirTests, `@/FrenParse,
     `@/FrenParseTests, `@/FrenAstToHir, `@/FrenAstToHirTests, `@/FrenHirToThir,
-    `@/FrenHirToThirTests, `@/FrenThirDesugar, `@/FrenThirDesugarTests, `@/FrenThirToMir,
+    `@/FrenHirToThirTests, `@/FrenWalking, `@/FrenWalkingTests, `@/FrenThirDesugar, `@/FrenThirDesugarTests, `@/FrenThirToMir,
     `@/FrenThirToMirTests, `@/FrenMirToMono, `@/FrenMirToMonoTests, `@/FrenMonoToFo,
     `@/FrenMonoToFoTests, `@/FrenFoToFlat, `@/FrenFoToFlatTests, `@/FrenMirToLean,
     `@/FrenMirToLeanTests, `@/FrenFlatToLir, `@/FrenFlatToLirTests, `@/FrenLirToOir,
