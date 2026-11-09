@@ -1,7 +1,8 @@
 # Expressions
 
-An expression denotes a value in an interpretation of its declarations and
-an assignment to its free locals. [Core typing](Types.md)
+A well-typed expression whose partial operations are within their domains
+denotes a value in an interpretation of its declarations and an assignment
+to its free locals. [Core typing](Types.md)
 defines the shared `Ty`, `Symbols`, `Context` and expression forms.
 This chapter specifies how their meanings and source obligations compose.
 The domain is Booleans, integers, payload-free nominal enums, locals, named
@@ -9,9 +10,16 @@ calls, unary and binary operators, lets, conditionals and constructor matches.
 
 ## Values, interpretation and mentioned names
 
+r[expressions.value.denotation]
+A well-typed expression of type τ, in a verified program and under values
+of its context's types, whose partial operations are within their domains,
+denotes a value of type τ. The [typing chapter](Types.md) states this as
+type safety.
+<!-- status: open -->
+
 r[expressions.value.type] spec::expressions::{Value, value_type, value_valid?}
-Every expression denotes a value of its type. A nominal value names an
-actual constructor of its canonical enum owner.
+A value is a Boolean, an integer, or a nominal value that names an actual
+constructor of its canonical enum owner; `value_type` gives its type.
 <!-- status: definition -->
 
 ```fren

@@ -85,7 +85,7 @@ compiler is specified later.
 | `types.derivation.unique-expression` | Open: lift `table_unique` across tables whose roots unfold alike |
 | `types.judgment.decidability` | Open: correctness of building a table bottom-up with `infer_layer` |
 | `types.symbols.resolution` | Open: depends on the resolution chapter |
-| `types.safety` | Open: needs the dynamic semantics of the Expressions chapter as a Fren definition |
+| `types.safety`, `expressions.value.denotation` | Open: needs the dynamic semantics of the Expressions chapter as a Fren definition |
 | `thir.core.levels`, `thir.core.unary`, `thir.core.binary` | `Spec.Compiler.Thir.lookup_nearest`, `core_unary` and `core_binary` |
 | `thir.primitive.compatibility`, `thir.primitive.unary`, `thir.primitive.binary` | Universal `impl` proofs of the primitive contracts in the THIR wrapper |
 | `thir.core.derivation` | Open: prove both directions between the Core relation and the production checker in its admitted domain, through the level-to-index conversion |
