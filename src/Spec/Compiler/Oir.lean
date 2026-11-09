@@ -449,6 +449,15 @@ theorem wrong_frame_rejected (p : FrenLir.Program) (owner : FrenBase.ItemId) :
       {EmptyQuestion owner with frames := [.guard (.bool false) true]} := by
   simp [SearchFor, EmptyQuestion]
 
+/-- A real nonempty obligation is valid for every environment and every
+zero-divisor totalization, without assuming a semantic preservation theorem. -/
+theorem constant_divisor_valid (out : FrenOir.Program) (q : FrenOir.Question) (origin : Origin)
+    (condition : q.condition = .binary .ne (.at origin (.int 2)) (.int 0)) :
+    ConditionValid out symbols zero q := by
+  intro values _ _ leaf _
+  rw [condition]
+  exact .binary (.at .int) .int (.ordinary rfl)
+
 /-- An outer guard is interpreted before a later lexical binding. -/
 example (name : Token) (ty : FrenExpr.Ty) (v d c : Term)
     (value : Lir.Meaning symbols zero env v x) (domain : Lir.Meaning symbols zero env d (.bool wd))
@@ -487,6 +496,18 @@ theorem request_to_source (lirContract : Lir.RequestContract) (oirContract : Req
   have _sat : RequestMeaning expected (fun _ _ _ => .bool true) (fun _ _ => 0) 0 :=
     empty_witness_sat empty.lir.mir block
   unless empty == expected do throw (IO.userError "admitted output differs from proved complete OIR witness")
+  let .ok total := FrenLirToOir.fromSource ⟨213⟩ "mod oir_contracts\nfn total(x: Int): Int := 1 div 2\n"
+    | throw (IO.userError "total division witness admission failed")
+  let #[totalQuestion] := total.questions | throw (IO.userError "total divisor obligation missing")
+  unless totalQuestion.kind == .functionDefinedness && totalQuestion.frames.isEmpty &&
+      totalQuestion.hypotheses.isEmpty && totalQuestion.context.map (·.1.text) == ["x"] do
+    throw (IO.userError "total divisor witness has an unexpected conditional context")
+  match condition : totalQuestion.condition with
+  | .binary .ne (.at origin (.int 2)) (.int 0) =>
+    have _valid : ConditionValid total (fun _ _ _ => .bool true) (fun _ _ => 0) totalQuestion :=
+      constant_divisor_valid total totalQuestion origin condition
+    pure ()
+  | _ => throw (IO.userError "actual total divisor condition differs from proved semantic witness")
   let source := "mod oir_contracts\nfn unused(d: Int): Int := let x := 1 div d in 0\n" ++
     "fn guarded(d: Int): Int := if d != 0 then 1 div d else 0\n" ++
     "expect c(n: Int, d: Int) { expect wrong: n div d = 0 assume later: d != 0 }\n"
@@ -522,9 +543,9 @@ theorem request_to_source (lirContract : Lir.RequestContract) (oirContract : Req
       {q with frames := [.guard (.bool false) true]}] do
     unless Term.infer 10000 out.lir.mir.source changed.context changed.search == some .bool && !retained changed do
       throw (IO.userError "well-sorted condition/hypothesis/context mutation survived")
-  let .error (.admission _) := FrenLirToOir.fromSource ⟨213⟩ "mod bad\nfn f(): Int := false"
+  let .error (.admission _) := FrenLirToOir.fromSource ⟨213⟩ "mod bad\nfn f(x: Int): Int := false"
     | throw (IO.userError "typing failure confused with false goal")
-  IO.println "OIR contract witnesses: admitted complete empty-block Constructs and existential Sat; 2 real definitions, 3 divisor sites, guarded/unused/later-assumption contexts, 2 ordered requests; 3 well-sorted record mutants rejected. No solver or universal pass proof."
+  IO.println "OIR contract witnesses: admitted complete empty-block Constructs and existential Sat; admitted nonempty divisor ConditionValid proof for all assignments; 2 real definitions, 3 divisor sites, guarded/unused/later-assumption contexts, 2 ordered requests; 3 well-sorted record mutants rejected. No solver or universal pass proof."
 
 #print axioms produced_boundary
 #print axioms entry_success
@@ -538,6 +559,7 @@ theorem request_to_source (lirContract : Lir.RequestContract) (oirContract : Req
 #print axioms empty_witness_sat
 #print axioms wrong_condition_rejected
 #print axioms wrong_frame_rejected
+#print axioms constant_divisor_valid
 #print axioms request_to_source
 
 end Spec.Compiler.Oir

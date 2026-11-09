@@ -157,8 +157,13 @@ prove contextual/interpretation facts, not solver claims.
 relation for a complete empty-block production shape; `empty_witness_sat`
 exhibits its typed empty assignment and search meaning. The real source
 producer admits such a block, and the wrapper requires its entire output to
-match that proved shape. A second admitted source has two nonempty function
-bodies, three divisor sites, unused-let and explicit-guard contexts, and a
+match that proved shape. A separate admitted function `1 div 2` generates a
+nonempty divisor question. Matching its actual condition supplies equality
+evidence to `constant_divisor_valid`, which proves `ConditionValid` for that
+question over every assignment, lexical continuation and zero-divisor
+totalization, without an assumed universal pass theorem. Another admitted
+source has two nonempty function bodies, three divisor sites, unused-let
+and explicit-guard contexts, and a
 goal with its later assumption and safety dependency. These finite checks
 show the intended domain is usable; they do not establish general source
 semantic preservation. `wrong_condition_rejected` and `wrong_frame_rejected`
