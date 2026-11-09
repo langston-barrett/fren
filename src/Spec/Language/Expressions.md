@@ -14,13 +14,11 @@ r[expressions.value.denotation]
 A well-typed expression of type τ, in a verified program and under values
 of its context's types, whose partial operations are within their domains,
 denotes a value of type τ. The [typing chapter](Types.md) states this as
-type safety.
-<!-- status: open -->
+type safety; it is open.
 
 r[expressions.value.type] spec::expressions::{Value, value_type, value_valid?}
 A value is a Boolean, an integer, or a nominal value that names an actual
 constructor of its canonical enum owner; `value_type` gives its type.
-<!-- status: definition -->
 
 ```fren
 pub mod spec
@@ -37,8 +35,7 @@ pub fn value_type(value: Value): Ty := match value {
 }
 
 pub fn value_valid?(symb: Symb, value: Value) := match value {
-    Value::Nominal(owner, item) =>
-        entry(symb, item) = Option::Some(ItemKind::Constructor(owner)),
+    Value::Nominal(owner, item) => entry(symb, item) = Option::Some(ItemKind::Constructor(owner)),
     _ => true,
 }
 ```
@@ -52,7 +49,6 @@ positional arguments into its function body's parameter context, without
 inheriting the caller's locals. A let interprets its value in the incoming
 context and its body with that value appended as the newest level. An if denotes its selected
 branch; a match denotes the body for its constructor, in the incoming context.
-<!-- status: definition -->
 
 r[expressions.meaning.operators] spec::expressions::{unary_meaning?, integer_meaning?, boolean_meaning?, binary_meaning?}
 Within their domains, arithmetic operators have their mathematical meanings.
@@ -64,7 +60,6 @@ Unary minus negates an integer and `not` complements a Boolean. `binary_meaning?
 `unary_meaning?` state every operator's result; for `*`, `div` and `%` they
 state the result's sort and the remainder's range, and the equations above
 give the values.
-<!-- status: definition -->
 
 ```fren
 pub fn unary_meaning?(op: UnaryOp, operand: Value, result: Value) := match op, operand {
@@ -115,7 +110,6 @@ r[expressions.mentions.direct] spec::expressions::{arm_mentions?, direct_item?}
 An occurrence directly mentions its constructor, callee or match-pattern
 items. A local mentions its resolved context slot, rather than an item with
 the same written spelling.
-<!-- status: definition -->
 
 ```fren
 pub fn arm_mentions?<E>(arms: Snoc<ArmF<E>>, item: ItemId) := match arms {
@@ -139,7 +133,6 @@ are unchanged. A let's value has no additional binder. Match patterns add none.
 Names in an unselected branch or unused definition still count. This
 structural closure uses the same children and binding depths as typing;
 it is independent of a particular evaluation trace.
-<!-- status: definition -->
 
 ## Definedness and source verification
 
@@ -151,7 +144,6 @@ occurrence.
 r[expressions.domain.integer] spec::expressions::integer_domain?
 Division and remainder require a nonzero divisor. Typing alone does not
 establish this condition.
-<!-- status: definition -->
 
 ```fren
 pub fn integer_domain?(op: BinaryOp, right: Int) :=
@@ -164,7 +156,6 @@ operands, including both sides of `and` and `or`, retain their obligations
 in the incoming context. Unused let values and uncalled named definitions
 retain their obligations too. An interpreter's short-circuit trace cannot
 decide which obligations exist.
-<!-- status: definition -->
 
 r[expressions.domain.guards]
 An if's condition is checked in the incoming context; its branches add the
@@ -173,14 +164,12 @@ scrutinee in the incoming context and each arm under its constructor guard.
 These explicit scopes determine conditional obligations. Thus the division
 in `if d != 0 then n div d else 0` has hypothesis `d != 0`, whereas the
 division in `false and (1 div 0 = 0)` retains its unconditional obligation.
-<!-- status: definition -->
 
 r[expressions.domain.evidence]
 An unknown result or resource limit is neither proof nor undefinedness.
 No unproved goal can justify itself. A local hypothesis cannot become an
 unconditional global fact. Verification of a domain and evaluation of a
 value are distinct judgments.
-<!-- status: definition -->
 
 The [OIR rules](../Compiler/Oir.md#static-traversal-guards-and-bindings)
 retain lexical binders, substitutions, branch guards, owners and source

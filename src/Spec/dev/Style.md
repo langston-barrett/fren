@@ -16,36 +16,32 @@ Retain an existing identifier when its meaning survives a rewrite.
 
 A Language chapter has these parts, omitting empty ones:
 
-1. An introduction states the domain and links its prerequisites. A chapter
-   that defines syntax gives its grammar in the usual notation. A chapter of
-   judgments gives a table of its judgment forms, their meanings and the
-   Fren definitions that state them, and an informative figure of all its
-   rules, in the notation of The Definition of Standard ML, with every
-   notation it uses defined; the numbered rules remain normative.
-2. Semantic objects define identities, types, contexts and environments,
+1. An introduction states the domain and links its prerequisites.
+2. An overview gives the gist in one screen (see [Overview](#overview)).
+3. Semantic objects define identities, types, contexts and environments,
    with their well-formedness judgments.
-3. Abstract forms and judgment forms define the objects being related and
-   the meaning of each judgment's inputs and outputs.
-4. Numbered rules give premises, conclusion and side conditions. Each
+4. Abstract forms and judgment forms define the objects being related and
+   the meaning of each judgment's inputs and outputs. A chapter that defines
+   syntax gives its grammar in the usual notation.
+5. Numbered rules give premises, conclusion and side conditions. Each
    expression constructor has its own rule paragraph, followed by the Fren
    function that states it, one premise per line.
-5. Witnesses define the finite objects, such as derivation tables, over
+6. Witnesses define the finite objects, such as derivation tables, over
    which the judgment is stated, before any property mentions them.
-6. Declarations and programs lift the judgment to a whole program.
-7. Properties state the chapter's headline metatheorems: for typing, at
+7. Declarations and programs lift the judgment to a whole program.
+8. Properties state the chapter's headline metatheorems: for typing, at
    least determinism, decidability (an algorithm and its agreement with the
    rules), regularity (typing produces well-formed types), well-scopedness,
    weakening and safety with respect to the dynamic semantics. State a
-   property even when its evidence is open.
-8. Examples instantiate the rules, including rejected premises.
+   property even when it is open.
+9. Examples instantiate the rules, including rejected premises.
 
-Every normative paragraph, examples included, starts with an `r[...]` line
-and has a status. Every Fren definition is reachable from a rule's links. A
-`definition` paragraph only defines: any sentence that could be true or
-false, such as that a construction ends or that a later judgment rejects
-something, is a property paragraph of its own, with a status.
-Material that a later chapter will own sits in a clearly marked section
-that names that chapter.
+Every normative paragraph, examples included, starts with an `r[...]` line.
+Every Fren definition is reachable from a rule's links. A paragraph that
+defines makes no claim: any sentence that could be true or false, such as
+that a construction ends or that a later judgment rejects something, is a
+property paragraph of its own. Material that a later chapter will own sits
+in a clearly marked section that names that chapter.
 
 The semantic-object, judgment and rule headings serve as their segment
 labels in this template; repeated bold labels are unnecessary. A chapter
@@ -56,6 +52,54 @@ only to well-typed, verified programs; it defines no undefined behavior and
 does not prescribe evaluation order. Source constructs are defined
 by derived forms translating to the typed Core, and a source program is
 well typed exactly when its translation is.
+
+## Statements and their Fren
+
+Each numbered rule's prose is immediately followed by the Fren that
+defines or checks it, before the next rule. Several small definitions that
+serve one rule stay together under it; a definition that serves many rules,
+such as a sequence helper, gets a short rule of its own. No block gathers
+the code of several rules. The `ruleReqs` job checks this for the chapters
+that follow the template: each item of their Fren is linked by the nearest
+rule before it.
+
+## Overview
+
+A chapter opens with an overview: a table of its judgment forms, their
+meanings and the Fren that states them, and an abstract interface. The
+interface declares abstract types and uninterpreted functions for the
+chapter's main objects and relation, and states its key laws as their
+contracts, or as expectations that the contracts prove. The chapter's
+wrapper interprets each abstract type and function by its detailed
+definition (`interp`), which proves the contracts for the detailed
+definitions: the interpretation is the refinement relation. Laws that Fren
+cannot state as contracts at the top, because they relate the relation to
+itself at other arguments, link to the property that states them below.
+
+## Notation
+
+Figures and prose write types as in the language: `Bool`, `Int` and
+`Nominal(a)`. They name locals, as in `let x := e₁ in e₂` and
+`let x : τ := e₁ in e₂`, and say once that each name stands for a de
+Bruijn level; the Fren is nameless. Each judgment's figure sits at the start
+of the section or rule that defines it in Fren, in the notation of The
+Definition of Standard ML, with every notation it uses defined, at most 80
+columns wide. Figures are informative; the numbered rules are normative.
+
+Fren identifiers and figures use one set of abbreviations:
+
+| Abbreviation | Meaning | Figure |
+| --- | --- | --- |
+| `ty`, `Ty` | a type | τ, σ |
+| `ctx`, `Ctx` | a context | Γ, Δ |
+| `symb`, `Symb` | a symbol environment | Σ |
+| `sig`, `Sig` | a function signature | |
+| `param`, `params` | a parameter, the parameters | |
+| `arg`, `args` | an argument, the arguments | aₖ |
+| `decl`, `decls`, `Decl` | a declaration, the declarations | d |
+| `prog` | a program | |
+| `pos` | a row's position in a table | |
+| `ok?` suffix | a well-formedness check | `⊢ … ok` |
 
 ## Semantic objects
 
@@ -76,13 +120,14 @@ enumeration, and every constructor's owner lists it.
 
 Give a recursive position as a type parameter, for example `ExprF<E>`, with
 arguments and match arms as `Snoc<E>` and `Snoc<ArmF<E>>`, and present the
-rules over this one-layer view. Why the chapter uses it, a limit of Fren,
-belongs in the development coverage document, with the feature that would
-remove it; the chapter says what the layers are, not why. The Core syntax
-is shared with the dynamic semantics, so it is complete: a literal carries
-its value, and a let carries its written type annotation. Concrete syntax
-such as parentheses, and spelling such as a `?` suffix, has no Core form;
-it belongs to the Syntax or derived-forms chapter.
+rules over this one-layer view. Where `ExprF<E>` is introduced, say in one
+sentence what makes the encoding possible and what the one form type is
+for; record the limit of Fren behind it, and the feature that would remove
+it, in the development coverage document. The Core syntax is shared with
+the dynamic semantics, so it is complete: a literal carries its value, and
+a let carries its written type annotation. Concrete syntax such as
+parentheses, and spelling such as a `?` suffix, has no Core form; it
+belongs to the Syntax or derived-forms chapter.
 
 The one-layer rule takes `ExprF<Typing>`: each child position holds the
 child's typing, with its exact context and type. Each typing rule is its own
@@ -99,15 +144,33 @@ the agreement of that definition with the inductive reading of the rules as
 a property of its own, and state the metatheorems over the witness rather
 than leaving them in prose.
 
-## Properties and decidability
+## Properties and evidence
 
-State each family of properties as one global expectation block,
-`expect name(params) { ... }`, with one rule identifier and status and a
-named claim per case, and cite the claims as `name::{a, b}`. Do not add an
-aggregate rule that only restates its parts. A `proc` is for a genuine
-procedure; it is never a container for properties. Prefer properties that
-say something about the type system, such as inversion, determinism,
-scoping, weakening and safety, over facts about constants.
+A rule's evidence is Fren's own, so that it follows mechanically from the
+rule's links and [`fren trace`](../../Reqs/Trace.md):
+
+- A property that the solver proves is an `expect`: the check is the
+  evidence. State each family as one global expectation block with a named
+  claim per case, cite the claims as `name::{a, b}`, and do not add an
+  aggregate rule that only restates its parts.
+- A property proved in Lean is a procedure whose `ensure` states exactly
+  what the Lean theorem proves, bound in the wrapper by an `impl` whose
+  proof uses that theorem; `fren trace` reports it `proved`. A procedure
+  without outputs takes its level from its calls, and with none would be
+  reported `proved` without evidence, so a law's procedure has one output,
+  `holds?`, with `ensure output: holds?`. Put the law's hypotheses in its
+  `ensure` as `when`, and set `fren.evidence` to `"random"`, so that its
+  own checks test it rather than ask the solver for an induction.
+- A property checked by tests is a procedure with a `tested` claim naming
+  the test.
+- An open property that Fren can state is such a procedure with no `impl`:
+  `fren trace` reports it `missing`. One that Fren cannot state is prose
+  that says it is open.
+- A definition carries no evidence.
+
+Prefer properties that say something about the type system, such as
+inversion, determinism, scoping, weakening and safety, over facts about
+constants.
 
 Maximize the decidable part of a chapter, but do not contort a rule to
 avoid undecidability. Quantification over positions of a `Seq` is outside
@@ -117,66 +180,40 @@ rule reads better stated directly but undecidably, state it so, and give it
 a decidable abstraction that composes with the rest of the chapter,
 treating the direct statement as its refinement and stating the refinement
 relation. Every lint opt-out, of `undecidable` or any other lint, has a
-one-sentence reason beside it. A lint opt-out never excuses a failed expectation. A property
-that needs induction may be proved in the wrapper and given a `lean`
-status.
+one-sentence reason beside it. A lint opt-out never excuses a failed
+expectation.
 
 ## Language and compiler
 
 A Language chapter states the language; the THIR chapter refines its Core.
-Correspondence with production
-code, such as a different numbering of locals, primitive contracts bound
-by `impl`, or the agreement of a checker with the judgment, belongs to the
-Compiler chapter of that pass. A definition's status is never a
-correspondence theorem. Limitations of today's tools, and diagnostic
-positions of today's checker, belong in the development coverage document,
-not in normative text.
+Correspondence with production code, such as a different numbering of
+locals, primitive contracts bound by `impl`, or the agreement of a checker
+with the judgment, belongs to the Compiler chapter of that pass.
+Limitations of today's tools, and diagnostic positions of today's checker,
+belong in the development coverage document, not in normative text.
 
 ## Examples
 
 Precede each example with the judgment it shows, in the chapter's printed
-notation, such as `Σ; · ⊢ let 1 in #0 : Integer`. Keep a few complete
-witnesses in the chapter and check the rest in the wrapper, at least one for
-each rule. A rejected example claims that no witness exists, so state it as
-an expectation that quantifies over every part its premises leave free, such
-as the children's typings, rather than checking one table; or say only that
-one table is rejected. Source programs in `fren example` blocks, each with
-the diagnostic it expects and a `--@ reference:` line for the rule it
-exercises, are informative until the source-to-Core translation is
-specified.
-
-## Rule evidence metadata
-
-Each rule paragraph in the template is immediately followed, before the
-blank line ending it, by exactly one standalone HTML comment. Its syntax is
-`<!-- status: STATUS -->`, where STATUS is exactly one of:
-
-- `definition`: an introduction, form, relation or rule defining the language.
-- `smt`: a Fren expectation proved by the chapter's checker.
-- `lean THEOREM`: a fully qualified theorem name in the wrapper or an
-  implementation file, compiling without `sorry`.
-- `tested TEST`: a concrete test name whose source cites the rule ID.
-- `open`: a stated property lacking the evidence above.
-
-THEOREM and TEST are single non-whitespace tokens; the literal uppercase
-placeholders are replaced by their names. There is one space after the colon
-and one before `-->`. The comment is metadata, not part of the rule's prose
-or the requirement links on its `r[...]` line. Keep those links in the
-existing format so the book renderer and `impl` bindings continue to resolve.
-A definition status asserts no theorem. A tested status asserts no universal
-proof. An open property remains a specification obligation. Detailed coverage
-inventories and implementation limits belong in
-[development coverage](../../../docs/fren2-specification-coverage.md).
+notation, such as `Σ; · ⊢ let x : Int := 1 in x : Int`, and show its table
+as numbered rows. Keep a few complete witnesses in the chapter and check the
+rest in the wrapper, at least one for each rule. A rejected example claims
+that no witness exists, so state it as an expectation that quantifies over
+every part its premises leave free, such as the children's typings, rather
+than checking one table; or say only that one table is rejected. Source
+programs in `fren example` blocks, each with the diagnostic it expects and
+a `--@ reference:` line for the rule it exercises, are informative until
+the source-to-Core translation is specified.
 
 ## Evidence outside the reference
 
 Specification Markdown contains prose and Fren, with no Lean declarations,
 proofs or Lean code fences. Put Lean statements and proofs in the chapter's
-`.lean` wrapper or implementation files. Associate them with the Markdown
-using rule IDs and the theorem names in status metadata. Wrappers elaborate
-`#fren_md` and run `#fren_check`; every expectation must pass. Keep genuine
-`impl` bindings in the wrapper of the Compiler chapter whose contracts they
-bind, and ensure they still resolve.
+`.lean` wrapper or implementation files, and connect them to the Markdown
+through `impl` and `interp`. Wrappers elaborate `#fren_md`, run
+`#fren_check`, in which every expectation must pass, and run `#fren_trace`.
+Keep genuine `impl` bindings of production code in the wrapper of the
+Compiler chapter whose contracts they bind, and ensure they still resolve.
 
 A compiler IR chapter defines its datatypes, printed form, well-formedness
 and generator guarantees. A compiler pass chapter states its transformation

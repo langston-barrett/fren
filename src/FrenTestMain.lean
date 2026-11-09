@@ -837,6 +837,22 @@ def guardRuleChapter (md text gap : String) : Array String :=
   #["test/unformalized_rules.txt:2: `testing.example` (src/Reqs/Lang/Testing.md:3) is not under a label that requires formalization in this chapter, so it needs no requirement: remove its line",
     "src/Reqs/Lang/Testing.md:3: **Rules** is used only in chapters under src/Reqs/dev/"]
 
+/-- The chapters whose Fren follows the rule that it serves
+(`Spec/dev/Style#statements-and-their-fren`). -/
+def ruleAdjacentChapters : Array String :=
+  #["src/Spec/Language/Types.md", "src/Spec/Language/Expressions.md"]
+
+/-- The problems with the items of chapter `md` whose nearest rule before
+them does not link them. -/
+def unservedItems (md : String) (items : Array ReqItem)
+    (linked : Array (Rule × Array (ReqItem × Array String))) : Array String :=
+  (items.filter (·.file == md)).filterMap fun i =>
+    match (linked.filter fun (r, _) => r.line < i.line).back? with
+    | none => some s!"{md}:{i.line}: `{i.path}` follows no rule: put each Fren definition after the rule that links it"
+    | some (r, reqs) =>
+      if reqs.any (·.1.path == i.path) then none
+      else some s!"{md}:{i.line}: `{i.path}` is not linked by `{r.id}`, the rule just before it: put it after the rule that it serves, or link it there"
+
 /-- The rules of the reference with their requirements, by chapter, the
 rules that tests cite, each with the test, and the problems that
 `ruleReqs` finds (`Reqs/dev/Style#rules-and-requirements`). -/
@@ -854,6 +870,8 @@ def ruleLinks : IO (Array (String × Array (Rule × Array (ReqItem × Array Stri
     if rules.isEmpty then continue
     let (linked, problems) := reqsOfChapter md items rules
     failures := failures ++ problems
+    if ruleAdjacentChapters.contains md then
+      failures := failures ++ unservedItems md items linked
     chapters := chapters.push (md, linked)
   let rules := chapters.flatMap fun (md, rs) => rs.map fun (r, reqs) => (md, r, reqs)
   failures := failures ++ ruleRequirementProblems rules (listedRules (← IO.FS.readFile unformalizedFile))

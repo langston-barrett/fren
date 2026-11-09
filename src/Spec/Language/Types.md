@@ -1298,30 +1298,32 @@ This section belongs to the derived-forms chapter, which will own it once
 that chapter is written. It states how written annotations and binder names
 become Core types; the Core itself has no names.
 
-r[types.surface.annotation] spec::types::parameter_type?
-A parameter's type is its written annotation. An omitted parameter
-annotation denotes Bool only when the parameter's name ends in `?`.
-
 r[types.surface.suffix] spec::types::{suffix_rule?, let_annotation?}
 The *`?` suffix rule*: a parameter or let binder whose name ends in `?` must
-have type Bool, including when it has an explicit annotation, which the
+have type `Bool`, including when it has an explicit annotation, which the
 suffix does not overwrite. A let binder `x?` without an annotation
-elaborates to a Core let annotated Bool.
+elaborates to a Core let annotated `Bool`.
 
 ```fren
 pub fn suffix_rule?(question?, ty: Ty) := not question? or ty = Ty::Boolean
 
+pub fn let_annotation?(written: Option<Ty>, question?, core: Option<Ty>) := match written {
+    Some(annotation) => suffix_rule?(question?, annotation) and core = written,
+    None => core = (if question? then Some(Ty::Boolean) else None),
+}
+```
+
+r[types.surface.annotation] spec::types::parameter_type?
+A parameter's type is its written annotation. An omitted parameter
+annotation denotes `Bool` only when the parameter's name ends in `?`.
+
+```fren
 pub fn parameter_type?(written: Option<Ty>, question?, ty: Ty) :=
     suffix_rule?(question?, ty)
     and match written {
         Some(annotation) => ty = annotation,
         None => question?,
     }
-
-pub fn let_annotation?(written: Option<Ty>, question?, core: Option<Ty>) := match written {
-    Some(annotation) => suffix_rule?(question?, annotation) and core = written,
-    None => core = (if question? then Some(Ty::Boolean) else None),
-}
 ```
 
 ## Examples

@@ -9,17 +9,30 @@ Fren language or compiler has been verified.
 
 ## Language core correspondence
 
-The [Core typing chapter](../src/Spec/Language/Types.md) opens with a Core
-grammar, a table of its judgment forms and an informative figure of its
-rules. It then defines semantic objects and their well-formedness, the
-one-layer view `ExprF<E>`, one Fren function per typing rule under its
-numbered paragraph, derivation tables and what a table's root unfolds to,
-the judgment over tables, declarations and programs, the metatheory, a
-marked surface-elaboration section and examples. It contains no Lean code.
-The [style guide](../src/Spec/dev/Style.md) specifies the chapter template
-and standalone `<!-- status: STATUS -->` metadata after each rule paragraph.
-This is the pilot; the rest of the reference has not yet adopted the syntax.
-No mechanical status checker is delivered by this unit.
+The [Core typing chapter](../src/Spec/Language/Types.md) opens with an
+overview: a table of its judgment forms and an abstract interface whose
+contract states determinism and regularity, interpreted in the wrapper by
+the detailed definitions. It then defines semantic objects and their
+well-formedness, the grammar and the one-layer view `ExprF<E>`, one Fren
+function per typing rule with a small figure, derivation tables and what a
+table's root unfolds to, the judgment over tables, declarations and
+programs, the metatheory, a marked surface-elaboration section and
+examples. It contains no Lean code. The [style guide](../src/Spec/dev/Style.md)
+specifies the chapter template. This is the pilot; the rest of the reference
+has not yet adopted it.
+
+Evidence is Fren's own. A property the solver proves is an `expect`. A
+property proved in Lean is a procedure bound by an `impl` in the wrapper,
+and one that is open is a procedure without one; `#fren_trace` in the
+wrapper reports their levels. For this chapter it reports:
+
+```text
+evidence: 11 proved, 0 solver, 0 tested, 0 trusted, 1 missing
+missing: `spec::types::expression_uniqueness`
+```
+
+The `ruleReqs` job checks that every Fren item of Types.md and
+Expressions.md is linked by the nearest rule before it.
 
 ### Fren1 limits that shape the chapter
 
@@ -56,8 +69,25 @@ No mechanical status checker is delivered by this unit.
   check needs.
 - **Operator enums.** `UnaryOp` and `BinaryOp` use the Syntax chapter's names
   and constructors and move to `spec::syntax` when that chapter lands.
-- **Undecidable parts.** The chapter has no lint opt-out; this is a
-  consequence of the representation, not a rule.
+- **Undecidable parts.** The chapter has no `undecidable` opt-out; this is
+  a consequence of the representation, not a rule.
+- **Evidence for Lean-proved laws.** A law that Lean proves has, as a
+  procedure, its own realizability check, which asks the solver for the law
+  itself; the solver cannot do the induction. So each law's procedure sets
+  `fren.evidence "random"`, and states its hypotheses in its `ensure` with
+  `when`, so that random testing finds admissible inputs. Fren has no way to
+  say that an `impl` discharges a procedure's own checks. A procedure
+  without outputs and calls is reported `proved` without evidence, so each
+  law's procedure has one output, `holds?`.
+- **Abstract interface.** An uninterpreted function's contract over an
+  abstract output type has a realizability check outside the decidable
+  core, so the overview cannot state weakening as a contract of a
+  `weaken` function; it links to the procedure below instead. Fren1 also
+  cannot name constructors of `Ty` `Bool` and `Int`, which are built-in
+  types, so `Ty::Boolean` and `Ty::Integer` remain.
+- **Lean-only correspondence.** The THIR chapter's level-to-index and
+  operator correspondence theorems are over production Lean types, which
+  Fren cannot name, so those rules name their theorems in prose.
 
 ### Correspondence with production
 
@@ -69,31 +99,19 @@ the compiler chapters, numbers locals nearest first; the Core uses levels.
 The rest of the erasure/refinement relation between the Core and the
 compiler is specified later.
 
-| Rule or obligation | Evidence and limit |
+| Rule | Evidence |
 | --- | --- |
-| `types.context.bound`, `types.context.weakening` | Fren expectations over arbitrary contexts; `lookup_bound` uses Fren's induction |
-| `types.layer.operators`, `types.layer.determinism` | Fren expectations: determinism once over every layer, generically in the form |
-| `types.layer.decidability` | Fren expectation: `rule?` holds at τ exactly when `infer_layer` returns τ, for every layer |
-| `types.judgment.coverage-separate` | Fren expectation: repeating or dropping a typed match's newest arm keeps it typed |
-| `types.layer.call-arity` | `Spec.Language.Types.argument_types_length` |
-| `types.layer.regularity`, `types.derivation.regularity`, `types.judgment.regularity` | `Spec.Language.Types.layer_regular`, `table_regular` and `judgment_regular` |
-| `types.layer.weakening`, `types.derivation.weakening`, `types.derivation.weakening-lookup`, `types.judgment.weakening` | `Spec.Language.Types.layer_weakening`, `table_weakening`, `lookup_shift` and `judgment_weakening` |
-| `types.derivation.scoped`, `types.derivation.unique` | `Spec.Language.Types.table_scoped` and `table_unique`; `table_unique` proves the stronger fact that the two tables are equal |
-| `types.examples.derivations` | `Spec.Language.Types.worked_examples` by `decide`; the wrapper checks further cases, at least one for each rule; finite evidence only |
-| `types.examples.rejected` | Fren expectation over every child typing that the premises leave free, layer by layer |
-| `types.judgment.adequacy` | Open: agreement of the table definition with the inductive reading of the rules |
-| `types.derivation.unique-expression` | Open: lift `table_unique` across tables whose roots unfold alike |
-| `types.judgment.decidability` | Open: correctness of building a table bottom-up with `infer_layer` |
-| `types.symbols.resolution` | Open: depends on the resolution chapter |
-| `types.safety`, `expressions.value.denotation` | Open: needs the dynamic semantics of the Expressions chapter as a Fren definition |
-| `thir.core.levels`, `thir.core.unary`, `thir.core.binary` | `Spec.Compiler.Thir.lookup_nearest`, `core_unary` and `core_binary` |
-| `thir.primitive.compatibility`, `thir.primitive.unary`, `thir.primitive.binary` | Universal `impl` proofs of the primitive contracts in the THIR wrapper |
-| `thir.core.derivation` | Open: prove both directions between the Core relation and the production checker in its admitted domain, through the level-to-index conversion |
+| `types.overview.interface`, `types.overview.determinism` | The interface's contract, checked for realizability by the solver and proved for the detailed definitions by the wrapper's `interp`; determinism follows from it by the solver |
+| `types.context.bound`, `types.context.weakening`, `types.layer.operators`, `types.layer.determinism`, `types.layer.decidability`, `types.judgment.coverage-separate`, `types.examples.rejected` | Fren expectations |
+| `types.layer.call-arity`, `types.layer.regularity`, `types.derivation.regularity`, `types.judgment.regularity`, `types.derivation.scoped`, `types.derivation.unique`, `types.layer.weakening`, `types.derivation.weakening-lookup`, `types.derivation.weakening`, `types.judgment.weakening`, `types.examples.derivations` | Procedures bound by `impl` in the wrapper: `proved` |
+| `types.derivation.unique-expression` | A procedure with no `impl`: `missing` |
+| `types.judgment.adequacy`, `types.judgment.decidability`, `types.symbols.resolution`, `types.safety`, `expressions.value.denotation` | Open, stated in prose: Fren cannot state them |
+| `thir.core.levels`, `thir.core.unary`, `thir.core.binary` | Lean theorems named in the rules' prose |
+| `thir.primitive.compatibility`, `thir.primitive.unary`, `thir.primitive.binary` | Procedures bound by `impl` in the THIR wrapper |
+| `thir.core.derivation` | Open, stated in prose |
 
-The theorem names used in rule metadata belong to `Spec.Language.Types` and
-`Spec.Compiler.Thir`. The `definition` rules introduce objects and
-relations; their status is not an implementation proof. Laws marked `open`
-remain normative obligations. Existing production `FrenHirToThir.HasValue`
+Definitions carry no evidence; they are not implementation proofs. Open
+laws remain normative obligations. Existing production `FrenHirToThir.HasValue`
 and `FrenHirToThir.TypingSound` concern the retained AST. Native tests,
 Plausible, closed examples and layer step cases do not establish
 `TypingSound`, its converse, or a complete source-to-Core occurrence
@@ -109,8 +127,8 @@ correspondence. The informative source examples' diagnostics, such as
   would turn every table result into an expression result.
 - [ ] Prove `types.derivation.unique-expression` and
   `types.judgment.decidability`.
-- [ ] Write each `lean`-status claim as a Fren predicate in the Markdown and
-  prove exactly that predicate in the wrapper.
+- [ ] Generate this section's evidence inventory from `#fren_trace` output
+  rather than copying it.
 - [ ] Replace the per-form maps over `ExprF` (`annotate`, `weaken_layer`,
   `children`, `layers_paired?` and their sequence helpers) with one generic
   traversal using Fren's second-class higher-order functions, and derive

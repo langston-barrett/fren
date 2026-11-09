@@ -275,35 +275,30 @@ Core's operator tables.
 
 r[thir.core.levels]
 For `0 ≤ i < |Γ|`, the Core entry at level i of Γ is the production entry at
-nearest-first index `|Γ| - 1 - i`.
-<!-- status: lean Spec.Compiler.Thir.lookup_nearest -->
+nearest-first index `|Γ| - 1 - i`. The wrapper proves this as `Spec.Compiler.Thir.lookup_nearest`.
 
 r[thir.core.unary]
 The production unary operator decision accepts an operand type and returns a
 result type exactly when the Core's `unary_type?` relates them, for every
-operator and canonical identity.
-<!-- status: lean Spec.Compiler.Thir.core_unary -->
+operator and canonical identity. The wrapper proves this as `Spec.Compiler.Thir.core_unary`.
 
 r[thir.core.binary]
 The production binary operator decision accepts operand types and returns a
 result type exactly when the Core's `binary_type?` relates them, for every
-operator and canonical identity.
-<!-- status: lean Spec.Compiler.Thir.core_binary -->
+operator and canonical identity. The wrapper proves this as `Spec.Compiler.Thir.core_binary`.
 
 r[thir.core.derivation]
 For an admitted resolved expression in the Core domain, a successful
 production typing traversal yields exactly a Core derivation of its reported
 type in its resolved context, and every such derivation is accepted by that
 traversal. The correspondence retains every written occurrence and relates
-nearest-first indices to levels as `thir.core.levels` states.
-<!-- status: open -->
+nearest-first indices to levels as `thir.core.levels` states. This is open.
 
 The following contracts express the production operator decisions with a
 finite tag and a separate nominal equality atom.
 
 r[thir.primitive.compatibility] spec::thir::compatible::{meaning, builtin, nominal, distinct, disjoint}
 Compatibility compares tags and, only for nominal types, identity atoms.
-<!-- status: lean Spec.Compiler.Thir.compatibility -->
 
 ```fren
 pub mod spec
@@ -327,7 +322,6 @@ pub proc compatible(left: ValueKind, right: ValueKind, left_id: Int, right_id: I
 
 r[thir.primitive.unary] spec::thir::unary::{meaning, result_type, negate_bool, not_int}
 A unary operator accepts exactly its table operand and preserves its tag.
-<!-- status: lean Spec.Compiler.Thir.unary -->
 
 ```fren
 pub proc unary(op: UnaryTag, operand: ValueKind): (accepted?, result: ValueKind) {
@@ -342,7 +336,6 @@ pub proc unary(op: UnaryTag, operand: ValueKind): (accepted?, result: ValueKind)
 r[thir.primitive.binary] spec::thir::binary::{meaning, result_type, enum_add, mixed_equality, distinct_enums, same_enum}
 A binary operator accepts exactly its table operands and returns its table
 tag, including nominal identity comparison for equality.
-<!-- status: lean Spec.Compiler.Thir.binary -->
 
 ```fren
 pub fn integer_tag?(op: BinaryTag) :=

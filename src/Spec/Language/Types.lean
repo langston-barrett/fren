@@ -864,15 +864,6 @@ example : derivation? (.Extend .Empty (bind LIGHT_RED (.Constructor LIGHT))) (t1
 example : derivation? SYMB (t1 (row (.Local 0) (t1 (.Nominal LIGHT_RED)) (.Nominal LIGHT_RED)))
     (t1 (.Nominal LIGHT_RED)) (.Nominal LIGHT_RED) = false := by decide
 
-/-- These two tables, a match that omits a constructor and one that repeats one, are valid. -/
-theorem coverage_separate :
-    typed (t3 red (int 1) (row (.Match 0 (.Extend .Empty (arm LIGHT_RED 1))) .Empty .Integer))
-      .Integer = true ∧
-    typed (t3 red (int 1)
-      (row (.Match 0 (.Extend (.Extend .Empty (arm LIGHT_RED 1)) (arm LIGHT_RED 1))) .Empty .Integer))
-      .Integer = true := by
-  decide
-
 end Spec.Language.Types
 
 /-! ## Laws bound to their procedures -/
