@@ -1,0 +1,7 @@
+-- verdict: inputFailure exit: 5
+-- Seed: skeleton review probe duplab.fren
+mod example
+expect s(a: Int) {
+  expect g: a = a
+  expect g: a > 0
+}

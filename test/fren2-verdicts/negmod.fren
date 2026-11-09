@@ -1,0 +1,7 @@
+-- verdict: verified exit: 0
+-- Seed: skeleton review probe negmod.fren
+mod example
+expect safe(n: Int) {
+  assume neg: n = (-7)
+  expect d: (n mod (-2)) = 1
+}

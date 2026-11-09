@@ -16,7 +16,8 @@ inductive Confirmation where
 
 /-- A conservative syntactic domain, independent of runtime demand. In
 particular partial operations in unused lets, skipped operands and unselected
-branches prevent confirmation. Every named body is checked, including callees. -/
+branches prevent value confirmation. The caller scopes this test to the
+consumed bodies and their transitive callees. -/
 @[expose] def confirmationFragment : Nat → FrenAst.Expr → Bool
   | 0, _ => false
   | n + 1, e =>
@@ -31,6 +32,87 @@ branches prevent confirmation. Every named body is checked, including callees. -
     | .letE _ _ _ a _ b => go a && go b
     | .matchE _ e _ arms _ => go e && arms.all (fun (_, _, arm, _) => go arm)
     | .call f _ args _ _ => go f && args.all go
+
+/-- Totality is scoped to the source expressions actually used by confirmation,
+including their transitive callees, rather than every body in the file. -/
+private def totalBody : Nat → FrenModule.Typed → FrenModule.TypedBody → Bool
+  | 0, _, _ => false
+  | n + 1, t, b => confirmationFragment 10000 b.expression && b.occurrences.all (fun o =>
+      match o.type with
+      | .callable sig => (t.bodies.find? (fun target =>
+          target.owner == sig.id && target.member.isNone)).any (totalBody n t)
+      | _ => true)
+
+private def containsSite : Nat → FrenAst.Expr → FrenAst.Expr → Bool
+  | 0, _, _ => false
+  | n + 1, target, e => e == target || (match e with
+    | .paren _ a _ | .unary _ _ a => containsSite n target a
+    | .binary a _ _ b | .letE _ _ _ a _ b => containsSite n target a || containsSite n target b
+    | .ifE _ c _ a _ b => [c, a, b].any (containsSite n target)
+    | .matchE _ a _ arms _ => containsSite n target a || arms.any (fun (_, _, b, _) => containsSite n target b)
+    | .call _ _ args _ _ => args.any (containsSite n target)
+    | _ => false)
+
+/-- Locate the exact retained source occurrence under its lexical bindings and
+conditional guards. Boolean operands and unused lets retain static obligations;
+only if/match select branches. Never evaluate the target operation itself. -/
+private def siteEnvironment : Nat → FrenModule.Typed → FrenModule.TypedBody →
+    FrenEval.Environment → FrenAst.Expr → FrenAst.Expr → Except String FrenEval.Environment
+  | 0, _, _, _, _, _ => .error "source site traversal exhausted"
+  | n + 1, t, b, env, target, e => do
+    if e == target then return env
+    let has := containsSite 10000 target
+    let visit := siteEnvironment n t b
+    let eval := fun a => (FrenEval.walk n t b env a).mapError reprStr
+    match e with
+    | .paren _ a _ | .unary _ _ a => visit env target a
+    | .binary a _ _ c => visit env target (if has a then a else c)
+    | .letE _ _ _ a _ rest =>
+      if has a then visit env target a
+      else visit (.ok (← eval a) :: env) target rest
+    | .ifE _ c _ yes _ no =>
+      if has c then visit env target c
+      else
+        let .bool choice ← eval c | throw "source guard is not Boolean"
+        let selected := if choice then yes else no
+        unless has selected do throw "source site is unreachable"
+        visit env target selected
+    | .matchE _ a _ arms _ =>
+      if has a then visit env target a
+      else
+        let .enum _ ctor ← eval a | throw "source match guard is not an enum"
+        let some (_, _, selected, _) := arms.find? (fun (pattern, _, _, _) =>
+          (t.resolved.referenceAt pattern.head.slice).any (·.target == .item ctor))
+          | throw "source match arm missing"
+        unless has selected do throw "source site is unreachable"
+        visit env target selected
+    | .call _ _ args _ _ =>
+      let some a := args.find? has | throw "source site not in call arguments"
+      visit env target a
+    | _ => throw "source site not found"
+
+private def confirmDefinedness (p : FrenEval.Program) (q : FrenOir.Question)
+    (values : Array FrenEval.Value) (depth : Nat) : Confirmation := Id.run do
+  let some b := q.subject | return .unconfirmed "missing source body"
+  let some origin := q.origin | return .unconfirmed "missing source site"
+  if !p.typed.bodies.contains b || origin.owner != b.owner || origin.member != b.member then
+    return .unconfirmed "source site body mismatch"
+  let .binary _ _ op divisor := origin.expression
+    | return .unconfirmed "source definedness site unsupported"
+  if op != .div && op != .mod then return .unconfirmed "source definedness operator unsupported"
+  -- The question is regenerated from admitted source. This shape restricts
+  -- confirmation to the producer's divisor-nonzero leaf, never call domains.
+  let .binary .ne _ (.int 0) := q.condition
+    | return .unconfirmed "source definedness condition unsupported"
+  let result : Except String FrenEval.Value := do
+    let env ← (FrenEval.arguments p.typed b values).mapError reprStr
+    let env ← siteEnvironment depth p.typed b env origin.expression b.expression
+    (FrenEval.walk depth p.typed b env divisor).mapError reprStr
+  match result with
+  | .error reason => return .unconfirmed ("source definedness evaluation: " ++ reason)
+  | .ok (.int 0) => return .counterexample
+  | .ok (.int _) => return .rejected "source divisor is nonzero"
+  | .ok _ => return .unconfirmed "source divisor is not an integer"
 
 private def sourceBoolean (p : FrenEval.Program) (b : FrenModule.TypedBody)
     (values : Array FrenEval.Value) (depth : Nat) : Except String Bool := do
@@ -48,11 +130,10 @@ private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index
   let some entry := out.queries[index]? | return .unconfirmed "missing question"
   let q := entry.question
   if q.readiness != .ready then return .unconfirmed "unresolved question readiness"
-  if q.kind != .assumptionsSatisfiable && q.kind != .validity then
-    return .unconfirmed "source definedness-site confirmation unsupported"
-  -- This deliberately examines every expression, rather than the walker's
-  -- short-circuit trace, and does not accept raw UNSAT as proof of a premise.
-  if !p.typed.bodies.all (fun b => confirmationFragment 10000 b.expression) then
+  -- Only expressions consumed below need the conservative total fragment.
+  -- Definedness confirmation evaluates a source prefix instead of its body.
+  if !q.hypotheses.all (fun h => totalBody 10000 p.typed h.source) ||
+      (q.kind == .validity && !q.subject.any (totalBody 10000 p.typed)) then
     return .unconfirmed "source static obligations outside total confirmation fragment"
   for edge in q.dependencies do
     match edge with
@@ -77,6 +158,7 @@ private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index
     | .ok false => return .rejected "source premise is false"
     | .ok true => pure ()
   if q.kind == .assumptionsSatisfiable then return .witness
+  if q.kind != .validity then return confirmDefinedness evaluator q values depth
   let some subject := q.subject | return .unconfirmed "missing source goal"
   match sourceBoolean evaluator subject values depth with
   | .error e => return .unconfirmed ("source goal evaluation: " ++ e)

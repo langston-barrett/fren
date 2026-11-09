@@ -1,0 +1,3 @@
+-- verdict: verified exit: 0
+mod corpus
+expect c(d: Int) { assume nz: d != 0 expect good: d mod d = 0 }

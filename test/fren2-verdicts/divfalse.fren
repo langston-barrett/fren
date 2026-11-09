@@ -1,0 +1,6 @@
+-- verdict: refuted exit: 1
+-- Seed: skeleton review probe divfalse.fren
+mod example
+expect safe(n: Int) {
+  expect d: (n div n) = 1
+}

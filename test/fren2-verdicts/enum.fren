@@ -1,0 +1,9 @@
+-- verdict: verified exit: 0
+-- Seed: skeleton review probe enum.fren
+mod example
+enum Color { Red, Green }
+fn flip(c: Color): Color := match c { Color::Red => Color::Green, Color::Green => Color::Red }
+expect inv(c: Color) {
+  expect twice: flip(flip(c)) = c
+  expect notsame: flip(c) != c
+}

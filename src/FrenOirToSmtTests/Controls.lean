@@ -14,6 +14,7 @@ private def isResource : Outcome → Bool
   | .resourceExhausted _ => true | _ => false
 
 def runControls : IO Unit := do
+  runDefinednessControls
   runCheckerOutcomes
   runCheckerEntryControls
   runModelReadback

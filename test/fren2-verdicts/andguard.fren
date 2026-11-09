@@ -1,0 +1,6 @@
+-- verdict: refuted exit: 1
+-- Seed: skeleton review probe andguard.fren
+mod example
+expect safe(n: Int) {
+  expect d: n = 0 or (n div n) = 1
+}

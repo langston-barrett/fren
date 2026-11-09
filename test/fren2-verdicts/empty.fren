@@ -1,0 +1,4 @@
+-- verdict: verified exit: 0
+-- Seed: skeleton review probe empty.fren
+mod example
+fn id(n: Int): Int := n

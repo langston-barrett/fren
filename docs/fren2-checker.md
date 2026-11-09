@@ -47,7 +47,7 @@ Exit classes are deterministic:
 | 1 | `refuted` | A counterexample was confirmed against the source. |
 | 2 | `inconsistent` | Owner assumptions are inconsistent; vacuous goals do not verify the program. |
 | 3 | `inconclusive` | Unknown, unsupported, blocked, unconfirmed, resource, process or evidence failure. Inspect all rows. |
-| 4 | `noChecks` | No proof obligations; this includes a module with no expectations. |
+| 4 | `noChecks` | No proof obligations; this includes an empty module. |
 | 5 | `inputFailure` | Arguments, file/UTF-8 input, parse, resolution, typing or admission failed. |
 
 `--help` prints usage and exits 0 without checking a program. A successful
@@ -87,10 +87,18 @@ The command uses no shell interpolation or solver-command override.
 Verification remains conditional on the current trusted solver, encoding,
 physical transport and source evaluator. Universal source/encoding soundness,
 model existence, confirmation adequacy and `CheckerContract` remain unproved.
-Unsupported definedness-site confirmation, partial-operation confirmation,
-exhausted evaluation, dependency cycles and absent nonvacuity witnesses remain
-explicit incomplete outcomes. This command adds no soundness claim to the
-production checker.
+Divisor definedness counterexamples are confirmed by evaluating the source
+assumptions, lexical bindings, conditional guards and divisor at the retained
+site. Confirmation never evaluates the undefined `div` or `mod` operation.
+Both Boolean operands and unused lets retain static obligations; `if` and
+`match` guard their branches. An unrelated partial expression does not prevent
+a nonvacuity witness or counterexample in another body from being confirmed.
+The complete inventory still includes every function's definedness checks.
+Value confirmation still conservatively requires its consumed bodies and
+transitive callees to be in the total fragment. Unsupported sites, undefined
+or exhausted prefix evaluation, dependency cycles and absent nonvacuity
+witnesses remain explicit incomplete outcomes. This command adds no soundness
+claim to the production checker.
 
 Build and run the focused normal test job with:
 
@@ -105,3 +113,8 @@ actual source command controls. It is also included in the child and parent
 default paths, under the existing 30-second child-job deadline. Command failure
 fixtures use an isolated temporary tree's fixed solver path; the shipped solver
 and runtime files are unchanged.
+
+The annotated known-verdict corpus is in `test/fren2-verdicts/`. Run it with
+`.lake/build/bin/fren2_test --job verdictCorpus`; it also runs in `smtControls`.
+The focused `definednessControls` child job checks source-site confirmation and
+evidence-binding controls for both `div` and `mod`.

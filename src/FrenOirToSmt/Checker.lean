@@ -99,7 +99,7 @@ private def classifyReadback (p : FrenThirDesugar.Program) (out : Program)
       if confirmation != r.confirmation then return bad "retained source confirmation conflicts"
       match confirmation with
       | .witness => return row q.question .witness "source premises evaluated true" (some r)
-      | .counterexample => return row q.question .counterexample "source premises true and goal false" (some r)
+      | .counterexample => return row q.question .counterexample "source premises true and obligation false" (some r)
       | .rejected reason | .unconfirmed reason => return row q.question .unconfirmed reason (some r)
 
 private def candidate (s : CheckStatus) : Bool :=
@@ -121,9 +121,9 @@ private def discharge (out : Program) (rows : Array CheckResult) : Array CheckRe
   let mut ready := Array.replicate rows.size false
   for _ in [:rows.size + 1] do
     ready := rows.mapIdx fun i r => (ready[i]?).getD false ||
-      (candidate r.status && r.question.readiness == .ready && dependenciesReady out ready r.question)
-  let resolved := rows.mapIdx fun i r =>
-    if candidate r.status && !(ready[i]?).getD false then
+      (r.status == .verified && r.question.readiness == .ready && dependenciesReady out ready r.question)
+  let resolved := rows.map fun r =>
+    if candidate r.status && (r.question.readiness != .ready || !dependenciesReady out ready r.question) then
       {r with status := .blocked, reason := "unresolved readiness or unproved dependency"}
     else r
   return resolved.map fun r =>

@@ -1,0 +1,7 @@
+-- verdict: verified exit: 0
+-- Seed: skeleton review probe divelsewhere.fren
+mod example
+fn half(n: Int): Int := n div 2
+expect s(a: Int) {
+  expect h: a = a
+}

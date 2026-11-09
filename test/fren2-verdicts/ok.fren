@@ -1,0 +1,8 @@
+-- verdict: verified exit: 0
+-- Seed: skeleton review probe ok.fren
+mod example
+fn next(n: Int): Int := n + 1
+expect safe(n: Int) {
+  assume nonnegative: n >= 0
+  expect grows: next(n) > n
+}

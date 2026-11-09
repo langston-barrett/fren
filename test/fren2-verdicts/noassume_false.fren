@@ -1,0 +1,6 @@
+-- verdict: refuted exit: 1
+-- Seed: skeleton review probe noassume_false.fren
+mod example
+expect safe(b: Bool) {
+  expect d: b
+}

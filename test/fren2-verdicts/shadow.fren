@@ -1,0 +1,6 @@
+-- verdict: verified exit: 0
+-- Seed: skeleton review probe shadow.fren
+mod example
+expect s(a: Int) {
+  expect h: let a := a + 1 in let b := a in b = a
+}

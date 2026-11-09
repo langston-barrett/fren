@@ -1,0 +1,3 @@
+-- verdict: inconclusive exit: 3
+mod corpus
+expect c(d: Int) { assume a: 1 div d = 0 assume b: 1 div d != 0 expect bad: false }

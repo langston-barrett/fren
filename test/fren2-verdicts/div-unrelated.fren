@@ -1,0 +1,4 @@
+-- verdict: verified exit: 0
+mod corpus
+fn half(n: Int): Int := n div 2
+expect c(a: Int) { expect good: a = a }

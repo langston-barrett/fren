@@ -1,0 +1,6 @@
+-- verdict: verified exit: 0
+-- Seed: skeleton review probe ifguard.fren
+mod example
+expect safe(n: Int) {
+  expect d: if n = 0 then true else (n div n) = 1
+}
