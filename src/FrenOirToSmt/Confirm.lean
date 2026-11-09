@@ -226,6 +226,25 @@ private def sourceBoolean (p : FrenEval.Program) (b : FrenModule.TypedBody)
     return (value, remaining)
   return (value, state)
 
+/-- Evaluate the retained source observations with one shared state. This is a
+low-level observation routine: the caller must validate question readiness,
+dependencies and the assignment before treating its result as confirmation. -/
+def confirmObservations (evaluator : FrenEval.Program) (q : FrenOir.Question)
+    (values : Array FrenEval.Value) (depth : Nat) : Confirmation := Id.run do
+  let mut state : StrictState := ⟨10000, #[]⟩
+  for hypothesis in q.hypotheses do
+    match sourceBoolean evaluator hypothesis.source values depth state with
+    | .error e => return .unconfirmed ("source premise evaluation: " ++ e)
+    | .ok (false, _) => return .rejected "source premise is false"
+    | .ok (true, remaining) => state := remaining
+  if q.kind == .assumptionsSatisfiable then return .witness
+  if q.kind != .validity then return confirmDefinedness evaluator q values depth
+  let some subject := q.subject | return .unconfirmed "missing source goal"
+  match sourceBoolean evaluator subject values depth state with
+  | .error e => return .unconfirmed ("source goal evaluation: " ++ e)
+  | .ok (true, _) => return .rejected "source goal is true"
+  | .ok (false, _) => return .counterexample
+
 /-- This helper consumes the actual producer's output, not editable solver
 formulas. The public assignment entry below re-runs that producer. Successful
 confirmation is a concrete evaluation, never a universal verified verdict. -/
@@ -252,20 +271,7 @@ private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index
     let some param := q.parameters[i]? | return .rejected "missing parameter"
     if value.type != param.source.type || !value.valid p.typed then
       return .rejected "assignment sort or enum membership"
-  let evaluator : FrenEval.Program := ⟨p.input, p.typed, p.accepted⟩
-  let mut state : StrictState := ⟨10000, #[]⟩
-  for hypothesis in q.hypotheses do
-    match sourceBoolean evaluator hypothesis.source values depth state with
-    | .error e => return .unconfirmed ("source premise evaluation: " ++ e)
-    | .ok (false, _) => return .rejected "source premise is false"
-    | .ok (true, remaining) => state := remaining
-  if q.kind == .assumptionsSatisfiable then return .witness
-  if q.kind != .validity then return confirmDefinedness evaluator q values depth
-  let some subject := q.subject | return .unconfirmed "missing source goal"
-  match sourceBoolean evaluator subject values depth state with
-  | .error e => return .unconfirmed ("source goal evaluation: " ++ e)
-  | .ok (true, _) => return .rejected "source goal is true"
-  | .ok (false, _) => return .counterexample
+  confirmObservations ⟨p.input, p.typed, p.accepted⟩ q values depth
 
 /-- Low-level assignment control also binds to the original admitted source
 and exact ordered producer question. It cannot certify a forged OIR record. -/

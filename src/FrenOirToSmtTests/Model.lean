@@ -174,6 +174,35 @@ def runSourceConfirmation : IO Unit := do
   let si ← select sharedOut .validity "c"
   require (confirmAssignment shared si #[] == .unconfirmed "source goal evaluation: strict: evaluation budget exhausted")
     s!"budget was not shared across premises and goal: {reprStr (confirmAssignment shared si #[])}"
+  -- The producer marks mutually partial premises unresolved. Exercise the
+  -- actual observation routine on its retained questions without bypassing
+  -- that readiness check at the public confirmation entry.
+  let two ← load (wide ++ "expect c() { assume a: true or g9(1) assume b: true or g9(1000) expect wrong: false }")
+  let .ok twoOut := produce two | throw (IO.userError "two-premise budget production")
+  let ti ← select twoOut .assumptionsSatisfiable "c"
+  let some tq := twoOut.queries[ti]? | throw (IO.userError "two-premise budget question")
+  require (confirmAssignment two ti #[] == .unconfirmed "unresolved question readiness")
+    "mutually partial premises passed readiness"
+  let twoEval : FrenEval.Program := ⟨two.input, two.typed, two.accepted⟩
+  require (tq.question.hypotheses.size == 2) "expected two consuming premises"
+  for hypothesis in tq.question.hypotheses do
+    require (confirmObservations twoEval {tq.question with hypotheses := #[hypothesis]} #[] 10000 == .witness)
+      "a premise exceeded the budget on its own"
+  require (confirmObservations twoEval tq.question #[] 10000 ==
+    .unconfirmed "source premise evaluation: strict: evaluation budget exhausted")
+    "budget was reset between two consuming premises"
+  let three ← load (wide ++ "expect c() { assume a: true or g8(1) assume b: true or g8(1000) expect wrong: true or g8(2000) }")
+  let .ok threeOut := produce three | throw (IO.userError "three-observation budget production")
+  let ai ← select threeOut .assumptionsSatisfiable "c"
+  let vi ← select threeOut .validity "c"
+  let some aq := threeOut.queries[ai]? | throw (IO.userError "premise witness question")
+  let some vq := threeOut.queries[vi]? | throw (IO.userError "goal budget question")
+  let threeEval : FrenEval.Program := ⟨three.input, three.typed, three.accepted⟩
+  require (confirmObservations threeEval aq.question #[] 10000 == .witness)
+    "two smaller premises did not fit in the budget"
+  require (confirmObservations threeEval vq.question #[] 10000 ==
+    .unconfirmed "source goal evaluation: strict: evaluation budget exhausted")
+    "budget was reset between consuming premises or before the goal"
   let cyclicInput ← load "mod partial\nexpect c(d: Int) { assume a: 1 div d = 0 assume b: 1 div d != 0 expect wrong: false }"
   let .ok mutualOut := produce cyclicInput | throw (IO.userError "mutual source production")
   let mi ← select mutualOut .validity "c"
