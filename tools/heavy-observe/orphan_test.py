@@ -141,3 +141,114 @@ time.sleep(.1)
                     os.close(live_fd)
     (work / 'orphan-result.json').write_text(json.dumps(result, indent=2) + '\n')
     return result
+
+
+def status_controls(work, env):
+    """Actual raw waits under ordinary, ignored and native auto-reap policy.
+
+    Each policy lives in a dedicated fixture process. A tiny C test shim uses
+    this platform's sigaction headers; no Python struct layout or production
+    ABI is assumed. It only sets/reads/restores that fixture's own policy.
+    """
+    source = work / 'sigchld.c'
+    library = work / 'sigchld.so'
+    source.write_text(r'''
+#define _GNU_SOURCE
+#include <errno.h>
+#include <signal.h>
+static struct sigaction saved;
+int no_wait_mask(void) { return SA_NOCLDWAIT; }
+int begin_no_wait(void) {
+  if (sigaction(SIGCHLD, 0, &saved)) return errno;
+  struct sigaction action = saved;
+  action.sa_flags |= SA_NOCLDWAIT;
+  return sigaction(SIGCHLD, &action, 0) ? errno : 0;
+}
+int restore_policy(void) { return sigaction(SIGCHLD, &saved, 0) ? errno : 0; }
+int current_flags(void) {
+  struct sigaction action;
+  return sigaction(SIGCHLD, 0, &action) ? -1 : action.sa_flags;
+}
+int current_disposition(void) {
+  struct sigaction action;
+  if (sigaction(SIGCHLD, 0, &action)) return -1;
+  return action.sa_handler == SIG_DFL ? 0 : action.sa_handler == SIG_IGN ? 1 : 2;
+}
+int current_mask(int sig) {
+  struct sigaction action;
+  return sigaction(SIGCHLD, 0, &action) ? -1 : sigismember(&action.sa_mask, sig);
+}
+''')
+    owned_run(['cc', '-shared', '-fPIC', str(source), '-o', str(library)],
+              directory=work, label='sigchld-shim', env=env, timeout=3, check=True)
+    worker = work / 'status-worker.py'
+    worker.write_text('import sys\nsys.path.insert(0,' + repr(str(Path(__file__).resolve().parent)) + ')\n' + r'''
+import ctypes,errno,json,os,signal,time
+from pathlib import Path
+from owned_test import run
+work=Path(sys.argv[1]);mode=sys.argv[2];lib=ctypes.CDLL(sys.argv[3])
+def policy():
+ return dict(python_disposition=int(signal.getsignal(signal.SIGCHLD)),
+             flags=lib.current_flags(),disposition=lib.current_disposition(),
+             mask=[lib.current_mask(sig) for sig in range(1,signal.NSIG)])
+original=policy();previous=signal.getsignal(signal.SIGCHLD)
+assert previous==signal.SIG_DFL and original['disposition']==0,original
+ready=work/(mode+'.ready');stolen=[]
+body='import os,pathlib,sys; print("actual exit 7 stdout",flush=True); print("actual exit 7 stderr",file=sys.stderr,flush=True); pathlib.Path(sys.argv[1]).write_text("{}"); \nif sys.argv[2]=="lost-status":\n import time\n deadline=time.monotonic()+2\n while not pathlib.Path(sys.argv[1]+".release").exists() and time.monotonic()<deadline: time.sleep(.005)\nsys.exit(7)'
+def steal(owner,process,data):
+ Path(str(ready)+'.release').write_text('exact fixture releases root exit')
+ deadline=time.monotonic()+1
+ while time.monotonic()<deadline:
+  observed=os.waitpid(process.pid,os.WNOHANG)
+  if observed[0]: stolen.append(list(observed));return
+  time.sleep(.005)
+ raise AssertionError('exact fixture wait did not complete')
+result=dict(mode=mode,original_policy=original,stolen=stolen)
+try:
+ if mode=='ignored': signal.signal(signal.SIGCHLD,signal.SIG_IGN)
+ if mode=='no-child-wait': assert lib.begin_no_wait()==0
+ before=policy()
+ if mode=='ignored': assert before['disposition']==1
+ if mode=='no-child-wait':
+  assert before['flags'] & lib.no_wait_mask() and before['disposition']==0,before
+ try:
+  p=run([sys.executable,'-I','-c',body,str(ready),mode],directory=work,label=mode,
+        timeout=1,grace=.1,ready=ready if mode=='lost-status' else None,
+        action=steal if mode=='lost-status' else None)
+  result['returned_status']=p.returncode
+ except RuntimeError as error:
+  result['adapter_error']=str(error)
+ after=policy()
+ assert before==after,(before,after)
+ result.update(policy_before=before,policy_after=after)
+finally:
+ if mode=='ignored': signal.signal(signal.SIGCHLD,previous)
+ if mode=='no-child-wait': assert lib.restore_policy()==0
+restored=policy();result['restored_policy']=restored
+assert signal.getsignal(signal.SIGCHLD)==previous
+assert restored['disposition']==original['disposition'] and restored['mask']==original['mask']
+assert restored['flags'] & lib.no_wait_mask()==original['flags'] & lib.no_wait_mask()
+row=json.loads((work/(mode+'.json')).read_text());result['receipt']=row
+assert (work/(mode+'.stdout')).read_bytes()==b'actual exit 7 stdout\n'
+assert (work/(mode+'.stderr')).read_bytes()==b'actual exit 7 stderr\n'
+if mode=='normal':
+ assert result['returned_status']==row['physical_status']==7 and row['physical_status_known'],result
+ assert row['root_wait_observation']==dict(pid=row['root_pid'],raw_wait_status=7<<8,status=7),row
+ assert row['root_wait_errno'] is None and row['cleanup']['outcome']=='complete'
+else:
+ assert 'adapter_error' in result and 'returned_status' not in result,result
+ assert row['physical_status'] is None and not row['physical_status_known']
+ assert row['root_wait_observation'] is None and row['root_wait_errno']==errno.ECHILD,row
+ assert row['cleanup']['outcome']=='unknown' and not row['product_success'],row
+ if mode=='lost-status': assert stolen==[[row['root_pid'],7<<8]],result
+result['kernel_children_after']={p.name:(p/'children').read_text().split() for p in Path('/proc/self/task').iterdir()}
+assert all(not pids for pids in result['kernel_children_after'].values()),result
+(work/(mode+'-result.json')).write_text(json.dumps(result,indent=2)+'\n')
+''')
+    results = []
+    for mode in ('normal', 'ignored', 'no-child-wait', 'lost-status'):
+        owned_run([sys.executable, '-I', str(worker), str(work), mode, str(library)],
+                  directory=work, label=mode + '-worker', env=env, timeout=3, grace=.1, check=True)
+        results.append(json.loads((work / (mode + '-result.json')).read_text()))
+    (work / 'status-result.json').write_text(json.dumps(results, indent=2) + '\n')
+    return results

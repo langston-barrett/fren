@@ -2045,8 +2045,16 @@ separate sessions. Cancellation signals are recorded while cleanup continues;
 a repeated signal does not interrupt cleanup. An independent kernel-child
 census includes adopted exits whose ownership environment is unreadable. A
 new child without established ownership makes cleanup unknown; the runner
-does not wait for or signal it. Pinned owned descendants are reaped by pidfd;
-Popen retains the command leader's physical wait status.
+does not wait for or signal it. Pinned owned descendants are reaped by pidfd.
+The command leader's physical status requires an actual exact-child wait
+observation, retained with its raw status. Popen's non-null returncode is not
+evidence: it may substitute zero after ECHILD. The runner leaves the caller's
+SIGCHLD disposition and flags untouched; ignored SIGCHLD, SA_NOCLDWAIT or
+another reaper can discard status. An unavailable root status remains unknown
+with an error, even when the final child census is empty. Actual IO controls
+cover ordinary exit 7, ignored SIGCHLD, the native no-child-wait flag and
+preservation of the caller's signal state. The native controller's raw
+sigaction/lifecycle binding does not prove this Python wait observation.
 The exited-orphan regression independently checks the kernel child, preserves
 the command's status and streams, and reaps only its exact fixture child.
 Foreign live and exited baseline children remain untouched by the runner.

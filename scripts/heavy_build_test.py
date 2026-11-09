@@ -48,6 +48,33 @@ class OwnedRun:
         self.cancelled = None
         self.initial_children = None
         self.reaped = []
+        self.root_wait = None
+        self.root_wait_error = None
+        self.root_wait_errno = None
+
+    def poll_root(self, root):
+        """Observe only our exact child; Popen's ECHILD-to-zero is not status."""
+        if self.root_wait is not None or self.root_wait_error is not None:
+            return True
+        try:
+            pid, raw = os.waitpid(root.pid, os.WNOHANG)
+            if pid == 0:
+                return False
+            if pid != root.pid or not (os.WIFEXITED(raw) or os.WIFSIGNALED(raw)):
+                raise RuntimeError(f'unexpected exact-child wait: {pid}, {raw}')
+            status = os.waitstatus_to_exitcode(raw)
+            self.root_wait = {'pid': pid, 'raw_wait_status': raw, 'status': status}
+            root.returncode = status
+        except InterruptedError:
+            return False
+        except (OSError, RuntimeError) as error:
+            self.root_wait_errno = getattr(error, 'errno', None)
+            self.root_wait_error = f'root wait unavailable: {error!r}'
+            self.errors.append(self.root_wait_error)
+            # Prevent Popen's destructor from polling a lost/reused PID. This
+            # is bookkeeping failure, never a physical status observation.
+            root.returncode = 125
+        return True
 
     def kernel_children(self):
         """Independent direct-child census, including exits with no environ.
@@ -85,7 +112,7 @@ class OwnedRun:
         # only for that pinned process; ECHILD means not currently our child.
         for key, fd in self.handles.items():
             if root is not None and key[0] == root.pid:
-                continue  # Popen retains its own physical wait status.
+                continue  # poll_root alone observes/reaps the command root.
             try:
                 result = os.waitid(os.P_PIDFD, fd, os.WEXITED | os.WNOHANG)
                 if result is not None:
@@ -180,7 +207,7 @@ class OwnedRun:
                 self.collect()
                 if ready is not None:
                     deadline = time.monotonic() + ready_timeout
-                    while not ready.exists() and p.poll() is None and time.monotonic() < deadline:
+                    while not ready.exists() and not self.poll_root(p) and time.monotonic() < deadline:
                         if self.cancelled is not None:
                             raise InterruptedError('owned runner cancelled during readiness')
                         self.collect(); time.sleep(.02)
@@ -189,14 +216,16 @@ class OwnedRun:
                     if action is not None:
                         action(self, p, json.loads(ready.read_text()))
                 deadline = time.monotonic() + timeout
-                while p.poll() is None and time.monotonic() < deadline:
+                while not self.poll_root(p) and time.monotonic() < deadline:
                     if self.cancelled is not None:
                         raise InterruptedError('owned runner cancelled')
                     self.collect(); time.sleep(.02)
                 if self.cancelled is not None:
                     raise InterruptedError('owned runner cancelled')
-                if p.poll() is None:
+                if not self.poll_root(p):
                     raise TimeoutError('wrapper timeout')
+                if self.root_wait_error is not None:
+                    raise RuntimeError(self.root_wait_error)
                 survivors = [r for r in self.collect().values() if r['state'] not in ('Z', 'X')]
                 row['survivors_before_harness_cleanup'] = survivors
                 if survivors:
@@ -219,19 +248,23 @@ class OwnedRun:
                             except OSError as error:
                                 self.errors.append(str(error))
                         if p is not None:
-                            p.poll()
+                            self.poll_root(p)
                         self.reap_owned(p)
                         live = list(self.collect().values())
-                        if not live and (p is None or p.returncode is not None):
+                        if not live and (p is None or self.poll_root(p)):
                             break
                         if time.monotonic() >= deadline:
                             break
                         time.sleep(.02)
-                    if not live and (p is None or p.returncode is not None):
+                    if not live and (p is None or self.poll_root(p)):
                         break
-                row.update(status=None if p is None else p.returncode,
-                           physical_status=None if p is None else p.returncode,
-                           physical_status_known=p is not None and p.returncode is not None,
+                physical = None if self.root_wait is None else self.root_wait['status']
+                row.update(status=physical, physical_status=physical,
+                           physical_status_known=self.root_wait is not None,
+                           root_wait_observation=self.root_wait,
+                           root_wait_error=self.root_wait_error,
+                           root_wait_errno=self.root_wait_errno,
+                           root_pid=None if p is None else p.pid,
                            wrapper_wall_seconds=time.monotonic() - start,
                            stdout=str(outpath), stderr=str(errpath))
                 # The environment census cannot see an already-exited orphan.
@@ -244,8 +277,8 @@ class OwnedRun:
                            if key not in baseline and key not in self.handles]
                 if self.initial_children is None:
                     census_errors.append('initial kernel census unavailable')
-                known_done = not live and (p is None or p.returncode is not None)
-                outcome = ('failed' if not known_done else 'unknown'
+                tracked_done = not live and (p is None or self.poll_root(p))
+                outcome = ('failed' if not tracked_done else 'unknown'
                            if unknown or census_errors or self.errors else 'complete')
                 row['cleanup'] = {'outcome': outcome,
                                   'seconds': time.monotonic() - cleanup_start,
@@ -253,7 +286,7 @@ class OwnedRun:
                                   'census_errors': census_errors,
                                   'preexisting_children': [list(k) for k in sorted(baseline)],
                                   'reaped_owned': self.reaped, 'errors': self.errors}
-                row['product_success'] = row['failure'] is None and row['physical_status'] == 0 and row['cleanup']['outcome'] == 'complete'
+                row['product_success'] = row['failure'] is None and row['physical_status_known'] and row['physical_status'] == 0 and row['cleanup']['outcome'] == 'complete'
                 for fd in self.handles.values():
                     os.close(fd)
                 self.handles.clear()

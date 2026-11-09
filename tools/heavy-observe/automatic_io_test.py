@@ -14,7 +14,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 from owned_test import run as owned_run
-from orphan_test import controls as orphan_controls
+from orphan_test import controls as orphan_controls, status_controls
 
 
 def workspace(mode):
@@ -221,7 +221,8 @@ while finish is None or time.monotonic()<finish: time.sleep(.01)
     assert inner['cleanup']['outcome']==outer['cleanup']['outcome']=='complete'
     assert not inner['cleanup']['remaining'] and not outer['cleanup']['remaining']
     orphans = orphan_controls(work, env)
-    (work/'result.json').write_text(json.dumps(dict(timeout=receipt,escalation=escalated,inner=inner,outer=outer,orphans=orphans),indent=2))
+    statuses = status_controls(work, env)
+    (work/'result.json').write_text(json.dumps(dict(timeout=receipt,escalation=escalated,inner=inner,outer=outer,orphans=orphans,statuses=statuses),indent=2))
     print(f'automatic owned cancellation controls passed: {work}')
 
 

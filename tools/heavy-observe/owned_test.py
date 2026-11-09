@@ -5,6 +5,8 @@ Signals request cancellation; they never interrupt the runner's cleanup. Nested
 runners retain ancestor ownership markers, including across separate sessions.
 An independent kernel-child census can make cleanup unknown even when no
 marked live worker remains; the adapter never turns that into success.
+Physical status requires a retained exact-child wait, independent of Popen's
+bookkeeping or a final empty census. The caller's SIGCHLD policy is untouched.
 """
 import importlib.util
 import json
@@ -53,6 +55,8 @@ def run(command, *, directory, label, cwd=None, env=None, timeout=12, grace=2,
             if row['failure'].startswith('TimeoutError('):
                 raise subprocess.TimeoutExpired(command, timeout, output=out, stderr=err)
             raise RuntimeError(f"owned command failed: {row['failure']}; {directory / (label + '.json')}")
+        if not row['physical_status_known']:
+            raise RuntimeError(f"owned root status unavailable; retain {directory / (label + '.json')}")
         result = subprocess.CompletedProcess(command, row['physical_status'], out, err)
         if check:
             try:
