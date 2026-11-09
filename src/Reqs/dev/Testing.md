@@ -1975,7 +1975,9 @@ assert that the fallback covers an observed or future peak. Explicit manifest
 requests retain the gate's existing oversized-request failure.
 
 ```fren
-pub proc heavy_compiler_request(peak: Option<Int>, padding: Nat, allowance: Int, parent: Int): (det request: Option<Int>) {
+pub proc heavy_compiler_request(peak: Option<Int>, padding: Nat, allowance: Int, parent: Int): (
+    det request: Option<Int>,
+) {
     ensure usable: request = match peak {
         Option::None => Option::None,
         Option::Some(p) => if p > 0 and padding > 0 and p + padding <= 1125899906842624
