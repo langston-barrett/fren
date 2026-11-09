@@ -87,6 +87,7 @@ import math
 import os
 import platform
 import re
+import select
 import shlex
 import shutil
 import signal
@@ -533,18 +534,47 @@ class ProcessSampler:
 
 
 def command_forecast(command, state=STATE, environ=None, now=None):
-    """Ask the Lean adviser for the bounded command forecast; unknown on failure."""
+    """Build and invoke this checkout's Lean adviser; unknown on failure."""
     environ = os.environ if environ is None else environ
     now = time.time() if now is None else now
-    adviser = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
-                           "tools", "heavy-observe", ".lake", "build", "bin", "compiler_advice")
+    root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    package = os.path.join(root, "tools", "heavy-observe")
+    build_dir = os.path.join(package, ".lake")
+    adviser = os.path.join(build_dir, "build", "bin", "compiler_advice")
     path = environ.get("HEAVY_LOG") or os.path.join(state, "log.jsonl")
+    build = ["lake", "--rehash", "--no-cache", "-d", package, "build", "compiler_advice", "--wfail"]
+    query = [adviser, "--job-forecast", path, str(now), command,
+             str(PREDICTION_SECONDS), str(PREDICTION_JOBS), root]
     try:
-        result = subprocess.run([adviser, "--job-forecast", path, str(now), command,
-                                 str(PREDICTION_SECONDS), str(PREDICTION_JOBS)],
-                                capture_output=True, text=True, timeout=30, check=True)
-        peak, count = json.loads(result.stdout)
-        return peak, count
+        os.makedirs(build_dir, exist_ok=True)
+        with open(os.path.join(build_dir, "prediction-build.lock"), "a") as lock:
+            deadline = time.monotonic() + 120
+            while True:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return None, 0
+                    select.select([], [], [], min(0.05, remaining))
+            try:
+                result = subprocess.run(query, capture_output=True, text=True, timeout=30)
+            except FileNotFoundError:
+                result = None
+            if result is None or result.returncode:
+                # Lake's trace can survive an externally replaced binary. Force
+                # a relink when the source-verifying protocol rejects it.
+                adapter = os.path.join(build_dir, "build", "lib", "lean", "ForecastMain")
+                for stale in (adviser, adviser + ".trace", adapter + ".olean", adapter + ".trace"):
+                    try:
+                        os.unlink(stale)
+                    except FileNotFoundError:
+                        pass
+                subprocess.run(build, cwd=package, capture_output=True, timeout=120, check=True)
+                result = subprocess.run(query, capture_output=True, text=True, timeout=30, check=True)
+            peak, count = json.loads(result.stdout)
+            return peak, count
     except (OSError, ValueError, TypeError, subprocess.SubprocessError):
         return None, 0
 

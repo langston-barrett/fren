@@ -1500,10 +1500,17 @@ completion time and excluding future completions. The lower cutoff is inclusive;
 larger peaks win completion-time ties. Failed jobs' observed peaks count too,
 though a killed job's peak does not show how much memory it needed to finish.
 `prediction_jobs` records the number used, and `prediction_method` is
-`"max_last_20_same_command_7d"`. With no usable history, or if the prebuilt Lean
-adviser is unavailable, the prediction is `null`, not zero. Malformed records
-are skipped; `HEAVY_LOG` selects the prediction's source as well as destination.
-The Lean adviser reads the log and applies `Heavy.Forecast`'s bounded selection;
+`"max_last_20_same_command_7d"`. Before each forecast, the standalone Lean
+adviser verifies that its embedded adapter, kernel, toolchain selection and
+Lake configuration match this checkout. Heavy builds it from this checkout
+if it is missing or stale, so a fresh checkout and a stale adviser use the
+current key and forecast rules. Concurrent Heavy starts serialize verification
+and build, with a bounded wait. If the toolchain or build is unavailable the
+optional forecast is `null` and the job still runs; with no usable history it
+is also `null`, not zero. The script integration test exercises fresh and stale
+advisers. Malformed records are skipped; `HEAVY_LOG` selects the prediction's
+source as well as destination. The Lean adviser reads the log and applies
+`Heavy.Forecast`'s bounded selection;
 its key and forecast functions are bound to `heavy_prediction_key` and
 `heavy_memory_prediction` in `Impls.Heavy`. Python invokes it and logs the
 result. The current admission rule still uses live RSS and lease reservations;

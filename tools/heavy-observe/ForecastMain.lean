@@ -75,6 +75,21 @@ end CompilerAdvice
 
 namespace JobForecast
 
+-- Tie the executable's protocol to the source that selected the key and
+-- decoded the history. A stale binary must never quietly return an estimate.
+def adapterSource : String := include_str "ForecastMain.lean"
+def kernelSource : String := include_str "../../src/Heavy/Forecast.lean"
+def toolchainSource : String := include_str "lean-toolchain"
+def lakefileSource : String := include_str "lakefile.lean"
+
+def verifySources (root : String) : IO Unit := do
+  let root := System.FilePath.mk root
+  unless (← IO.FS.readFile (root / "tools/heavy-observe/ForecastMain.lean")) == adapterSource &&
+      (← IO.FS.readFile (root / "src/Heavy/Forecast.lean")) == kernelSource &&
+      (← IO.FS.readFile (root / "tools/heavy-observe/lean-toolchain")) == toolchainSource &&
+      (← IO.FS.readFile (root / "tools/heavy-observe/lakefile.lean")) == lakefileSource do
+    throw (IO.userError "job forecast executable is stale")
+
 -- Eighteen decimal places retain ordinary JSON floating-point timestamps
 -- while keeping selection in integral units.
 def ticks (j : Json) : Option Int := do
@@ -124,8 +139,11 @@ end JobForecast
 
 def main (args : List String) : IO UInt32 := do
   match args with
-  | ["--job-forecast", path, now, command, seconds, count] =>
-    try JobForecast.run path now command seconds count; return 0
+  | ["--job-forecast", path, now, command, seconds, count, root] =>
+    try
+      JobForecast.verifySources root
+      JobForecast.run path now command seconds count
+      return 0
     catch e => (← IO.getStderr).putStrLn s!"job forecast: {e}"; return 1
   | ["--manifest", "--padding-kib", paddingText, path] =>
     try

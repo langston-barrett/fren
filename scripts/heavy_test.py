@@ -14,6 +14,7 @@ import json
 import math
 import os
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -317,7 +318,7 @@ def test_load_admission():
     assert admit(0, 0, 100, 8, lambda: None)  # Missing OS load fails open.
 
 
-def tiny_job(state, command, overrides=None, timeout=30):
+def tiny_job(state, command, overrides=None, timeout=30, script=None):
     # Invoke main in a fresh process, with no real load or shared state.
     code = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
             "sys.exit(h['main'](sys.argv[3:], state=sys.argv[2], load_reader=lambda: 0.5))")
@@ -326,7 +327,7 @@ def tiny_job(state, command, overrides=None, timeout=30):
     environ.pop("FREN_JOB_KIND", None)
     environ.update(overrides or {})
     return subprocess.run([sys.executable, "-I", "-B", "-c", code,
-                           os.path.join(HERE, "heavy"), state] + command,
+                           script or os.path.join(HERE, "heavy"), state] + command,
                           env=environ, capture_output=True, text=True, timeout=timeout)
 
 
@@ -1201,6 +1202,7 @@ def test_policy_flip_while_waiting():
              mock.patch.object(heavy.time, "monotonic", side_effect=lambda: clock[0]), \
              mock.patch.object(heavy.time, "sleep", side_effect=release), \
              mock.patch.object(heavy, "heavy_rss_kb", return_value=0), \
+             mock.patch.object(heavy, "command_forecast", return_value=(None, 0)), \
              mock.patch.object(heavy, "run_command", side_effect=finish), \
              contextlib.redirect_stderr(io.StringIO()):
             assert heavy.main([sys.executable, "-c", "pass"], state, environ, lambda: 100) == 0
@@ -2367,8 +2369,8 @@ def test_machine_pressure():
 
 def test_memory_prediction():
     # fren-covers: testing::heavy_memory_prediction
-    if not os.access(os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
-        assert heavy.command_forecast("lake build") == (None, 0)
+    if shutil.which("lake") is None and not os.access(
+            os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
         return
     with tempfile.TemporaryDirectory() as state:
         now = 1000000
@@ -2410,7 +2412,8 @@ def test_memory_prediction():
 
 def test_forecast_kind():
     # fren-covers: testing::heavy_memory_prediction, testing::heavy_prediction_key
-    if not os.access(os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
+    if shutil.which("lake") is None and not os.access(
+            os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
         return
     command = [sys.executable, "-c", "pass"]
     normal = heavy.job_kind(command)
@@ -2432,7 +2435,8 @@ def test_forecast_kind():
 
 def test_command_forecast_real_rows():
     # fren-covers: testing::heavy_memory_prediction, testing::heavy_prediction_key
-    if not os.access(os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
+    if shutil.which("lake") is None and not os.access(
+            os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
         return
     rows = [
         {"command": "--offline lake test", "job_kind": "heavy", "peak_rss_kb": 17911340,
@@ -2462,6 +2466,51 @@ def test_command_forecast_real_rows():
         heavy.append_log({"command": command[:237] + "...", "prediction_command": command,
                           "job_kind": "heavy", "ended_at": now, "peak_rss_kb": 444}, state, {})
         assert heavy.command_forecast(command, state, {}, now) == (444, 1)
+
+
+def test_forecast_fresh_and_stale_adviser():
+    # fren-covers: testing::heavy_memory_prediction, testing::heavy_prediction_key
+    if shutil.which("lake") is None:
+        return  # The script-only lint job does not install the Lean toolchain.
+    with tempfile.TemporaryDirectory(prefix="heavy-forecast-checkout-") as root:
+        scripts = os.path.join(root, "scripts")
+        sources = os.path.join(root, "src")
+        package = os.path.join(root, "tools", "heavy-observe")
+        os.makedirs(scripts)
+        os.makedirs(sources)
+        os.makedirs(os.path.dirname(package))
+        script = os.path.join(scripts, "heavy")
+        shutil.copy2(os.path.join(HERE, "heavy"), script)
+        shutil.copytree(os.path.join(HERE, "../src/Heavy"), os.path.join(sources, "Heavy"))
+        shutil.copytree(os.path.join(HERE, "../tools/heavy-observe"), package,
+                        ignore=shutil.ignore_patterns(".lake", "test-work", "__pycache__"))
+        state = os.path.join(root, "state")
+        os.makedirs(state)
+        command = [sys.executable, "-c", "pass"]
+        peak = 17911340
+        heavy.append_log({"command": heavy.shlex.join(command), "job_kind": "heavy",
+                          "ended_at": heavy.time.time() - 1, "peak_rss_kb": peak}, state, {})
+        adviser = os.path.join(package, ".lake", "build", "bin", "compiler_advice")
+        assert not os.path.exists(adviser)
+
+        def verify():
+            result = tiny_job(state, command, timeout=180, script=script)
+            assert result.returncode == 0, result.stderr
+            with open(os.path.join(state, "log.jsonl")) as log:
+                row = json.loads(log.readlines()[-1])
+            assert row["predicted_peak_rss_kb"] >= peak, row
+
+        verify()  # Fresh checkout builds the adviser before its first job.
+        # Simulate an old executable with surviving Lake traces: the old
+        # interface rejects the new protocol and must be rebuilt, not trusted.
+        with open(adviser, "w") as old:
+            old.write("#!/bin/sh\nexit 2\n")
+        verify()
+        # A protocol-compatible binary whose kernel source changed must also
+        # be rejected and rebuilt, even if its executable and traces exist.
+        with open(os.path.join(sources, "Heavy", "Forecast.lean"), "a") as kernel:
+            kernel.write("\n-- changed checkout for the stale-adviser control\n")
+        verify()
 
 def test_process_integration():
     # fren-covers: testing::heavy_counter_rate, testing::heavy_pressure
@@ -2567,7 +2616,7 @@ def main():
              test_cpu_ticks, test_cpu_samples, test_cpu_monitor, test_monitor_group_completion,
              test_cpu_descendants, test_cpu_reaping, test_cpu_many_waits, test_cpu_signal_fold,
              test_child_subreaper, test_process_readings,
-             test_process_sampling, test_machine_pressure, test_memory_prediction, test_forecast_kind, test_command_forecast_real_rows,
+             test_process_sampling, test_machine_pressure, test_memory_prediction, test_forecast_kind, test_command_forecast_real_rows, test_forecast_fresh_and_stale_adviser,
              test_process_integration,
              test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
              test_registry_wait_messages,
