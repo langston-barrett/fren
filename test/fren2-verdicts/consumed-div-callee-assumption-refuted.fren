@@ -1,0 +1,5 @@
+-- verdict: refuted exit: 1
+-- The assumption consumes `f`, which divides; d = 3 satisfies it and refutes g.
+mod corpus
+fn f(x: Int): Int := x div 2
+expect c(d: Int) { assume a: f(d) = 1 expect g: d = 2 }

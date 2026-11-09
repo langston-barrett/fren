@@ -1,0 +1,5 @@
+-- verdict: verified exit: 0
+-- f(d) = 1 exactly when d is 2 or 3; the nonvacuity witness evaluates `f`.
+mod corpus
+fn f(x: Int): Int := x div 2
+expect c(d: Int) { assume a: f(d) = 1 expect g: d = 2 or d = 3 }

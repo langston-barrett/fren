@@ -14,44 +14,54 @@ inductive Confirmation where
   | unconfirmed (reason : String)
   deriving Repr, BEq
 
-/-- A conservative syntactic domain, independent of runtime demand. In
-particular partial operations in unused lets, skipped operands and unselected
-branches prevent value confirmation. The caller scopes this test to the
-consumed bodies and their transitive callees. -/
-@[expose] def confirmationFragment : Nat → FrenAst.Expr → Bool
-  | 0, _ => false
-  | n + 1, e =>
-    let go := confirmationFragment n
+/-- Strict source evaluation at one concrete assignment. It follows the
+retained verification tree of `r[lir.walking.demand]` rather than runtime
+demand: both ordinary operands (including `and`/`or`), every let value even if
+unused, and every call argument followed by the callee body are evaluated; only
+the selected `if`/`match` branch is. Any undefined `div`/`mod`, other failure
+or exhaustion is an error. Success therefore means that every active static
+obligation of the body and of the callee bodies it reaches holds under this
+assignment, so the demand-driven value is the dynamic semantics there. -/
+@[expose] def strictWalk : Nat → FrenModule.Typed → FrenModule.TypedBody →
+    FrenEval.Environment → FrenAst.Expr → Except String FrenEval.Value
+  | 0, _, _, _, _ => .error "strict source evaluation exhausted"
+  | n + 1, t, b, env, e => do
+    let visit := strictWalk n t b env
     match e with
-    | .bool .. | .integer .. | .name .. => true
-    | .paren _ e _ | .unary _ _ e => go e
-    | .binary a _ op b => match op with
-      | .div | .mod => false
-      | _ => go a && go b
-    | .ifE _ c _ a _ b => go c && go a && go b
-    | .letE _ _ _ a _ b => go a && go b
-    | .matchE _ e _ arms _ => go e && arms.all (fun (_, _, arm, _) => go arm)
-    | .call f _ args _ _ => go f && args.all go
+    | .bool .. | .integer .. | .name .. => (FrenEval.walk 1 t b env e).mapError reprStr
+    | .paren _ a _ => visit a
+    | .unary _ op a => (FrenEval.unary op (← visit a)).mapError reprStr
+    | .binary a _ op c =>
+      let l ← visit a
+      let r ← visit c
+      (FrenEval.binary op l r).mapError reprStr
+    | .ifE _ c _ yes _ no =>
+      let .bool selected ← visit c | throw "non-Boolean condition"
+      visit (if selected then yes else no)
+    | .letE _ _ _ a _ rest => strictWalk n t b (.ok (← visit a) :: env) rest
+    | .matchE _ s _ arms _ =>
+      let .enum _ ctor ← visit s | throw "non-enum scrutinee"
+      let some (_, _, arm, _) := arms.find? (fun (pattern, _, _, _) =>
+          (t.resolved.referenceAt pattern.head.slice).any (fun ref =>
+            ref.role == .pattern && ref.target == .item ctor))
+        | throw "no arm for canonical constructor"
+      visit arm
+    | .call callee _ args _ _ =>
+      let some (.callable sig) := FrenHirToThir.occurrenceType b callee
+        | throw "callee is not a callable designator"
+      let some target := t.bodies.find? (fun x => x.owner == sig.id && x.member.isNone)
+        | throw "missing resolved function body"
+      let values ← args.mapM visit
+      let slots ← (FrenEval.arguments t target values).mapError reprStr
+      let v ← strictWalk n t target slots target.expression
+      unless v.type == target.type && v.valid t do throw "callee result disagrees with its type"
+      return v
 
-/-- Totality is scoped to the source expressions actually used by confirmation,
-including their transitive callees, rather than every body in the file. Each
-reachable body is checked once, so shared callees cost linear, not exponential,
-work. A missing callee body or a leftover worklist is not total. -/
-private def totalBody (t : FrenModule.Typed) (root : FrenModule.TypedBody) : Bool := Id.run do
-  let mut work := #[root]
-  let mut seen : Array FrenBase.ItemId := #[]
-  for _ in [:t.bodies.size + 1] do
-    let some b := work.back? | return true
-    work := work.pop
-    unless confirmationFragment 10000 b.expression do return false
-    for o in b.occurrences do
-      if let .callable sig := o.type then
-        unless seen.contains sig.id do
-          seen := seen.push sig.id
-          let some target := t.bodies.find? (fun target =>
-              target.owner == sig.id && target.member.isNone) | return false
-          work := work.push target
-  return work.isEmpty
+/-- Strict evaluation of a retained body on positional parameter values. -/
+@[expose] def strictBody (t : FrenModule.Typed) (b : FrenModule.TypedBody)
+    (values : Array FrenEval.Value) (depth : Nat) : Except String FrenEval.Value := do
+  let env ← (FrenEval.arguments t b values).mapError reprStr
+  strictWalk depth t b env b.expression
 
 private def containsSite : Nat → FrenAst.Expr → FrenAst.Expr → Bool
   | 0, _, _ => false
@@ -124,12 +134,17 @@ private def confirmDefinedness (p : FrenEval.Program) (q : FrenOir.Question)
   | .ok (.int _) => return .rejected "source divisor is nonzero"
   | .ok _ => return .unconfirmed "source divisor is not an integer"
 
+/-- The demand-driven interpreter supplies the value; strict evaluation must
+agree, so a skipped undefined operand, unused let or callee step leaves the
+observation unconfirmed instead of becoming a witness or counterexample. -/
 private def sourceBoolean (p : FrenEval.Program) (b : FrenModule.TypedBody)
     (values : Array FrenEval.Value) (depth : Nat) : Except String Bool := do
   let e ← (FrenEval.evaluate p ⟨b.owner, b.member.map (·.label.text)⟩ values depth).mapError reprStr
   unless e.body == b do throw "source evaluator selected another body"
   let v ← e.outcome.mapError reprStr
   let .bool value := v | throw "source evaluator returned a non-Boolean"
+  let strict ← (strictBody p.typed b values depth).mapError ("strict: " ++ ·)
+  unless strict == v do throw "strict and demand-driven evaluation disagree"
   return value
 
 /-- This helper consumes the actual producer's output, not editable solver
@@ -140,11 +155,8 @@ private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index
   let some entry := out.queries[index]? | return .unconfirmed "missing question"
   let q := entry.question
   if q.readiness != .ready then return .unconfirmed "unresolved question readiness"
-  -- Only expressions consumed below need the conservative total fragment.
+  -- Consumed hypotheses and goals are evaluated strictly by sourceBoolean.
   -- Definedness confirmation evaluates a source prefix instead of its body.
-  if !q.hypotheses.all (fun h => totalBody p.typed h.source) ||
-      (q.kind == .validity && !q.subject.any (totalBody p.typed)) then
-    return .unconfirmed "source static obligations outside total confirmation fragment"
   for edge in q.dependencies do
     match edge with
     | .definition id =>
@@ -238,8 +250,23 @@ def solveModels (p : FrenThirDesugar.Program) (limits : Limits := {})
       results := results.push entry
     return .ok ⟨p, out, results, limits, runId, evaluationDepth⟩
 
-theorem fragment_div (n : Nat) (a b : FrenAst.Expr) (token : FrenAst.Token) :
-    confirmationFragment (n + 1) (.binary a token .div b) = false := rfl
+/-- Strict evaluation never skips an operand: a failure of the right operand
+is the result even when `and`/`or` demand would short-circuit on the left. -/
+theorem strict_operand (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBody)
+    (env : FrenEval.Environment) (left right : FrenAst.Expr) (token : FrenAst.Token)
+    (op : FrenAst.BinaryOp) (value : FrenEval.Value) (failure : String)
+    (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .error failure) :
+    strictWalk (n + 1) t b env (.binary left token op right) = .error failure := by
+  simp [strictWalk, hl, hr, Bind.bind, Except.bind]
+
+/-- A zero divisor is undefined under strict evaluation; it has no value. -/
+theorem strict_div_zero (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBody)
+    (env : FrenEval.Environment) (left right : FrenAst.Expr) (token : FrenAst.Token)
+    (value : FrenEval.Value)
+    (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
+    (strictWalk (n + 1) t b env (.binary left token .div right)).isOk = false := by
+  cases value <;> simp [strictWalk, hl, hr, Bind.bind, Except.bind, FrenEval.binary,
+    Except.mapError, Except.isOk, Except.toBool]
 
 theorem model_nonzero (r : Receipt) (h : r.exitCode ≠ some 0) : modelData r = false := by
   simp [modelData, h]

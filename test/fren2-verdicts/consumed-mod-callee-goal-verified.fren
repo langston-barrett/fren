@@ -1,0 +1,5 @@
+-- verdict: verified exit: 0
+-- A true goal over a remainder function, with a witness through `parity`.
+mod corpus
+fn parity(n: Int): Int := n mod 2
+expect c(a: Int) { assume even: parity(a) = 0 expect g: parity(a + 1) = 1 }

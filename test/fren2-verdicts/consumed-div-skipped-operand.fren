@@ -1,0 +1,7 @@
+-- verdict: refuted exit: 1
+-- `or` retains its right operand statically: at d = 0, 1 div d is undefined,
+-- so the assumption's definedness row is the counterexample. Demand-driven
+-- evaluation would accept d = 0 as satisfying `a`, but strict confirmation
+-- does not, so the witness and validity rows at d = 0 stay unconfirmed.
+mod corpus
+expect c(d: Int) { assume a: d = 0 or 1 div d = 1 expect g: d = 1 }

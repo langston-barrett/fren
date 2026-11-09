@@ -1,0 +1,6 @@
+-- verdict: verified exit: 0
+-- Nested consumption that verifies: quarter(d) = 1 exactly when 4 <= d <= 7.
+mod corpus
+fn half(n: Int): Int := n div 2
+fn quarter(n: Int): Int := half(half(n))
+expect c(d: Int) { assume a: quarter(d) = 1 expect g: d >= 4 and d <= 7 }

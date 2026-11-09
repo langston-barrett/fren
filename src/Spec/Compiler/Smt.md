@@ -356,26 +356,27 @@ def ModelAssignment (p : FrenOir.Program) (q : FrenOir.Question)
     q.parameters[i]? = some param → values[i]? = some value →
     value.type = param.source.type ∧ value.valid p.lir.mir.source = true
 
-/-- Observation of the actual interpreter on the retained source body. -/
+/-- Observation of the actual interpreter on the retained source body, which
+strict evaluation of its retained static obligations must reproduce. -/
 def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
     (depth : Nat) (value : Bool) : Prop :=
   ∃ observation, FrenEval.evaluate ⟨p.input, p.typed, p.accepted⟩
       ⟨body.owner, body.member.map (·.label.text)⟩ values depth = .ok observation ∧
-    observation.body = body ∧ observation.outcome = .ok (.bool value)
+    observation.body = body ∧ observation.outcome = .ok (.bool value) ∧
+    strictBody p.typed body values depth = .ok (.bool value)
 
 /-- Concrete candidates do not discharge universal validity or domain questions. -/
 def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Question)
     (values : Array FrenEval.Value) (depth : Nat) (answer : Confirmation) : Prop :=
   Produces p out ∧ q ∈ out.oir.questions.toList ∧ q.readiness = .ready ∧
   ModelAssignment out.oir q values ∧
-  (∀ body ∈ p.typed.bodies.toList, confirmationFragment 10000 body.expression = true) ∧
   (∀ hypothesis ∈ q.hypotheses.toList, SourceBoolean p hypothesis.source values depth true) ∧
   ((q.kind = .assumptionsSatisfiable ∧ answer = .witness) ∨
     (q.kind = .validity ∧ answer = .counterexample ∧
       ∃ body, q.subject = some body ∧ SourceBoolean p body values depth false))
 
 /-- Decoder typing and source-observation correspondence are separate from the
-universal SMT interpretation, static-totality and evaluator-adequacy bridges. -/
+universal SMT interpretation, strict-evaluation and evaluator-adequacy bridges. -/
 def ReadbackContract : Prop := ∀ p out, Produces p out → ∀ entry ∈ out.queries.toList,
   ∀ text cap values, decodeModel out.oir entry.question text cap = .ok values →
     ModelAssignment out.oir entry.question values
@@ -500,22 +501,30 @@ nonzero exit, invalid UTF-8 and all other bounded failures remain unconfirmed.
 r[smt.model.confirmation]
 `confirmAssignment` regenerates the program from the original admitted source
 and selects its exact question index. `solveModels` applies the same source
-check to decoded assignments. Confirmation supports assumption Sat and
-validity refutations in `confirmationFragment`; definedness-site readback is
-explicitly unconfirmed. Readiness must be ready, every referenced definition
-must exist, and every prerequisite must exist, be ready and be a definedness
-question. The conservative static fragment checks every source body, including
-unused definitions, lets, both ordinary Boolean operands and every branch.
-It excludes division, remainder and exhausted traversal independently of the
-interpreter's demand. Dependencies are not discharged by a raw Unsat token.
+check to decoded assignments. Confirmation supports assumption Sat, validity
+refutations and divisor-nonzero definedness sites. Readiness must be ready,
+every referenced definition must exist, and every prerequisite must exist, be
+ready and be a definedness question. Dependencies are not discharged by a raw
+Unsat token.
 
 Assignments have the exact source arity and types and real enum membership.
-Every retained hypothesis is evaluated as true by `FrenEval.evaluate` on its
-original source body. A Sat search then yields a concrete witness. A validity
-refutation additionally evaluates its retained source goal as false and yields
-a concrete counterexample. A false premise or true goal rejects the candidate;
-unsupported forms and evaluation failures, including exhaustion, are
-unconfirmed. `SourceBoolean` and `SourceCandidate` specify these observations;
+Every retained hypothesis is evaluated as true on its original source body.
+A Sat search then yields a concrete witness. A validity refutation
+additionally evaluates its retained source goal as false and yields a concrete
+counterexample. Each such observation needs two agreeing evaluations under the
+assignment: `FrenEval.evaluate`, which follows runtime demand, and
+`strictBody`, which follows the retained verification tree of
+`r[lir.walking.demand]`. Strict evaluation evaluates both ordinary operands,
+including those of `and` and `or`, every let value even if unused, and every
+call argument followed by the callee body; it evaluates only the selected
+branch of an `if` or `match`. A `div` or `mod` by zero has no value, so any
+undefined step, like exhaustion, fails strict evaluation. Agreement therefore
+means that every active static obligation of the consumed body and of the
+callee bodies it reaches holds at the assignment, so the demand-driven value
+is the dynamic value there. A consumed body may contain division anywhere;
+only its evaluation at the model decides. A false premise or true goal rejects
+the candidate; unsupported forms and evaluation failures are unconfirmed.
+`SourceBoolean` and `SourceCandidate` specify these observations;
 `ConfirmationContract` states correspondence of the actual API to them.
 No per-question confirmation is an aggregate verified-program verdict.
 
@@ -523,11 +532,11 @@ No per-question confirmation is an aggregate verified-program verdict.
 
 r[smt.model.bridges]
 Concrete source observations are bounded interpreter results. General decoder
-correspondence, static totality of the syntactic fragment, evaluator adequacy,
+correspondence, strict evaluation's adequacy to the verification tree, evaluator adequacy,
 model existence, solver identity/trust and recursive source/SMT preservation
 require independent justification. The MIR/LIR/OIR/SMT contracts and their
 semantic domains remain premises of any universal source-soundness claim.
-The nonzero-transport, wrong-model-sort and partial-operation exclusion laws
+The nonzero-transport, wrong-model-sort, retained-operand and zero-divisor laws
 constrain actual functions without supplying those recursive bridges.
 
 ## 7. Source checker reports

@@ -1,0 +1,5 @@
+-- verdict: refuted exit: 1
+-- A false goal over a dividing function: half(1) = 0, not 1.
+mod corpus
+fn half(n: Int): Int := n div 2
+expect c(a: Int) { expect g: half(a) = a }

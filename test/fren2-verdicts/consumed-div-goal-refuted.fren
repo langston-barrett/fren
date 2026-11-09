@@ -1,0 +1,5 @@
+-- verdict: refuted exit: 1
+-- The goal consumes a division whose definedness is verified under `p`;
+-- d = 1 gives 10 div 1 = 10, a source-confirmed counterexample.
+mod corpus
+expect c(d: Int) { assume p: d > 0 expect g: 10 div d = 100 }
