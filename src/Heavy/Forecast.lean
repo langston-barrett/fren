@@ -5,6 +5,12 @@ requirements and log decoding depend on it, never the reverse. -/
 
 namespace Heavy.Forecast
 
+/-- Complete command keys cannot collide with legacy kind-only keys. -/
+def predictionKey (command : Option String) (kind : String) : Bool × String :=
+  match command with
+  | some c => (true, c)
+  | none => (false, kind)
+
 /-- An observation's forecast fields. Decoders use `none` for missing or
 malformed fields; a missing log event defaults to `some "job"`. Times
 and the cutoff share one integral unit. -/
