@@ -71,11 +71,11 @@ private def tests : List String := roots.map (· ++ "Tests")
 -- Spec wrappers and FrenTestMain remain Fren1 infrastructure, not Fren2 roots.
 private def owners : List String := roots ++ tests ++
   ["FrenTextTests", "FrenTextTestsTests", "FrenTextDemo", "FrenTextDemoTests",
-   "Fren2TestMain", "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing",
+   "Fren2TestMain", "Fren2FakeSolver", "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing",
    "FrenTest.Fren2Mir", "FrenTest.Fren2Lir"]
 
 private def testOnly (owner : String) : Bool :=
-  tests.contains owner || ["FrenTextTestsTests", "FrenTextDemoTests", "Fren2TestMain",
+  tests.contains owner || ["FrenTextTestsTests", "FrenTextDemoTests", "Fren2TestMain", "Fren2FakeSolver",
     "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing",
     "FrenTest.Fren2Mir", "FrenTest.Fren2Lir"].contains owner
 
@@ -99,6 +99,7 @@ private def permits (owner imported : String) : Bool := Id.run do
   if owner == "FrenTextDemo" then return imported == "FrenTextTests"
   if owner == "FrenTextDemoTests" then return imported == "FrenTextDemo"
   if owner == "Fren2TestMain" then return (roots ++ tests ++ ["FrenTextDemo"]).contains imported
+  if owner == "Fren2FakeSolver" then return imported == "FrenOirToSmt"
   if owner == "FrenThirDesugarTests" && imported == "FrenEval" then return true
   if let some original := owner.dropSuffix? "Tests" then
     let original := original.toString
@@ -147,6 +148,8 @@ private def permits (owner imported : String) : Bool := Id.run do
 #guard permits "FrenFlatToLir" "FrenThirToMir"
 #guard !permits "FrenFlatToLir" "FrenEval"
 #guard !permits "FrenLirEval" "FrenHirToThir"
+#guard permits "Fren2FakeSolver" "FrenOirToSmt"
+#guard !permits "Fren2FakeSolver" "FrenCli2"
 
 private def rootOf (name : Lean.Name) : String :=
   (name.toString.splitOn ".").headD ""
@@ -235,6 +238,42 @@ private def files (root : String) : IO (Array System.FilePath) := do
     result := result ++ (← path.walkDir).filter (·.extension == some "lean")
   return result
 
+/-- Fren2's test inputs and harnesses: each directory directly under `test/`
+whose name starts with `Fren` or `fren2`. Fren1's are lowercase (`cli`,
+`ui`, `mutate`, ...), and `scripts/`, `tools/` and `.github/` are not Fren2. -/
+private def testRoots (base : System.FilePath) : IO (Array System.FilePath) := do
+  let dir := base / "test"
+  unless ← dir.isDir do return #[]
+  let mut found := #[]
+  for entry in ← dir.readDir do
+    if (← entry.path.isDir) && (entry.fileName.startsWith "Fren" || entry.fileName.startsWith "fren2") then
+      found := found.push entry.path
+  return found
+
+private def pythonScript (file : System.FilePath) : IO Bool := do
+  let h ← IO.FS.Handle.mk file .read
+  let line := ((String.fromUTF8? (← h.read 128)).getD "").splitOn "\n" |>.headD ""
+  return line.startsWith "#!" && (line.splitOn "python").length > 1
+
+/-- Python in a Fren2 source or test root: a `.py`, `.pyi` or `.pyc` file, or
+any file whose first line is a Python `#!` line. Fren2 is Lean only. -/
+private def pythonFiles (base : System.FilePath) : IO (Array String) := do
+  let mut roots := #[]
+  let mut files := #[]
+  for owner in owners do
+    let path := base / "src" / owner.replace "." "/"
+    roots := roots.push path
+    files := files ++ #["py", "pyi", "pyc"].map (path.withExtension ·)
+  roots := roots ++ (← testRoots base)
+  for root in roots do
+    if ← root.isDir then files := files ++ (← root.walkDir)
+  let mut found := #[]
+  for file in files do
+    unless (← file.pathExists) && !(← file.isDir) do continue
+    if ["py", "pyi", "pyc"].any (file.extension == some ·) || (← pythonScript file) then
+      found := found.push file.toString
+  return found
+
 /-- Boundary controls run inside the actual default layering job. The same
 checker handles synthetic inputs and each physical file in the inventory. -/
 private def qualityControls : IO (Array String) := do
@@ -292,7 +331,23 @@ private def qualityControls : IO (Array String) := do
   unless physicalLines "" == 0 && physicalLines "\n" == 1 && physicalLines "a\n\n" == 2 &&
       physicalLines "a" == 1 && physicalLines "a\r\n" == 1 do
     failures := failures.push "physical line counting boundary"
-  IO.println s!"Fren2 quality controls: {cases.length} header/line/section cases plus inventory/path/count controls"
+  -- The Python guard on a synthetic tree: Fren2 roots fail, the rest pass.
+  let tree ← IO.FS.createTempDir
+  try
+    for (path, text) in [("src/FrenAst/helper.py", ""), ("src/FrenCli2Tests.py", ""),
+        ("test/FrenResolve/deep/x.pyc", ""), ("test/fren2-verdicts/run", "#!/usr/bin/env python3\n"),
+        ("test/FrenWalking/a.fren", "mod a\n"), ("test/cli/legacy.py", ""), ("scripts/tool.py", ""),
+        ("src/FrenCore/data.py", ""), ("test/FrenParse/shell", "#!/bin/sh\n")] do
+      let file := tree / path
+      if let some dir := file.parent then IO.FS.createDirAll dir
+      IO.FS.writeFile file text
+    let found := (← pythonFiles tree).map (·.drop (tree.toString.length + 1) |>.toString) |>.qsort (· < ·)
+    unless found == #["src/FrenAst/helper.py", "src/FrenCli2Tests.py", "test/FrenResolve/deep/x.pyc",
+        "test/fren2-verdicts/run"] do
+      failures := failures.push s!"quality control python guard: found {found}"
+  finally
+    IO.FS.removeDirAll tree
+  IO.println s!"Fren2 quality controls: {cases.length} header/line/section cases plus inventory/path/count and Python-guard controls"
   return failures
 
 /-- The default layering job checks imports, actual header module mode and
@@ -312,6 +367,10 @@ def check : IO (Array String) := do
       failures := failures ++ (← checkSource owner path.toString source)
       checked := checked + 1
       if testOnly owner then standalone := standalone + 1 else production := production + 1
+  let python ← pythonFiles "."
+  for file in python do
+    failures := failures.push s!"{file}: Python in a Fren2 source or test root; Fren2 is Lean only"
+  IO.println s!"Fren2 Python guard: {python.size} Python files under Fren2 source and test roots"
   IO.println s!"Fren2 quality inventory: {checked} physical files ({production} production, {standalone} standalone tests/driver/support); Spec wrappers and FrenTestMain excluded"
   return failures
 

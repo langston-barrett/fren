@@ -4668,7 +4668,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["libraries"] => libraries
   | ["layering"] => FrenTest.Layering.check
   | ["fren2Deadlines"] => do
-    let out ← IO.Process.output { cmd := "python3", args := #["test/Fren2Driver/deadlines.py", ".lake/build/bin/fren2_test"] }
+    let out ← IO.Process.output { cmd := ".lake/build/bin/fren2_test", args := #["--fren2-deadline-controls"] }
     return if out.exitCode == 0 then #[] else #[s!"Fren2 deadline controls failed:\n{out.stdout}{out.stderr}"]
   | ["fren2", job] => do
     unless ["resolver", "resolverProperties", "walking", "walkingProperties", "typing", "typingOperators", "typingProperties", "evaluator", "evaluatorProperties", "desugaring", "mir", "mirProperties", "lir", "lirProperties", "oir", "oirControls", "oirProperties", "smt", "smtControls", "smtProperties", "definednessControls", "verdictCorpus"].contains job do
