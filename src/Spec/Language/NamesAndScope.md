@@ -2,24 +2,24 @@
 
 Name resolution connects a written name to a declaration. A *scope* is the
 set of declarations available at that occurrence. This chapter specifies
-the single-file walking subset; [HIR](../Compiler/Hir.md) describes the
+a single-file source domain; [HIR](../Compiler/Hir.md) describes the
 resolved result. The parser already accepts these forms, including names
 that will fail resolution. Parsing does not establish that a name exists.
 
-## 1. Walking domain and declarations
+## 1. Declarations and source scope
 
-The walking file starts with one `mod M` or `pub mod M`, where `M` is one
+The source file starts with one `mod M` or `pub mod M`, where `M` is one
 name. Its remaining declarations are payload-free enumerations,
 expression-bodied functions, and global expectations with typed parameters.
 Types are `Bool`, `Int` and named enumerations. Expressions are the forms
-listed in [AST and parsing](../Compiler/AstAndParsing.md#walking-subset).
-The end-to-end walking programs use non-recursive functions. Resolving a
+listed in [AST and parsing](../Compiler/AstAndParsing.md#source-forms).
+The end-to-end programs use non-recursive functions. Resolving a
 reference alone does not establish non-recursion.
 
 **Proof obligations**
 
 r[names.walking.domain]
-Resolution of this slice accepts one complete file in the walking domain
+Resolution of this source domain accepts one complete file in the source domain
 and reports unsupported module structure before treating it as resolved.
 
 r[names.collection.complete]
@@ -48,7 +48,7 @@ restriction is not the Fren2 rule. The following file must resolve even
 though the function and enumeration are used before their declarations:
 
 ```text
-pub mod walking
+pub mod signals
 pub fn use_next(l: Light): Light := next(l)
 expect forward(l: Light) { expect same: next(l) = next(l) }
 pub fn next(l: Light): Light := Light::Red
@@ -88,8 +88,7 @@ The current match patterns are qualified payload-free constructors. They
 introduce zero binders. Each arm body starts in the scrutinee's incoming
 context; a `let` inside an arm is lexical to that arm body. Payload patterns
 and their binders require a later contract extension. Reusing a parameter's
-name in a nested `let` is shadowing, not a same-list duplicate. The walking
-parser writes that name without Fren1's `!` shadowing suffix.
+name in a nested `let` is shadowing, not a same-list duplicate. The parser writes that name without Fren1's `!` shadowing suffix.
 
 For `fn f(x: Int, y: Int): Int := let x := x + y in x + y`, the value's
 context is `[y, x]`: its uses are indices 1 and 0. The body's context is
@@ -110,7 +109,7 @@ An expression path resolves its head among nearest locals, module items,
 and then the current module's own name, in that order.
 
 r[names.paths.members]
-Only a module or enumeration has path members in the walking domain; module
+Only a module or enumeration has path members in the source domain; module
 members are its collected items and enumeration members are its variants.
 
 r[names.paths.types]
@@ -122,29 +121,30 @@ An absent unqualified expression name is an error (`F0201`) at that written
 occurrence, with the message `cannot find NAME in this scope` where `NAME`
 is displayed in backticks.
 
-The current module's name provides `walking::Light::Red` as well as
+The current module's name provides `signals::Light::Red` as well as
 `Light::Red`. A nearer local named `Light` blocks `Light::Red`; it does not
 silently fall back to the enumeration. Qualification through a local or a
-function fails, and a missing variant fails. The next resolver must return
+function fails, and a missing variant fails. The resolver must return
 diagnostic data for these failures, using the established diagnostic
-catalogue; this slice assigns no new diagnostic codes. A bare `Red` is
+catalogue; this source domain assigns no new diagnostic codes. A bare `Red` is
 unknown unless it names a local or module item. There are no imports or
-opened variants in this slice.
+opened variants in this source domain.
 
 A spelling is compared exactly, including a final `?`. The parser's implicit
 `Bool` parameter annotation for `b?` remains distinct from a written
 annotation; `b?: Int` resolves its written `Int`, leaving suffix/type
 consistency to typing. Full paths such as `Int::T` are named type paths,
 not a built-in type followed by ignored text. Redefining the built-in type
-names as enumerations is outside this walking domain.
+names as enumerations is outside this source domain.
 
-## 4. Primitive facts checked today
+## 4. Name equality and nearest lookup
 
 These finite contracts isolate deciding facts. Integer atoms stand for
 names compared only for equality. The output of each procedure is
 constrained from its raw inputs; no caller-supplied "resolved" or "valid"
-Boolean is assumed. They specify primitives for the future lookup and
-collection code, without copying a tree or a resolver into Fren.
+Boolean is assumed. They define equality and nearest-slot decisions used by the local-context
+rules; the arbitrary-context closure is specified by the Lean obligation
+listed in the development coverage document.
 
 **Dynamic semantics**
 
@@ -183,12 +183,11 @@ The wrapper defines the arbitrary-context nearest-name obligation in Lean
 and proves fresh/older slot lookup facts about the existing binding core.
 The finite Fren procedures are checked contracts, not production `impl`
 bindings. Their examples establish consequences of the contracts, not that
-a future name-search function satisfies them.
+a complete name-search traversal satisfies them.
 
-## 5. Worked failures and remaining obligations
+## 5. Worked failures
 
-These isolated examples run with today's checker to pin the established
-messages. They are not executions of an implemented Fren2 resolver.
+These isolated examples pin the established messages.
 
 ```fren example
 pub mod bad
@@ -213,20 +212,5 @@ pub mod duplicate_variant
 pub enum Light { Red, Red }  --~ error: variant `Red` is defined multiple times
 ```
 
-The full lookup and traversal properties need evidence over the actual
-resolver, not a roundtrip or agreement between two copies of lookup.
-
-- [ ] Bind the future nearest-name primitive to the finite facts and the
-  wrapper's arbitrary-context law, with a genuine Lean proof where cheap.
-- [ ] Test actual collection under declaration permutations, including
-  forward type, function and expectation references and all duplicate kinds.
-- [ ] Test actual lexical traversal on parameters, nested lets, each arm and
-  siblings, including unknown names in let values and uses outside a let.
-- [ ] Use direct Plausible on actual lookup and resolution, with accepted and
-  rejected inputs and counts for successful parse, walking-domain membership,
-  duplicate-free collection and lookup-hit/miss premises. No sampled test is
-  classified as a universal proof or discharged with `impl ... by plausible`.
-- [ ] Extend this chapter before imports, multiple modules, visibility across
-  modules, payload binders, generics, recursion policy or body visibility are
-  implemented. These are remaining obligations, not prerequisites for the
-  single-file resolver.
+Implementation correspondence and proof coverage are recorded in the
+[development coverage document](../../../docs/fren2-specification-coverage.md).

@@ -1,24 +1,21 @@
-# Walking logical lowering (LIR)
+# Logical lowering (LIR)
 
 Logical lowering turns a retained program into first-order terms suitable
 for asking logical questions. It must preserve both a term's value and
 where that value is defined. Keeping only Boolean formulas would lose the
 difference between a false expectation and an undefined one.
 
-This chapter specifies the walking boundary after the actual
-[MIR producer](Mir.md). [FrenLir](../../FrenLir/Walking.lean) now provides
-first-order values and scoped verification information, and
-[FrenFlatToLir](../../FrenFlatToLir/Walking.lean) lowers the admitted walking
-fragment directly. No mono, closure or flat pass is claimed. `FrenLirEval`
-remains a stub; there is no production logical evaluator or solver backend.
-The checked primitive facts below remain independent contract tests.
+This chapter specifies the boundary after [MIR](Mir.md): first-order
+values and scoped verification information over the admitted source forms.
+These forms have neither polymorphism nor closures, so their lowering can
+proceed directly without instance or closure specialization.
 
 ## Input and retained program
 
 **Proof obligations**
 
 r[lir.walking.input]
-The walking input is a `FrenMir.Theory` returned successfully by
+The input is a `FrenMir.Theory` returned successfully by
 `FrenThirToMir.produce p`, with that success and `p.accepted` as evidence.
 An arbitrary edited theory or typed record is insufficient. Unsupported
 inputs remain explicit failures, never silently erased expressions.
@@ -27,12 +24,10 @@ The admitted source has Bool, mathematical Int, nominal payload-free enums,
 nonrecursive named expression-bodied functions and global expectations.
 Bodies have the existing literals, resolved names, parentheses, unary and
 binary operators, calls, lets, conditionals and exhaustive constructor
-matches. The [desugaring boundary](Desugaring.md) is currently an identity.
+matches. The [desugaring boundary](Desugaring.md) is an identity.
 There are no type parameters, function-valued parameters or closures here;
-this slice neither implements nor pretends to run the full instance,
-closure-specialization and match-compilation pipeline of the
-[compiler overview](Overview.md). A walking implementation may lower these
-already first-order MIR bodies directly, with an explicit boundary.
+these already first-order MIR bodies may be lowered directly without
+instance or closure specialization.
 
 r[lir.walking.retention]
 The resulting program retains ordered nominal enum declarations, function
@@ -50,7 +45,7 @@ Arithmetic and precedence retain their existing meanings. The pure fragment's
 [declarative verification policy](../Language/Expressions.md) governs source
 obligations independently of the concrete evaluator's execution strategy.
 
-The walking logical vocabulary needs typed local variables, literals and
+The logical vocabulary needs typed local variables, literals and
 nominal constructor constants, first-order symbol applications, primitives,
 conditionals (`ite`), constructor tests and scoped local lets. Exhaustive
 matches can become constructor tests and conditionals, provided the selected
@@ -120,7 +115,7 @@ unspecified symbolic value, which cannot discharge its obligation.
 - An explicit conditional retains its condition's obligations and both
   written branches, under the condition and its negation respectively.
   A match likewise retains each written arm under its constructor context.
-  Only these explicit scopes guard obligations in the walking grammar.
+  Only these explicit scopes guard obligations in the source grammar.
 
 Thus ordinary `a and b` and `a or b` both have
 `WD(a) and WD(b)`. A conditional has `WD(c)` together with
@@ -130,17 +125,16 @@ unused binding does not remove `WD(value)`. An unguarded conjunction of
 both conditional branches' obligations is wrong, as is guarding an ordinary
 Boolean right operand by the left value.
 
-The current walking grammar has no local assert/assume expressions or
+The current source grammar has no local assert/assume expressions or
 subset syntax. For the existing check blocks, assumptions, goals, parameter
 contexts and their independent verification roots remain explicit IR data.
 Future assertion and subset introduction/coercion predicates use the same
 scoped mechanism: preserve the obligation and applicable assumptions until
 condition generation, without unconditional global hoisting. A parameter's
 established subset predicate may become a scoped body assumption; the
-introduced value's predicate must first be proved. These forms are not
-implemented or silently admitted by this slice.
+introduced value's predicate must first be proved. These forms are outside the admitted source grammar.
 
-The raw [walking evaluator](Evaluator.md) uses a lazy value strategy.
+The raw [value evaluator](Evaluator.md) uses a lazy value strategy.
 Its outcome on one input does not determine which verification obligations
 exist. In particular, a concrete value from an unused partial let or a
 skipped Boolean operand does not establish source well-definedness.
@@ -184,8 +178,8 @@ symbols. Sharing `x + 1` from one function or let context in a global table
 would lose its binding. Closed sharing must not hoist a partial operation's
 obligation out of its explicit guard. Acyclic references permit finite
 expansion; expansion and local-let substitution must preserve values and
-verification contexts, not just textual equality. Sharing is optional in the first walking
-implementation; emitting no table is preferable to an unsound one.
+verification contexts, not just textual equality. Sharing is optional;
+a program without a sharing table still satisfies these rules.
 
 r[lir.walking.attribution]
 Lowering and sharing are deterministic in declaration and child order.
@@ -200,7 +194,7 @@ be delivered with the actual representation.
 
 ## Retained example
 
-This small program lies in the walking source fragment. The goal appears
+This small program lies in the source fragment. The goal appears
 before its assumption deliberately.
 
 ```fren
@@ -232,9 +226,9 @@ Removing `bounded` admits `l = Light::Red, base = 101`, which falsifies
 ## Checked primitive facts
 
 The following independent facts catch reversed counterexample polarity,
-wrong branch guards and wrong value domains. They use today's Fren1 checker;
+wrong branch guards and wrong value domains. They are checked independently;
 there is no Fren IR, executable pass model or production `impl` binding here.
-The procedure and `when` syntax do not extend walking admission.
+The procedure and `when` syntax do not extend source admission.
 
 **Dynamic semantics**
 
@@ -285,65 +279,5 @@ control: `assumption? = true, goal? = false` refutes it. Removing the
 `not` before `selected?` in `then_guard` is refuted at `selected? = false,
 d = 0`. These are primitive counterexamples, not Fren2 solver models.
 
-## Actual-producer evidence and remaining laws
-
-[Producer laws](../../FrenFlatToLir/Walking.lean) prove actual admission,
-retention of the complete MIR and typed source, determinism, rejection
-propagation and success of the output scope/retention checker. The latter
-includes Boolean declaration/request retention certificates; it is not a
-proof of their equality from unproved lawful-equality instances.
-[Combinator laws](../../FrenLir/Walking.lean) prove the actual branch, let,
-ordinary-operator and call domain equations, including both Boolean operands
-and unused definitions. The retained `Verification` tree is the source of
-the formula summary; no independently supplied definedness bit is accepted.
-[Direct Plausible
-properties](../../FrenFlatToLirTests/Properties.lean) exercise the actual
-producer on mandatory admitted, rejected and partial classes, with explicit
-premise counts and independent arithmetic/request expectations. Native
-controls retain nominal identities, owned request roots and lexical origins,
-and kill source, domain and retention mutants.
-
-The universal laws below remain obligations, beyond those checked facts.
-
-For every `p : FrenThirDesugar.Program` and `t : FrenMir.Theory` with
-`FrenThirToMir.produce p = .ok t`, the logical-lowering producer must
-succeed on this walking domain and return a well-formed program satisfying
-the retention, requests, verification and sharing rules above.
-For every retained value body or occurrence, in its recorded lexical
-context, relate source and logical environments slot by slot at their
-actual Bool, Int or canonical enum types. Under corresponding definition
-interpretations and environments, declarative source obligations and LIR
-verification information must correspond in both directions. Where those
-obligations hold, values must correspond at the recorded result type. Raw
-interpreter comparisons additionally require sufficient operational depth;
-their undefinedness is not the source verification judgment. Lets require
-exact scoped value/domain bindings, not just lists of unscoped values.
-
-After the applicable definedness obligations are accounted for, assumption
-satisfiability and each owned validity question must agree in both
-directions over the same parameter domains. This includes empty blocks,
-contradictory assumptions, assumptions after goals, nominal enums, unused
-definitions and the declarative regressions above. These are laws about the
-actual eventual producer and evaluators, not universal simulation theorems
-proved by the six primitive facts.
-
-- [x] Implement the walking representation and producer, with actual-code
-  structural laws, direct Plausible over admitted, rejected and partial inputs,
-  reported premise counts and independent native verification/context controls.
-- [ ] Establish whole-term value, definedness and request preservation,
-  beyond the actual static-scope audits and negative controls already tested.
-- [ ] Restate these laws in Fren when recursive typed syntax, scoped
-  outcome environments and recursive evaluation judgments can be expressed
-  against the real code. No general quantifier or recursive-unfolding model
-  is needed to deliver this nonrecursive walking slice.
-
-The next OIR step must generate conditions from the retained scoped
-verification information, separating each goal from its active assumptions
-and branch guards. It must follow the existing
-[definedness hypotheses](../../Reqs/Check.md#definedness),
-including other assumptions when checking an assumption, rather than let
-an undefined predicate disappear as false. Solver translation, Sat/validity
-polarity, limits, unknown results and source-model confirmation then need
-their own actual-path evidence. This chapter does not deliver OIR condition
-generation, recursive unfolding, general quantifier expansion, an SMT
-backend or a completed S1 solver result.
+Implementation correspondence and proof coverage are recorded in the
+[development coverage document](../../../docs/fren2-specification-coverage.md).

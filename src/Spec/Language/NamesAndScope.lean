@@ -10,7 +10,7 @@ open Fren.Lang
 
 namespace Spec.Language.NamesAndScope
 
-/-- Obligation for the planned actual nearest-name search. The result must
+/-- Relation for actual nearest-name search. The result must
 identify the first equal spelling, not merely an in-bounds slot. This defines
 requirements and supplies no search implementation or universal proof. -/
 def NearestName (find : List String → String → Option Nat) : Prop :=

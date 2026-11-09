@@ -1,4 +1,4 @@
-# Walking obligations (OIR)
+# Obligations (OIR)
 
 Obligation generation turns retained verification information into logical
 questions. A question records what must hold, under which assumptions and
@@ -6,12 +6,10 @@ branch guards, for which parameters, and at which source occurrence. Keeping
 only a Boolean goal would lose the difference between an undefined assumption,
 contradictory assumptions, an undefined goal and a false goal.
 
-This chapter specifies the next boundary after [logical lowering](Lir.md).
-The actual `FrenLir.Program` and its scoped verification trees feed
-`FrenLirToOir.produce`, which now generates `FrenOir.Program` questions from
-an accepted walking source witness through the real LIR producer. No solver
-backend or completed S1 solver result is delivered here. The small checked
-facts below constrain logical primitives independently of extraction.
+This chapter specifies obligation generation from [logical lowering](Lir.md).
+Its input is an admitted program with scoped verification information.
+Its output is contextual questions, with domains and prerequisites retained.
+Solver answers and source confirmation have separate rules below.
 
 ## Input and questions
 
@@ -19,7 +17,7 @@ facts below constrain logical primitives independently of extraction.
 
 r[oir.walking.input]
 The input is an actual successful `FrenFlatToLir.produce p` result, together
-with that success and the accepted walking source witness. An arbitrary
+with that success and the accepted source witness. An arbitrary
 edited `Program`, or a successful scope audit alone, is insufficient.
 
 The admitted fragment has Bool, mathematical Int, nominal payload-free enums,
@@ -60,7 +58,7 @@ Free parameters in a solver search range existentially over their complete
 typed domains. Bool has two values, Int all integers, and each enum exactly
 its own canonical constructors. The empty conjunction is true. The empty
 parameter tuple has one assignment. These domains are inhabited in this
-walking fragment, so an empty block's Sat question succeeds mathematically.
+source domain, so an empty block's Sat question succeeds mathematically.
 Contradictory assumptions make validity vacuous and Sat fail; a vacuous
 validity result cannot establish a successful block.
 
@@ -86,7 +84,7 @@ domains are unspecified and cannot discharge these conditions.
 The existing [definedness hypotheses](../../Reqs/Check.md#definedness)
 permit the other assumptions when checking an assumption; its own value is
 excluded. A global expectation's goal uses its block assumptions, never
-itself or sibling goals. A walking function body has no written
+itself or sibling goals. A function body has no written
 preconditions, hence no block hypotheses: its written domain obligations
 must be checked over its own parameters, even when the function is unused.
 Definitions supply value and domain equations for their actual bodies, not
@@ -114,9 +112,8 @@ a separately proved simultaneous rule; this chapter chooses neither. It does
 not silently replace the legacy rule with unconditional definedness of every
 assumption over all parameters. A consumer lacking that rule must retain the
 questions and report the affected result unresolved/unsupported, with the
-reason, rather than claim a verified block. Tests of total assumptions cannot
-close this gap. This is a pending part of OIR semantics, not a new source
-feature or separate crossover gate.
+reason, rather than claim a verified block. The supported domain excludes a verified result for this unresolved class.
+The development coverage document records the remaining semantic obligation.
 
 ## Static traversal, guards and bindings
 
@@ -172,13 +169,13 @@ the source policy. Closed term sharing may share formulas, but must preserve
 the distinct diagnostic occurrences, guards and dependency edges. Emit
 questions deterministically in declaration and child order, not hash order.
 
-Scoped assume/assert expressions and subset conditions are future consumers
+Scoped assume/assert expressions and subset conditions are consumers
 of this interface, as specified in [Expressions](../Language/Expressions.md).
 They retain local assumptions and asserted predicates until extraction;
 assertions require proof, and subset introduction/coercion requires proving
 the predicate for the introduced value. An already-established parameter
 predicate may be a scoped body hypothesis. None of these forms is admitted
-by the current walking grammar or implemented by this chapter.
+by the source grammar defined here.
 
 ## Answers and source confirmation
 
@@ -218,12 +215,12 @@ checks. Unsupported or exhausted confirmation leaves a candidate unconfirmed,
 with its reason; it cannot become a source failure or pass. Finite model
 confirmation validates that assignment, not a universal preservation theorem.
 
-## Checked primitive facts
+## Logical primitives
 
 These independent Fren1 facts specify truth-table and quantifier primitives.
 They do not copy an IR, implement extraction, take a precomputed pass decision
 as input, or bind a nonexistent producer with `impl`. The procedure and
-quantifier syntax below do not extend walking admission.
+quantifier syntax below do not extend source admission.
 
 **Dynamic semantics**
 
@@ -263,72 +260,5 @@ with `selected?` on the right of `then_guard` is false at
 `selected? = false, d = 0`. These controls must actually fail the checker;
 their counterexamples are primitive Fren1 results, not Fren2 solver models.
 
-## Actual producer evidence and remaining laws
-
-`FrenLirToOir.retains_lir`, `admission`, `retains_source` and `scoped_input`
-prove that successful production retains actual admitted, well-scoped LIR;
-`deterministic` and `lowering_rejected` constrain the real entry point.
-`retained_equations` proves that every function keeps its actual equations.
-`walk_empty`, `walk_check`, `walk_both`, `walk_branch`, `walk_binding` and
-`walk_at` state equations for all actual traversal constructors.
-`FrenOir.scoped_binding`, `scoped_guard` and `search_counterexample` constrain
-scope reconstruction and the negated-condition search formula. These local
-laws do not prove a whole-pass source correspondence.
-
-The producer retains complete typed domains, actual definition value/domain
-equations, ordered requests, per-occurrence paths, interleaved lexical frames
-and question/definition dependency edges. Free parameters are total values of
-their declared domains; their LIR local-domain components mean true. A
-conservative structural domain check recognizes independently total
-assumptions, including parameter comparisons. Their trivial domain questions
-need no hypotheses. Partial assumptions retain the other assumptions and
-explicit edges to their checks. When those others are also partial, the
-questions and dependent requests carry an unresolved reason. `ready` means
-this dependency rule is supported, not that any question has been proved.
-Guard and binding entries conservatively depend on earlier checks in their
-body; these edges are prerequisites, never Boolean premises. No aggregate
-verification success is produced.
-
-The native `oir`, `oirControls` and `oirProperties` jobs exercise actual
-source production. The fixed source checks unused functions, both Boolean
-operands, lets and shadowing, calls and actual equations, nominal match
-guards, later assumptions, empty/contradictory blocks and unresolved mutual
-partiality. Direct Plausible runs 100 samples with mandatory admitted,
-partial, contradictory and rejected classes and no discarded premises; a
-19-source census records the same classes. Independent negative controls
-remove a question, change an owner/origin or local slot, add an ordinary
-operand guard, move a let check, insert the goal as a premise, flip polarity
-and remove equations. Missing and wrong-origin obligations remain well-sorted
-but fail the source controls. Finite formula observations use the existing
-test-only LIR observer, not extraction as their oracle or a solver backend.
-
-The checked test item below is finite evidence. All eight `oir.walking.*`
-rules still require universal actual-pass laws; neither the primitive facts
-nor these tests prove the unchecked statements:
-
-- [ ] For every actual successful admitted LIR production, extraction either
-  produces well-formed contextual questions for every retained verification
-  occurrence and MIR request, or reports the exact unsupported boundary.
-  Establish the partial-assumption dependency rule before claiming success
-  for that class of inputs.
-- [ ] Prove both directions of correspondence between those questions and
-  declarative source obligations, under related typed environments and actual
-  definition interpretations. Preserve let substitution, explicit guards,
-  unused bodies, ordinary operands, owners and every diagnostic occurrence.
-- [ ] Prove that after independently established applicable domains, each
-  owned Sat and validity request agrees in both directions with the formulas
-  above over the complete parameter domains. Never infer validity from its
-  own goal or consistency from bounded search.
-- [x] Test the actual producer directly, with premise counts for admitted,
-  partial, contradictory and unsupported classes. Delete a check, use the
-  wrong owner or slot, guard an ordinary operand, move a let check, insert a
-  goal as a premise and flip counterexample polarity as negative controls.
-- [ ] Bind solver translation and later source-model confirmation to the
-  actual code, retaining unknown and exhaustion. Restate recursive scoped
-  laws in Fren when it can express them against that code. No copied Fren
-  pass model or plausible-only `impl` substitutes for these laws.
-
-The existing MIR request laws and LIR constructor equations establish useful
-retention and local structure. They are not OIR extraction proofs. This
-chapter leaves universal extraction and pipeline soundness to later units;
-the producer evidence above establishes the current implementation boundary.
+Implementation correspondence and proof coverage are recorded in the
+[development coverage document](../../../docs/fren2-specification-coverage.md).

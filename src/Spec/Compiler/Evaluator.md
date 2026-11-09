@@ -1,11 +1,11 @@
-# Walking evaluation
+# Evaluation
 
 Evaluation gives a concrete meaning to an expression for a particular choice
-of its inputs. This chapter specifies the walking subset of
+of its inputs. This chapter specifies the source domain of
 [typed syntax](Thir.md). It does not decide whether a property holds for
-all inputs. It describes the implemented raw
-value-debugging strategy, not the pure fragment's declarative source
-verification policy in [Expressions](../Language/Expressions.md).
+all inputs. It defines the concrete value-debugging strategy.
+[Expressions](../Language/Expressions.md) separately defines declarative
+source verification.
 
 ## Inputs and outcomes
 
@@ -14,7 +14,7 @@ verification policy in [Expressions](../Language/Expressions.md).
 r[evaluator.input.boundary]
 The input module is an actual successful `checkWalking` or
 `checkWalkingSource` result, or a typed value with evidence of actual
-successful typing and walking validation. An arbitrary edited `Typed` record
+successful typing and coverage and non-recursion validation. An arbitrary edited `Typed` record
 is not such evidence. The expression is a value-typed retained body or
 occurrence in that module, evaluated in its corresponding lexical context. A callable designator supplies
 the resolved signature and body for a call; it is not itself a value or an
@@ -90,7 +90,7 @@ at this boundary.
 
 These independent contracts fix operand order and distinguish addition from
 subtraction. They constrain mathematical results; they are not an executable
-model of the walking evaluator.
+model of the value evaluator.
 
 **Dynamic semantics**
 
@@ -145,20 +145,20 @@ pub proc right_demand(op: BooleanOp, left?): (needed?) {
 #fren_check
 ```
 
-For the walking example with `Light { Red, Amber, Green }`, `next(Amber)`
+For the example with `Light { Red, Amber, Green }`, `next(Amber)`
 evaluates to `Red`, and `wait(Red, 70)` evaluates to `100`. At `l = Amber`,
 `next(l) != Light::Red` evaluates to false. These are concrete evaluations,
 not claims that a solver has found or delivered a counterexample.
 
-## Scope and evidence
+## Supported values and verification
 
 This contract covers Bool, Int, payload-free nominal enums, locals, let,
 if, constructor matches, nonrecursive named calls and the operators in the
-walking typing table. It makes no claim about recursive calls, payload
+typing table. It makes no claim about recursive calls, payload
 patterns, first-class functions, other types, effects or unsupported syntax.
 Only selected branches and demanded Boolean right operands are visited;
 let-definition outcomes are stored without propagating failures at binding.
-Static checking still visits all written expressions. The actual walking grammar
+Static checking still visits all written expressions. The actual source grammar
 and static boundary determine which programs can reach this contract. A full
 verification-aware debugger must also check applicable executable obligations
 or report unresolved predicates. The current raw `FrenEval` result alone
@@ -166,98 +166,9 @@ performs no such discharge; LIR now retains this information separately.
 Conditions proved by verification may be erased for value evaluation.
 
 The identity [desugaring stage](Desugaring.md) already preserves these
-raw outcomes. A future transformation must establish its own value
+raw outcomes. Each transformation must establish its own value
 correspondence under the required well-definedness premises, independently
 of completeness of its retained source verification information.
 
-- [x] Check the small arithmetic and demand contracts independently with Fren.
-- [x] Implement the walking evaluator on actual admitted typed syntax in
-  `FrenEval`, with actual-code arithmetic and outcome boundary laws in Lean.
-- [x] Exercise actual code with direct Plausible and concrete controls on
-  accepted, rejected, undefined and invalid inputs, with premise counts.
-- [ ] Prove universal traversal soundness, result completeness and definedness
-  correspondence; the output type check and finite controls do not prove these.
-- [ ] Establish the future desugared THIR correspondence when that producer
-  and evaluator exist.
-
-## Implemented walking boundary
-
-`FrenEval.Program` stores the actual `Typed` value and proof that
-`checkWalking input = .ok typed`. `fromResolved` runs that producer;
-`fromSource` runs the real parser and resolver before it. `fromTyped` requires
-proof of actual typing before running walking validation. An edited record
-or a supplied Boolean cannot create this evidence. `Program.retains`,
-`Program.static` and `fromResolved_success` bind this boundary to the actual
-producer and its retained document, coverage and non-recursion results.
-
-`evaluate` selects a retained body by canonical owner and optional member
-label. Its positional concrete arguments must match the body's parameters;
-they are reversed into the existing nearest-first context. Enum inputs must
-name an actual declared constructor of their recorded canonical owner.
-The interpreter walks the existing syntax and resolved references, using
-typed callable occurrences to enter a named body with only its arguments.
-There is no second syntax tree, executable Fren pass model or solver call.
-The result retains the original body and complete check member, including
-whether it is an assumption or expectation, its label and its source spans.
-Clients must keep assumptions when interpreting check assignments.
-
-An outcome is a concrete `Value`, semantic `Failure.undefined` (zero divisor),
-`Failure.exhausted`, or an invalid/unsupported diagnostic. Missing requests
-are invalid; bad arguments are invalid outcomes associated with the retained
-body. These failures carry source spans and details; undefinedness also
-retains its operator. They are never converted to false or a solver verdict.
-
-The total implementation uses the static walker's depth approach: each
-visited expression, including entry into a callee body, consumes one unit.
-Siblings receive the same remaining depth; the bound does not count total
-steps. Let definitions are computed once in the incoming environment at the
-let's remaining depth and stored as complete outcomes, without a thunk or
-closure machine. Reading a slot consumes the name's unit and returns that
-stored outcome; it does not reevaluate the definition at the use site's depth.
-An unused slot's undefined, exhausted, invalid or unsupported outcome does
-not escape. A read returns that exact outcome and its original diagnostic.
-Thus an unused definition may still cost work. A definition exhausted at
-binding depth remains exhausted at every read; slot reads do not retry it.
-Skipped `and`/`or` right expressions consume no depth or evaluation work.
-`defaultDepth` multiplies the largest body token count plus one by the function
-count plus one. Callers may supply another depth, including
-zero. Exhaustion is explicitly separate from semantic undefinedness. No
-theorem currently proves that this default suffices for every admitted
-program, or bounds total execution time, memory or integer magnitude.
-
-`binary_add`, `binary_sub`, `binary_mul`, `binary_div`, `binary_mod`,
-`div_zero`, `mod_zero` and `euclidean` prove the actual primitive arithmetic
-decisions. The independent Fren contract above remains checked separately;
-changing its addition to subtraction must fail. Native controls also mutate
-operators in actual admitted source and require the changed concrete results.
-`evaluate_selected` proves retained body selection, `evaluate_type` proves
-that a returned value matches the retained body's type and constructor
-inventory, and `evaluate_deterministic` proves uniqueness at fixed depth.
-The type theorem follows from an explicit output check, not a universal
-preservation proof of the recursive interpreter.
-
-`walk_and_false` and `walk_or_true` prove the current strategy's deciding-left facts
-about the actual recursive walker for every right expression. `walk_let`
-proves its outcome-binding equation at explicit depth, and `walk_local`
-proves exact retrieval of any stored outcome. `walk_strict_failure` preserves
-complete demanded right failures; `shortCircuit_strict` excludes every other
-operator from skipping. The wrapper also checks admitted source against
-independent lazy-let and Boolean outcomes. These laws and regressions close
-the earlier concrete strategy regression. They do not establish declarative
-source-obligation completeness, universal value correspondence or completeness
-at `defaultDepth`.
-
-Direct Plausible generates source programs and concrete values, then runs
-the real producer and evaluator. Every source sample requires defined,
-undefined, invalid, exhausted and rejected cases; no failed premise is
-discarded. The separate fixed census reports each class explicitly. These
-tests include S1's three concrete results above, unused/used/guarded lets,
-lexical shadowing, skipped/demanded `and`/`or` operands, strict `iff`, equality,
-inequality and calls, both check-member roles, depth controls, nominal input
-rejection and operator mutation sensitivity. The 24-source evaluator census
-requires 216 defined and 120 undefined outcomes, 96 invalid arguments, 24
-exhaustions, 120 rejected sources, 24 rejected edited producers and 24 operator
-mutants, with no discarded premises. These remain finite evidence.
-
-- [ ] Restate recursive evaluation and its correspondence laws in Fren once
-  Fren2 can express recursive syntax and judgments, without copying the IR.
+Implementation correspondence and proof coverage are recorded in the
+[development coverage document](../../../docs/fren2-specification-coverage.md).

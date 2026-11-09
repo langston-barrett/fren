@@ -1,11 +1,10 @@
-# HIR and walking name resolution
+# HIR and name resolution
 
 The high-level intermediate representation (HIR) keeps surface expressions
 but replaces each name use with its declaration. It sits between the
 [structured AST](AstAndParsing.md) and type checking. This chapter specifies
-the next single-file AST-to-HIR resolver, using the
-[walking scope rules](../Language/NamesAndScope.md). It supplies a contract,
-not an implementation of that resolver or of the complete compiler pipeline.
+single-file AST-to-HIR resolution, using the
+[scope rules](../Language/NamesAndScope.md).
 
 ## 1. Input and result boundary
 
@@ -18,7 +17,7 @@ canonical item identities and nearest-first raw-index contexts.
 **Proof obligations**
 
 r[hir.input.complete]
-The resolver consumes a successful file AST in the walking domain, not a
+The resolver consumes a successful file AST in the source domain, not a
 parse failure, an expression root or a partial syntax tree.
 
 r[hir.result.boundary]
@@ -28,12 +27,11 @@ a result containing an unresolved name is not a successful resolved module.
 A caller must supply the actual parsed document. Fabricated documents need
 syntax validation before this boundary. The minimal public operation is a
 function from that document to success or diagnostic failure, with no
-caller-supplied resolution table or validity verdict. Its concrete Lean
-names and storage layout are for the implementation unit. It need not
+caller-supplied resolution table or validity verdict. Its storage layout does not decide resolution. It need not
 provide error recovery, a serializer, a generic pass framework or an API for
 another module's private bodies. The typed textual-context adapter is
-already a parser client; resolving moduleless contexts with an externally
-supplied module is a later API extension.
+a parser client; moduleless resolution with an externally supplied module
+is outside this input domain.
 
 ## 2. Minimal resolved information
 
@@ -51,7 +49,7 @@ or a source-indexed result with complete resolved occurrence information.
 | Parameter | Written name and span, resolved annotation, and whether `Bool` was implicit from `?`. |
 | Type reference | Built-in `Bool`, built-in `Int`, or canonical enumeration identity, with its written occurrence. |
 | Expression reference | Canonical item identity or natural local index, with its written path and span. |
-| Match arm | Resolved constructor identity and body; no pattern binders in this slice. |
+| Match arm | Resolved constructor identity and body; no pattern binders in this source domain. |
 | Other expression forms | Original literal values, operators, child structure and child order. |
 
 The output keeps `if`, `let`, `match`, calls and parentheses; it does not
@@ -88,9 +86,9 @@ typing. The resolver must not treat an expectation label as a local value.
 
 ## 3. Identity and source occurrences
 
-Canonical item identity is already implemented by `FrenBase.ItemId.named`.
-For module `walking`, enumeration `Light` and variant `Red`, the components
-are `[walking, Light, Red]`, not the last segment alone. Display strings
+Canonical item identity uses `FrenBase.ItemId.named`.
+For module `signals`, enumeration `Light` and variant `Red`, the components
+are `[signals, Light, Red]`, not the last segment alone. Display strings
 are not identity keys. Local slot identity is contextual: adding a binder
 moves an older reference from index `i` to `i + 1`.
 
@@ -122,14 +120,13 @@ use retained occurrences even when semantic nodes compare equal.
 
 ## 4. Pass laws and primitive facts
 
-The full pass laws concern the future actual `FrenAstToHir` code. They are
-not checked by defining an executable Fren resolver, by assuming a supplied
-`resolved?` flag, or by roundtripping a serialized HIR.
+The full pass laws concern actual `FrenAstToHir` decisions. A supplied
+`resolved?` flag or a serialization roundtrip does not establish them.
 
 **Proof obligations**
 
 r[hir.laws.collection]
-On a duplicate-free walking file, collection enumerates exactly its module
+On a duplicate-free source file, collection enumerates exactly its module
 items and constructors before resolving any use.
 
 r[hir.laws.lookup]
@@ -147,8 +144,7 @@ observable declarations and diagnostics in source order.
 A well-scoped result alone is insufficient: choosing the wrong in-scope
 slot can capture a reference. The wrapper's `NearestName` obligation in the
 Language chapter states first-match selection independently of bounds.
-The HIR wrapper proves canonical child identity injectivity using the real
-`ItemId` API. These are foundations, not proofs of this pass's traversal.
+Canonical child identity injectivity does not establish traversal correctness.
 
 **Dynamic semantics**
 
@@ -186,20 +182,18 @@ pub proc child_identity(parent: Int, name: Int, other_parent: Int, other_name: I
 Parent and name integers are equality atoms for this primitive table. They
 are not hashes, serialized paths or a second item representation. In
 particular, equal hash values do not establish equal parent identities.
-There is no `impl` binding of the future resolver in this slice.
 
-## 5. Walking cases and the typing boundary
 
-These expected results are acceptance cases for the next resolver unit.
-The wrapper checks that their syntax is accepted by the existing parser;
-it does not claim their resolution has run.
+## 5. Resolution cases and the typing boundary
 
-| Source fragment in module `walking` | Required resolution result |
+These examples illustrate required name-resolution decisions.
+
+| Source fragment in module `signals` | Required resolution result |
 | --- | --- |
-| `use_next(l: Light)` calls later `next(l)`; `Light` is declared last | Both type uses select `walking::Light`; the call selects `walking::next`. |
+| `use_next(l: Light)` calls later `next(l)`; `Light` is declared last | Both type uses select `signals::Light`; the call selects `signals::next`. |
 | `f(x: Int, y: Int)` has `let x := x + y in x + y` | Value indices `[1, 0]`; body indices `[0, 1]`. |
 | `let fresh := fresh in fresh`, with no outer/item `fresh` | Failure on the value's `fresh`, not success from the body's binder. |
-| `Light::Red` and `walking::Light::Red` | Same constructor identity. |
+| `Light::Red` and `signals::Light::Red` | Same constructor identity. |
 | `Signal::Red` alongside `Light::Red` | Different constructor identities. |
 | Bare `Red`, with no declaration of that name | Unknown-name failure. |
 | Two module items named `Light`, even of different kinds | Duplicate failure, no successful HIR. |
@@ -220,34 +214,10 @@ pub fn f(l: Light): Int := l + 1  --~ error: type mismatch: expected `Int`, foun
 Resolution succeeds with `l` at index 0 and result annotation `Int`.
 Typing subsequently reports `F0304`; resolution does not reject the `+`
 merely because it can see the enumeration annotation. This checked example
-pins today's established type diagnostic, not a Fren2 type-checker result.
+pins the established type diagnostic.
 An empty or incomplete match can likewise resolve every written reference
 before exhaustiveness fails. A fully resolved false expectation still needs
 lowering and a solver verdict. No result here establishes those phases.
 
-## 6. Remaining implementation evidence
-
-- [ ] Implement only the walking resolved interface and actual collection and
-  traversal in `FrenAstToHir`, then state the pass laws over those concrete
-  APIs in Lean or bind expressible uninterpreted Fren laws with genuine
-  `impl` proofs. Reuse `ItemId` and the binding core.
-- [ ] Run direct Plausible on actual code, including unknown, duplicate,
-  ill-typed-but-resolvable and partial inputs. Report premise counts for
-  successful parsing, walking shape, duplicate-free collection, lookup
-  success/failure and in-scope indices; rejection must not make a law vacuous.
-- [ ] Add textual resolver cases for every row above, both qualified path
-  spellings, missing members, blocked qualifiers, parameter and member-label
-  duplicates, annotation forward references, span retention and deterministic
-  source-order failure reporting. Test deliberate wrong-slot, let-value and
-  sibling-leak controls. Prove simple collection/lookup lemmas where cheap.
-- [ ] Keep recursion validation, dependency SCCs, imports and module DAGs,
-  cross-module visibility and body access, generics, payload patterns, full
-  HIR serialization and the remaining compiler passes for later slices.
-  Self and mutual references may resolve to collected item identities;
-  success is not permission to evaluate recursion or a recursion proof.
-
-The checked primitives establish independent scope and identity facts. The
-wrapper's parser controls establish input availability and a source anchor.
-Whole-pass semantic correctness, alpha-invariance and source preservation
-remain obligations until tested or proved over the actual resolver. No
-recursive Fren feature or general generator framework is needed to start it.
+Implementation correspondence and proof coverage are recorded in the
+[development coverage document](../../../docs/fren2-specification-coverage.md).

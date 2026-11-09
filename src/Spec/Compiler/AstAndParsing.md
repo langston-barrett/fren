@@ -6,9 +6,9 @@ that tools can reproduce the source and locate each occurrence. Name
 resolution and type checking produce later intermediate representations
 (IRs); parsing alone establishes neither meaning nor validity of a check.
 
-## Walking subset
+## Source forms
 
-The initial parser supports modules, public declarations, payload-free
+The source grammar includes modules, public declarations, payload-free
 enumerations, non-recursive expression-bodied functions, and global
 expectations with typed parameters and labelled `assume` and `expect`
 members. Types are `Bool`, `Int` and named enumerations. Expressions include
@@ -22,7 +22,7 @@ For example, these declarations exercise ordered variants, match arms,
 argument lists, nested calls and labelled checks:
 
 ```fren
-pub mod walking
+pub mod signals
 
 pub enum Light { Red, Amber, Green }
 
@@ -67,7 +67,7 @@ operator's operand likewise requires parentheses, as in
 `a and (let x := true in x)`. Repeated `not not b` is valid. `if` and `match`
 are atoms and do not acquire these restrictions.
 `iff` does not associate: write `(a iff b) iff c` or `a iff (b iff c)`.
-This walking slice has binary comparisons only. Unparenthesized comparison
+This source grammar has binary comparisons only. Unparenthesized comparison
 chains, including the full language's `a < b <= c`, are unsupported rather
 than parsed as nested binary operators. Explicitly parenthesized comparisons
 remain syntax trees whose operand types are checked later.
@@ -147,15 +147,14 @@ entry categories select grammar roots, not independent parser implementations.
 
 A *token* is a written identifier, keyword, literal or punctuator. *Trivia*
 is text between tokens: spaces, tabs, line endings and comments. The
-walking identifiers start with an ASCII letter or `_`, followed by ASCII
+identifiers start with an ASCII letter or `_`, followed by ASCII
 letters, digits or `_`, with an optional final `?`. Fren's reserved words
 remain reserved even when their constructs are unsupported: `proc` and
-`forall` are not names in this slice. Contextual `assume` is an ordinary
+`forall` are not names in this source domain. Contextual `assume` is an ordinary
 name outside an expectation member's keyword position. `Bool`, `Int`,
 `true`, `false` and `not` are interpreted at their type, literal or operator
 positions, rather than globally reserved from name positions. This does not
-add the constructs or broader lexical forms deferred below. The walking
-slice includes `--` line comments ending before LF or CRLF, or
+admit additional lexical forms. The source grammar includes `--` line comments ending before LF or CRLF, or
 at EOF. LF and CRLF retain their original bytes. A keyword is recognized only
 at a token boundary: `next_step` is one identifier. Punctuators use longest
 matching spelling, so `<=`, `!=`, `:=`, `=>` and `::` are not split into
@@ -205,7 +204,7 @@ For decoded UTF-8 text, token, trivia and parse-diagnostic endpoints lie on
 character boundaries, with EOF at the byte length; ingestion rejects invalid
 UTF-8 bytes before constructing the text AST, without replacement decoding.
 
-The walking parser consumes decoded text. Invalid bytes are an ingestion
+The parser consumes decoded text. Invalid bytes are an ingestion
 failure, not a successful parse. A diagnostic for invalid encoding may
 identify the offending raw byte range. No editor column or UTF-16 offset
 is substituted for a byte offset; conversion occurs at the editor boundary.
@@ -234,7 +233,7 @@ r[parsing.diagnostic.anchor]
 A syntax diagnostic identifies the first unexpected token, rejected character or EOF where
 required syntax is missing, and describes the expected form.
 
-This slice requires a primary diagnostic; additional recovery diagnostics
+This source grammar requires a primary diagnostic; additional recovery diagnostics
 are optional but deterministic and in source order. Missing `}` or an arm
 ending at `=>` reports EOF with the empty span `[size, size)`. An extra `}`
 after a valid declaration reports that token. `pub fn f(` and an incomplete
@@ -243,8 +242,7 @@ retained as rejected text and diagnosed at its byte span. These malformed
 and truncated inputs must be supported as failures, including comment-only
 expression input. Recovery nodes, if provided, explicitly distinguish missing
 syntax from written tokens and own no invented bytes. Incremental parsing,
-editor completion and useful recovery trees are future extensions, not
-requirements to implement a second tolerant parser now.
+editor completion and tolerant recovery trees are outside this input contract.
 
 **Proof obligations**
 
@@ -268,7 +266,7 @@ Resolution later replaces source names with item identities and de Bruijn
 indices using the [binding contracts](Bindings.md). Those semantic references
 do not replace written names in the AST.
 
-## Checked byte primitives and remaining evidence
+## Byte classification
 
 These contracts classify raw byte values. They neither implement a lexer
 nor accept a caller-supplied parse verdict. The continuation-byte interval
@@ -280,7 +278,7 @@ validate an encoding or connect a byte to a particular source offset.
 **Dynamic semantics**
 
 r[parsing.primitive.space] spec::parsing::space_case::{classification, space, tab, lf, cr, ordinary}
-The walking slice's ASCII whitespace bytes are space, tab, LF and CR.
+The ASCII whitespace bytes are space, tab, LF and CR.
 
 ```fren
 pub mod spec
@@ -313,26 +311,5 @@ pub proc continuation_case(byte: Nat): (continuation?) {
 }
 ```
 
-The chapter wrapper checks these primitives and the successful walking
-example. The parser, AST and shared typed-context adapter are not implemented
-by this chapter. The rules labelled **Proof obligations** remain requirements,
-not discharged theorems about an empty library or assumed parser.
-
-- [ ] State the complete-input, ownership, boundary, determinism and roundtrip
-  laws in Lean over the actual `FrenParse`/`FrenAst` APIs, or bind uninterpreted
-  Fren laws to them with genuine `impl` proofs where expressible.
-- [ ] Bind the actual byte classifiers to the primitive meanings above; reuse
-  the existing Span bounds/translation laws rather than duplicating them.
-- [ ] Exercise the actual parser directly with Plausible and textual tests:
-  successful, ill-typed-but-parsable, malformed and truncated text; Unicode
-  comments, empty input, trailing junk, EOF and alternate trivia. Report
-  accepted/rejected grammar premises and test deliberately perturbed bounds,
-  byte classification and grouping. Sampled properties are not proofs.
-- [ ] Check driver and typed-context adapter agreement on the same extracted
-  text, preserving source-map and callback-input bytes.
-
-Full-language syntax, payload patterns, generics, closures, procedures,
-interfaces, views, broader lexical forms and editor recovery require later
-chapter extensions before their implementation. This walking slice supplies
-no recursive Fren parser model, no semantic pass implementation and no
-prerequisite to extend Fren's recursive specification features.
+Implementation correspondence and proof coverage are recorded in the
+[development coverage document](../../../docs/fren2-specification-coverage.md).

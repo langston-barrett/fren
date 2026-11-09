@@ -1,13 +1,13 @@
-# Walking SMT queries
+# SMT queries
 
-This boundary translates the actual walking OIR questions to SMT-LIB and
+This boundary translates the OIR questions to SMT-LIB and
 asks the existing pinned cvc5 solver in a separate, bounded process per
 question. It produces evidence about those questions, with their original
 attribution and dependencies. It does not report verified source programs.
 
 ## Supported input and translation
 
-The entry point accepts the actual walking source witness and runs
+The entry point accepts the actual source witness and runs
 `FrenLirToOir.produce`. Successful scope checking, an edited question array or
 a supplied success Boolean is not an alternative admission path. Invalid
 source and upstream generation failures remain errors.
@@ -110,34 +110,5 @@ Changing the expected negative-divisor quotient to 4 or replacing
 the actual producer also use independently expected signed arithmetic and
 query polarities; agreement with a copy of the translator is insufficient.
 
-## Evidence and pending laws
-
-`FrenOirToSmt.retains_oir`, `retains_questions` and `admission` prove that
-successful production retains the actual admitted OIR and every original
-question. `deterministic`, `distinct_components`, `parameter_domain`,
-`classify_nonzero` and `classify_resource` state small actual-code laws.
-Native `smt`, `smtControls` and `smtProperties` jobs exercise source-to-query
-to-real-solver behavior and nonanswers. The fixed fixture independently checks
-32 written requests, signed arithmetic, unused/guarded domains, forward calls,
-shadowing, nominal enums and unresolved mutual assumptions. Owned controls
-exercise invalid protocols, nonzero exits, exact invalid bytes, time/output
-limits, suspended children and repeated cancellation at cleanup. The ownership
-regression checks that the direct leader is still waitable at every group
-signal, including normal solver exit and repeated cancellation. These tests
-and raw receipts are finite evidence, not proofs of universal translation
-correctness or SMT soundness, or a new crossover prerequisite.
-
-The following universal obligations remain pending:
-
-- Prove translation preserves each actual typed logical term in related
-  complete environments, including nominal identity, Euclidean arithmetic,
-  function equations and interleaved lexical frames.
-- Prove query correspondence in both directions with the declarative source
-  obligations after independently justified applicable domains. OIR's general
-  extraction/source correspondence remains pending too.
-- Prove injectivity and freshness of every rendered symbol family and
-  substitution/capture preservation over all admitted source programs.
-- Establish the unresolved mutually partial assumption rule before claiming
-  supported source results for that class.
-- Bind later model decoding and static source confirmation to actual code;
-  raw SAT/UNSAT, bounded tests and solver trust do not close this obligation.
+Implementation correspondence and proof coverage are recorded in the
+[development coverage document](../../../docs/fren2-specification-coverage.md).

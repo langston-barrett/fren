@@ -1,11 +1,184 @@
-# THIR and walking type checking
+# THIR and type checking
 
 The typed high-level intermediate representation (THIR) adds value types to
-resolved expressions. This chapter contracts the production
-`FrenHirToThir` slice using the real `FrenAst` and `FrenModule.Resolved` APIs.
-The actual pass now retains resolved syntax plus typed occurrence data; this
-chapter does not freeze a complete THIR schema. The
+resolved expressions. This chapter specifies
+`FrenHirToThir` using the `FrenAst` and `FrenModule.Resolved` APIs.
+The pass retains resolved syntax plus typed occurrence data. The
 [Language types](../Language/Types.md) chapter supplies the typing rules.
+
+## Shared judgments and pass interface
+
+`Produces input out` means that the actual type checker returned `out`.
+`BodyTyping` uses the recursive `FrenHirToThir.HasValue` judgment over the
+retained AST, whose clauses are literals, selected locals and constructors,
+operators, exact-arity named calls, lets, conditionals and constructor matches.
+It is the recursive closure of the [Language local rules](../Language/Types.md#finite-expression-derivations),
+with resolver-selected targets and binder tokens retained. The finite Fren
+derivation verifies a candidate proof; the production checker infers one.
+No equality between those two presentations is assumed as an input.
+
+`ChildContext` states the context of each immediate written child.
+`AtContext` is its reflexive structural closure. In particular, a let value
+uses the parent context and only its body receives the value's type. A match
+arm receives no extra binder. All branches, arguments and unused definitions
+are traversed. `OccurrenceTyping` requires an entry for each actual descendant,
+so deleting an occurrence cannot make a quantified obligation disappear.
+`DeclaresBody` derives each body's declared result and nearest-first parameter
+context from actual source declarations and resolved signatures. `BodyInventory`
+requires exactly one retained entry for every source body, including unused
+functions and every check member; it also excludes invented entries.
+These declarations are compiled in the [chapter wrapper](Thir.lean), over
+actual production types; the source audit checks this displayed block against it.
+
+**Proof obligations**
+
+r[thir.contract.typing]
+Every successful production satisfies `TypePassContract`, including recursive
+body and occurrence typing, exact signatures and body inventory, admission
+and exact retained resolved input.
+
+r[thir.contract.coverage]
+On actual successful type-only output, coverage validation holds exactly
+when every constructor of the scrutinee owner occurs once in each match.
+
+r[thir.contract.nonrecursion]
+On actual successful type-only output, non-recursion validation holds exactly
+when the selected function-call graph has no nonempty cycle.
+
+```lean
+/-- Immediate written children and their exact lexical type contexts. -/
+inductive ChildContext (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+    FrenModule.TypeContext → FrenAst.Expr → FrenModule.TypeContext → FrenAst.Expr → Prop where
+  | paren : ChildContext r sigs ctx (.paren o e c) ctx e
+  | unary : ChildContext r sigs ctx (.unary tok op e) ctx e
+  | binaryLeft : ChildContext r sigs ctx (.binary a tok op b) ctx a
+  | binaryRight : ChildContext r sigs ctx (.binary a tok op b) ctx b
+  | callee : ChildContext r sigs ctx (.call f o args commas c) ctx f
+  | argument : e ∈ args.toList → ChildContext r sigs ctx (.call f o args commas c) ctx e
+  | condition : ChildContext r sigs ctx (.ifE i b t yes e no) ctx b
+  | thenBranch : ChildContext r sigs ctx (.ifE i b t yes e no) ctx yes
+  | elseBranch : ChildContext r sigs ctx (.ifE i b t yes e no) ctx no
+  | letValue : ChildContext r sigs ctx (.letE l name assign value i body) ctx value
+  | letBody : FrenHirToThir.HasValue r sigs ctx value vt →
+      ChildContext r sigs ctx (.letE l name assign value i body) ((name, vt) :: ctx) body
+  | scrutinee : ChildContext r sigs ctx (.matchE m scrutinee o arms c) ctx scrutinee
+  | armBody : arm ∈ arms.toList →
+      ChildContext r sigs ctx (.matchE m scrutinee o arms c) ctx arm.2.2.1
+
+/-- Reflexive structural closure, with context changes carried at every step. -/
+inductive AtContext (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+    FrenModule.TypeContext → FrenAst.Expr → FrenModule.TypeContext → FrenAst.Expr → Prop where
+  | root : AtContext r sigs ctx e ctx e
+  | child : AtContext r sigs rootCtx root ctx parent →
+      ChildContext r sigs ctx parent childCtx childExpr →
+      AtContext r sigs rootCtx root childCtx childExpr
+
+/-- The actual successful type-only producer, rather than a supplied verdict. -/
+def Produces (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
+  FrenHirToThir.check input = .ok out
+
+/-- The recursive body judgment is over the retained production AST. -/
+def BodyTyping (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
+  ∀ body ∈ out.bodies.toList,
+    FrenHirToThir.HasValue input out.signatures body.context body.expression body.type
+
+/-- Every written value or callee occurrence has the exact context and meaning. -/
+def OccurrenceTyping (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
+  ∀ body ∈ out.bodies.toList, ∀ ctx expr,
+    AtContext input out.signatures body.context body.expression ctx expr →
+    ∃ occurrence ∈ body.occurrences.toList,
+      occurrence.expression = expr ∧ occurrence.context = ctx ∧
+      match occurrence.type with
+      | .value ty => FrenHirToThir.HasValue input out.signatures ctx expr ty
+      | .callable sig => ∃ path,
+          expr = .name path ∧ FrenHirToThir.Selects input ctx path .expression (.item sig.id) ∧
+          FrenHirToThir.signatureAt out.signatures sig.id = some sig
+
+/-- Source declarations determine body owner, result type and parameter context. -/
+inductive DeclaresBody (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+    FrenBase.ItemId → Option FrenAst.Member → FrenAst.Expr →
+      FrenModule.TypeContext → FrenExpr.Ty → Prop where
+  | function : input.document.root = .declarations decls →
+      FrenAst.Decl.function vis keyword name params colon result assign expr ∈ decls.toList →
+      FrenHirToThir.signatureAt sigs (input.scope.id.named name.text) = some sig →
+      DeclaresBody input sigs sig.id none expr
+        (FrenHirToThir.parameterContext sig.parameters) sig.result
+  | member : input.document.root = .declarations decls →
+      FrenAst.Decl.expectation keyword name params openTok members closeTok ∈ decls.toList →
+      member ∈ members.toList → FrenHirToThir.parameters input params = .ok typedParams →
+      DeclaresBody input sigs (input.scope.id.named name.text) (some member) member.body
+        (FrenHirToThir.parameterContext typedParams) .bool
+
+def BodyEntry (body : FrenModule.TypedBody) (owner : FrenBase.ItemId)
+    (member : Option FrenAst.Member) (expr : FrenAst.Expr)
+    (ctx : FrenModule.TypeContext) (ty : FrenExpr.Ty) : Prop :=
+  body.owner = owner ∧ body.member = member ∧ body.expression = expr ∧
+    body.context = ctx ∧ body.type = ty
+
+/-- Every source body occurs once, including unused functions and every member. -/
+def BodyInventory (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
+  (∀ body ∈ out.bodies.toList,
+    DeclaresBody input out.signatures body.owner body.member body.expression body.context body.type) ∧
+  (∀ owner member expr ctx ty, DeclaresBody input out.signatures owner member expr ctx ty →
+    ∃ i : Fin out.bodies.size, BodyEntry out.bodies[i] owner member expr ctx ty ∧
+      ∀ j : Fin out.bodies.size, BodyEntry out.bodies[j] owner member expr ctx ty → j = i)
+
+def TypePassContract : Prop := ∀ input out, Produces input out →
+  FrenHirToThir.Admitted input ∧ out.resolved = input ∧
+    FrenHirToThir.signatures input = .ok out.signatures ∧
+    BodyInventory input out ∧ BodyTyping input out ∧ OccurrenceTyping input out
+
+/-- Coverage quantifies over actual AST descendants, not just a supplied table. -/
+def MatchCoverage (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
+  ∀ body ∈ out.bodies.toList, ∀ ctx m scrutinee o arms c,
+    AtContext input out.signatures body.context body.expression ctx
+      (.matchE m scrutinee o arms c) →
+    ∃ owner, FrenHirToThir.HasValue input out.signatures ctx scrutinee (.enum owner) ∧
+      (∀ item ∈ input.scope.items.toList,
+        item.kind = .constructor → item.id.parent = some owner →
+        ∃ j : Fin arms.size,
+          FrenHirToThir.Selects input ctx arms[j].1 .pattern (.item item.id) ∧
+          ∀ k : Fin arms.size,
+            FrenHirToThir.Selects input ctx arms[k].1 .pattern (.item item.id) → k = j) ∧
+      (∀ arm ∈ arms.toList, ∃ item ∈ input.scope.items.toList,
+        item.kind = .constructor ∧ item.id.parent = some owner ∧
+        FrenHirToThir.Selects input ctx arm.1 .pattern (.item item.id))
+
+def Calls (input : FrenModule.Resolved) (out : FrenModule.Typed)
+    (caller callee : FrenBase.ItemId) : Prop :=
+  ∃ body ∈ out.bodies.toList, body.owner = caller ∧ body.member = none ∧
+    ∃ ctx path o args commas c,
+      AtContext input out.signatures body.context body.expression ctx
+        (.call (.name path) o args commas c) ∧
+      FrenHirToThir.Selects input ctx path .expression (.item callee)
+
+inductive CallPath (edge : FrenBase.ItemId → FrenBase.ItemId → Prop) :
+    FrenBase.ItemId → FrenBase.ItemId → Prop where
+  | one : edge a b → CallPath edge a b
+  | more : edge a b → CallPath edge b c → CallPath edge a c
+
+def Nonrecursive (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
+  ∀ item, ¬ CallPath (Calls input out) item item
+
+/-- These are correspondence obligations, not aliases for validator success. -/
+def CoverageContract : Prop := ∀ input out, Produces input out →
+  (FrenHirToThir.WalkingCoverage out ↔ MatchCoverage input out)
+
+def NonrecursionContract : Prop := ∀ input out, Produces input out →
+  (FrenHirToThir.WalkingNonrecursive out ↔ Nonrecursive input out)
+```
+
+`MatchCoverage` and `Nonrecursive` are semantic relations over actual
+source descendants, collected constructors and selected calls. They do not
+define correctness as the validator returning true. Their correspondence
+contracts are separate from `TypePassContract`; a type-correct partial match
+or recursive call does not acquire static acceptance from its typing derivation.
+The `body_contract_iff` theorem equates the body component with the existing
+`FrenHirToThir.TypingSound` obligation. It does not prove that obligation.
+The wrapper proves admission/retention, uniqueness, failure exclusion and the
+exact factorization of the public static boundary using actual-code theorems.
+The unproved recursive correspondence laws stay explicit in
+[development coverage](../../../docs/fren2-specification-coverage.md).
 
 ## Input admission
 
@@ -34,7 +207,7 @@ neither obligation. The wrapper names the concrete successful-producer
 relation `Admitted`. The actual `admit` boundary reuses the resolver, its
 proved document-retention law and decidable equality on the complete scope
 and reference table to establish this proposition.
-For the next public checker, reusing the existing resolver to compare with
+At the public checking boundary, reusing the existing resolver to compare with
 the supplied resolved value is an acceptable executable admission check.
 Alternatively a trusted producer boundary can carry evidence. Missing,
 duplicate or stale references, wrong local slots or contexts, changed item
@@ -60,7 +233,7 @@ This inventory fixes what consumers can obtain, not a storage layout.
 **Proof obligations**
 
 r[thir.result.typing]
-Every successful typed result satisfies all Language walking typing rules
+Every successful typed result satisfies all Language typing rules
 in the signatures and contexts derived from its admitted input.
 
 r[thir.result.preservation]
@@ -87,9 +260,9 @@ matches without an inferred result. It checks every declaration and member,
 including unused functions and unreachable written branches. For fixed
 admitted input it returns deterministic typed data or diagnostics; no solver
 choice or guessed type is involved. Diagnostic recovery and multi-error
-aggregation are not required by this slice.
+aggregation are not required by this source domain.
 
-## Type correctness and walking validation
+## Type correctness, coverage and non-recursion
 
 **Proof obligations**
 
@@ -102,7 +275,7 @@ The separate `WalkingNonrecursive` obligation requires the function call
 graph to have no self cycle or mutually recursive strongly connected component.
 
 r[thir.validation.boundary]
-Whole walking static acceptance requires admitted input, successful typing,
+Whole static acceptance requires admitted input, successful typing,
 `WalkingCoverage` and `WalkingNonrecursive`; typing alone establishes only
 the first two.
 
@@ -110,14 +283,13 @@ The type-only `check` and `checkSource` decide arity, callability and
 constructor owner compatibility. They retain the information the two
 validators consume; they do not run those validators.
 A nonempty partial match with compatible bodies and a recursive call can
-be type correct while still failing walking validation. No downstream
+be type correct while still failing coverage and non-recursion validation. No downstream
 consumer may assume those checks passed merely because THIR exists.
 Neither validation nor typing proves evaluation termination in general,
 operator definedness, solver success, evidence quality, or the correctness
-of later desugaring and lowering. No evaluator simulation law is claimed
-before the actual typed representation and evaluator exist.
+of later desugaring and lowering. Value correspondence requires a separate simulation law.
 
-## Actual static boundary
+## Coverage and cycle diagnostics
 
 `validateCoverage` visits the actual typed postorder occurrences in every
 function and check member, including assumptions and unreachable written
@@ -126,7 +298,7 @@ sequence, reads its nominal enum type, and takes the constructor inventory
 from the admitted declaration scope, filtered by canonical owner. It checks
 pattern reference identities in written order, recording every repeated
 case and every absent constructor independently of the arm count. The
-walking AST supports only constructor paths as patterns. It has no wildcard
+AST supports only constructor paths as patterns. It has no wildcard
 or pattern binder; unresolved `_` and wrong-owner patterns fail before static
 validation rather than silently discharging coverage.
 
@@ -152,24 +324,13 @@ catalogue codes: coverage includes the owner, missing and repeated IDs; a
 cycle includes a closed canonical function path. Missing cases point at the
 match keyword, repetitions at the first repeated pattern, and cycles at the
 closing call's callee. Metadata failures also carry the actual source span.
-Rendering these new failures is future work.
+These validation failures are structured data; they have no new catalogue codes.
 
-The actual Lean laws `validateWalking_iff`, `walking_success`,
-`walking_failure_iff`, `walking_retains` and `walking_deterministic` establish
-the executable success/failure boundary, admission, preservation and
-uniqueness. They do not prove a universal correspondence between traversal
-and the declarative coverage or graph obligations. Direct Plausible and
-native tests exercise actual generated programs with successful, partial,
-repeated, ill-typed, cyclic and edited-provider variants, requiring explicit
-nonzero premise counts and no discards. Finite tests are evidence rather
-than recursive universal soundness proofs.
-
-## Focused examples and evidence
+## Examples
 
 This checked program exercises constructor values, positional calls, a
 nearest-first let context, if branches, match results and Bool conditions.
-The fence runs through Fren1's documentation wrapper; native walking tests
-exercise the actual Fren2 checker separately.
+Its checked fence exercises the documented source forms.
 
 ```fren
 pub mod typing
@@ -197,41 +358,4 @@ example checks the established diagnostic text; it is not Fren2 diagnostic
 execution. A wrong call arity, local callee, cross-enum comparison, wrong
 branch type, non-Bool condition or wrong-owner pattern is likewise a typing
 failure, even when resolution succeeds. No diagnostic code beyond the
-pinned case is assigned by this slice.
-
-The S1 `wrong` expectation remains a well-typed goal for later lowering and
-solver checking. The S1 unknown `y` remains a resolver failure. Accepting
-syntax and names for the enum arithmetic example must not turn it into a
-successful typed result or an empty set of goals.
-
-- [x] Implement actual walking typing and admission in `FrenHirToThir`, with
-  genuine admission, erasure, lookup, primitive and determinism proofs.
-  The wrapper's `Admitted` is the actual pass's relation.
-- [x] Test every expression/operator, annotation/suffix, local/let/sibling
-  context, forward call, arity, callability, enum identity, constructor owner,
-  branch and member, with independent S1 type/target/span expectations and
-  the exact `F0304` code/text/span above.
-- [x] Reject edited resolved inputs with deleted/duplicate entries and changed
-  role, target, context, scope, constructor owner, source, tape or AST.
-- [x] Run direct Plausible on the actual recursive checker with required
-  success, typing failure and partial-table admission failure per sample.
-  Native census counts admission, signatures, lookup hit/miss and typing
-  success/failure without discarded premises.
-- [ ] Prove the declarative `HasValue` relation for every successful actual
-  traversal (`TypingSound`). The finite native and Plausible cases do not
-  establish universal soundness or complete traversal correctness.
-- [x] Implement and test `WalkingCoverage` and `WalkingNonrecursive` over
-  actual typed syntax, and provide the admitted whole walking static entry.
-  S1 retains all four Bool members, including the false `never_red` goal.
-- [ ] Prove universal declarative coverage/call-graph correspondence for the
-  actual validators; finite tests and executable boundary laws do not prove it.
-- [ ] Restate recursive coverage traversal and call-graph laws in Fren once
-  recursive syntax and graph reachability can be expressed there.
-- [ ] Restate the recursive typing/preservation relation in Fren once Fren2
-  supports recursive expression datatypes and recursive judgments over
-  their children and binder contexts. State it in Lean over the real pass
-  meanwhile; it does not require a copied executable Fren IR.
-
-These existing Spec wrappers remain compatibility documentation checked by
-Fren1. They introduce no Fren2 runtime/test module and are outside the
-runtime module/header and physical-size guard's inventory.
+pinned case is assigned by this source domain.

@@ -1,4 +1,4 @@
-# Walking MIR and theory construction
+# MIR and theory construction
 
 The mid-level intermediate representation (MIR) separates what a module
 **defines** from what it asks Fren to **check**. A function contributes its
@@ -7,19 +7,17 @@ over its parameters. MIR carries these meanings toward logical lowering
 (LIR), obligation generation (OIR) and SMT solving, as described in the
 [compiler overview](Overview.md).
 
-This chapter specifies `FrenThirToMir` for the current
-[walking desugaring](Desugaring.md) boundary. Its first walking producer
-retains typed expressions and separates definitions from explicit check
-requests. The rules fix observable information and meaning without freezing
-a final IR datatype, printed format or generator. The implementation and
-remaining proof obligations are distinguished below.
+This chapter specifies the [desugaring](Desugaring.md)-to-MIR boundary.
+It retains typed expressions and separates definitions from explicit check
+requests. The rules fix observable information and meaning independently
+of a particular storage layout.
 
 ## Admitted input and retained identity
 
 **Proof obligations**
 
 r[mir.walking.admission]
-The input carries evidence of actual successful walking admission and
+The input carries evidence of actual successful source admission and
 identity desugaring, including successful typing, coverage and non-recursion.
 
 `FrenThirDesugar.Program` contains `input`, `typed` and
@@ -50,7 +48,7 @@ remain diagnostic data, not semantic identity.
 ## Declarations and check requests
 
 A *theory* packages a module's declarations and statements about them.
-This walking theory needs enum declarations, function signatures and bodies,
+This theory needs enum declarations, function signatures and bodies,
 and global expectation checks. A *check request* identifies a question to
 be answered later; it is not a verdict or a solver query already executed.
 
@@ -155,23 +153,23 @@ false Boolean, and an undefined expectation is not a verified goal.
 **Proof obligations**
 
 r[mir.walking.values]
-The future actual producer preserves defined source and MIR values in both
+The producer preserves defined source and MIR values in both
 directions at corresponding types, canonical identities and environments,
 together with the conditions under which those values are defined.
 
 r[mir.walking.check-correspondence]
-The future actual producer preserves the source assumptions and obligations
+The producer preserves the source assumptions and obligations
 and their contexts in both directions, including assumption satisfiability,
 expectation validity and required definedness checks.
 
-These are obligations about the eventual real producer and consumers.
+These obligations relate the actual producer and consumers.
 They require more than a value-only commuting square. Dropping `bounded`
 from the example below changes validity even if every function still returns
 the same value. Assuming `at_most` rather than checking it makes a false
 claim pass. Using the wrong local slot changes both function values and
 the meaning of assumptions.
 
-The raw [walking evaluator](Evaluator.md) implements a lazy value strategy:
+The raw [value evaluator](Evaluator.md) implements a lazy value strategy:
 an unused `let x := 1 div 0 in 0` returns 0, and deciding-left Boolean
 operands may skip their right side. Those concrete outcomes do not establish
 source well-definedness. Declarative verification traverses all written
@@ -185,7 +183,7 @@ remain distinct. Exhaustion cannot become logical falsehood, an unsatisfiable
 assumption set or evidence of validity. Value correspondence under established
 well-definedness and static obligation completeness are separate obligations.
 
-## Walking example and independent facts
+## Example and arithmetic laws
 
 `Light` has three nominal values. `next` cycles through them; `wait` adds
 an offset to `base`. The bounded assumption belongs to `waits`, and no
@@ -219,9 +217,9 @@ expect waits(l: Light, base: Int) {
 The following three small facts independently fix arithmetic offset,
 Boolean implication and the Amber row used in the example. Fren1 checks
 these facts and the preceding true examples. They neither model MIR nor
-prove a future pass, evaluator or solver correct. The procedure and `when`
+prove a pass, evaluator or solver correct. The procedure and `when`
 syntax below belong to Fren1's contract language; they do not extend the
-admitted walking grammar.
+admitted source grammar.
 
 **Dynamic semantics**
 
@@ -245,92 +243,7 @@ pub proc primitive_facts(base: Int, l: Light, premise?, conclusion?) {
 #fren_check
 ```
 
-The original S1 adds this deliberately false block, shown as text so that
-the book's checked examples remain successful:
-
-```text
-expect wrong(l: Light) {
-    expect never_red: next(l) != Light::Red
-}
-```
-
-For S1's three blocks alone, the intended future Fren2 solver output is
-exactly **5 passed, 1 failed**: `back` and `at_most` pass, each of the three
-blocks' assumption-satisfiability checks passes, and `never_red` fails with
-`l = Light::Amber`. This is an acceptance target for the future complete
-pipeline, not solver evidence currently computed by Fren2. In particular,
-a concrete interpreter returning false at Amber is not delivery of a solver
-counterexample. Removing `bounded` is a separate negative control:
-`l = Light::Red, base = 101` makes `at_most` false. The chapter's positive
-Fren fences do not contain either deliberate failure.
-
-## Implementation evidence and remaining obligations
-
-`FrenThirToMir.produce` consumes `FrenThirDesugar.Program`, whose equality
-witness certifies actual walking admission. `fromSource` uses that same
-parser, resolver and checked desugaring boundary. Rejected sources retain
-their admission diagnostics. Internal missing-table failures are explicit;
-construction never silently omits a declaration after such a failure.
-
-`FrenMir.Theory` retains the complete `Typed` source. Its ordered declarations
-separate nominal enums, function signatures and defining bodies, and global
-expectation blocks. Blocks retain their written declaration, ordered typed
-parameters, nearest-first context and ordered typed members, even when there
-are no members. This is a small walking representation, not the final theory
-schema for the full language.
-
-`Block.requests` always emits an assumption-satisfiability request, then one
-validity request per written goal. Every request carries all and only its
-block's assumptions, including later assumptions, with the block's parameters
-and context. Each request also carries structured `Demand` roots: complete
-assumption bodies, plus the goal body for validity. Their original syntax,
-occurrences, lexical contexts and call targets remain available. Definedness
-is requested by static source verification before interpreting Boolean
-results; no conditional operation is flattened into an unguarded assertion.
-The legacy `Demand` name denotes retained source roots, not an instruction
-to use the raw evaluator's demand trace as the verification policy.
-Definitions remain definitions in the same theory. These data are unresolved
-requests, not discharged obligations, logical formulas or solver verdicts.
-
-The Lean `retains`, `admission`, `rejected` and `deterministic` laws constrain
-the actual producer. `requests_from_blocks` connects its output requests to
-the retained blocks. `assumptions_exact`, `goals_exact`, `request_context`,
-`satisfiability_first`, `request_count` and `validity_member` constrain the
-actual request helper. These laws establish data retention and request
-selection, not logical validity or general definedness correspondence.
-
-Direct Plausible and native cases run source through actual admission and
-construction, with mandatory admitted, rejected and partial classes and
-reported counts. Independent expected request identities, counts, member
-roles, ordering and contexts cover S1, later assumptions, multiple owners,
-no assumptions, empty blocks, contradictory assumptions, nominal spellings
-and unused definitions. Negative controls omit assumptions or declarations,
-change roles, reorder declarations, substitute owners, parameters, contexts
-or local slots, remove demand roots and alter guards. Concrete probes of the
-retained source cover the raw value strategy's lazy lets and Boolean demand,
-strict operators and call arguments, and exact failure provenance. Those
-operational probes are not evidence of static obligation completeness.
-These tests are finite evidence;
-concrete false results are not solver counterexamples.
-
-The three primitive facts above retain their independent Fren1 checks.
-They are not production `impl` bindings. The eleven `mir.walking.*` rules
-remain normative: the retention and request-selection laws above address
-parts of them, while the general semantic correspondence laws remain open.
-
-- [x] Implement the actual admitted walking producer and its retained theory
-  information, with explicit failure data and deterministic declaration order.
-- [x] Bind actual admission, retention and request selection to Lean laws,
-  with finite checks of definitions, contexts and members.
-- [ ] Establish actual value, assumption and obligation correspondence,
-  including satisfiability and definedness in downstream encodings.
-- [x] Test the real code directly with Plausible, reporting premise counts
-  for admitted, rejected and partial inputs, and independent negative controls.
-- [ ] Connect downstream requests to real LIR/OIR/SMT and confirm source
-  counterexamples, including S1's Amber result. A Fren1 negative control
-  demonstrates sensitivity of the example, not solver evidence for this pass.
-
-Interfaces, views, morphisms, recursive groups, subset erasure, procedure
-relations, generic and closure elimination, a full MIR schema and Lean
-emission remain future scope. This slice does not implement OIR or claim
-that current requests have already been solved.
+A deliberately false expectation, such as `next(l) != Light::Red`, remains
+a typed validity request. It fails mathematically at `l = Light::Amber`.
+Removing `bounded` makes `at_most` false at `l = Light::Red, base = 101`.
+These counterexamples describe the formulas' meanings, not solver evidence.

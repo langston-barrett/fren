@@ -214,8 +214,8 @@ compares the results. If both evaluations use an evaluator that implements
 `a + b` as `a - b`, the results can agree while both are wrong. An independent
 arithmetic fact such as `2 + 1 = 3` detects that particular mistake. The
 contract below checks an independent increase property that also catches this
-error. Connecting a future evaluator to its primitive contract is separate
-work. The contract does not bind or verify a production pass or evaluator.
+error. The evaluator must separately satisfy its primitive contract.
+The contract does not bind or verify a production pass or evaluator.
 
 **Proof obligations**
 

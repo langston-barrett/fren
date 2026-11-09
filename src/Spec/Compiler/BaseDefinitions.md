@@ -160,7 +160,5 @@ The hosted front end's saved state and cache keys carry a format version.
 The version is part of the format contract; this chapter does not prescribe
 a version number, wire schema or compatibility policy.
 
-> **Note:** The checked cases above establish only arithmetic facts about the
-> examples. The base, source and diagnostic libraries and their bindings to
-> contracts are future work. The remaining rules are listed as pending
-> formalization; no production implementation or property test is claimed.
+Implementation correspondence and proof coverage are recorded in the
+[development coverage document](../../../docs/fren2-specification-coverage.md).

@@ -7,13 +7,11 @@ shared binding operations for expressions, quantifiers, sentences and
 obligations. It builds on [compiler identity](Overview.md#identity-and-origin)
 and [base definitions](BaseDefinitions.md).
 
-The reference implementation used here is the successful raw-index
-[expression prototype](../../../scratch/expr/Prototype.lean). Its `Expr p`
-is a small Lean test representation, not the production IR datatype.
-The equations below constrain the future shared library without fixing
-production constructors. `V i`, `All b`, `Let v b`, and `Array xs` abbreviate
-prototype variable, quantifier, let and array nodes. They are mathematical
-notation, not additional Fren syntax.
+The notation below describes finite raw terms: `V i` is a local occurrence,
+`All b` a quantified body, `Let v b` a local definition, and `Array xs` an
+ordered sequence of children. These are mathematical forms, not additional
+Fren source syntax. Scope and substitution laws apply at every child and
+binding depth, independently of a concrete IR's constructor names.
 
 ## Contexts and scope
 
@@ -49,7 +47,7 @@ r[bindings.identity.metadata]
 Written names, origins and debug spans do not decide semantic binding or
 alpha-equivalence.
 
-The prototype's exact child contexts are:
+The child contexts are:
 
 | Node | Child contexts at root length `n` |
 | --- | --- |
@@ -69,16 +67,10 @@ An open term has free occurrences relative to the root. It can still be
 well scoped in a nonempty context. A dangling occurrence exceeds that
 context. Raw operations below also accept dangling occurrences; that
 computational totality does not make the result valid. Scope says nothing
-about types, definedness, or whether evaluation succeeds. Future error or
-hole forms must expose their child binding depths; their traversal and
-scope policy remain part of their IR chapter. They acquire no evaluation
-or typing guarantee from this chapter.
-
-> **Rationale:** The prototype keeps arrays and raw indices after two
-> particular intrinsic scope-indexed array encodings were rejected by
-> Lean's kernel. Those failures do not establish that all intrinsic
-> encodings are impossible. The accepted implementation uses extrinsic
-> `Scoped` and an equivalent executable `scopeCheck`.
+about types, definedness, or whether evaluation succeeds. Any additional
+error or hole form must expose its child binding depths;
+its traversal and scope policy is part of its IR contract. Scope alone
+supplies no evaluation or typing guarantee.
 
 ## Renaming and shifting
 
@@ -150,8 +142,7 @@ r[bindings.substitution.at]
 For natural `j`, `substAt j s t` removes root slot `j` using the environment
 `i ↦ if i < j then V i else if i = j then s else V (i - 1)`.
 
-`substAt` is notation for a call to simultaneous substitution, not an
-existing prototype API. With `j ≤ n`, body scoped at `n + 1` and
+`substAt` denotes simultaneous substitution. With `j ≤ n`, body scoped at `n + 1` and
 replacement scoped at `n`, its result is scoped at `n`. The replacement
 is already expressed in the destination context after deletion. Subtraction
 occurs only in the `i > j` case; no valid index is truncated at zero.
@@ -177,8 +168,7 @@ does not establish well-formedness.
 
 Opening instantiates an exposed binder body; closing abstracts a selected
 outer slot as the newest slot. Both use indices, with no separate named
-free-variable constructor. These are semantic definitions for future APIs;
-the prototype currently supplies only `substTop`, `subst` and `rename`.
+free-variable constructor. The equations below define both operations.
 
 **Dynamic semantics**
 
@@ -232,7 +222,7 @@ Syntactic de Bruijn alpha-equivalence is equality of binding structure and
 semantic fields, ignoring written names, origins and debug spans, with
 ordered arrays compared element by element in corresponding contexts.
 
-For the prototype, `FV (V i) = {i}`, `FV (literal v) = ∅`,
+For these forms, `FV (V i) = {i}`, `FV (literal v) = ∅`,
 `FV (All b) = {i | i + 1 ∈ FV b}`, and
 `FV (Let v b) = FV v ∪ {i | i + 1 ∈ FV b}`.
 An array uses the union over all members; the empty array contributes `∅`.
@@ -244,8 +234,8 @@ pretty names differ. The same raw `V 0` under `[a]` and `[b]` does not
 assert that `a` and `b` denote the same external object. Comparing open
 terms from different contexts requires an explicit correspondence or
 renaming first. Alpha-equivalence is syntactic: it does not equate `1 + 1`
-with `2`, nor discharge type or definedness obligations. The future equality
-implementation must exclude metadata; the prototype has no such metadata.
+with `2`, nor discharge type or definedness obligations. The equality
+relation excludes metadata.
 
 **Proof obligations**
 
@@ -257,16 +247,14 @@ alpha-equivalent substitution environments.
 For the substitution law the source terms are scoped at `n` and the
 images of each source slot below `n` are scoped in the same destination
 context. For renaming, both terms use the same source context and the
-same map into a common destination context. These are requirements for
-the future metadata-independent equality API, not existing Lean theorems.
+same map into a common destination context. These laws require the indicated
+context correspondence; their proof coverage is recorded in the development
+coverage document.
 
-## Whole-term laws and evidence
+## Whole-term laws
 
-The equations use one fixed prototype phase `p` and its actual operations.
-`V`, `upRen`, `upSub`, `rename`, `shift`, `subst`, `substTop`, `Scoped` and
-`scopeCheck` refer to `ExprPrototype`. Symbols for free indices, closing,
-alpha-equivalence and `substAt` denote the definitions above, with no claim
-of existing production declarations.
+The following equations quantify over finite raw terms and their complete
+ordered children. Their source and destination contexts are explicit.
 
 **Proof obligations**
 
@@ -331,75 +319,8 @@ For `j = 0, c = 1`, the source cutoff is 2, not 1. With `t = V 1`,
 shifting it at 1 before deleting slot 0 moves a protected slot incorrectly.
 These cases distinguish reindexing from a naive always-equal formula.
 
-The existing universal proofs are `rename_scoped`, `subst_scoped`,
-`scoped_mono`, `substTop_closed_scoped`, and `scopeCheck_iff` in the prototype.
-In particular, `Scoped 0 s → Scoped (n + 1) b → Scoped n (substTop s b)`
-is already proved for every depth and every array member. Open replacements
-are covered by the stronger `subst_scoped`; the additional chapter test
-proves that specialization directly. These proofs use real induction on
-scope evidence, not a solver abstraction or a test classified as a proof.
-
-[Chapter checks](../../../scratch/expr/BindingsLaws.lean) add direct Plausible
-checks of actual prototype composition and shift/substitution operations on
-bounded raw terms, and concrete capture/cutoff controls. They include open
-and dangling terms and nonzero cutoffs. They do not implement a production
-binder library. The prototype has no type checker or hole constructor;
-raw malformed terms exercise scope failure, not all future partial IR forms.
-The original [prototype tests](../../../scratch/expr/Tests.lean) also cover
-both phases, let-value/body distinctions, arrays and deliberately bad lifts.
-
-The production index foundation is now
-[`FrenBase.Binding`](../../FrenBase/Binding.lean), exported by `FrenBase`.
-It is independent of any expression datatype. `Context` stores caller-owned
-entries newest first; `lookup` returns `none` outside the context, and
-`HasType` compares the actual type entry at an index. `InScope` states the
-raw index bound separately. This does not make an arbitrary renaming
-type-preserving, or identify slots of unrelated contexts of equal length.
-
-`shiftIndex` implements upward cutoff insertion. `liftRen` and `liftRenN`
-protect one or several fresh binders. `liftSub` extends a generic environment
-using caller-supplied variable construction and weakening. Its scope theorem
-requires those actions to preserve the caller's scope predicate; the caller
-must also establish that weakening has the intended capture-avoiding meaning.
-No downward shift or expression traversal is supplied.
-
-The [production checks](../../FrenBaseTests/Binding.lean), imported by the
-normal Fren2 test driver, connect these functions to the primitive scope,
-shift and lift contracts with Lean laws and rule references. This is direct
-Lean evidence, not an `impl` binding or a proof from Plausible. Universal
-proofs cover fresh/older lookup, membership bounds and completeness, shift
-boundaries, injectivity and same-cutoff composition, bounded lifted maps,
-the nested cutoff equation, and conditional scope preservation for lifted
-substitution environments. Direct Plausible tests additionally compare
-shifted lookup with concrete context insertion, check raw indices and nested
-lifts, count accepted/rejected scope premises, and falsify deliberately bad
-cutoffs, renaming lifts and substitution weakening. Lists of references test
-the generic environment carrier; they are not a production expression IR.
-
-The evidence boundary is explicit:
-
-| Obligation | Evidence now | Remaining work |
-| --- | --- | --- |
-| Index and environment primitives | Universal Lean production proofs and direct Plausible checks | Instantiate weakening with each actual IR |
-| Whole-term scope preservation and checker equivalence | Universal Lean prototype proofs | Bind to shared structural operations when implemented |
-| Whole-term identity, composition, shift/substitution | Bounded executable tests on prototype operations | Shared structural operations and universal composition/commutation proofs |
-| Free indices, alpha-equivalence, opening/closing inverses | Definitions and laws in this chapter | Actual APIs, formalization and tests |
-| Generic fold induction/fusion | Prototype has a total fold | Prove the reusable theorem once and instantiate it |
-| Production pass simulations | Overview's requirements | Relate values, assumptions and obligations for each pass |
-
-- [ ] Formalize the composition and commutation equations in Lean over the
-  shared implementation, using real induction where the fold theorem
-  does not suffice.
-- [ ] Prove free-index, alpha and open/close laws over their actual APIs.
-- [ ] Instantiate the planned generic fold theorem for simple traversal
-  laws; it is not an existing proof delivered by the prototype.
-- [ ] Bind the future shared code with `impl` where applicable, without
-  using `impl … by plausible` as proof evidence.
-- [ ] Test actual future IR forms with direct Plausible, including invalid,
-  ill-typed and partial inputs; report accepted/rejected premise counts.
-- [ ] Restate recursive laws in Fren after crossover when it supports
-  recursive functions over array children and the required environments.
-  No Fren 1 recursive feature is a prerequisite for this chapter.
+Implementation correspondence and proof coverage are recorded in the
+[development coverage document](../../../docs/fren2-specification-coverage.md).
 
 ## Independent primitive contracts
 
