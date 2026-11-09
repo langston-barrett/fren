@@ -1359,7 +1359,8 @@ def elabFile (file : Nat) (src : Array Char) (items : Array Item) (starts : Arra
                            expectationRemovals := #[], items := #[], usedItems := #[], procs := #[], lintFixes := #[],
                            hofParams := #[], fnArgs := #[],
                            globalTexts := #[], natReports := #[], natKept := #[], settings := #[], settingRemovals := #[], seenSettings := #[],
-                           assumptions := #[], globalReads := #[], trailingCommas }
+                           assumptions := #[], globalReads := #[], trailingCommas,
+                           itemStart := 0, literals := #[], itemSpan := default }
   for item in items, k in [0:items.size] do
     -- An item has the literals and comments up to the next item, and the
     -- first, those before it too, and those that a `set_option` before it

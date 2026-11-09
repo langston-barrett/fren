@@ -2045,19 +2045,21 @@ def specFiles : IO (Array String) := do
   let fs := fs.filter fun f => f.extension == some "fren" || f.extension == some "md"
   return (fs.map fun f => ((f.toString.dropPrefix? "./").map (·.toString)).getD f.toString).qsort (· < ·)
 
-/-- These container fixtures deliberately pin bytes, token spans or text-runner
-oracles. The Fren2 parser, AST, resolver and text jobs check them directly;
-the legacy formatter must neither rewrite them nor treat them as format laws. -/
-def fmtExactBytes : List String :=
-  ["test/FrenParse/crlf.fren", "test/FrenParse/walking.fren",
-   "test/FrenResolve/s1.fren", "test/FrenAst/emission.fren",
-   "test/FrenTextBytes/eol.fren", "test/FrenTextDemo/sums.fren",
-   "test/FrenWalking/static.fren"]
+/-- Fren2 test corpora use their own syntax and fixtures, not Fren1 formatting.
+Keep the directory boundary so similarly named Fren1 paths remain checked. -/
+def fmtFren2Corpus (f : String) : Bool :=
+  ["FrenAst", "FrenParse", "FrenResolve", "FrenTextBytes", "FrenTextDemo",
+   "FrenTypecheck", "FrenWalking", "fren2-verdicts"].any fun dir =>
+    f.startsWith s!"test/{dir}/"
+
+#guard fmtFren2Corpus "test/FrenParse/new.fren"
+#guard !fmtFren2Corpus "test/FrenParser/new.fren"
+#guard !fmtFren2Corpus "test/ui/new.fren"
 
 /-- Specs that are not formatted, as `--ignore` globs: those deliberately
 not formatted, and those that `fren fmt` cannot parse, such as tests of
 syntax errors and of Lean code, and the examples of Markdown specs. -/
-def fmtIgnore : List String := fmtExactBytes ++
+def fmtIgnore : List String :=
   ["test/cli/syntax/*.fren", "test/cli/names/f0216_member_option.fren", "test/cli/fix/*.fren", "test/cli/fmt/check.fren",
    "test/cli/fmt/chain_error.fren", "test/cli/fmt/quantifier.fren", "test/cli/fmt/quantifier_error.fren", "test/cli/fmt/quantifier_unbounded.fren",
    "test/cli/fmt/is.fren", "test/cli/fmt/parse_error.fren", "test/cli/fmt/patterns.fren", "test/cli/fmt/shadow.fren", "test/cli/fmt/update.fren",
@@ -2672,8 +2674,8 @@ spec that parses is formatted. -/
 def formatting : IO (Array String) := do
   let mut failures := #[]
   let mut relaidSome := false
-  for f in ← specFiles do
-    if FrenCli.Fmt.ignored fmtExactBytes.toArray f then continue
+  let files := (← specFiles).filter fun f => !fmtFren2Corpus f
+  for f in files do
     let src ← IO.FS.readFile f
     let .ok new := FrenCli.Fmt.formatFile f src | continue
     if fmtKept f src != fmtKept f new then
@@ -2713,7 +2715,7 @@ def formatting : IO (Array String) := do
     failures := failures.push "the check of blank lines misses a blank line between a doc comment and its item"
   -- Every other spec is formatted, as `fren fmt --check` says.
   let ignore := (fmtIgnore ++ fmtPending).flatMap (["--ignore", ·])
-  let (out, code) ← runFren (["fmt", "--check"] ++ ignore ++ (← specFiles).toList)
+  let (out, code) ← runFren (["fmt", "--check"] ++ ignore ++ files.toList)
   if code != 0 then
     failures := failures.push s!"specs are not formatted (exit {code}); run `fren fmt {" ".intercalate ignore} FILE...`:\n{out}"
   -- In place: the file becomes formatted, and is then left alone.
@@ -3403,6 +3405,13 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
   -- `elabFile` sets before reading them are another file's, or the first's
   -- (`State.withPerFileOf`), so `sameForLater` need not compare them.
   if slice == 0 then
+    -- Empty chapters still reset the item-local fields, although no item runs.
+    let empty := #[]
+    let dirty : FrenCli.State := { itemStart := 7, itemSpan := ⟨7, 9⟩ }
+    let clean := FrenCli.elabParsed {} 0 empty (FrenCli.parseText empty)
+    let after := FrenCli.elabParsed dirty 0 empty (FrenCli.parseText empty)
+    unless same_fields% FrenCli.State clean after except [bound] && clean.bound.size == after.bound.size do
+      failures := failures.push "empty file retains another file's item-local fields"
     for (_, chars) in files, j in [0:files.size] do
       let other := before[if j == 0 then files.size else 0]?.getD {}
       let st := FrenCli.elabParsed (before[j]?.getD {}) j chars parsed[j]!
