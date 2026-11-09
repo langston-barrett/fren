@@ -1123,19 +1123,22 @@ from source forms to the item identities, scopes of de Bruijn levels and
 symbol environment of Core typing, and its wrapper traces its evidence.
 The wrapper proves in Lean the laws of local lookup, weakening by an
 unmentioned name, the resolved table's scoping and alignment, the item
-kinds that each resolved position names, sibling scopes and the parallel
-parameter context, and it binds the production resolver's nearest-name
-search and name equality (`FrenAstToHir.nearest`, `FrenAstToHir.sameName`)
-to their rules.
+kinds that each resolved position names, sibling scopes, the parallel
+parameter context, that collection yields a well-formed symbol
+environment and that exchanging the last two declarations changes
+nothing that collection binds. It binds the production resolver's
+nearest-name search and name equality (`FrenAstToHir.nearest`,
+`FrenAstToHir.sameName`) to their rules. None of the chapter's own claims
+is `trusted`.
 
 - [x] Bind the nearest-name primitive to its rule with a genuine Lean
   proof over every scope.
-- [ ] Prove in Lean that collection yields a well-formed symbol
+- [x] Prove in Lean that collection yields a well-formed symbol
   environment (`names.handoff.environment`), which is what
-  `types.symbols.resolution` assumes; it is `trusted` as open.
-- [ ] Prove the exchange law of collection (`names.collection.order`) and
-  state the law for every permutation; the exchange law is `trusted` as
-  open.
+  `types.symbols.resolution` assumes.
+- [x] Prove the exchange law of collection (`names.collection.order`).
+- [ ] State and prove the order law for every permutation of the
+  declarations; the chapter states it only for the last two.
 - [ ] Bind path-head and member lookup and collection to the production
   resolver, whose functions read production scope and token structures
   that Fren does not yet state.

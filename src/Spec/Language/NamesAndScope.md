@@ -950,8 +950,6 @@ pub proc collection_order(
         and collect(parent, name, Extend(Extend(decls, second), first)) = Some(right),
         entry(left, item) = entry(right, item)
 }
-
-trusted collection_order: "open: the exchange law needs that collected identities are distinct, which is not yet proved in Lean"
 ```
 
 r[names.handoff.environment] spec::names::collection_well_formed::well_formed
@@ -969,8 +967,6 @@ pub proc collection_well_formed(parent: ItemId, name: String, decls: Snoc<SrcDec
     ensure output: holds?
     ensure well_formed: when collect(parent, name, decls) = Some(symb), symb_ok?(symb)
 }
-
-trusted collection_well_formed: "open: not yet proved in Lean; random testing has found no counterexample"
 ```
 
 r[names.locals.parameters] spec::names::{parameters_parallel::parallel, bodies_resolve?, module_resolves?}
