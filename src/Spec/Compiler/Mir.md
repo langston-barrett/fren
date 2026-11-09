@@ -7,12 +7,12 @@ over its parameters. MIR carries these meanings toward logical lowering
 (LIR), obligation generation (OIR) and SMT solving, as described in the
 [compiler overview](Overview.md).
 
-This chapter specifies the next producer, `FrenThirToMir`, for the current
-[walking desugaring](Desugaring.md) boundary. `FrenMir` and `FrenThirToMir`
-are currently empty module stubs. The rules below are requirements for their
-future real code, not properties already proved of a producer. They fix
-observable information and meaning without freezing a final IR datatype,
-printed format or generator.
+This chapter specifies `FrenThirToMir` for the current
+[walking desugaring](Desugaring.md) boundary. Its first walking producer
+retains typed expressions and separates definitions from explicit check
+requests. The rules fix observable information and meaning without freezing
+a final IR datatype, printed format or generator. The implementation and
+remaining proof obligations are distinguished below.
 
 ## Admitted input and retained identity
 
@@ -184,7 +184,7 @@ bodies. Lean laws constrain the real walker's outcome binding, local reads
 and deciding-left branches; a bound primitive Fren contract independently
 checks the right-operand demand decision. This corrects the reported strict
 reference behavior before dependent encoding. It does not establish general
-partial-outcome simulation for a future MIR producer. Explicit operational
+partial-outcome simulation for downstream logical encodings. Explicit operational
 depth and the evaluator's remaining correspondence limits still apply.
 
 The actual interpreter also distinguishes semantic undefinedness,
@@ -275,25 +275,67 @@ counterexample. Removing `bounded` is a separate negative control:
 `l = Light::Red, base = 101` makes `at_most` false. The chapter's positive
 Fren fences do not contain either deliberate failure.
 
-## Pending implementation evidence
+## Implementation evidence and remaining obligations
 
-The three primitive facts have Fren1 checks. There is no MIR producer,
-production `impl` binding, MIR evaluation or general simulation theorem yet.
-The eleven `mir.walking.*` rules are pending contracts, not eleven proofs.
+`FrenThirToMir.produce` consumes `FrenThirDesugar.Program`, whose equality
+witness certifies actual walking admission. `fromSource` uses that same
+parser, resolver and checked desugaring boundary. Rejected sources retain
+their admission diagnostics. Internal missing-table failures are explicit;
+construction never silently omits a declaration after such a failure.
 
-- [ ] Implement the actual admitted walking producer and its retained theory
+`FrenMir.Theory` retains the complete `Typed` source. Its ordered declarations
+separate nominal enums, function signatures and defining bodies, and global
+expectation blocks. Blocks retain their written declaration, ordered typed
+parameters, nearest-first context and ordered typed members, even when there
+are no members. This is a small walking representation, not the final theory
+schema for the full language.
+
+`Block.requests` always emits an assumption-satisfiability request, then one
+validity request per written goal. Every request carries all and only its
+block's assumptions, including later assumptions, with the block's parameters
+and context. Each request also carries structured `Demand` roots: complete
+assumption bodies, plus the goal body for validity. Their original syntax,
+occurrences, lexical contexts and call targets remain available. Definedness
+is requested with source demand semantics before interpreting Boolean
+results; no partial operation is flattened into an unguarded assertion.
+Definitions remain definitions in the same theory. These data are unresolved
+requests, not discharged obligations, logical formulas or solver verdicts.
+
+The Lean `retains`, `admission`, `rejected` and `deterministic` laws constrain
+the actual producer. `requests_from_blocks` connects its output requests to
+the retained blocks. `assumptions_exact`, `goals_exact`, `request_context`,
+`satisfiability_first`, `request_count` and `validity_member` constrain the
+actual request helper. These laws establish data retention and request
+selection, not logical validity or general definedness correspondence.
+
+Direct Plausible and native cases run source through actual admission and
+construction, with mandatory admitted, rejected and partial classes and
+reported counts. Independent expected request identities, counts, member
+roles, ordering and contexts cover S1, later assumptions, multiple owners,
+no assumptions, empty blocks, contradictory assumptions, nominal spellings
+and unused definitions. Negative controls omit assumptions or declarations,
+change roles, reorder declarations, substitute owners, parameters, contexts
+or local slots, remove demand roots and alter guards. Concrete probes of the
+retained source cover lazy lets and Boolean demand, strict operators and call
+arguments, and exact failure provenance. These tests are finite evidence;
+concrete false results are not solver counterexamples.
+
+The three primitive facts above retain their independent Fren1 checks.
+They are not production `impl` bindings. The eleven `mir.walking.*` rules
+remain normative: the retention and request-selection laws above address
+parts of them, while the general semantic correspondence laws remain open.
+
+- [x] Implement the actual admitted walking producer and its retained theory
   information, with explicit failure data and deterministic declaration order.
-- [ ] Bind the actual code to admission, retention, definitions, contexts and
-  member contracts, using Lean proofs where cheap.
+- [x] Bind actual admission, retention and request selection to Lean laws,
+  with finite checks of definitions, contexts and members.
 - [ ] Establish actual value, assumption and obligation correspondence,
-  including satisfiability and definedness. The evaluator demand correction
-  above is a prerequisite resolved, not a general outcome-preservation proof.
-- [ ] Test the real code directly with Plausible, reporting premise counts
-  for admitted, rejected and partial inputs. Include mutations that drop an
-  assumption or obligation, flip a role and use the wrong context.
+  including satisfiability and definedness in downstream encodings.
+- [x] Test the real code directly with Plausible, reporting premise counts
+  for admitted, rejected and partial inputs, and independent negative controls.
 - [ ] Connect downstream requests to real LIR/OIR/SMT and confirm source
   counterexamples, including S1's Amber result. A Fren1 negative control
-  demonstrates sensitivity of the example, not sensitivity of future code.
+  demonstrates sensitivity of the example, not solver evidence for this pass.
 
 Interfaces, views, morphisms, recursive groups, subset erasure, procedure
 relations, generic and closure elimination, a full MIR schema and Lean
