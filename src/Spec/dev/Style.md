@@ -253,3 +253,27 @@ structural induction or fold theorem where one is available. Independent
 primitive contracts fix facts such as lookup and operator meanings. Neither
 roundtrips nor model agreement replace those facts. Testing is not a proof
 and supplies no `impl ... by plausible` or `sorry`.
+
+## Checked blocks of the syntax chapters
+
+[Lexical structure](../Language/LexicalStructure.md) and
+[Syntax](../Language/Syntax.md) check their grammar and examples against the
+actual lexer and parser, through blocks that their wrappers read:
+
+- A `grammar` block holds normative grammar rules, read as a parsing
+  expression grammar; the reader rejects malformed notation, a rule defined
+  twice, an undefined nonterminal and an unreachable rule.
+- A `fren2` block is a file that the parser accepts, and a
+  `fren2 rejected` block one that it rejects. A rejected block follows a
+  sentence that starts with the identifier of the rule it breaks, and
+  carries a `--~ error:` annotation with the parser's message, which is not
+  normative.
+- A `fren2 groups` block lists `text -- grouping` lines, whose sides have
+  the same tree; a `fren2 trees` block lists `text -- tree` lines, the tree
+  written with the constructor names of the abstract syntax.
+- A `fren2 pieces` block gives a text on its first line and then its
+  lexical pieces, one a line.
+
+A rationale cites the decision or design-debt entry that it explains, in
+[development coverage](../../../docs/fren2-specification-coverage.md#syntax-decisions-and-design-debt),
+until the issue tracker can be cited again.

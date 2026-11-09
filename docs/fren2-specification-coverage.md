@@ -1365,3 +1365,48 @@ conflict and cross-owner/program/source records are rejected. These are finite
 checks and cheap actual-code verdict laws, not proofs of `CheckerContract`,
 source/encoding preservation, solver trust or the existing universal model and
 evaluator contracts. Process bindings are retained IO evidence, not signatures.
+
+## Syntax decisions and design debt
+
+These entries are the decisions and the design debt that the chapters
+[Lexical structure](../src/Spec/Language/LexicalStructure.md) and
+[Syntax](../src/Spec/Language/Syntax.md) cite.
+
+Decisions:
+
+- **L1.** `<-` is rejected text, reserved for a possible future operator;
+  `x<-1` is an error rather than `x < -1`.
+- **L2.** The keywords of today's Fren that the Fren 2 grammar does not use
+  are reserved, and `true`, `false` and `not` are keywords.
+- **S1.** Every comma-separated list allows a trailing comma; only an
+  expectation's parameters and a match's arms may be empty.
+- **S2.** The remainder is written `%`, and `mod` is only the module keyword.
+
+Design debt:
+
+- **D2.** A declaration may be named `Bool` or `Int`, while a type written
+  as that single identifier denotes the built-in type. Names and scope has
+  to say whether such a declaration is allowed.
+- **G1.** Today's Fren has no recursive datatype whose recursion passes
+  through a `Seq`, so the abstract syntax is the one-layer `ExprF<E>`, and
+  a constraint on the elements of a `Seq` is outside the decidable core, so
+  only the identifiers that no sequence holds are typed as `Identifier`.
+
+Evidence of these chapters, and its bounds:
+
+- [ ] The lexer agrees with the lexical classes and maximal munch on every
+  text of up to three characters over 23 characters, of four over ten, a
+  corpus and 500 seeded random texts (`lexer_agrees`); not proved for all
+  texts.
+- [ ] The grammar agrees with the parser on exhaustive token sequences of
+  up to three, four or five pieces, seeded random sequences, printed random
+  trees and files, and the texts near them (`grammar_agrees`), and a
+  mutation control of 34 wrong grammars is caught (`mutants_caught`); not
+  proved for all texts.
+- [ ] Printing and parsing round-trip 2000 seeded random trees and every
+  operator pair, with minimal parentheses (`roundtrip_agrees`); not proved
+  for all trees.
+- [ ] `parsing.shared.drivers` is open: the command line and the hosted
+  reader do not yet call `FrenParse`.
+- [ ] `parsing.primitive.boundary` is open: no theorem relates continuation
+  bytes to character boundaries.

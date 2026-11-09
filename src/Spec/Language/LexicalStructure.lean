@@ -108,15 +108,10 @@ random texts of 20 to 120 characters. -/
 def lexer_agrees : Bool :=
   let texts := strings alphabet 3 ++ strings ['a', '?', '-', '<', '=', '!', ':', '\r', '\n', '1'] 4 ++
     corpus ++ randomTexts 500
-  texts.all (fun s => actualPieces s == specPieces s &&
+  texts.all fun s => actualPieces s == specPieces s &&
     FrenAst.ownsSource ⟨0⟩ s (FrenParse.tokenize ⟨0⟩ s).tape &&
     (!(actualPieces s).any (·.1 == .rejected) ||
-      !(FrenParse.parseFile ⟨0⟩ s).toBool && !(FrenParse.parseExpression ⟨0⟩ s).toBool)) &&
-  -- The chapter's worked example.
-  actualPieces "f(x)<=-1 -- note" ==
-    [(.identifier, "f"), (.punctuation, "("), (.identifier, "x"), (.punctuation, ")"),
-     (.punctuation, "<="), (.punctuation, "-"), (.numeral, "1"), (.trivia, " "), (.trivia, "-- note")] &&
-  actualPieces "x<-1" == [(.identifier, "x"), (.rejected, "<-"), (.numeral, "1")]
+      !(FrenParse.parseFile ⟨0⟩ s).toBool && !(FrenParse.parseExpression ⟨0⟩ s).toBool)
 
 #guard lexer_agrees
 
@@ -151,5 +146,49 @@ def numerals_agree : Bool :=
     | .error _ => false
 
 #guard numerals_agree
+
+def chapterPath : System.FilePath := "src" / "Spec" / "Language" / "LexicalStructure.md"
+
+/-- A piece in the notation of the chapter's `fren2 pieces` blocks: its kind
+and its text, a space written as `U+0020`. Trivia is told apart by its text. -/
+def pieceLine : LexicalKind × String → String
+  | (.trivia, t) => if t.startsWith "--" then s!"comment {t}" else
+      "whitespace " ++ " ".intercalate (t.toList.map fun c =>
+        let h := (String.ofList (Nat.toDigits 16 c.toNat)).toUpper
+        "U+" ++ String.ofList (List.replicate (4 - h.length) '0') ++ h)
+  | (.identifier, t) => s!"identifier {t}"
+  | (.keyword, t) => s!"keyword {t}"
+  | (.numeral, t) => s!"numeral {t}"
+  | (.punctuation, t) => s!"punctuator {t}"
+  | (.rejected, t) => s!"rejected {t}"
+
+--@ reference: lexical.piece.longest
+--@ reference: lexical.piece.rejected
+/-- Each `fren2 pieces` block's first line lexes into the pieces that its
+other lines list, by the actual lexer and by the chapter's rules alike. -/
+def pieces_agree (md : String) : Except String Unit := do
+  for b in (Fren.Core.fencedBlocks md).toList do
+    if b.info != "fren2 pieces" then continue
+    let some text := b.body[0]? | throw s!"LexicalStructure.md:{b.line}: an empty `fren2 pieces` block"
+    let expected := b.body.toList.drop 1
+    unless (actualPieces text).map pieceLine == expected && (specPieces text).map pieceLine == expected do
+      throw s!"LexicalStructure.md:{b.line}: `{text}` has the pieces {(actualPieces text).map pieceLine}"
+
+open Lean in
+/-- The `tested` and `lean` names of a chapter's status comments. -/
+def statusNames (md : String) : List String :=
+  (md.splitOn "\n").filterMap fun l =>
+    match (l.trimAscii.toString.dropPrefix? "<!-- status: ").map (·.toString) with
+    | some rest => match rest.splitOn " " with
+      | [kind, name, "-->"] => if kind == "tested" || kind == "lean" then some name else none
+      | _ => none
+    | none => none
+
+open Lean Elab Command in
+#eval show CommandElabM Unit from do
+  let md ← IO.FS.readFile chapterPath
+  if let .error e := pieces_agree md then throwError e
+  for name in statusNames md do
+    unless (← getEnv).contains name.toName do throwError s!"the status names `{name}`, which does not exist"
 
 end Spec.Language.LexicalStructure

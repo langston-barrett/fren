@@ -8,6 +8,13 @@ namespace FrenParseTests
 open FrenAst FrenParse Plausible
 open scoped Plausible.Decorations
 
+--@ reference: parsing.lossless.ownership
+--@ reference: parsing.source.bounds
+--@ reference: parsing.source.utf8
+--@ reference: parsing.complete
+--@ reference: parsing.failure
+--@ reference: parsing.diagnostic.anchor
+--@ reference: parsing.roundtrip
 /-- Both outcomes are checked. No accepted-parse implication can discard a
 malformed sample, and failure retains and audits the full lexical tape. -/
 def audit (entry : Entry) (file : FrenSource.FileId) (text : String) : Bool :=
@@ -60,12 +67,16 @@ private def check (label : String) (p : Prop)
   ∀ (text : String) (file : Nat) (expr : Bool),
   audit (if expr then .expression else .context) ⟨file⟩ text = true
 
-#eval check "file and context share ordered declaration trees and diagnostics" <|
-  ∀ (text : String) (file : Nat),
-  (match parseFile ⟨file⟩ text, parseContext ⟨file⟩ text with
+--@ reference: parsing.shared.entry
+/-- The file and context entries give the same tree or the same diagnostic. -/
+def entriesAgree (text : String) (file : Nat) : Bool :=
+  match parseFile ⟨file⟩ text, parseContext ⟨file⟩ text with
   | .ok a, .ok b => a.root == b.root && a.tape == b.tape && a.emit == b.emit
   | .error a, .error b => a == b
-  | _, _ => false) = true
+  | _, _ => false
+
+#eval check "file and context share ordered declaration trees and diagnostics" <|
+  ∀ (text : String) (file : Nat), entriesAgree text file = true
 
 -- Independent expectations for producer classifications, not a copy of a
 -- producer-supplied verdict. Both properties also have universal Lean proofs.

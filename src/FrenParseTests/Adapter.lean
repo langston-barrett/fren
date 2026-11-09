@@ -55,6 +55,7 @@ def sameResult [BEq ε] [BEq α] (left right : Except ε α) : Bool :=
   | .error a, .error b => a == b
   | _, _ => false
 
+--@ reference: parsing.tree.structure
 /-- Audit actual terminal occurrences against independently scanned tokens. -/
 def coherent (doc : Document) : Bool :=
   let lexed := tokenize doc.file doc.source
