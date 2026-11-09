@@ -140,8 +140,7 @@ r[lexical.class.disjoint] spec::lexical::classes::{disjoint, punctuator_extensio
 status: smt
 No text belongs to two classes: the class of each piece is determined.
 A punctuator of two characters, other than `!=`, extends one of one
-character: the punctuators, `--` and `<-` are the only places where one
-character of lookahead decides between a short and a long piece.
+character.
 
 ```fren
 expect classes(a: Class, b: Class, text: String) {
