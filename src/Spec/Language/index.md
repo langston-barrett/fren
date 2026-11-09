@@ -28,7 +28,8 @@ of evaluation; a run ends in a value, ends in an error, or diverges.
 of a typed expression, the hypotheses under which each must be proved, and
 what a solver's answer establishes. Later chapters build on these
 same identities, contexts and judgments rather than assuming precomputed
-(Patterns.md) defines how a match selects an arm, the
+resolution or typing decisions.
+[Patterns and matching](Patterns.md) defines how a match selects an arm, the
 coverage check that every constructor has exactly one arm, and the
 unreachable arms that the check rejects.
 

@@ -24,7 +24,8 @@ The chapter's judgments, and the Fren definitions that state them:
 
 In outline, a match on a constructor c takes the first arm written for c, and
 the check on a match is exactly that every constructor of the scrutinee's
-enumeration is the pattern of one arm:
+enumeration is the pattern of one arm, for arms whose patterns the typing rules
+have admitted:
 
 ```text
   select   : Arms × Item → Option Arm
@@ -281,9 +282,8 @@ pub proc check_coverage(constructors: Snoc<ItemId>, arms: Snoc<ArmF<Typing>>): (
 r[patterns.coverage.diagnostic] spec::patterns::{CoverageError, coverage_error, coverage_error_none::{accepted, rejected}}
 A match that does not cover its scrutinee's enumeration is rejected with an
 error that names the enumeration, the missing constructors in declaration
-order and the repeated patterns in written order. The compiler reports a
-missing constructor at the `match` keyword and a repeated pattern at the first
-repeated arm; source positions are outside the Core. A match on a type that
+order and the repeated patterns in written order. The compiler reports the error at the first repeated arm when there is one,
+and otherwise at the `match` keyword; source positions are outside the Core. A match on a type that
 is not an enumeration has no coverage error here: its owner has no
 constructors to cover, and the typing rules reject it. The error has no
 catalogue code yet, and its rendering is not specified here.

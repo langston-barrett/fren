@@ -194,9 +194,9 @@ correspondence. The informative source examples' diagnostics, such as
   compiler representations, including the level-to-index conversion.
 - [ ] Prove the complete occurrence/context-preserving source-to-Core
   correspondence and actual checker's `TypingSound` theorem and converse.
-- [ ] Prove universal call-graph correspondence separately from typing,
-  preserving all branch bodies and unused definitions. The match-coverage
-  half is the Patterns chapter below.
+- [ ] Prove universal match-coverage and call-graph correspondence separately
+  from typing, preserving all branch bodies and unused definitions. The
+  Patterns chapter below binds only the coverage computation on arrays.
 - [ ] Formalize interpretation/free-local/mentioned-item recursive closure
   against actual binding and expression code, including capture avoidance.
 - [ ] Establish universal value and declarative source-obligation preservation
@@ -1835,7 +1835,7 @@ checks that each rule of the three chapters links the Fren items after it:
 ## Patterns and matching: src/Spec/Language/Patterns.md
 
 The chapter reuses the Core's identities, `Snoc`, `Symb` and `ArmF`. Its
-wrapper proves in Lean, over every arm sequence, that selection takes the
+wrapper proves in Lean, over every arm sequence (every typed one, where a premise says so), that selection takes the
 first written arm for a constructor, agrees with the arm at the first index,
 and is unaffected by the order of arms when a constructor has one; that the
 coverage check is exactly "every constructor selects an arm and no arm is
