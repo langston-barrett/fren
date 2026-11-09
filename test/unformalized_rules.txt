@@ -348,3 +348,8 @@ expressions.mentions.closure -- recursive closure over complete written children
 expressions.domain.traversal -- whole-source obligation traversal; no ordinary operand or unused definition may be erased
 expressions.domain.guards -- recursive conditional context and scoped obligation correspondence
 expressions.domain.evidence -- proof provenance and unknown/resource policy; no goal may justify itself
+
+# src/Spec/Compiler/Lir.md
+lir.terms.sorts -- actual recursive Lean Sorted judgment; checker equivalence and recursive Fren binding remain unproved
+lir.meaning.values -- actual recursive Lean Meaning judgment; universal typed interpretation correspondence remains unproved
+lir.meaning.symbols -- actual source-definition Models relation and constructive sufficient model proof; universal model existence remains unproved
