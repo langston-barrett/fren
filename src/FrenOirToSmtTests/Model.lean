@@ -172,6 +172,7 @@ def runSourceConfirmation : IO Unit := do
 #print axioms FrenOirToSmt.wrong_bool
 #print axioms FrenOirToSmt.strict_operand
 #print axioms FrenOirToSmt.strict_div_zero
+#print axioms FrenOirToSmt.strict_mod_zero
 #print axioms FrenOirToSmt.model_nonzero
 
 end FrenOirToSmtTests

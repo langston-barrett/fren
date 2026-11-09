@@ -357,13 +357,14 @@ def ModelAssignment (p : FrenOir.Program) (q : FrenOir.Question)
     value.type = param.source.type ∧ value.valid p.lir.mir.source = true
 
 /-- Observation of the actual interpreter on the retained source body, which
-strict evaluation of its retained static obligations must reproduce. -/
+strict evaluation of its retained static obligations must reproduce whenever
+the body or a transitive callee mentions `div` or `mod`. -/
 def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
     (depth : Nat) (value : Bool) : Prop :=
   ∃ observation, FrenEval.evaluate ⟨p.input, p.typed, p.accepted⟩
       ⟨body.owner, body.member.map (·.label.text)⟩ values depth = .ok observation ∧
     observation.body = body ∧ observation.outcome = .ok (.bool value) ∧
-    strictBody p.typed body values depth = .ok (.bool value)
+    (divisionFree p.typed body = true ∨ strictBody p.typed body values depth = .ok (.bool value))
 
 /-- Concrete candidates do not discharge universal validity or domain questions. -/
 def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Question)
@@ -511,8 +512,9 @@ Assignments have the exact source arity and types and real enum membership.
 Every retained hypothesis is evaluated as true on its original source body.
 A Sat search then yields a concrete witness. A validity refutation
 additionally evaluates its retained source goal as false and yields a concrete
-counterexample. Each such observation needs two agreeing evaluations under the
-assignment: `FrenEval.evaluate`, which follows runtime demand, and
+counterexample. When the body or a transitive callee mentions `div` or `mod`
+(`divisionFree` fails), each such observation needs two agreeing evaluations
+under the assignment: `FrenEval.evaluate`, which follows runtime demand, and
 `strictBody`, which follows the retained verification tree of
 `r[lir.walking.demand]`. Strict evaluation evaluates both ordinary operands,
 including those of `and` and `or`, every let value even if unused, and every
@@ -521,7 +523,9 @@ branch of an `if` or `match`. A `div` or `mod` by zero has no value, so any
 undefined step, like exhaustion, fails strict evaluation. Agreement therefore
 means that every active static obligation of the consumed body and of the
 callee bodies it reaches holds at the assignment, so the demand-driven value
-is the dynamic value there. A consumed body may contain division anywhere;
+is the dynamic value there. Without `div` or `mod` no primitive step is undefined,
+so demand-driven success alone suffices and confirmation costs no more than
+the interpreter. A consumed body may contain division anywhere;
 only its evaluation at the model decides. A false premise or true goal rejects
 the candidate; unsupported forms and evaluation failures are unconfirmed.
 `SourceBoolean` and `SourceCandidate` specify these observations;

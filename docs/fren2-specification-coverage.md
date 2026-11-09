@@ -218,7 +218,9 @@ upstream universal proof obligations are preserved in full.
   a consumed body whose strict evaluation is undefined at the model remains
   unconfirmed.
 - [ ] Prove `ReadbackContract`, `ConfirmationContract`, adequacy of
-  `strictBody` to the retained verification tree and evaluator adequacy.
+  `strictBody` to `Lir.SourceValue`/`Mir.ValueOf` (so that `SourceBoolean`
+  can be stated through that judgment rather than the implementation) and
+  evaluator adequacy.
   Justify mutually partial assumptions.
 - [x] Deliver a conservative actual-source checker report with complete ordered
   inventory, receipt provenance, dependency discharge and confirmed nonvacuity.

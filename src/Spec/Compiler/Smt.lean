@@ -208,13 +208,14 @@ def ModelAssignment (p : FrenOir.Program) (q : FrenOir.Question)
     value.type = param.source.type ∧ value.valid p.lir.mir.source = true
 
 /-- Observation of the actual interpreter on the retained source body, which
-strict evaluation of its retained static obligations must reproduce. -/
+strict evaluation of its retained static obligations must reproduce whenever
+the body or a transitive callee mentions `div` or `mod`. -/
 def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
     (depth : Nat) (value : Bool) : Prop :=
   ∃ observation, FrenEval.evaluate ⟨p.input, p.typed, p.accepted⟩
       ⟨body.owner, body.member.map (·.label.text)⟩ values depth = .ok observation ∧
     observation.body = body ∧ observation.outcome = .ok (.bool value) ∧
-    strictBody p.typed body values depth = .ok (.bool value)
+    (divisionFree p.typed body = true ∨ strictBody p.typed body values depth = .ok (.bool value))
 
 /-- Concrete candidates do not discharge universal validity or domain questions. -/
 def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Question)
@@ -286,6 +287,12 @@ theorem strict_division_by_zero (n : Nat) (t : Typed) (b : TypedBody) (env : Fre
     (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
     (strictWalk (n + 1) t b env (.binary left token .div right)).isOk = false :=
   FrenOirToSmt.strict_div_zero n t b env left right token value hl hr
+
+theorem strict_remainder_by_zero (n : Nat) (t : Typed) (b : TypedBody) (env : FrenEval.Environment)
+    (left right : Expr) (token : Token) (value : FrenEval.Value)
+    (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
+    (strictWalk (n + 1) t b env (.binary left token .mod right)).isOk = false :=
+  FrenOirToSmt.strict_mod_zero n t b env left right token value hl hr
 
 theorem wrong_model_sort (p : FrenOir.Program) :
     modelValue p .bool (.list #[]) = .error "unsupported model value or wrong sort" :=
@@ -520,6 +527,7 @@ theorem flipped_goal_model (p : FrenOir.Program) :
 #print axioms model_transport_nonzero
 #print axioms strict_operand_retained
 #print axioms strict_division_by_zero
+#print axioms strict_remainder_by_zero
 #print axioms wrong_model_sort
 #print axioms exact_encoding
 #print axioms local_translation

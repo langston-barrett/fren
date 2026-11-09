@@ -63,6 +63,42 @@ assignment, so the demand-driven value is the dynamic semantics there. -/
   let env ← (FrenEval.arguments t b values).mapError reprStr
   strictWalk depth t b env b.expression
 
+/-- Syntactic test for a partial operation anywhere in an expression, in
+every branch, operand and let. Exhausted traversal counts as partial. -/
+@[expose] def mentionsDivision : Nat → FrenAst.Expr → Bool
+  | 0, _ => true
+  | n + 1, e =>
+    let go := mentionsDivision n
+    match e with
+    | .bool .. | .integer .. | .name .. => false
+    | .paren _ e _ | .unary _ _ e => go e
+    | .binary a _ op b => op == .div || op == .mod || go a || go b
+    | .ifE _ c _ a _ b => go c || go a || go b
+    | .letE _ _ _ a _ b => go a || go b
+    | .matchE _ e _ arms _ => go e || arms.any (fun (_, _, arm, _) => go arm)
+    | .call f _ args _ _ => go f || args.any go
+
+/-- Whether a body and its transitive callees are free of `div` and `mod`.
+Without them no primitive step is undefined, so a successful demand-driven
+evaluation already means every static obligation holds and strict evaluation
+is skipped; this bounds confirmation cost by the interpreter's. Each reachable
+body is scanned once; a missing callee body or leftover worklist is partial. -/
+@[expose] def divisionFree (t : FrenModule.Typed) (root : FrenModule.TypedBody) : Bool := Id.run do
+  let mut work := #[root]
+  let mut seen : Array FrenBase.ItemId := #[]
+  for _ in [:t.bodies.size + 1] do
+    let some b := work.back? | return true
+    work := work.pop
+    if mentionsDivision 10000 b.expression then return false
+    for o in b.occurrences do
+      if let .callable sig := o.type then
+        unless seen.contains sig.id do
+          seen := seen.push sig.id
+          let some target := t.bodies.find? (fun target =>
+              target.owner == sig.id && target.member.isNone) | return false
+          work := work.push target
+  return work.isEmpty
+
 private def containsSite : Nat → FrenAst.Expr → FrenAst.Expr → Bool
   | 0, _, _ => false
   | n + 1, target, e => e == target || (match e with
@@ -134,17 +170,19 @@ private def confirmDefinedness (p : FrenEval.Program) (q : FrenOir.Question)
   | .ok (.int _) => return .rejected "source divisor is nonzero"
   | .ok _ => return .unconfirmed "source divisor is not an integer"
 
-/-- The demand-driven interpreter supplies the value; strict evaluation must
-agree, so a skipped undefined operand, unused let or callee step leaves the
-observation unconfirmed instead of becoming a witness or counterexample. -/
+/-- The demand-driven interpreter supplies the value; when division is
+reachable, strict evaluation must agree, so a skipped undefined operand, unused
+let or callee step leaves the observation unconfirmed instead of becoming a
+witness or counterexample. -/
 private def sourceBoolean (p : FrenEval.Program) (b : FrenModule.TypedBody)
     (values : Array FrenEval.Value) (depth : Nat) : Except String Bool := do
   let e ← (FrenEval.evaluate p ⟨b.owner, b.member.map (·.label.text)⟩ values depth).mapError reprStr
   unless e.body == b do throw "source evaluator selected another body"
   let v ← e.outcome.mapError reprStr
   let .bool value := v | throw "source evaluator returned a non-Boolean"
-  let strict ← (strictBody p.typed b values depth).mapError ("strict: " ++ ·)
-  unless strict == v do throw "strict and demand-driven evaluation disagree"
+  unless divisionFree p.typed b do
+    let strict ← (strictBody p.typed b values depth).mapError ("strict: " ++ ·)
+    unless strict == v do throw "strict and demand-driven evaluation disagree"
   return value
 
 /-- This helper consumes the actual producer's output, not editable solver
@@ -265,6 +303,15 @@ theorem strict_div_zero (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBo
     (value : FrenEval.Value)
     (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
     (strictWalk (n + 1) t b env (.binary left token .div right)).isOk = false := by
+  cases value <;> simp [strictWalk, hl, hr, Bind.bind, Except.bind, FrenEval.binary,
+    Except.mapError, Except.isOk, Except.toBool]
+
+/-- The same holds for remainder. -/
+theorem strict_mod_zero (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBody)
+    (env : FrenEval.Environment) (left right : FrenAst.Expr) (token : FrenAst.Token)
+    (value : FrenEval.Value)
+    (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
+    (strictWalk (n + 1) t b env (.binary left token .mod right)).isOk = false := by
   cases value <;> simp [strictWalk, hl, hr, Bind.bind, Except.bind, FrenEval.binary,
     Except.mapError, Except.isOk, Except.toBool]
 
