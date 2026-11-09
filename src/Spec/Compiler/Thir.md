@@ -45,7 +45,7 @@ context from actual source declarations and resolved signatures. `BodyInventory`
 requires exactly one retained entry for every source body, including unused
 functions and every check member; it also excludes invented entries.
 These declarations are compiled in the [chapter wrapper](Thir.lean), over
-actual production types; the source audit checks this displayed block against it.
+actual production types.
 
 **Proof obligations**
 
@@ -62,186 +62,11 @@ r[thir.contract.nonrecursion]
 On actual successful type-only output, non-recursion validation holds exactly
 when the selected function-call graph has no nonempty cycle.
 
-```lean
-/-- Immediate written children and their exact lexical type contexts. -/
-inductive ChildContext (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
-    FrenModule.TypeContext → FrenAst.Expr → FrenModule.TypeContext → FrenAst.Expr → Prop where
-  | paren : ChildContext r sigs ctx (.paren o e c) ctx e
-  | unary : ChildContext r sigs ctx (.unary tok op e) ctx e
-  | binaryLeft : ChildContext r sigs ctx (.binary a tok op b) ctx a
-  | binaryRight : ChildContext r sigs ctx (.binary a tok op b) ctx b
-  | callee : ChildContext r sigs ctx (.call f o args commas c) ctx f
-  | argument : e ∈ args.toList → ChildContext r sigs ctx (.call f o args commas c) ctx e
-  | condition : ChildContext r sigs ctx (.ifE i b t yes e no) ctx b
-  | thenBranch : ChildContext r sigs ctx (.ifE i b t yes e no) ctx yes
-  | elseBranch : ChildContext r sigs ctx (.ifE i b t yes e no) ctx no
-  | letValue : ChildContext r sigs ctx (.letE l name assign value i body) ctx value
-  | letBody : FrenHirToThir.HasValue r sigs ctx value vt →
-      ChildContext r sigs ctx (.letE l name assign value i body) ((name, vt) :: ctx) body
-  | scrutinee : ChildContext r sigs ctx (.matchE m scrutinee o arms c) ctx scrutinee
-  | armBody : arm ∈ arms.toList →
-      ChildContext r sigs ctx (.matchE m scrutinee o arms c) ctx arm.2.2.1
-
-/-- Reflexive structural closure, with context changes carried at every step. -/
-inductive AtContext (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
-    FrenModule.TypeContext → FrenAst.Expr → FrenModule.TypeContext → FrenAst.Expr → Prop where
-  | root : AtContext r sigs ctx e ctx e
-  | child : AtContext r sigs rootCtx root ctx parent →
-      ChildContext r sigs ctx parent childCtx childExpr →
-      AtContext r sigs rootCtx root childCtx childExpr
-
-/-- The actual successful type-only producer, rather than a supplied verdict. -/
-def Produces (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
-  FrenHirToThir.check input = .ok out
-
-/-- The recursive body judgment is over the retained production AST. -/
-def BodyTyping (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
-  ∀ body ∈ out.bodies.toList,
-    FrenHirToThir.HasValue input out.signatures body.context body.expression body.type
-
-/-- Callable meaning propagates through retained callee parentheses. -/
-inductive HasCallable (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
-    FrenModule.TypeContext → FrenAst.Expr → FrenModule.Signature → Prop where
-  | name : FrenHirToThir.Selects input ctx path .expression (.item sig.id) →
-      FrenHirToThir.signatureAt sigs sig.id = some sig →
-      HasCallable input sigs ctx (.name path) sig
-  | paren : HasCallable input sigs ctx e sig →
-      HasCallable input sigs ctx (.paren o e c) sig
-
-def OccurrenceMeaning (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature)
-    (occurrence : FrenModule.TypedOccurrence) : Prop :=
-  match occurrence.type with
-  | .value ty => FrenHirToThir.HasValue input sigs occurrence.context occurrence.expression ty
-  | .callable sig => HasCallable input sigs occurrence.context occurrence.expression sig
-
-/-- Ordered immediate children. Pattern paths and binder tokens are not expressions. -/
-inductive WrittenChildren (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
-    FrenModule.TypeContext → FrenAst.Expr →
-      List (FrenModule.TypeContext × FrenAst.Expr) → Prop where
-  | bool : WrittenChildren r sigs ctx (.bool t b) []
-  | integer : WrittenChildren r sigs ctx (.integer t n) []
-  | name : WrittenChildren r sigs ctx (.name p) []
-  | paren : WrittenChildren r sigs ctx (.paren o e c) [(ctx, e)]
-  | unary : WrittenChildren r sigs ctx (.unary t op e) [(ctx, e)]
-  | binary : WrittenChildren r sigs ctx (.binary a t op b) [(ctx, a), (ctx, b)]
-  | call : WrittenChildren r sigs ctx (.call f o args commas c)
-      ((ctx, f) :: args.toList.map (ctx, ·))
-  | ifE : WrittenChildren r sigs ctx (.ifE i b t yes e no)
-      [(ctx, b), (ctx, yes), (ctx, no)]
-  | letE : FrenHirToThir.HasValue r sigs ctx value vt →
-      WrittenChildren r sigs ctx (.letE l name assign value i body)
-        [(ctx, value), ((name, vt) :: ctx, body)]
-  | matchE : WrittenChildren r sigs ctx (.matchE m scrutinee o arms c)
-      ((ctx, scrutinee) :: arms.toList.map (fun arm => (ctx, arm.2.2.1)))
-
-mutual
-  /-- One entry per structural visit, after all ordered child entries. No key deduplication. -/
-  inductive OccurrenceOrder (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
-      FrenModule.TypeContext → FrenAst.Expr → List FrenModule.TypedOccurrence → Prop where
-    | node : WrittenChildren r sigs ctx expr children →
-        OccurrenceForest r sigs children nodes →
-        OccurrenceOrder r sigs ctx expr (nodes ++ [⟨expr, ctx, ty⟩])
-
-  /-- Child subtrees concatenate in written order, retaining their multiplicities. -/
-  inductive OccurrenceForest (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
-      List (FrenModule.TypeContext × FrenAst.Expr) → List FrenModule.TypedOccurrence → Prop where
-    | nil : OccurrenceForest r sigs [] []
-    | cons : OccurrenceOrder r sigs ctx expr first →
-        OccurrenceForest r sigs rest remaining →
-        OccurrenceForest r sigs ((ctx, expr) :: rest) (first ++ remaining)
-end
-
-/-- Exact per-body source inventory, including multiplicity and postorder. -/
-def OccurrenceInventory (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
-  ∀ body ∈ out.bodies.toList,
-    OccurrenceOrder input out.signatures body.context body.expression body.occurrences.toList
-
-/-- Both source-to-output coverage and soundness of every output entry. -/
-def OccurrenceTyping (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
-  (∀ body ∈ out.bodies.toList, ∀ ctx expr,
-    AtContext input out.signatures body.context body.expression ctx expr →
-    ∃ occurrence ∈ body.occurrences.toList,
-      occurrence.expression = expr ∧ occurrence.context = ctx ∧
-      OccurrenceMeaning input out.signatures occurrence) ∧
-  (∀ body ∈ out.bodies.toList, ∀ occurrence ∈ body.occurrences.toList,
-    AtContext input out.signatures body.context body.expression
-      occurrence.context occurrence.expression ∧
-    OccurrenceMeaning input out.signatures occurrence)
-
-/-- Source declarations determine body owner, result type and parameter context. -/
-inductive DeclaresBody (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
-    FrenBase.ItemId → Option FrenAst.Member → FrenAst.Expr →
-      FrenModule.TypeContext → FrenExpr.Ty → Prop where
-  | function : input.document.root = .declarations decls →
-      FrenAst.Decl.function vis keyword name params colon result assign expr ∈ decls.toList →
-      FrenHirToThir.signatureAt sigs (input.scope.id.named name.text) = some sig →
-      DeclaresBody input sigs sig.id none expr
-        (FrenHirToThir.parameterContext sig.parameters) sig.result
-  | member : input.document.root = .declarations decls →
-      FrenAst.Decl.expectation keyword name params openTok members closeTok ∈ decls.toList →
-      member ∈ members.toList → FrenHirToThir.parameters input params = .ok typedParams →
-      DeclaresBody input sigs (input.scope.id.named name.text) (some member) member.body
-        (FrenHirToThir.parameterContext typedParams) .bool
-
-def BodyEntry (body : FrenModule.TypedBody) (owner : FrenBase.ItemId)
-    (member : Option FrenAst.Member) (expr : FrenAst.Expr)
-    (ctx : FrenModule.TypeContext) (ty : FrenExpr.Ty) : Prop :=
-  body.owner = owner ∧ body.member = member ∧ body.expression = expr ∧
-    body.context = ctx ∧ body.type = ty
-
-/-- Every source body occurs once, including unused functions and every member. -/
-def BodyInventory (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
-  (∀ body ∈ out.bodies.toList,
-    DeclaresBody input out.signatures body.owner body.member body.expression body.context body.type) ∧
-  (∀ owner member expr ctx ty, DeclaresBody input out.signatures owner member expr ctx ty →
-    ∃ i : Fin out.bodies.size, BodyEntry out.bodies[i] owner member expr ctx ty ∧
-      ∀ j : Fin out.bodies.size, BodyEntry out.bodies[j] owner member expr ctx ty → j = i)
-
-def TypePassContract : Prop := ∀ input out, Produces input out →
-  FrenHirToThir.Admitted input ∧ out.resolved = input ∧
-    FrenHirToThir.signatures input = .ok out.signatures ∧
-    BodyInventory input out ∧ BodyTyping input out ∧
-    OccurrenceInventory input out ∧ OccurrenceTyping input out
-
-/-- Coverage quantifies over actual AST descendants, not just a supplied table. -/
-def MatchCoverage (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
-  ∀ body ∈ out.bodies.toList, ∀ ctx m scrutinee o arms c,
-    AtContext input out.signatures body.context body.expression ctx
-      (.matchE m scrutinee o arms c) →
-    ∃ owner, FrenHirToThir.HasValue input out.signatures ctx scrutinee (.enum owner) ∧
-      (∀ item ∈ input.scope.items.toList,
-        item.kind = .constructor → item.id.parent = some owner →
-        ∃ j : Fin arms.size,
-          FrenHirToThir.Selects input ctx arms[j].1 .pattern (.item item.id) ∧
-          ∀ k : Fin arms.size,
-            FrenHirToThir.Selects input ctx arms[k].1 .pattern (.item item.id) → k = j) ∧
-      (∀ arm ∈ arms.toList, ∃ item ∈ input.scope.items.toList,
-        item.kind = .constructor ∧ item.id.parent = some owner ∧
-        FrenHirToThir.Selects input ctx arm.1 .pattern (.item item.id))
-
-def Calls (input : FrenModule.Resolved) (out : FrenModule.Typed)
-    (caller callee : FrenBase.ItemId) : Prop :=
-  ∃ body ∈ out.bodies.toList, body.owner = caller ∧ body.member = none ∧
-    ∃ ctx path o args commas c,
-      AtContext input out.signatures body.context body.expression ctx
-        (.call (.name path) o args commas c) ∧
-      FrenHirToThir.Selects input ctx path .expression (.item callee)
-
-inductive CallPath (edge : FrenBase.ItemId → FrenBase.ItemId → Prop) :
-    FrenBase.ItemId → FrenBase.ItemId → Prop where
-  | one : edge a b → CallPath edge a b
-  | more : edge a b → CallPath edge b c → CallPath edge a c
-
-def Nonrecursive (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
-  ∀ item, ¬ CallPath (Calls input out) item item
-
-/-- These are correspondence obligations, not aliases for validator success. -/
-def CoverageContract : Prop := ∀ input out, Produces input out →
-  (FrenHirToThir.WalkingCoverage out ↔ MatchCoverage input out)
-
-def NonrecursionContract : Prop := ∀ input out, Produces input out →
-  (FrenHirToThir.WalkingNonrecursive out ↔ Nonrecursive input out)
-```
+The definitions of `ChildContext`, `AtContext`, `OccurrenceTyping`,
+`OccurrenceInventory`, `DeclaresBody`, `BodyInventory`, `TypePassContract`,
+`CoverageContract` and `NonrecursionContract` are Lean declarations over
+actual production types. They are in the [chapter wrapper](Thir.lean),
+between `-- reference begin` and `-- reference end`.
 
 `MatchCoverage` and `Nonrecursive` are semantic relations over actual
 source descendants, collected constructors and selected calls. They do not
@@ -440,3 +265,125 @@ execution. A wrong call arity, local callee, cross-enum comparison, wrong
 branch type, non-Bool condition or wrong-owner pattern is likewise a typing
 failure, even when resolution succeeds. No diagnostic code beyond the
 pinned case is assigned by this source domain.
+
+## Correspondence with Core typing
+
+The [Core typing](../Language/Types.md) chapter numbers locals by de Bruijn
+level, oldest first; production contexts number them nearest first. The
+rules below relate the two and the production operator decisions to the
+Core's operator tables.
+
+r[thir.core.levels]
+For `0 ≤ i < |Γ|`, the Core entry at level i of Γ is the production entry at
+nearest-first index `|Γ| - 1 - i`.
+<!-- status: lean Spec.Compiler.Thir.lookup_nearest -->
+
+r[thir.core.unary]
+The production unary operator decision accepts an operand type and returns a
+result type exactly when the Core's `unary_type?` relates them, for every
+operator and canonical identity.
+<!-- status: lean Spec.Compiler.Thir.core_unary -->
+
+r[thir.core.binary]
+The production binary operator decision accepts operand types and returns a
+result type exactly when the Core's `binary_type?` relates them, for every
+operator and canonical identity.
+<!-- status: lean Spec.Compiler.Thir.core_binary -->
+
+r[thir.core.derivation]
+For an admitted resolved expression in the Core domain, a successful
+production typing traversal yields exactly a Core derivation of its reported
+type in its resolved context, and every such derivation is accepted by that
+traversal. The correspondence retains every written occurrence and relates
+nearest-first indices to levels as `thir.core.levels` states.
+<!-- status: open -->
+
+The following contracts express the production operator decisions with a
+finite tag and a separate nominal equality atom.
+
+r[thir.primitive.compatibility] spec::thir::compatible::{meaning, builtin, nominal, distinct, disjoint}
+Compatibility compares tags and, only for nominal types, identity atoms.
+<!-- status: lean Spec.Compiler.Thir.compatibility -->
+
+```fren
+pub mod spec
+pub mod spec::thir
+
+pub enum ValueKind { Boolean, Integer, Nominal }
+
+-- The production unary and binary operators.
+pub enum UnaryTag { Neg, Not }
+pub enum BinaryTag { Add, Sub, Mul, Div, Mod, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Iff }
+
+pub proc compatible(left: ValueKind, right: ValueKind, left_id: Int, right_id: Int): (same?) {
+    ensure meaning: same? iff left = right and (left != ValueKind::Nominal or left_id = right_id)
+
+    expect builtin: when left = right and left != ValueKind::Nominal, same?
+    expect nominal: when left = ValueKind::Nominal and right = left and left_id = right_id, same?
+    expect distinct: when left = ValueKind::Nominal and right = left and left_id != right_id, not same?
+    expect disjoint: when left != right, not same?
+}
+```
+
+r[thir.primitive.unary] spec::thir::unary::{meaning, result_type, negate_bool, not_int}
+A unary operator accepts exactly its table operand and preserves its tag.
+<!-- status: lean Spec.Compiler.Thir.unary -->
+
+```fren
+pub proc unary(op: UnaryTag, operand: ValueKind): (accepted?, result: ValueKind) {
+    ensure meaning: accepted? iff (op = UnaryTag::Neg and operand = ValueKind::Integer) or (op = UnaryTag::Not and operand = ValueKind::Boolean)
+    ensure result_type: when accepted?, result = operand
+
+    expect negate_bool: when op = UnaryTag::Neg and operand = ValueKind::Boolean, not accepted?
+    expect not_int: when op = UnaryTag::Not and operand = ValueKind::Integer, not accepted?
+}
+```
+
+r[thir.primitive.binary] spec::thir::binary::{meaning, result_type, enum_add, mixed_equality, distinct_enums, same_enum}
+A binary operator accepts exactly its table operands and returns its table
+tag, including nominal identity comparison for equality.
+<!-- status: lean Spec.Compiler.Thir.binary -->
+
+```fren
+pub fn integer_tag?(op: BinaryTag) :=
+    op in {
+        BinaryTag::Add,
+        BinaryTag::Sub,
+        BinaryTag::Mul,
+        BinaryTag::Div,
+        BinaryTag::Mod,
+        BinaryTag::Lt,
+        BinaryTag::Le,
+        BinaryTag::Gt,
+        BinaryTag::Ge,
+    }
+
+pub fn boolean_tag?(op: BinaryTag) := op in {BinaryTag::And, BinaryTag::Or, BinaryTag::Iff}
+
+pub proc binary(op: BinaryTag, left: ValueKind, right: ValueKind, left_id: Int, right_id: Int): (
+    accepted?,
+    result: ValueKind,
+) {
+    ensure meaning: accepted? iff (
+        if integer_tag?(op) then left = ValueKind::Integer and right = ValueKind::Integer
+        else if boolean_tag?(op) then left = ValueKind::Boolean and right = ValueKind::Boolean
+        else left = right and (left != ValueKind::Nominal or left_id = right_id)
+        )
+    ensure result_type: when accepted?, result = (
+        if op in {
+            BinaryTag::Add,
+            BinaryTag::Sub,
+            BinaryTag::Mul,
+            BinaryTag::Div,
+            BinaryTag::Mod,
+        }
+        then ValueKind::Integer
+        else ValueKind::Boolean
+        )
+
+    expect enum_add: when op = BinaryTag::Add and left = ValueKind::Nominal, not accepted?
+    expect mixed_equality: when op = BinaryTag::Eq and left != right, not accepted?
+    expect distinct_enums: when op = BinaryTag::Ne and left = ValueKind::Nominal and right = left and left_id != right_id, not accepted?
+    expect same_enum: when op = BinaryTag::Eq and left = ValueKind::Nominal and right = left and left_id = right_id, accepted? and result = ValueKind::Boolean
+}
+```

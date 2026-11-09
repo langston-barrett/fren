@@ -9,89 +9,94 @@ Fren language or compiler has been verified.
 
 ## Language core correspondence
 
-The [Core typing chapter](../src/Spec/Language/Types.md) defines semantic
-objects first, then `ExprF<E>` and `ArmF<E>`, judgment forms, one rule per
-expression constructor, layer properties, primitive contracts, an optional
-postorder witness and examples. It contains no Lean code. The
+The [Core typing chapter](../src/Spec/Language/Types.md) opens with a Core
+grammar and an informative figure of its rules, then defines semantic
+objects, `ExprF<E>` and `ArmF<E>`, one Fren function per typing rule under
+its numbered paragraph, derivation tables, declarations and programs, the
+metatheory, a marked surface-elaboration section, the definitions that the
+Expressions chapter cites, and examples. It contains no Lean code. The
 [style guide](../src/Spec/dev/Style.md) specifies the chapter template and
 standalone `<!-- status: STATUS -->` metadata after each rule paragraph.
 This is the pilot; the rest of the reference has not yet adopted the syntax.
 No mechanical status checker is delivered by this unit.
 
-`layer_rule?` is the single one-layer relation. It takes `ExprF<Judgment>`,
-whose child positions hold each child's exact context and type. The
-postorder table replaces each child's row position by that row's judgment,
-looking only among earlier rows, and calls the same relation; it does not
-repeat the typing decisions. A finite derivation tree justifies every child
-judgment, including unused let values and all branches. The
-postorder-to-tree argument is mathematical; a checked source-occurrence
-adapter theorem is still needed.
+### Fren1 limits that shape the chapter
 
-Contexts, call arguments, match arms, parameter lists, the symbol
-environment and derivation tables are snoc sequences (`Snoc<T>`), read by
-structural recursion. The symbol environment is a map by construction: its
-lookup returns the newest binding, so no validity predicate is stated. The
-chapter has no `fren.lint.undecidable` opt-out. Its recursive definitions
-are opaque to the solver past one unfolding; the properties that need
-induction over them are proved in the wrapper or by Fren's induction over
-an expectation's parameters. Unbounded SMT witness search is not claimed
-decidable. The reference's dynamic semantics has a verified, well-typed
-domain; partial-operation and strategy notes in historical records below
-describe implementations and do not extend that semantic domain.
+- **No recursive derivation datatype.** Fren1 refuses a recursive occurrence
+  inside another type instance and has no mutual datatypes
+  ([generic types](../src/Reqs/Lang/Generics.md)), so neither `Expr` nor a
+  `Derivation` tree can be declared. Expressions are one-layer `ExprF<E>`,
+  and a derivation is a postorder table of rows checked by `rows_valid?`.
+  The metatheory is stated over tables: determinism (`table_unique`) and
+  well-scopedness (`table_scoped`) are proved in Lean; weakening over tables
+  is stated in Fren and open, with its lookup step proved
+  (`lookup_shift`).
+- **Recursion is opaque to the solver past one step.** Snoc sequences are
+  read by structural recursion. Properties that need induction with a
+  generalized argument (call arity, table determinism, scoping, the lookup
+  shift) are proved in the wrapper; Fren's own induction proves the rest.
+- **`Nat` inside recursive payloads.** Fren1 rejects a `Nat` within a
+  recursive enumeration's payload (`F0389`, `F0714`), and derivation rows hold
+  forms, so a local's level is an `Int`. A negative level names no entry, so
+  no rule needs a `0 ≤ i` premise.
+- **Declaration order across chapters.** The Fren checker reads chapters in
+  file order, and `Expressions.md` precedes `Types.md`, so the definitions
+  that the Expressions chapter's rules cite (`Value`, `value_valid?`,
+  `integer_domain?`, `linear_meaning?`, `direct_item?`) are declared in a
+  marked section of the typing chapter.
+- **Operator enums.** `UnaryOp` and `BinaryOp` use the Syntax chapter's names
+  and constructors and move to `spec::syntax` when that chapter lands.
+- **Undecidable parts.** The chapter has no `fren.lint.undecidable` opt-out;
+  this is a consequence of the representation, not a rule. A part that
+  reads better stated directly but undecidably may be, with a decidable
+  abstraction and a stated refinement.
 
-Locals use de Bruijn levels, counted from the oldest entry of a snoc
-context, so context extension leaves every existing level unchanged.
-Production code, including `FrenBase.Binding`, `FrenHirToThir` and the
-compiler chapters, numbers the same entries nearest first. The conversion,
-nearest-first index `|Γ| - 1 - i` for level i, is part of the
-erasure/refinement relation between the Core and the compiler, which is
-specified later. `Spec.Language.Types.lookup_nearest` proves that lookup
-agrees under this conversion; the rest of the relation, including the
-traversal correspondence of `types.derivation.correspondence`, is open.
-A local's level is an `Int`: Fren1 rejects a `Nat` within a recursive
-enumeration's payload, where derivation rows hold forms. A negative level
-names no entry, so no rule has a `0 ≤ i` premise.
+Feature request for Fren2 (or a Fren 2.5 checker): recursion through a
+type's own instance inside another type, such as `Snoc<Derivation>` within
+`Derivation`, so that the judgment and its metatheory can be stated over
+derivation trees directly and the table becomes an implementation detail.
 
-The source representation uses canonical sequences of named components.
-Production `FrenBase.ItemId` also admits generated components, which are not
-source declarations in this domain. Display strings and hashes are not
-identities. The three genuine primitive `impl` bindings remain in
-`Types.lean`, using integer equality atoms to instantiate the generic
-production compatibility/unary/binary operations. They are adapters, not
-the normative type representation. The operator enums `UnaryOp` and
-`BinaryOp` are defined locally with the Syntax chapter's names and
-constructors; they move to `spec::syntax` when that chapter lands.
+### Correspondence with production
+
+The level-to-index conversion, the operator correspondence, the primitive
+contracts and their `impl` bindings, and the open traversal correspondence
+are in the [THIR chapter](../src/Spec/Compiler/Thir.md), proved in its
+wrapper. Production code, including `FrenBase.Binding`, `FrenHirToThir` and
+the compiler chapters, numbers locals nearest first; the Core uses levels.
+The rest of the erasure/refinement relation between the Core and the
+compiler is specified later.
 
 | Rule or obligation | Evidence and limit |
 | --- | --- |
-| `types.walking.identity`, `types.walking.compatibility` | Fren expectation for disjointness and exact nominal equality |
 | `types.context.bound`, `types.context.weakening` | Fren expectations over arbitrary contexts; `lookup_bound` uses Fren's induction |
-| `types.context.indices` | `Spec.Language.Types.lookup_nearest` proves level lookup equals production nearest-first lookup at index `\|Γ\| - 1 - i` |
-| `types.symbols.lookup` | Fren expectation: a new binding determines its item and leaves others unchanged |
-| `types.layer.operators`, `types.operator.unary-unique`, `types.operator.binary-unique` | Fren expectations for result uniqueness at fixed operand types |
-| `types.layer.determinism`, `types.layer.unique-*` (ten forms) | One Fren expectation per form, for arbitrary symbol environments, contexts and child judgments |
-| `types.layer.context-unary`, `-binary`, `-let`, `-conditional` | One Fren expectation per form for exact child contexts, including let extension |
-| `types.layer.context-call`, `types.layer.context-match`, `types.layer.context` | `Spec.Language.Types.call_arguments_context`, `match_arms_context` and `layer_context` in Lean: every argument and arm body at every level, composed with `children_context` and `arms_each` |
-| `types.layer.children-each` | Fren expectation, by induction over the child sequence |
-| `types.layer.arms-each`, `types.layer.call-arity` | `Spec.Language.Types.arms_each` and `argument_types_length`, by induction in Lean |
+| `types.expression.values`, `types.expression.items` | Fren inversion expectations, one claim per form |
+| `types.layer.operators`, `types.layer.determinism`, `types.layer.context`, `types.layer.each` | One Fren expectation per family, with a named claim per form, for arbitrary environments, contexts and child typings |
+| `types.layer.call-arity` | `Spec.Language.Types.argument_types_length`, by induction in Lean |
+| `types.derivation.scoped`, `types.derivation.unique` | `Spec.Language.Types.table_scoped` and `table_unique` over all valid tables, by induction in Lean |
+| `types.derivation.weakening-lookup` | `Spec.Language.Types.lookup_shift` in Lean |
+| `types.derivation.weakening` | Open: preservation of `rows_valid?` under `weaken`, by induction over rows |
+| `types.safety` | Open: needs the dynamic semantics of the Expressions chapter as a Fren definition |
 | `types.value.examples` | Fren expectation for the stated arithmetic examples only; the general operator meanings are not checked here |
-| `types.operator.unary`, `types.operator.binary` | `Spec.Language.Types.core_unary` and `core_binary` prove agreement with the actual generic primitives for every operator and arbitrary canonical identities |
-| `types.primitive.compatibility`, `types.primitive.unary`, `types.primitive.binary` | Existing universal `impl` proofs of the primitive contracts |
-| Context lookup | `local_type_unique` and `local_type_scoped` prove actual production binding laws |
-| Concrete derivations | Wrapper checks every public example constant by `decide`; finite evidence only |
-| `types.derivation.unique` | Open: lift the layer step to uniqueness of whole derivations by induction, comparing recursively derived child types |
-| `types.derivation.weakening` | Open: define the level shift of bound locals and prove typing under context extension by induction |
-| `types.derivation.correspondence` | Open: prove both directions between this Core relation and the production checker in its admitted domain, through the level-to-index conversion |
+| `types.examples.derivations` | `Spec.Language.Types.worked_examples` by `decide`; the wrapper checks further cases, at least one for each rule; finite evidence only |
+| `types.examples.source` | `manualExamples` runs each source example through both of today's front ends |
+| `thir.core.levels`, `thir.core.unary`, `thir.core.binary` | `Spec.Compiler.Thir.lookup_nearest`, `core_unary` and `core_binary` |
+| `thir.primitive.compatibility`, `thir.primitive.unary`, `thir.primitive.binary` | Universal `impl` proofs of the primitive contracts in the THIR wrapper |
+| `thir.core.derivation` | Open: prove both directions between the Core relation and the production checker in its admitted domain, through the level-to-index conversion |
 
-The theorem names used in rule metadata belong to `Spec.Language.Types`.
-The `definition` rules introduce objects and relations; their status is not
-an implementation proof. Whole-term laws marked `open` remain normative
-obligations. Existing production `FrenHirToThir.HasValue` and
-`FrenHirToThir.TypingSound` concern the retained AST. Native tests, Plausible,
-closed examples and layer step cases do not establish `TypingSound`, its
-converse, or a complete source-to-Core occurrence correspondence.
+The theorem names used in rule metadata belong to `Spec.Language.Types` and
+`Spec.Compiler.Thir`. The `definition` rules introduce objects and
+relations; their status is not an implementation proof. Laws marked `open`
+remain normative obligations. Existing production `FrenHirToThir.HasValue`
+and `FrenHirToThir.TypingSound` concern the retained AST. Native tests,
+Plausible, closed examples and layer step cases do not establish
+`TypingSound`, its converse, or a complete source-to-Core occurrence
+correspondence. The source examples' diagnostic positions, such as `l + 1`
+at line 5 column 28, byte span `[71, 72)`, are today's checker's.
 
-- [ ] Prove whole-derivation uniqueness and weakening with the level shift of bound locals.
+- [ ] Prove weakening over derivation tables (`types.derivation.weakening`).
+- [ ] State the dynamic semantics as a Fren definition and prove `types.safety`.
+- [ ] Restate the judgment over recursive derivation trees once Fren supports
+  recursion through a type's own instance inside another type.
 - [ ] Specify the erasure/refinement relation between the Core and the
   compiler representations, including the level-to-index conversion.
 - [ ] Prove the complete occurrence/context-preserving source-to-Core

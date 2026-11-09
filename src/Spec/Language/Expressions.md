@@ -94,7 +94,7 @@ semantics for unresolved mutually partial assumptions.
 With `Γ = ·, Boolean, Integer`, local 0 denotes the Boolean, and local 1 the
 integer. In `let x := y + 1 in x + y`, with incoming context `·, y: Integer`,
 the value uses level 0 for `y`; the body uses level 0 for `y` and level 1
-for `x`. These are the same contexts required by `layer_rule?`.
+for `x`. These are the same contexts required by `rule?`.
 
 `Ty::Nominal(["M", "Light"])` and `Ty::Nominal(["M", "Signal"])` are
 different types even if both enums declare `Red`. A comparison between
