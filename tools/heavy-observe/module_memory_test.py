@@ -89,7 +89,8 @@ def controls(work, part):
                  '--',sys.executable,str(driver),str(source),str(work/(label+'.out'))]
         def action(owner,process,data):
             if not cleanup_cancel:
-                owner.send(process.pid,signal.SIGTERM);return
+                owner.send(process.pid,signal.SIGTERM)
+                signals_sent.append(dict(pid=process.pid,signal=signal.SIGTERM));return
             # Native IO interposition pauses the observer immediately before
             # its actual cgroup.kill. The compiler leader has already exited.
             info=json.loads(marker.read_text())
@@ -126,7 +127,8 @@ def controls(work, part):
                   child=json.loads(Path(str(marker)+'.child').read_text()) if Path(str(marker)+'.child').exists() else None,
                   cleanup_entries=cleanup_entries,
                   cancellation_signals=signals_sent,
-                  compiler_physical_status='unknown' if record is None else record['raw_wait_status'])
+                  compiler_physical_status=(record['raw_wait_status'] if record is not None
+                      and record['child_present'] and record['wait_errno']==0 else 'unknown'))
         results.append(item);(work/'results.json').write_text(json.dumps(results,indent=2)+'\n')
         if record and record['compiler_memory_applied_bytes']:
             assert record['compiler_memory_ack_pid']==record['child_pid']==item['marker']['pid'],item
