@@ -77,7 +77,9 @@ The desugaring unit below adds its own actual-code contracts. The MIR unit
 below adds theory-construction and semantic contracts. The LIR unit below
 adds actual term, scope and interpretation contracts.
 The OIR unit below adds contextual extraction, request and interpretation
-contracts. The SMT normative correction remains owed.
+contracts. The SMT unit below adds concrete encoding, interpretation and
+raw response contracts; universal preservation and source confirmation remain
+open.
 
 Continue the same correction objective with these separate chapter units:
 
@@ -97,13 +99,105 @@ Continue the same correction objective with these separate chapter units:
    actual extraction and owned contextual questions. Prove the remaining
    whole-pass construction, sorting, model and semantic correspondence laws.
    Keep mutually partial assumption dependencies unresolved until justified.
-5. **SMT** (`SCsmt`, 1027): actual query/answer relation, symbol freshness,
-   environment and polarity preservation, unknown/resource outcomes, model
-   decoding and static source confirmation. Solver responses alone do not
-   establish source-level verification.
+5. **SMT extensions** (`SCsmt`, 1027): the core encoding and response
+   contracts below are specified. Prove universal symbol freshness, encoding
+   and environment preservation, solver adequacy and trust; implement and
+   justify model decoding and static source confirmation. Raw responses
+   alone do not establish source verification.
 
 These are retained substantive obligations, not completed chapters or a
 separate plan replacing the implemented shared-core and THIR correction.
+
+## SMT contracts and proof boundary
+
+`Spec/Compiler/Smt.md` displays the exact compiled reference block of its
+wrapper. It uses the accepted source witness, OIR program/questions/definitions,
+LIR terms, shared sorts, `Lir.Sorted`, `Meaning`, `Primitive`, `Slots`, `Symbols`,
+`ZeroValues`, and OIR assignment/equation judgments. It defines no duplicate
+executable compiler or toy logical IR. The five retained primitive expectations
+remain separate checked arithmetic/polarity facts, never pass proofs.
+
+`Encoded` is proved for actual `produce`: every original question is retained
+in order and its script is exactly actual prelude generation followed by
+actual query printing, including errors. `SortFor`, `ContextFor`, `ParametersFor`, `Names`,
+`Renders`, `TermFor`, `DefinitionFor`, `DefinitionsFor`, `EnumerationFor`,
+`PreludeFor` and `QueryFor` state independent unbounded grammar, typing,
+canonical-reference, declaration-order and complete-script requirements.
+`DefinitionsFor` uses structural `Oir.Uses` on actual value/domain bodies;
+it does not consume a supplied dependency decision. `VariableName`, `Naming`,
+`EnvironmentFor`, `Interprets` and `Model` state legal symbol environments,
+simultaneous-let scope, positional calls and actual retained definition
+interpretation. The text interpretation is restricted to well-sorted declared
+terms; its name rule cannot override literal meanings. Euclidean operators
+reuse the shared primitive semantics and arbitrary zero totalizations.
+
+`EncodingContract`, `InterpretationContract` and `ValidationContract` are named
+universal obligations, not proved claims. `ValidationContract` refers to the
+actual bounded `Term.infer` checker and the shared unbounded sort judgment.
+Low-level printing deliberately does not typecheck arbitrary hand-built OIR:
+a wrong-sort arithmetic term still prints, but is rejected by `Term.infer`
+and public source admission. Missing enum/constructor/canonical signature and
+open-local references fail in the printer; missing/cyclic equations are
+unsupported. The chapter states this boundary instead of inventing a new
+validator or implying low-level success establishes wellformedness.
+
+The wrapper proves actual OIR/question retention, exact encoding, error
+exclusion, local slot translation, all 14 binary operator spellings, distinct
+rendered function components, wrong local/operator-sort rejection and zero
+translation-budget failure. The two closed multiple-answer/unknown equalities
+use `native_decide`; their printed native reduction axioms are retained
+separately from the kernel proofs of the general laws. It proves raw nonzero exit, multiple-answer and
+unknown laws, and both OIR evidence polarities. `false_goal_render`,
+`false_goal_sorted` and `false_goal_model` give independent concrete-text,
+sort and interpretation witnesses for an admitted false expectation's actual
+search. `empty_model` constructs a compatible model when no definitions are
+present; `false_goal_satisfiable` supplies a typed empty assignment and search
+witness for that admitted shape, without assuming a universal encoding or
+source preservation contract. `false_goal_query` proves its complete independent `QueryFor` script relation;
+`parameter_domain_total` excludes overriding the literal parameter domain
+through a name map. `flipped_goal_model` independently interprets
+the polarity mutant at false. A separate admitted constant definition and
+later assumption check exact declaration, parameter and assumption layout.
+These are finite/constrained witnesses, not universal metatheory.
+
+`SearchSatisfiable` quantifies over compatible interpretations and typed
+assignments. `AnswerSound` states what trusted Sat/Unsat would need to establish;
+actual `classify` is only protocol recognition. No model request, readback,
+source evaluation confirmation, aggregate verdict, cache, selectors or
+incremental solver API is added. The previous OIR checklist's separate SMT
+chapter correction is supplied here; its remaining source-confirmation and
+upstream universal proof obligations are preserved in full.
+
+- [ ] Prove `EncodingContract`, including canonical name lookup/uniqueness,
+  sort/arity/declaration references, complete stable definition order and
+  exact query polarity/context for every admitted producer result.
+- [ ] Prove `ValidationContract` and depth adequacy where appropriate; do not
+  infer them from finite wrong-sort/name/arity controls.
+- [ ] Prove all rendered symbol families are injective and mutually disjoint,
+  and `Naming` preserves active-scope freshness and capture freedom.
+- [ ] Prove `InterpretationContract` in both directions, including function
+  equations and lets, under independently justified sufficient domains.
+- [ ] Establish model existence and total typed model readback, relate the
+  concrete-text interpretation to SMT-LIB and the actual solver, and justify
+  the trust bridge expressed by `AnswerSound` rather than deriving it from
+  a status token. Prove source/encoding preservation through the accepted
+  MIR/LIR/OIR contracts, whose outstanding inventories are unchanged.
+- [ ] Implement and specify actual model decoding, evaluator adequacy and
+  static source confirmation. Preserve all hypotheses, original lexical
+  contexts, definedness questions, dependencies and unresolved readiness;
+  justify mutually partial assumptions before giving them source verdicts.
+- [ ] Restate the recursive grammar/interpretation contracts in Fren when it
+  can quantify over the real recursive production objects. Current primitive
+  Fren arithmetic and polarity contracts do not replace those relations.
+
+Checks are bounded to the affected hosted wrapper/chapter, wrong-law controls,
+actual hosted/rule/library/source-discovery audits, formatting and exact-source
+artifact provenance. Existing 81-answer backend/protocol tests and native
+SMT properties remain the base implementation record below; this correction
+launches no new solver campaign or full suite. The cached primary FLS
+scope/method/types/expression excerpts and Standard ML Revised sections
+4.1–4.2, 4.10 and 6.1–6.3/6.7 supply semantic-object/environment and judgment
+organization; no Rust/ML semantic rule is imported into Fren.
 
 ## OIR contracts and proof boundary
 
@@ -377,8 +471,7 @@ and deliberate failing mutations are recorded in the external check receipts.
 - [ ] Restate these recursive actual-code relations in Fren when its recursive
   types/judgments permit them, without extending Fren1 as a prerequisite.
 
-MIR, LIR and OIR now have substantive formal core contracts; the SMT
-normative correction remains a separate unit. Universal pass proofs remain
+MIR, LIR, OIR and SMT now have substantive formal core contracts. Universal pass proofs remain
 open at all non-identity boundaries.
 No production pass or broader source admission changes in this unit.
 

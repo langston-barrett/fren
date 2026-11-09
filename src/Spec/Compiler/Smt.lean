@@ -1,6 +1,446 @@
 import Fren.Impl
 import Fren.Literate
+import Spec.Compiler.Oir
+import FrenOirToSmt
 
 open Fren.Lang
 
 #fren_md "Smt.md"
+
+namespace Spec.Compiler.Smt
+open FrenModule FrenAst FrenLir FrenOirToSmt
+
+deriving instance DecidableEq for Outcome
+
+-- reference begin
+abbrev Input := FrenThirDesugar.Program
+
+def Produces (p : Input) (out : FrenOirToSmt.Program) : Prop := produce p = .ok out
+
+def Rejects (p : Input) (e : InputFailure) : Prop := produce p = .error e
+
+/-- Exact public producer envelope, including per-question translation failures. -/
+def Encoded (out : FrenOirToSmt.Program) : Prop :=
+  Lir.Pairs (fun q entry => entry.question = q ∧
+    entry.script = (prelude out.oir >>= fun text => script out.oir text q))
+    out.oir.questions.toList out.queries.toList
+
+inductive SortFor (p : FrenOir.Program) : FrenExpr.Ty → String → Prop where
+  | boolean : SortFor p .bool "Bool"
+  | integer : SortFor p .int "Int"
+  | nominal : p.enumerations[i]? = some e →
+      SortFor p (.enum e.id) (Symbol.sort i).render
+
+def ContextFor (ps : Array TypedParameter) (ctx : TypeContext) : Prop :=
+  ctx = FrenHirToThir.parameterContext ps
+
+/-- Written parameter order; lexical environments reverse this list. -/
+def Names (count : Nat) : List (String × String) :=
+  ((List.range count).map (fun i => ((Symbol.parameter i).render, "true"))).reverse
+
+def ParametersFor (p : FrenOir.Program) (ps : Array TypedParameter) (binders : List String) : Prop :=
+  Lir.Pairs (fun entry text => ∃ sort, SortFor p entry.1.type sort ∧
+    text = "(" ++ (Symbol.parameter entry.2).render ++ " " ++ sort ++ ")") ps.toList.zipIdx binders
+
+/-- Finite operator vocabulary; no source token is an SMT operator. -/
+def UnaryName : UnaryOp → String
+  | .not => "not" | .neg => "-"
+
+def BinaryName : BinaryOp → String
+  | .and => "and" | .or => "or" | .iff | .eq => "=" | .ne => "distinct"
+  | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .mod => "mod"
+  | .lt => "<" | .le => "<=" | .gt => ">" | .ge => ">="
+
+/-- Concrete-text grammar judgment on the actual LIR term, without fuel.
+Typing is separate: a printable string need not be a legal SMT term. -/
+inductive Renders (p : FrenOir.Program) : List (String × String) → Term → String → Prop where
+  | bool {b : Bool} : Renders p env (.bool b) (if b then "true" else "false")
+  | int : Renders p env (.int n) (integer n)
+  | constructor : p.enumerations[i]? = some e → e.id = owner → e.constructors[j]? = some (ctor, name) →
+      Renders p env (.constructor owner ctor) (Symbol.constructor i j).render
+  | local : env[i]? = some (v, d) →
+      Renders p env (.local ty i component) (if component == .domain then d else v)
+  | unary : Renders p env a text →
+      Renders p env (.unary op a) (application (UnaryName op) [text])
+  | binary : Renders p env a left → Renders p env b right →
+      Renders p env (.binary op a b) (application (BinaryName op) [left, right])
+  | ite : Renders p env c testText → Renders p env a yes → Renders p env b no →
+      Renders p env (.ite c a b) (application "ite" [testText, yes, no])
+  | app : p.definitions[i]? = some d → d.signature = sig →
+      args.length = texts.length →
+      (∀ (i : Nat) (a : Term) (text : String), args[i]? = some a → texts[i]? = some text → Renders p env a text) →
+      Renders p env (.app sig component args) (application (Symbol.function i component).render texts)
+  | binding : Renders p env v value → Renders p env d domain →
+      Renders p (((Symbol.local env.length .value).render, (Symbol.local env.length .domain).render) :: env) b body →
+      Renders p env (.letE name ty v d b)
+        ("(let ((" ++ (Symbol.local env.length .value).render ++ " " ++ value ++ ") (" ++
+          (Symbol.local env.length .domain).render ++ " " ++ domain ++ ")) " ++ body ++ ")")
+  | at : Renders p env a text → Renders p env (.at origin a) text
+
+def TermFor (p : FrenOir.Program) (ctx : TypeContext) (env : List (String × String))
+    (t : Term) (ty : FrenExpr.Ty) (text : String) : Prop :=
+  env.length = ctx.length ∧ Lir.Sorted p.lir.mir.source ctx t ty ∧ Renders p env t text
+
+/-- Declaration equations constrain real bodies, including unused definitions.
+The ordering relation uses actual structural occurrences, not supplied edges. -/
+def DefinitionFor (p : FrenOir.Program) (d : FrenOir.Definition) (component : Component) (line : String) : Prop :=
+  ContextFor d.signature.parameters d.body.source.context ∧ ∃ i binders sort text, p.definitions[i]? = some d ∧ ParametersFor p d.signature.parameters binders ∧
+    SortFor p (if component == .domain then .bool else d.signature.result) sort ∧
+    TermFor p d.body.source.context (Names d.signature.parameters.size)
+      (if component == .domain then d.domain else d.value)
+      (if component == .domain then .bool else d.signature.result) text ∧
+    line = "(define-fun " ++ (Symbol.function i component).render ++ " (" ++
+      String.intercalate " " binders ++ ") " ++ sort ++ " " ++ text ++ ")"
+
+inductive DefinitionsFor (p : FrenOir.Program) : List FrenOir.Definition → List FrenBase.ItemId → List String → Prop where
+  | nil : DefinitionsFor p [] done []
+  | cons : d ∈ pending →
+      (∀ id, Oir.Uses id d.value ∨ Oir.Uses id d.domain → id ∈ done) →
+      (∀ earlier ∈ pending.takeWhile (fun other => other.signature.id != d.signature.id),
+        ∃ id, (Oir.Uses id earlier.value ∨ Oir.Uses id earlier.domain) ∧ id ∉ done) →
+      DefinitionFor p d .value value → DefinitionFor p d .domain domain →
+      DefinitionsFor p (pending.filter (fun other => other.signature.id != d.signature.id))
+        (done ++ [d.signature.id]) rest →
+      DefinitionsFor p pending done (value :: domain :: rest)
+
+def EnumerationFor (entry : FrenMir.Enumeration × Nat) (line : String) : Prop :=
+  ¬ entry.1.constructors.isEmpty ∧ line = "(declare-datatype " ++ (Symbol.sort entry.2).render ++ " (" ++
+    String.intercalate " " ((List.range entry.1.constructors.size).map
+      (fun j => "(" ++ (Symbol.constructor entry.2 j).render ++ ")")) ++ "))"
+
+def PreludeFor (p : FrenOir.Program) (text : String) : Prop :=
+  ∃ enums defs, Lir.Pairs EnumerationFor p.enumerations.toList.zipIdx enums ∧
+    DefinitionsFor p p.definitions.toList [] defs ∧
+    text = String.intercalate "\n" ("(set-logic ALL)" :: enums ++ defs) ++ "\n"
+
+def QueryFor (p : FrenOir.Program) (q : FrenOir.Question) (text : String) : Prop :=
+  ContextFor (q.parameters.map (·.source)) q.context ∧ ∃ pre declarations formula,
+    PreludeFor p pre ∧
+    Lir.Pairs (fun entry line => ∃ sort, SortFor p entry.1.source.type sort ∧
+      line = "(declare-const " ++ (Symbol.parameter entry.2).render ++ " " ++ sort ++ ")")
+      q.parameters.toList.zipIdx declarations ∧
+    TermFor p q.context (Names q.parameters.size) q.search .bool formula ∧
+    text = pre ++ String.intercalate "\n" declarations ++ "\n(assert " ++ formula ++ ")\n(check-sat)\n"
+
+/-- Environments for the text interpretation are name maps, not LIR slots. -/
+abbrev Environment := String → Option FrenEval.Value
+
+def Extend (env : Environment) (name : String) (v : FrenEval.Value) : Environment :=
+  fun key => if key = name then some v else env key
+
+def VariableName (name : String) : Prop :=
+  (∃ i, name = (Symbol.parameter i).render) ∨ ∃ i component, name = (Symbol.local i component).render
+
+inductive Naming : List (String × String) → Prop where
+  | parameters : Naming (Names count)
+  | binding : Naming names →
+      Naming (((Symbol.local names.length .value).render, (Symbol.local names.length .domain).render) :: names)
+
+/-- SMT interpretation of emitted concrete text. Function arguments are
+positional; simultaneous let RHSs use the incoming environment. -/
+inductive Interprets (p : FrenOir.Program) (symbols : Lir.Symbols) (zero : Lir.ZeroValues) :
+    Environment → String → FrenEval.Value → Prop where
+  | bool {b : Bool} : Interprets p symbols zero env (if b then "true" else "false") (.bool b)
+  | int : Interprets p symbols zero env (integer n) (.int n)
+  | constructor : p.enumerations[i]? = some e → e.constructors[j]? = some (ctor, name) →
+      Interprets p symbols zero env (Symbol.constructor i j).render (.enum e.id ctor)
+  | name : VariableName name → env name = some v → Interprets p symbols zero env name v
+  | unary : Interprets p symbols zero env text a → FrenEval.unary op a = .ok v →
+      Interprets p symbols zero env (application (UnaryName op) [text]) v
+  | binary : Interprets p symbols zero env left a → Interprets p symbols zero env right b →
+      Lir.Primitive zero op a b v →
+      Interprets p symbols zero env (application (BinaryName op) [left, right]) v
+  | yes : Interprets p symbols zero env testText (.bool true) → Interprets p symbols zero env yes v →
+      Interprets p symbols zero env (application "ite" [testText, yes, no]) v
+  | no : Interprets p symbols zero env testText (.bool false) → Interprets p symbols zero env no v →
+      Interprets p symbols zero env (application "ite" [testText, yes, no]) v
+  | app : p.definitions[i]? = some d →
+      texts.length = values.length →
+      (∀ (i : Nat) (text : String) (v : FrenEval.Value), texts[i]? = some text → values[i]? = some v → Interprets p symbols zero env text v) →
+      Interprets p symbols zero env (application (Symbol.function i component).render texts)
+        (symbols d.signature component values)
+  | binding : Interprets p symbols zero env value v → Interprets p symbols zero env domain (.bool wd) →
+      Interprets p symbols zero
+        (Extend (Extend env (Symbol.local i .value).render v) (Symbol.local i .domain).render (.bool wd)) body result →
+      Interprets p symbols zero env
+        ("(let ((" ++ (Symbol.local i .value).render ++ " " ++ value ++ ") (" ++
+          (Symbol.local i .domain).render ++ " " ++ domain ++ ")) " ++ body ++ ")") result
+
+def EnvironmentFor (env : Environment) (names : List (String × String)) (slots : Lir.Slots) : Prop :=
+  Lir.Pairs (fun names slot => env names.1 = some slot.1 ∧
+    (if names.2 = "true" then slot.2 = true else env names.2 = some (.bool slot.2))) names slots
+
+def Model (p : FrenOir.Program) (symbols : Lir.Symbols) (zero : Lir.ZeroValues) : Prop :=
+  Oir.EquationsHold p symbols zero ∧
+    ∀ d ∈ p.definitions.toList, ∀ args,
+      Mir.Assignment p.lir.mir.source d.body.source.context args.reverse →
+      (symbols d.signature .value args).type = d.signature.result ∧
+      (symbols d.signature .value args).valid p.lir.mir.source = true ∧
+      ∃ wd, symbols d.signature .domain args = .bool wd
+
+def SearchSatisfiable (p : FrenOir.Program) (q : FrenOir.Question) : Prop :=
+  ∃ symbols zero values, Model p symbols zero ∧ Oir.Assignment p q values ∧ Oir.SearchHolds symbols zero q values
+
+/-- Solver trust, encoding adequacy and model existence are hypotheses to be
+justified separately; raw protocol classification supplies none of them. -/
+def AnswerSound (p : FrenOir.Program) (q : FrenOir.Question) : Outcome → Prop
+  | .sat => SearchSatisfiable p q
+  | .unsat => ¬ SearchSatisfiable p q
+  | _ => True
+
+def EncodingContract : Prop := ∀ p out, Produces p out → Oir.Constructs out.oir →
+  ∀ entry ∈ out.queries.toList, ∀ text, entry.script = .ok text → QueryFor out.oir entry.question text
+
+def InterpretationContract : Prop := ∀ input out, Produces input out → Oir.Constructs out.oir →
+  ∀ ctx names t ty text, Naming names → TermFor out.oir ctx names t ty text → ∀ symbols zero env slots,
+  Model out.oir symbols zero → Lir.Assigned out.oir.lir.mir.source ctx slots → EnvironmentFor env names slots →
+  ∀ v, Lir.Meaning symbols zero slots t v ↔ Interprets out.oir symbols zero env text v
+
+/-- Actual bounded scope/name/arity checker, without a supplied wellformed flag. -/
+def ValidationContract : Prop := ∀ input out, Produces input out → ∀ ctx t ty fuel,
+  Term.infer fuel out.oir.lir.mir.source ctx t = some ty → Lir.Sorted out.oir.lir.mir.source ctx t ty
+-- reference end
+
+theorem retains_oir (p : Input) (out : FrenOirToSmt.Program) (h : Produces p out) : Oir.Produces p out.oir :=
+  FrenOirToSmt.retains_oir p out h
+
+theorem admission (p : Input) (out : FrenOirToSmt.Program) (h : Produces p out) :
+    FrenHirToThir.checkWalking p.input = .ok out.oir.lir.mir.source :=
+  FrenOirToSmt.admission p out h
+
+theorem unique (p : Input) (a b : FrenOirToSmt.Program) (ha : Produces p a) (hb : Produces p b) : a = b :=
+  FrenOirToSmt.deterministic p a b ha hb
+
+theorem retains_questions (p : Input) (out : FrenOirToSmt.Program) (h : Produces p out) :
+    out.queries.map Query.question = out.oir.questions := FrenOirToSmt.retains_questions p out h
+
+theorem exact_encoding (p : Input) (out : FrenOirToSmt.Program) (h : Produces p out) : Encoded out := by
+  unfold Produces produce at h
+  cases ho : FrenLirToOir.produce p with
+  | error e => simp [ho, Except.mapError, Bind.bind, Except.bind] at h
+  | ok oir =>
+    simp only [ho, Except.mapError, Bind.bind, Except.bind] at h
+    cases Except.ok.inj h
+    change Lir.Pairs (fun q (entry : Query) => entry.question = q ∧
+      entry.script = (prelude oir >>= fun text => script oir text q))
+      oir.questions.toList (oir.questions.map (fun q => ⟨q, prelude oir >>= fun text => script oir text q⟩)).toList
+    simp only [Array.toList_map]
+    generalize oir.questions.toList = qs
+    induction qs with
+    | nil => exact .nil
+    | cons q qs ih => exact .cons ⟨rfl, rfl⟩ ih
+
+theorem failure_excludes_success (p : Input) (e : InputFailure) (h : Rejects p e) : ∀ out, ¬ Produces p out := by
+  intro out success
+  unfold Rejects at h
+  unfold Produces at success
+  rw [h] at success
+  contradiction
+
+theorem local_translation (p : FrenOir.Program) (env : List (String × String)) (i : Nat)
+    (found : env[i]? = some (v, d)) (ty : FrenExpr.Ty) (component : Component) :
+    term (n + 1) p env (.local ty i component) = .ok (if component == .domain then d else v) := by
+  cases component <;> simp only [term, found] <;> rfl
+
+theorem binary_translation (p : FrenOir.Program) (env : List (String × String)) (op : BinaryOp)
+    (left : term n p env a = .ok x) (right : term n p env b = .ok y) :
+    term (n + 1) p env (.binary op a b) = .ok (application (BinaryName op) [x, y]) := by
+  cases op <;> simp only [term, left, right, Bind.bind, Except.bind] <;> rfl
+
+theorem open_local_rejected (p : FrenOir.Program) (ty : FrenExpr.Ty) :
+    term (n + 1) p [] (.local ty 0 .value) = .error (.invalid "open logical local") := rfl
+
+theorem wrong_local_sort (s : Typed) (name : Token) :
+    Term.infer (n + 1) s [(name, .int)] (.local .bool 0 .value) = none := rfl
+
+theorem wrong_operator_sort (s : Typed) :
+    Term.infer 3 s [] (.binary .add (.bool true) (.int 1)) = none := rfl
+
+theorem translation_depth (p : FrenOir.Program) (env : List (String × String)) (t : Term) :
+    term 0 p env t = .error (.resourceExhausted "SMT term translation depth") := rfl
+
+theorem rendered_components (i : Nat) :
+    (Symbol.function i .value).render ≠ (Symbol.function i .domain).render := by
+  simp [Symbol.render, toString]
+
+theorem nonzero_not_unsat (code : Int) (h : code ≠ 0) :
+    classify (some code) "unsat" "" "finished" "" = .error "solver exited unsuccessfully" :=
+  classify_nonzero code h
+
+theorem multiple_answers_rejected : classify (some 0) "sat\nunsat" "" "finished" "" =
+    .error "invalid solver answer protocol" := by native_decide
+
+theorem unknown_not_proof : classify (some 0) "unknown" "" "finished" "" =
+    .unknown "cvc5 returned unknown under the configured limits" := by native_decide
+
+theorem polarity (q : FrenOir.Question) (h : q.kind ≠ .assumptionsSatisfiable) :
+    q.interpret .sat = .candidateCounterexample ∧ q.interpret .unsat = .noCounterexample := by
+  cases hk : q.kind <;> simp only [FrenOir.Question.interpret, hk]
+  all_goals first | exact ⟨rfl, rfl⟩ | exact (h hk).elim
+
+/-- Nonempty, independently interpreted encoding witness: the false goal's
+refutation is true, irrespective of definitions or zero totalization. -/
+theorem false_goal_render (p : FrenOir.Program) (origin : Origin) :
+    Renders p [] (.binary .and (.bool true) (.unary .not (.at origin (.bool false)))) "(and true (not false))" :=
+  .binary .bool (.unary (.at .bool))
+
+theorem false_goal_model (p : FrenOir.Program) :
+    Interprets p symbols zero (fun _ => none) "(and true (not false))" (.bool true) :=
+  .binary (op := .and) (.bool (b := true)) (.unary (op := .not) (.bool (b := false)) rfl) (.ordinary rfl)
+
+theorem false_goal_sorted (s : Typed) (origin : Origin) (context : origin.context = []) :
+    Lir.Sorted s [] (.binary .and (.bool true) (.unary .not (.at origin (.bool false)))) .bool :=
+  .binary .bool (.unary (.at context .bool) rfl) rfl
+
+theorem empty_model (p : FrenOir.Program) (empty : p.definitions = #[]) :
+    Model p symbols zero := by
+  constructor
+  · intro d member
+    simp [empty] at member
+  · intro d member
+    simp [empty] at member
+
+theorem false_goal_satisfiable (p : FrenOir.Program) (q : FrenOir.Question) (origin : Origin)
+    (empty : p.definitions = #[]) (context : q.context = [])
+    (search : q.search = .binary .and (.bool true) (.unary .not (.at origin (.bool false)))) :
+    SearchSatisfiable p q := by
+  refine ⟨(fun _ _ _ => .bool true), (fun _ _ => 0), [], empty_model p empty, ?_, ?_⟩
+  · simp only [Oir.Assignment, Mir.Assignment, context, List.length_nil]
+    refine ⟨True.intro, ?_⟩
+    intro i token ty h
+    simp at h
+  · unfold Oir.SearchHolds
+    rw [search]
+    exact .binary .bool (.unary (.at .bool) rfl) (.ordinary rfl)
+
+/-- The parameter-domain literal cannot be overridden by the name map. -/
+theorem parameter_domain_total (env : Environment) (v : FrenEval.Value) :
+    ¬ EnvironmentFor env [("P0", "true")] [(v, false)] := by
+  intro h
+  cases h with
+  | cons first _ => simp at first
+
+/-- Full script relation for the admitted no-parameter false-goal shape. -/
+theorem false_goal_query (p : FrenOir.Program) (q : FrenOir.Question) (origin : Origin)
+    (enums : p.enumerations = #[]) (defs : p.definitions = #[])
+    (params : q.parameters = #[]) (context : q.context = []) (originContext : origin.context = [])
+    (search : q.search = .binary .and (.bool true) (.unary .not (.at origin (.bool false)))) :
+    QueryFor p q "(set-logic ALL)\n\n(assert (and true (not false)))\n(check-sat)\n" := by
+  refine ⟨?_, ?_⟩
+  · simp [ContextFor, params, context, FrenHirToThir.parameterContext]
+  · refine ⟨"(set-logic ALL)\n", [], "(and true (not false))", ?_, ?_, ?_, rfl⟩
+    · refine ⟨[], [], ?_, ?_, rfl⟩
+      · simp only [enums, Array.toList_empty, List.zipIdx_nil]
+        exact .nil
+      · rw [defs]
+        exact .nil
+    · simp only [params, Array.toList_empty, List.zipIdx_nil]
+      exact .nil
+    · simp only [TermFor, params, Array.size_empty, Names, List.range_zero, List.map_nil, List.reverse_nil,
+        List.length_nil, context, search]
+      exact ⟨True.intro, false_goal_sorted p.lir.mir.source origin originContext, false_goal_render p origin⟩
+
+/-- Independent negative meaning: the polarity mutant denotes false. -/
+theorem flipped_goal_model (p : FrenOir.Program) :
+    Interprets p symbols zero (fun _ => none) "(and true false)" (.bool false) :=
+  .binary (op := .and) (.bool (b := true)) (.bool (b := false)) (.ordinary rfl)
+
+#eval show IO Unit from do
+  let source := "mod smt_contracts\nfn fixed(x: Int): Bool := true\n" ++
+    "expect c(x: Int) { expect bad: false assume later: true }\n"
+  let .ok admitted := FrenThirDesugar.fromSource ⟨215⟩ source
+    | throw (IO.userError "SMT witness admission failed")
+  let .ok out := produce admitted | throw (IO.userError "SMT witness production failed")
+  unless out.oir.definitions.size == 1 && out.queries.size == out.oir.questions.size do
+    throw (IO.userError "SMT definition/question retention")
+  let qs := out.queries.filter (fun q => q.question.kind == .validity)
+  let #[entry] := qs | throw (IO.userError "SMT validity inventory")
+  let .ok text := entry.script | throw (IO.userError "SMT witness translation failed")
+  unless entry.question.context.map (·.1.text) == ["x"] && entry.question.hypotheses.size == 1 &&
+      text.endsWith "\n(assert (and (and true true) (not false)))\n(check-sat)\n" &&
+      text.contains "(declare-const P0 Int)" &&
+      text.contains "(define-fun F0v ((P0 Int)) Bool true)" &&
+      text.contains "(define-fun F0d ((P0 Int)) Bool true)" do
+    throw (IO.userError "SMT independent definition/sort/assumption/polarity oracle")
+  let .ok falseOut := FrenOirToSmt.fromSource ⟨215⟩ "mod false_goal\nexpect c() { expect bad: false }\n"
+    | throw (IO.userError "false witness rejected")
+  let #[_, q] := falseOut.queries | throw (IO.userError "false witness questions")
+  let .at origin (.bool false) := q.question.condition | throw (IO.userError "false goal origin missing")
+  let expected : Term := .binary .and (.bool true) (.unary .not (.at origin (.bool false)))
+  unless q.question.search == expected && q.script.toOption == some "(set-logic ALL)\n\n(assert (and true (not false)))\n(check-sat)\n" do
+    throw (IO.userError "proved false-goal witness differs from actual producer")
+  have _render := false_goal_render falseOut.oir origin
+  have _meaning := false_goal_model (symbols := fun _ _ _ => .bool true) (zero := fun _ _ => 0) falseOut.oir
+  match empty : falseOut.oir.definitions.toList with
+  | [] =>
+    match context : q.question.context with
+    | [] =>
+      match search : q.question.search with
+      | .binary .and (.bool true) (.unary .not (.at actualOrigin (.bool false))) =>
+        have _sat : SearchSatisfiable falseOut.oir q.question :=
+          false_goal_satisfiable falseOut.oir q.question actualOrigin (Array.toList_inj.mp empty) context search
+        match originContext : actualOrigin.context with
+        | [] =>
+          have _sorted := false_goal_sorted falseOut.oir.lir.mir.source actualOrigin originContext
+          match enums : falseOut.oir.enumerations.toList with
+          | [] =>
+            match params : q.question.parameters.toList with
+            | [] =>
+              have _query := false_goal_query falseOut.oir q.question actualOrigin
+                (Array.toList_inj.mp enums) (Array.toList_inj.mp empty) (Array.toList_inj.mp params)
+                context originContext search
+              pure ()
+            | _ => throw (IO.userError "parameters outside proved QueryFor witness")
+          | _ => throw (IO.userError "enums outside proved QueryFor witness")
+        | _ => throw (IO.userError "origin context outside proved sorting witness")
+      | _ => throw (IO.userError "search outside proved model witness")
+    | _ => throw (IO.userError "context outside proved model witness")
+  | _ => throw (IO.userError "definitions outside proved model witness")
+  let .ok pre := prelude out.oir | throw (IO.userError "prelude rejected")
+  let changed := {q.question with condition := .bool true}
+  unless (script falseOut.oir "(set-logic ALL)\n" changed).toOption ==
+      some "(set-logic ALL)\n\n(assert (and true (not true)))\n(check-sat)\n" do
+    throw (IO.userError "changed condition did not change search")
+  let some definition := out.oir.definitions[0]? | throw (IO.userError "definition missing")
+  let signature := definition.signature
+  for args in [[], [.bool true]] do
+    unless Term.infer 3 out.oir.lir.mir.source [] (.app signature .value args) == none do
+      throw (IO.userError "actual signature arity/argument-sort check lost")
+  unless Term.infer 3 out.oir.lir.mir.source [] (.app signature .value [.int 2]) == some .bool do
+    throw (IO.userError "valid canonical call rejected")
+  let .error (.invalid _) := functionName {out.oir with definitions := #[]} definition.signature .value
+    | throw (IO.userError "missing canonical signature printed")
+  let .error (.invalid _) := enumIndex out.oir entry.question.owner
+    | throw (IO.userError "missing nominal owner printed")
+  unless Term.infer 3 out.oir.lir.mir.source [] (.binary .add (.bool true) (.int 1)) == none &&
+      (term 3 out.oir [] (.binary .add (.bool true) (.int 1))).isOk do
+    throw (IO.userError "low-level printer/admission boundary changed")
+  let .ok nominal := FrenOirToSmt.fromSource ⟨215⟩
+      "mod nominal\nenum A { One }\nenum B { One }\nexpect c(a: A, b: B) { expect good: a = A::One }\n"
+    | throw (IO.userError "nominal witness admission failed")
+  let #[first, second] := nominal.oir.enumerations | throw (IO.userError "nominal inventory")
+  let some (ctor, _) := first.constructors[0]? | throw (IO.userError "nominal constructor missing")
+  unless Term.infer 2 nominal.oir.lir.mir.source [] (.constructor first.id ctor) == some (.enum first.id) &&
+      Term.infer 2 nominal.oir.lir.mir.source [] (.constructor second.id ctor) == none &&
+      (term 2 nominal.oir [] (.constructor second.id ctor)).isOk == false do
+    throw (IO.userError "cross-owner constructor confused with same spelling")
+  unless pre.startsWith "(set-logic ALL)\n" do throw (IO.userError "logic prefix missing")
+  IO.println "SMT contracts: admitted false-goal encoding with independent Renders/Sorted/Interprets proofs; retained real definition and later assumption; exact sort/polarity/declaration oracle; wrong operator and missing canonical references distinguished from raw printing. No solver run or source-model confirmation."
+
+#print axioms exact_encoding
+#print axioms local_translation
+#print axioms binary_translation
+#print axioms wrong_local_sort
+#print axioms rendered_components
+#print axioms nonzero_not_unsat
+#print axioms multiple_answers_rejected
+#print axioms unknown_not_proof
+#print axioms false_goal_render
+#print axioms false_goal_model
+#print axioms empty_model
+#print axioms false_goal_satisfiable
+#print axioms false_goal_query
+#print axioms parameter_domain_total
+#print axioms flipped_goal_model
+
+end Spec.Compiler.Smt
