@@ -23,8 +23,9 @@ A Language chapter has these parts, omitting empty ones:
 4. Numbered rules give premises, conclusion and side conditions. Each
    expression constructor has its own rule paragraph. Fren blocks supply
    their precise definitions.
-5. Properties state consequences as Fren expectations wherever possible.
-   State properties requiring induction even when their evidence is open.
+5. Properties state consequences as Fren expectation blocks wherever
+   possible, one numbered rule per property. State properties requiring
+   induction even when their evidence is open.
 6. Optional representations explain how finite witnesses encode the
    judgment, after the judgment itself has been defined.
 7. Checked examples instantiate the rules, including rejected premises.
@@ -38,14 +39,36 @@ only to well-typed, verified programs; it defines no undefined behavior and
 does not prescribe evaluation order. Source constructs are defined
 by derived forms translating to the typed Core.
 
+## Semantic objects
+
+Write contexts conventionally, as snoc sequences: `·` is empty and `Γ, τ`
+extends Γ by one newest entry. A local names its entry by de Bruijn level,
+counted from the oldest entry, so extending a context leaves every existing
+level unchanged. When a production representation numbers entries
+differently, such as nearest first, state the conversion as part of the
+refinement relation to that representation rather than leaving it implicit.
+
+Choose representations whose well-formedness holds by construction instead
+of stating a validity predicate. An environment is a finite map, written as
+a snoc sequence of bindings whose lookup returns the newest binding, so each
+key has at most one entry and each entry has one kind.
+
 ## One-layer relations
 
-Give a recursive position as a type parameter, for example `ExprF<E>` with
-`Seq<E>` arguments and `ArmF<E>` match arms. This specifies a semantic
-language, independently of a production IR's storage representation. A
-child's annotation carries its exact context and type. A generic annotation
-function may associate child positions with these records; identity
-instantiates a layer with annotations directly in its child positions.
+Give a recursive position as a type parameter, for example `ExprF<E>`, with
+arguments and match arms as `Snoc<E>` and `Snoc<ArmF<E>>`. This specifies
+a semantic language, independently of a production IR's storage
+representation. The Core syntax is shared with the dynamic semantics, so it
+is complete: a literal carries its value, as in `BooleanLiteral(Bool)` and
+`IntegerLiteral(Int)`. The Core is THIR after derived forms, so concrete
+syntax such as parentheses has no Core form; it belongs to the Syntax
+chapter.
+
+The one-layer rule takes `ExprF<Judgment>`: each child position holds the
+child's judgment, with its exact context and type. There is no separate
+annotation function. A representation that names children otherwise, such
+as by row position, first replaces each child by its judgment and then
+calls the same rule.
 
 Define typing by one match arm per constructor. Each arm states that
 constructor's premises and side conditions. All children have derivations:
@@ -56,18 +79,36 @@ Compute deciding facts from forms, signatures and contexts. A caller's
 success Boolean never replaces a premise that the relation can compute.
 
 Define a derivation once as a finite tree whose every node satisfies the
-one-layer rule. An optional postorder representation checks child bounds
-and calls that same rule with annotations from child rows; it must not
-introduce a second set of typing decisions. Explain the source-occurrence
-correspondence separately from the table's validity.
+one-layer rule. An optional postorder representation looks up children only
+among earlier rows and calls that same rule; it must not introduce a second
+set of typing decisions. Explain the source-occurrence correspondence
+separately from the table's validity.
 
-Prove cheap step properties, including determinism at fixed child types
+## Properties and decidability
+
+State each property as its own global expectation block,
+`expect name(params) { ... }`, with its own rule identifier and status. Small
+separate obligations are easier to read and more likely to be decided. A
+`proc` is for a genuine procedure, such as a primitive contract bound by
+`impl`; it is never a container for properties.
+
+Prove cheap step properties, including determinism at fixed child judgments
 and context discipline, as Fren expectations. Whole-derivation uniqueness,
 weakening and production-checker correspondence require their own evidence;
-a layer lemma alone does not prove them. Minimize `fren.lint.undecidable
-"allow"`; put a one-sentence reason beside each remaining use. Finite guarded
-quantification may need this solver opt-out without being mathematically
-undecidable. A lint opt-out never excuses a failed expectation.
+a layer lemma alone does not prove them. A property that needs induction
+over a recursive definition may be proved in the wrapper and given a `lean`
+status.
+
+Keep every check in the decidable core: the target is no
+`fren.lint.undecidable "allow"` in a chapter. Quantification over positions
+of a `Seq` is outside the core; a structurally recursive function over a
+snoc sequence, or a quantifier over a sequence's elements, is inside it.
+Where a part cannot be decided, write a more abstract decidable version that
+composes with the rest of the chapter, state the precise or
+implementation-level version as a refinement of it, and state the refinement
+relation. Each remaining opt-out has a one-sentence reason beside it and
+names that abstract version. A lint opt-out never excuses a failed
+expectation.
 
 ## Rule evidence metadata
 

@@ -7,7 +7,8 @@ their meanings, and the obligations that checking them produces.
 Start with source text and [syntax](Syntax.md), then [names and scope](NamesAndScope.md).
 The typed Core in [Core typing](Types.md) defines
 canonical item identities, Boolean, integer and nominal enum types, local
-contexts, signatures, one-layer expression forms and a typing judgment.
+contexts indexed by de Bruijn level, a symbol map of signatures and
+constructors, complete one-layer expression forms and a typing judgment.
 Source constructs are defined by derived forms that translate into this Core.
 [Expressions](Expressions.md) uses those definitions for meaning, mentioned
 names and declarative domain obligations. Later chapters build on these

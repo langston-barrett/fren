@@ -60,16 +60,16 @@ def primitiveType : spec.types.ValueKind → Int → FrenExpr.ValueType Int
 def primitiveKind : FrenExpr.ValueType Int → spec.types.ValueKind
   | .bool => .Boolean | .int => .Integer | .enum _ => .Nominal
 
-def primitiveUnary : spec.types.Unary → FrenAst.UnaryOp
-  | .Negate => .neg | .Not => .not
+def primitiveUnary : spec.types.UnaryOp → FrenAst.UnaryOp
+  | .Neg => .neg | .Not => .not
 
-def primitiveBinary : spec.types.Binary → FrenAst.BinaryOp
+def primitiveBinary : spec.types.BinaryOp → FrenAst.BinaryOp
   | .Add => .add | .Sub => .sub | .Mul => .mul | .Div => .div | .Mod => .mod
   | .Lt => .lt | .Le => .le | .Gt => .gt | .Ge => .ge
   | .And => .and | .Or => .or | .Iff => .iff | .Eq => .eq | .Ne => .ne
 
 /-- The normative unary rule agrees with the actual generic primitive. -/
-theorem core_unary (op : spec.types.Unary) (operand result : spec.types.Ty) :
+theorem core_unary (op : spec.types.UnaryOp) (operand result : spec.types.Ty) :
     @FrenExpr.unary (Fren.Seq String) ⟨fun x y => decide (x = y)⟩
       (primitiveUnary op) (coreType operand) = some (coreType result) ↔
         spec.types.unary_type? op operand result := by
@@ -78,7 +78,7 @@ theorem core_unary (op : spec.types.Unary) (operand result : spec.types.Ty) :
       FrenExpr.ValueType.compatible, fren_spec]
 
 /-- Every operator and nominal identity is covered; there is no bounded enum domain. -/
-theorem core_binary (op : spec.types.Binary) (left right result : spec.types.Ty) :
+theorem core_binary (op : spec.types.BinaryOp) (left right result : spec.types.Ty) :
     @FrenExpr.binary (Fren.Seq String) ⟨fun x y => decide (x = y)⟩
       (primitiveBinary op) (coreType left) (coreType right) = some (coreType result) ↔
         spec.types.binary_type? op left right result := by
@@ -95,7 +95,7 @@ impl compatibility: compatible for
   cases left <;> cases right <;>
     simp [fren_spec, primitiveType, FrenExpr.ValueType.compatible, beq_iff_eq]
 
-impl unary: unary for (op : spec.types.Unary) (operand : spec.types.ValueKind) {
+impl unary: unary for (op : spec.types.UnaryOp) (operand : spec.types.ValueKind) {
   op := op, operand := operand,
   accepted? := (FrenExpr.unary (primitiveUnary op) (primitiveType operand 0)).isSome,
   result := primitiveKind ((FrenExpr.unary (primitiveUnary op) (primitiveType operand 0)).getD .bool)
@@ -106,7 +106,7 @@ impl unary: unary for (op : spec.types.Unary) (operand : spec.types.ValueKind) {
       FrenExpr.unaryOperand, FrenExpr.ValueType.compatible]
 
 impl binary: binary for
-    (op : spec.types.Binary) (left right : spec.types.ValueKind) (left_id right_id : Int) {
+    (op : spec.types.BinaryOp) (left right : spec.types.ValueKind) (left_id right_id : Int) {
   op := op, left := left, right := right, left_id := left_id, right_id := right_id,
   accepted? := (FrenExpr.binary (primitiveBinary op) (primitiveType left left_id)
     (primitiveType right right_id)).isSome,
@@ -119,147 +119,194 @@ impl binary: binary for
       FrenExpr.binaryOperand, FrenExpr.binaryResult, FrenExpr.ValueType.compatible, beq_iff_eq]
   all_goals by_cases h : left_id = right_id <;> simp_all [primitiveKind, eq_comm]
 
-/-- Guarded integer quantifiers are finite for every supplied upper bound. -/
-theorem forall_below_iff (upper : Int) (p : Int → Prop) :
-    (∀ i : Int, 0 ≤ i ∧ i < upper → p i) ↔
-      ∀ i : Fin upper.toNat, p (i.val : Int) := by
-  constructor
-  · intro h i
-    exact h i.val (by have := i.isLt; omega)
-  · intro h i hi
-    have bound : i.toNat < upper.toNat := by omega
-    have eq : (i.toNat : Int) = i := by omega
-    simpa only [eq] using h ⟨i.toNat, bound⟩
+/-- Production contexts list the same entries nearest first. -/
+def nearest {α : Type} : spec.types.Snoc α → List α
+  | .Empty => []
+  | .Extend earlier x => x :: nearest earlier
 
-theorem exists_below_iff (upper : Int) (p : Int → Prop) :
-    (∃ i : Int, (0 ≤ i ∧ i < upper) ∧ p i) ↔
-      ∃ i : Fin upper.toNat, p (i.val : Int) := by
-  constructor
-  · rintro ⟨i, hi, hp⟩
-    have bound : i.toNat < upper.toNat := by omega
-    refine ⟨⟨i.toNat, bound⟩, ?_⟩
-    have eq : (i.toNat : Int) = i := by omega
-    simpa only [eq] using hp
-  · rintro ⟨i, hp⟩
-    refine ⟨i.val, ?_, hp⟩
-    constructor <;> have := i.isLt <;> omega
+theorem nearest_length {α : Type} [Inhabited α] (xs : spec.types.Snoc α) :
+    (nearest xs).length = spec.types.length _ xs := by
+  induction xs with
+  | Empty => rfl
+  | Extend earlier x ih => simp [nearest, spec.types.length, ih]
 
-theorem forall_below_flat (upper : Int) (p : Int → Prop) :
-    (∀ i : Int, 0 ≤ i → i < upper → p i) ↔
-      ∀ i : Fin upper.toNat, p (i.val : Int) := by
-  simpa only [and_imp] using forall_below_iff upper p
+/-- The level-to-index refinement: the Core entry at level `level` is the
+production entry at nearest-first index `|xs| - 1 - level`. -/
+theorem lookup_nearest {α : Type} [Inhabited α] (xs : spec.types.Snoc α) (level : Nat)
+    (bound : level < spec.types.length _ xs) :
+    spec.types.lookup _ xs level =
+      FrenBase.Binding.lookup (nearest xs) (spec.types.length _ xs - 1 - level) := by
+  induction xs with
+  | Empty => simp [spec.types.length] at bound
+  | Extend earlier x ih =>
+    simp only [spec.types.length] at bound ⊢
+    simp only [spec.types.lookup, nearest]
+    by_cases h : level = spec.types.length _ earlier
+    · subst h; simp
+    · have lt : level < spec.types.length _ earlier := by omega
+      have eq : spec.types.length _ earlier + 1 - 1 - level =
+          (spec.types.length _ earlier - 1 - level) + 1 := by omega
+      simp only [Int.natCast_inj, h, if_false, eq, FrenBase.Binding.lookup_older]
+      exact ih lt
 
-theorem exists_below_flat (upper : Int) (p : Int → Prop) :
-    (∃ i : Int, 0 ≤ i ∧ i < upper ∧ p i) ↔
-      ∃ i : Fin upper.toNat, p (i.val : Int) := by
-  simpa only [and_assoc] using exists_below_iff upper p
+/-- Arguments and parameters correspond level by level, so their numbers agree. -/
+theorem argument_types_length (args : spec.types.Snoc spec.types.Judgment)
+    (parameters : spec.types.Snoc spec.types.Ty)
+    (h : spec.types.argument_types? args parameters = true) :
+    spec.types.length _ args = spec.types.length _ parameters := by
+  induction args generalizing parameters with
+  | Empty =>
+    cases parameters with
+    | Empty => rfl
+    | Extend _ _ => simp [spec.types.argument_types?] at h
+  | Extend earlier arg ih =>
+    cases parameters with
+    | Empty => simp [spec.types.argument_types?] at h
+    | Extend earlierParameters parameter =>
+      simp only [spec.types.argument_types?, decide_eq_true_eq] at h
+      simp [spec.types.length, ih earlierParameters h.2]
 
--- Expanding generic layers and bounded arm tables needs more simplifier work.
-set_option maxHeartbeats 1000000
+/-- Every arm found at a level satisfies the per-arm rule. -/
+theorem arms_each (s : spec.types.Snoc spec.types.Entry)
+    (arms : spec.types.Snoc (spec.types.ArmF spec.types.Judgment))
+    (owner : Fren.Seq String) (context : spec.types.Snoc spec.types.Ty) (ty : spec.types.Ty)
+    (level : Int) (arm : spec.types.ArmF spec.types.Judgment)
+    (h : spec.types.arms? s arms owner context ty = true)
+    (found : spec.types.lookup _ arms level = some arm) :
+    spec.types.arm? s arm owner context ty = true := by
+  induction arms with
+  | Empty => simp [spec.types.lookup] at found
+  | Extend earlier last ih =>
+    simp only [spec.types.arms?, decide_eq_true_eq] at h
+    simp only [spec.types.lookup] at found
+    split at found
+    · cases found; simpa [spec.types.arm?] using h.1
+    · exact ih h.2 found
 
--- A shared simp set keeps each finite example on the same exact definitions.
-attribute [local simp] forall_below_flat exists_below_flat Fin.forall_fin_succ
-  Fin.exists_fin_succ Fren.Seq.ofList Fren.Seq.unit Fren.Seq.len Fren.Seq.toList
-  Fren.Seq.nth Fren.Seq.instAppend Fren.Seq.instEmptyCollection Fren.Str.lit and_assoc
+example : spec.types.INTEGER_EXAMPLE := by
+  decide
 
+example : spec.types.WRONG_LITERAL_EXAMPLE := by
+  decide
+
+example : spec.types.ABSENT_LOCAL_EXAMPLE := by
+  decide
+
+example : spec.types.OLDEST_LEVEL_EXAMPLE := by
+  decide
+
+example : spec.types.WRONG_LEVEL_EXAMPLE := by
+  decide
+
+example : spec.types.NEWEST_LEVEL_EXAMPLE := by
+  decide
+
+example : spec.types.MISSING_CHILD_EXAMPLE := by
+  decide
+
+example : spec.types.NOMINAL_EQUALITY_EXAMPLE := by
+  decide
+
+example : spec.types.DOMAIN_SEPARATE_EXAMPLE := by
+  decide
 
 example : spec.types.UNARY_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.UNARY_REJECT_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.BINARY_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.BINARY_REJECT_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.BOOLEAN_RIGHT_CHECKED_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.LET_BODY_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
+
+example : spec.types.LET_LEVEL_EXAMPLE := by
+  decide
 
 example : spec.types.SUFFIX_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.LET_VALUE_SCOPE_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.CONDITIONAL_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.BOTH_BRANCHES_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.CONDITION_TYPE_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.MATCH_ARMS_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.MATCH_OWNER_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.MATCH_EMPTY_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.MATCH_ALL_BODIES_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.COVERAGE_SEPARATE_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.DUPLICATES_SEPARATE_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.CALL_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.CALL_ARITY_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.CALL_ARGUMENT_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.CONSTRUCTOR_NOT_CALLABLE_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.FUNCTION_NOT_VALUE_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.CONSTRUCTOR_TYPE_EXAMPLE := by
-  simp [fren_spec] <;> decide
-
-example : spec.types.PARENTHESES_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.CONTEXT_ALIGNMENT_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.PARAMETER_ORDER_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.PARAMETER_SUFFIX_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.IMPLICIT_BOOLEAN_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.MISSING_ANNOTATION_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.EXPLICIT_NOT_OVERWRITTEN_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.VALUE_OWNER_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.WRONG_VALUE_OWNER_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 example : spec.types.DIRECT_CALLEE_EXAMPLE := by
-  simp [fren_spec] <;> decide
+  decide
 
 end Spec.Language.Types

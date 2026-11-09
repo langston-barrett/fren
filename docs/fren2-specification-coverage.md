@@ -18,23 +18,39 @@ standalone `<!-- status: STATUS -->` metadata after each rule paragraph.
 This is the pilot; the rest of the reference has not yet adopted the syntax.
 No mechanical status checker is delivered by this unit.
 
-`rule?` is the single generic one-layer relation. It receives a child-position
-to `Judgment` annotation function, preserving each child's exact context and
-type. `layer_rule?` instantiates it with annotations directly in the recursive
-positions. `local_rule?` instantiates the same relation with annotation lookup
-in the postorder table and separately checks that every child precedes its
-parent. It does not repeat the typing decisions. A finite derivation tree
-justifies every annotation, including unused let values and all branches.
-The postorder-to-tree argument is mathematical; a checked source-occurrence
+`layer_rule?` is the single one-layer relation. It takes `ExprF<Judgment>`,
+whose child positions hold each child's exact context and type. The
+postorder table replaces each child's row position by that row's judgment,
+looking only among earlier rows, and calls the same relation; it does not
+repeat the typing decisions. A finite derivation tree justifies every child
+judgment, including unused let values and all branches. The
+postorder-to-tree argument is mathematical; a checked source-occurrence
 adapter theorem is still needed.
 
-Guarded integer quantifiers range over supplied finite sequences. Each
-remaining `undecidable` lint opt-out explains the solver restriction it
-addresses. None excuses a failed expectation or claims mathematical
-undecidability of finite derivation checking. Unbounded SMT witness search
-is not claimed decidable. The reference's dynamic semantics has a verified,
-well-typed domain; partial-operation and strategy notes in historical records
-below describe implementations and do not extend that semantic domain.
+Contexts, call arguments, match arms, parameter lists, the symbol
+environment and derivation tables are snoc sequences (`Snoc<T>`), read by
+structural recursion. The symbol environment is a map by construction: its
+lookup returns the newest binding, so no validity predicate is stated. The
+chapter has no `fren.lint.undecidable` opt-out. Its recursive definitions
+are opaque to the solver past one unfolding; the properties that need
+induction over them are proved in the wrapper or by Fren's induction over
+an expectation's parameters. Unbounded SMT witness search is not claimed
+decidable. The reference's dynamic semantics has a verified, well-typed
+domain; partial-operation and strategy notes in historical records below
+describe implementations and do not extend that semantic domain.
+
+Locals use de Bruijn levels, counted from the oldest entry of a snoc
+context, so context extension leaves every existing level unchanged.
+Production code, including `FrenBase.Binding`, `FrenHirToThir` and the
+compiler chapters, numbers the same entries nearest first. The conversion,
+nearest-first index `|Γ| - 1 - i` for level i, is part of the
+erasure/refinement relation between the Core and the compiler, which is
+specified later. `Spec.Language.Types.lookup_nearest` proves that lookup
+agrees under this conversion; the rest of the relation, including the
+traversal correspondence of `types.derivation.correspondence`, is open.
+A local's level is an `Int`: Fren1 rejects a `Nat` within a recursive
+enumeration's payload, where derivation rows hold forms. A negative level
+names no entry, so no rule has a `0 ≤ i` premise.
 
 The source representation uses canonical sequences of named components.
 Production `FrenBase.ItemId` also admits generated components, which are not
@@ -42,21 +58,29 @@ source declarations in this domain. Display strings and hashes are not
 identities. The three genuine primitive `impl` bindings remain in
 `Types.lean`, using integer equality atoms to instantiate the generic
 production compatibility/unary/binary operations. They are adapters, not
-the normative type representation.
+the normative type representation. The operator enums `UnaryOp` and
+`BinaryOp` are defined locally with the Syntax chapter's names and
+constructors; they move to `spec::syntax` when that chapter lands.
 
 | Rule or obligation | Evidence and limit |
 | --- | --- |
-| `types.walking.identity`, `types.walking.compatibility` | Fren expectations for disjointness and exact nominal equality |
-| `types.layer.determinism` | Fren expectation for arbitrary layers and valid symbol environments, with child judgments fixed |
-| `types.layer.context` | Fren expectations for exact child contexts, including let extension and binder-free match arms |
-| `types.layer.operators` | Fren expectations for result uniqueness at fixed operand types |
+| `types.walking.identity`, `types.walking.compatibility` | Fren expectation for disjointness and exact nominal equality |
+| `types.context.bound`, `types.context.weakening` | Fren expectations over arbitrary contexts; `lookup_bound` uses Fren's induction |
+| `types.context.indices` | `Spec.Language.Types.lookup_nearest` proves level lookup equals production nearest-first lookup at index `\|Γ\| - 1 - i` |
+| `types.symbols.lookup` | Fren expectation: a new binding determines its item and leaves others unchanged |
+| `types.operator.unary-unique`, `types.operator.binary-unique` | Fren expectations for result uniqueness at fixed operand types |
+| `types.layer.unique-*` (ten forms) | One Fren expectation per form, for arbitrary symbol environments, contexts and child judgments |
+| `types.layer.context-*` (six forms) | One Fren expectation per form for exact child contexts, including let extension and binder-free match arms |
+| `types.layer.children-each` | Fren expectation, by induction over the child sequence |
+| `types.layer.arms-each`, `types.layer.call-arity` | `Spec.Language.Types.arms_each` and `argument_types_length`, by induction in Lean |
+| `types.value.examples` | Fren expectation for the arithmetic meaning examples |
 | `types.operator.unary`, `types.operator.binary` | `Spec.Language.Types.core_unary` and `core_binary` prove agreement with the actual generic primitives for every operator and arbitrary canonical identities |
 | `types.primitive.compatibility`, `types.primitive.unary`, `types.primitive.binary` | Existing universal `impl` proofs of the primitive contracts |
 | Context lookup | `local_type_unique` and `local_type_scoped` prove actual production binding laws |
-| Concrete derivations | Wrapper checks for every public example constant, by finite index expansion; finite evidence only |
+| Concrete derivations | Wrapper checks every public example constant by `decide`; finite evidence only |
 | `types.derivation.unique` | Open: lift the layer step to uniqueness of whole derivations by induction, comparing recursively derived child types |
-| `types.derivation.weakening` | Open: define the capture-avoiding index adjustment and prove typing under context extension by induction |
-| `types.derivation.correspondence` | Open: prove both directions between this Core relation and the production checker in its admitted domain |
+| `types.derivation.weakening` | Open: define the level shift of bound locals and prove typing under context extension by induction |
+| `types.derivation.correspondence` | Open: prove both directions between this Core relation and the production checker in its admitted domain, through the level-to-index conversion |
 
 The theorem names used in rule metadata belong to `Spec.Language.Types`.
 The `definition` rules introduce objects and relations; their status is not
@@ -66,7 +90,9 @@ obligations. Existing production `FrenHirToThir.HasValue` and
 closed examples and layer step cases do not establish `TypingSound`, its
 converse, or a complete source-to-Core occurrence correspondence.
 
-- [ ] Prove whole-derivation uniqueness and capture-avoiding weakening.
+- [ ] Prove whole-derivation uniqueness and weakening with the level shift of bound locals.
+- [ ] Specify the erasure/refinement relation between the Core and the
+  compiler representations, including the level-to-index conversion.
 - [ ] Prove the complete occurrence/context-preserving source-to-Core
   correspondence and actual checker's `TypingSound` theorem and converse.
 - [ ] Prove universal match-coverage and call-graph correspondence separately

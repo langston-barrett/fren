@@ -17,12 +17,12 @@ actual constructor of its canonical enum owner.
 
 r[expressions.meaning.context]
 An interpretation assigns meanings to canonical items. A local assignment
-lists values nearest first in the exact typing context. Literals denote
-their values; a local denotes its indexed value; a constructor denotes its
-nominal value. Parentheses preserve meaning. A named call substitutes its
+lists values by level, oldest first, in the exact typing context. Literals
+denote the values they carry; a local denotes the value at its level; a
+constructor denotes its nominal value. A named call substitutes its
 positional arguments into its function body's parameter context, without
 inheriting the caller's locals. A let interprets its value in the incoming
-context and its body with that value prepended. An if denotes its selected
+context and its body with that value appended as the newest level. An if denotes its selected
 branch; a match denotes the body for its constructor, in the incoming context.
 
 r[expressions.meaning.operators] spec::types::{linear_meaning?, meaning_examples}
@@ -41,8 +41,8 @@ the same written spelling.
 r[expressions.mentions.closure]
 An expression's mentioned items are the union of its direct items and those
 of every written child. Its free local slots are collected through every
-child, removing the newest slot and decrementing older slots when leaving
-a let body. A let's value has no additional binder. Match patterns add none.
+child, removing the let's own level when leaving a let body; other levels
+are unchanged. A let's value has no additional binder. Match patterns add none.
 Names in an unselected branch or unused definition still count. This
 structural closure uses the same children and binding depths as typing;
 it is independent of a particular evaluation trace.
@@ -91,10 +91,10 @@ semantics for unresolved mutually partial assumptions.
 
 ## Examples
 
-With `Γ = [Boolean, Integer]`, local 0 denotes the Boolean, and local 1 the
-integer. In `let x := y + 1 in x + y`, with incoming context `[y: Integer]`,
-the value uses slot 0 for `y`; the body uses slot 0 for `x` and slot 1 for
-`y`. These are the same contexts required by `local_rule?`.
+With `Γ = ·, Boolean, Integer`, local 0 denotes the Boolean, and local 1 the
+integer. In `let x := y + 1 in x + y`, with incoming context `·, y: Integer`,
+the value uses level 0 for `y`; the body uses level 0 for `y` and level 1
+for `x`. These are the same contexts required by `layer_rule?`.
 
 `Ty::Nominal(["M", "Light"])` and `Ty::Nominal(["M", "Signal"])` are
 different types even if both enums declare `Red`. A comparison between
