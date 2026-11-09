@@ -73,8 +73,9 @@ It proves retention/admission, uniqueness, failure exclusion, static-boundary
 factorization and equivalence of the body obligation to `TypingSound`.
 It does not prove `TypePassContract`, `CoverageContract` or
 `NonrecursionContract`, or a complete source-to-Fren-derivation bridge.
-The desugaring unit below adds its own actual-code contracts. The remaining
-MIR/LIR/OIR/SMT narrative edits do not complete their formal specifications.
+The desugaring unit below adds its own actual-code contracts. The MIR unit
+below adds theory-construction and semantic contracts. The remaining
+LIR/OIR/SMT narrative edits do not complete their formal specifications.
 
 Continue the same correction objective with these separate chapter units:
 
@@ -82,9 +83,9 @@ Continue the same correction objective with these separate chapter units:
    relation and actual API correspondence are specified below. Each additional
    sugar still needs Language semantics, its own transformation rule, typing
    and scoped-obligation/value preservation. No additional sugar is admitted.
-2. **MIR** (`SCmir`, 1018): actual theory/signature/member/request judgments,
-   owner/parameter roles, scoped assumptions and domain retention, with
-   bidirectional source-check correspondence. Extend to procedures/views
+2. **MIR extensions** (`SCmir`, 1018): the core formal chapter and conditional
+   correspondence laws are specified below. Prove its universal producer
+   inventories and recursive semantic premises; extend to procedures/views
    only with their Language semantics.
 3. **LIR** (`SClir`, 1024): actual term sorting and scoped verification
    relations, equations/closed sharing/local-let laws and preservation of
@@ -100,6 +101,95 @@ Continue the same correction objective with these separate chapter units:
 
 These are retained substantive obligations, not completed chapters or a
 separate plan replacing the implemented shared-core and THIR correction.
+
+## MIR contracts and proof boundary
+
+`Spec/Compiler/Mir.md` now defines a substantive theory-construction chapter
+with numbered semantic objects, admission, declaration/member ordering,
+owned assumptions and requests, static definedness, interpretation and
+confirmation. Its displayed Lean definitions are the wrapper's exact compiled
+reference block. They reuse production `Program`, `Typed`, `Theory`, bodies,
+contexts, syntax and request data, together with the shared THIR and
+Desugaring judgments. No executable compiler or IR is duplicated. The
+pointwise Fren question matrix is checked independently of the Lean laws.
+The former Light/arithmetic example and its unreferenced `mir.primitive.offset`,
+`mir.primitive.implication` and `mir.primitive.amber` identifiers have been
+retired from the normative chapter; their old example-only evidence never
+established MIR correctness. The historical S1 acceptance record below remains.
+
+`DeclarationFor`, `MemberOrder` and `DeclarationOrder` specify exact source
+origins, parameter/result annotations and contexts, body identity, enum
+constructor ownership and written order. `DefinitionInventory` and
+`RootInventory` state bidirectional completeness over the actual producer
+input/output. `RequestFor`, `BlockLayout` and `RequestOrder` specify complete
+request fields, indexed multiplicity, all assumptions including later ones,
+satisfiability first, one validity question per goal, and block order.
+`Constructs` combines these requirements. `PassContract`, the universal claim
+that actual production satisfies `Constructs`, remains unproved.
+
+The wrapper proves actual retention/admission, uniqueness, error exclusion,
+source-entry success factorization, unchanged admission errors, every actual
+request's complete owning context, `BlockLayout` for the real block helper,
+and `RequestOrder` for actual producer results. It proves scoped-site retention
+under the explicit `RootInventory` premise and bidirectional `ValueOf` and
+check meaning under `DefinitionInventory`. Actual evaluator results, including
+all negative outcomes and depths, are preserved by equality of the retained
+source. These proofs do not assume that finite tests establish the inventories.
+
+`ValueOf` is a declarative defined-value relation on real syntax and named
+definitions, including parenthesized callees, exact local slots and fresh
+callee parameter environments. It does not specify an outside-domain value.
+`StaticAt` traverses ordinary operands and unused let definitions independently
+of lazy execution; explicit guards use their original lexical environments.
+Its projection to shared scoped traversal is proved. `BodySafe` requires the
+actual divisor's nonzero value in every applicable static context.
+`VerificationDomain` demands safety of every function definition on every
+typed argument assignment, independently safe assumptions, and request demand
+roots under those assumptions. It is a sufficient verification domain; the
+unresolved mutually partial-assumption dependency class is not silently admitted.
+
+`SemanticDomain` states the shared source static judgments and functionality
+of `ValueOf`; no universal proof is claimed. `ConfirmedCounterexample` requires
+actual admission/production, construction correspondence, this semantic domain,
+request membership, static safety, typed arguments, true assumptions and a
+false goal. `counterexample_refutes` proves that these premises refute validity.
+A solver SAT answer by itself does not establish source confirmation.
+
+The wrapper checks a real source with three complete function roots and four
+ordered requests, then rejects twelve raw request changes, deletion of an
+unused function and substitution of another file's origins. A generic request
+observation law explains why exact relational fields constrain all such
+observations; printed-record comparisons are finite controls, with no universal
+injectivity claim. The existing real producer cases and direct Plausible job
+also exercise nominal enums, multiple/empty blocks, later assumptions, false
+goals, partial expressions, rejections and edited raw outputs. No production
+pass, driver, Lake configuration or global compiler budget changes here.
+
+- [ ] Prove `PassContract`, including complete ordered source declaration/member
+  correspondence and both definition and static-root inventories, over every
+  successful actual producer result.
+- [ ] Prove the shared THIR static contracts and defined-value functionality
+  that `SemanticDomain` requires; prove actual evaluator adequacy for `ValueOf`
+  under independent static verification and sufficient depth.
+- [ ] Prove completeness of the recursive static interpretation, including
+  all bindings and guard environments, before claiming universal verification
+  or source-model confirmation from implementation output.
+- [ ] Bind LIR/OIR/SMT preservation and model decoding to these actual relations;
+  no solver or lowering correctness is supplied by this MIR chapter.
+- [ ] Restate the recursive relations in Fren when it can quantify over the
+  real recursive syntax and evidence-carrying program objects. The finite
+  question matrix is expressible now; no new Fren1 recursion gate is required.
+
+Primary-reference organization remains the first core unit's actual research
+record: FLS [method and subchapter segments](https://rust-lang.github.io/fls/general.html),
+[expression rules](https://rust-lang.github.io/fls/expressions.html), and
+[The Definition of Standard ML (Revised)](https://smlfamily.github.io/sml97-defn.pdf)
+sections 4.1–4.3, 4.10 and 6.1–6.7. The MIR chapter applies the semantic-object,
+environment and judgment composition discipline: it defines exact contexts
+before rules, separates static premises from value judgments, and states
+preservation with its actual hypotheses. The immutable core research receipt
+is `out/fren2-language-core/phases/001-author-75cb4488-a40c-4027-a2d1-2a7548ffc302/references.json`;
+this unit uses that supplied record while network access is paused.
 
 ## Desugaring contracts and proof boundary
 
