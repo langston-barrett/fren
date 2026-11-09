@@ -1,0 +1,4 @@
+-- verdict: verified exit: 0
+mod corpus
+enum E { A, B }
+expect c(e: E) { assume a: e = E::A expect good: match e { E::A => true, E::B => 1 div 0 = 0 } }

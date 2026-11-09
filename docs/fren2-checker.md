@@ -115,6 +115,7 @@ fixtures use an isolated temporary tree's fixed solver path; the shipped solver
 and runtime files are unchanged.
 
 The annotated known-verdict corpus is in `test/fren2-verdicts/`. Run it with
-`.lake/build/bin/fren2_test --job verdictCorpus`; it also runs in `smtControls`.
-The focused `definednessControls` child job checks source-site confirmation and
-evidence-binding controls for both `div` and `mod`.
+`.lake/build/bin/fren2_test --job verdictCorpus`. The `definednessControls` job
+checks source-site confirmation and evidence-binding controls for both `div`
+and `mod`. Both are separate jobs in the child and parent default paths, each
+under its own 30-second deadline.

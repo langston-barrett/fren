@@ -1,0 +1,3 @@
+-- verdict: refuted exit: 1
+mod corpus
+expect c(d: Int) { assume a: 10 div d = 5 expect good: d = 2 }

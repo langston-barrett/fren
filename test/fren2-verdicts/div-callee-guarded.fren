@@ -1,0 +1,4 @@
+-- verdict: verified exit: 0
+mod corpus
+fn f(x: Int): Int := if x = 0 then 0 else 10 div x
+expect c(a: Int) { assume p: a > 0 expect good: f(a) >= 0 }

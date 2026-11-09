@@ -91,8 +91,8 @@ def main():
                 ('evaluation-limit', ['--evaluation-depth', '0'], 'unconfirmed')]:
             result = run(label, good, options=opts, expected=3, verdict='inconclusive')
             assert any(r['status'] == status for r in result['checks']), result
-        unsupported = run('unsupported-confirmation', 'mod command\nexpect c() { expect goal: 1 div 0 = 0 }', expected=3, verdict='inconclusive')
-        assert any(r['status'] == 'unconfirmed' and 'unsupported' in r['reason'] for r in unsupported['checks'])
+        definedness = run('definedness-confirmation', 'mod command\nexpect c() { expect goal: 1 div 0 = 0 }', expected=1, verdict='refuted')
+        assert any(r['status'] == 'counterexample' and r['model_ref'] and r['assignment_summary']['confirmation'] == 'FrenOirToSmt.Confirmation.counterexample' for r in definedness['checks'])
 
         for args in [[], ['--bogus', '1', str(source)], ['--wall-ms', '0', str(source)],
                      ['--wall-ms', '10001', str(source)], ['--solver-ms', '0', str(source)],

@@ -3,13 +3,15 @@
 Each `.fren` file starts with `-- verdict: NAME exit: N`. The `verdictCorpus`
 child job discovers every file, runs `FrenCli2.checkFile` (the same pipeline as
 `fren2_check`), and checks both the verdict and its exit class. It rejects an
-empty corpus or malformed annotation. `smtControls` includes this job, so the
-existing parent and default test selections run it too.
+empty corpus or malformed annotation. The child and parent default test
+selections run it as its own job (`fren_test --job fren2 verdictCorpus`).
 
-Most seeds come from the independent skeleton review probes; their second
-comment records provenance. The corpus includes integer arithmetic, lexical
+Files whose second comment names a seed come from the independent skeleton
+review probes. The corpus includes integer arithmetic, lexical
 bindings, nominal enums, calls, inconsistent assumptions, invalid input,
-no checks, unresolved dependencies, and the div/mod definedness regressions.
+no checks, unresolved dependencies, and the div/mod definedness regressions:
+sites in unused lets, uncalled and called functions, assumptions, call
+arguments, `if` conditions, `match` arms and divisors that themselves divide.
 `empty.fren` has a total function, which creates definedness checks and verifies;
 `no-checks.fren` has no obligations.
 

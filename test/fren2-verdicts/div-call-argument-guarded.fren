@@ -1,0 +1,4 @@
+-- verdict: verified exit: 0
+mod corpus
+fn id(x: Int): Int := x
+expect c(d: Int) { expect good: if d = 0 then true else id(1 div d) = id(1 div d) }

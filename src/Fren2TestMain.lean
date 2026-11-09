@@ -74,7 +74,6 @@ private def runJob (args : List String) : IO UInt32 := do
   if args == ["--job", "smtControls"] then
     FrenOirToSmtTests.runControls
     FrenCli2Tests.run
-    runVerdictCorpus
     return 0
   if args == ["--job", "smtProperties"] then
     FrenOirToSmtTests.runProperties
@@ -179,7 +178,8 @@ public def main (args : List String) : IO UInt32 := do
       ["--job", "mir"], ["--job", "mirProperties"],
       ["--job", "lir"], ["--job", "lirProperties"],
       ["--job", "oir"], ["--job", "oirControls"], ["--job", "oirProperties"],
-      ["--job", "smt"], ["--job", "smtControls"], ["--job", "smtProperties"]] do
+      ["--job", "smt"], ["--job", "smtControls"], ["--job", "smtProperties"],
+      ["--job", "definednessControls"], ["--job", "verdictCorpus"]] do
     let status ← bounded job
     if status != 0 then return status
   for name in ["run", "derive", "phase"] do

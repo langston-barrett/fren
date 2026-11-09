@@ -1,0 +1,4 @@
+-- verdict: refuted exit: 1
+mod corpus
+fn f(x: Int): Int := 10 div x
+expect c(a: Int) { assume p: a > 0 expect good: f(a) >= 0 }

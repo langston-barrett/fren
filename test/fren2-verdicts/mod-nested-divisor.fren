@@ -1,0 +1,3 @@
+-- verdict: verified exit: 0
+mod corpus
+expect c(d: Int) { assume big: d > 1 expect good: 1 mod (1 mod d) = 0 }

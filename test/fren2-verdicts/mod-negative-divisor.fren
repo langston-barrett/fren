@@ -1,0 +1,3 @@
+-- verdict: verified exit: 0
+mod corpus
+expect c(d: Int) { assume neg: d < 0 expect good: 7 mod d >= 0 }
