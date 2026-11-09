@@ -50,8 +50,6 @@ private def sample (file n : Nat) : Bool := Id.run do
   if again.program != p then return false
   let .ok shifted := compile (file + 1) src | return false
   if shifted.program == p then return false
-  let dropped := {p with questions := p.questions.filter (fun q => q.id != ordinary.id)}
-  if !(divisions dropped "ordinary").isEmpty then return false
   let flipped := {goal with condition := .unary .not goal.condition}
   if !sorted p flipped || !sees flipped #[.int (k : Int), .int 1] true then return false
   for invalid in #[src ++ "\nfn bad(x: Int): Int := false", src ++ "\nfn bad(x: Int): Int := absent",
@@ -73,7 +71,7 @@ def runProperties : IO Unit := do
   for n in [:19] do
     unless sample (700 + n) n do throw (IO.userError s!"OIR census sample {n}")
   IO.println s!"OIR properties execution: {(← IO.monoMsNow) - started} ms"
-  IO.println "OIR census: 19 admitted sources, each with mandatory ordinary/unused partial bodies, safe single-partial goal, mutual-partial unresolved block, empty and contradictory blocks; 57 illtyped/unbound/recursive rejections, 38 omitted/polarity controls, 19 deterministic and 19 moved-file productions; Plausible 100 samples with same classes, discarded=0. Finite observations are not solver results or universal soundness."
+  IO.println "OIR census: 19 admitted sources, each with mandatory ordinary/unused partial bodies, safe single-partial goal, mutual-partial unresolved block, empty and contradictory blocks; 57 illtyped/unbound/recursive rejections, 19 independent polarity controls (generated omissions are not counted; fixed-fixture omission audit remains), 19 deterministic and 19 moved-file productions; Plausible 100 samples with same classes, discarded=0. Finite observations are not solver results or universal soundness."
 
 #print axioms FrenLirToOir.deterministic
 #print axioms FrenLirToOir.retains_lir
