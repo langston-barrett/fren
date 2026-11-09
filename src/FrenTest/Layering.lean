@@ -29,7 +29,7 @@ private def allowed : List (String × List String) :=
    ("FrenMirToLean", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
    -- Direct walking lowering requires the real admitted MIR producer.
    ("FrenFlatToLir", base ++ ["FrenExpr", "FrenMir", "FrenLir", "FrenThirToMir"]),
-   ("FrenLirToOir", base ++ ["FrenLir", "FrenOir"]),
+   ("FrenLirToOir", base ++ ["FrenLir", "FrenOir", "FrenModule", "FrenFlatToLir"]),
    ("FrenOirToSmt", base ++ ["FrenOir"]),
    -- The walking adapter proves admission with the actual checked producer.
    -- This dependency does not prescribe the future generic evaluator boundary.
@@ -56,6 +56,7 @@ private def testOnly (owner : String) : Bool :=
 private def permits (owner imported : String) : Bool := Id.run do
   if ["Lean", "Std", "Init"].contains imported then return true
   if owner == imported then return true
+  if owner == "FrenLirToOirTests" && ["FrenFlatToLirTests", "Plausible"].contains imported then return true
   if owner == "FrenTest.Fren2Lir" then return imported == "FrenFlatToLirTests"
   if owner == "FrenFlatToLirTests" && ["Plausible", "FrenEval"].contains imported then return true
   if owner == "FrenTest.Fren2Mir" then return imported == "FrenThirToMirTests"

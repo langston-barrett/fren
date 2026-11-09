@@ -7,11 +7,11 @@ only a Boolean goal would lose the difference between an undefined assumption,
 contradictory assumptions, an undefined goal and a false goal.
 
 This chapter specifies the next boundary after [logical lowering](Lir.md).
-The actual `FrenLir.Program` and its scoped verification trees exist;
-`FrenOir` and `FrenLirToOir` are still empty module stubs. No OIR producer,
-solver backend or completed S1 solver result is delivered here. The small
-checked facts below constrain logical primitives independently of that future
-implementation.
+The actual `FrenLir.Program` and its scoped verification trees feed
+`FrenLirToOir.produce`, which now generates `FrenOir.Program` questions from
+an accepted walking source witness through the real LIR producer. No solver
+backend or completed S1 solver result is delivered here. The small checked
+facts below constrain logical primitives independently of extraction.
 
 ## Input and questions
 
@@ -263,10 +263,48 @@ with `selected?` on the right of `then_guard` is false at
 `selected? = false, d = 0`. These controls must actually fail the checker;
 their counterexamples are primitive Fren1 results, not Fren2 solver models.
 
-## Remaining actual-pass laws
+## Actual producer evidence and remaining laws
 
-All eight `oir.walking.*` rules above are pending actual-producer obligations.
-The primitive facts prove none of the following whole-pass statements:
+`FrenLirToOir.retains_lir`, `admission`, `retains_source` and `scoped_input`
+prove that successful production retains actual admitted, well-scoped LIR;
+`deterministic` and `lowering_rejected` constrain the real entry point.
+`retained_equations` proves that every function keeps its actual equations.
+`walk_empty`, `walk_check`, `walk_both`, `walk_branch`, `walk_binding` and
+`walk_at` state equations for all actual traversal constructors.
+`FrenOir.scoped_binding`, `scoped_guard` and `search_counterexample` constrain
+scope reconstruction and the negated-condition search formula. These local
+laws do not prove a whole-pass source correspondence.
+
+The producer retains complete typed domains, actual definition value/domain
+equations, ordered requests, per-occurrence paths, interleaved lexical frames
+and question/definition dependency edges. Free parameters are total values of
+their declared domains; their LIR local-domain components mean true. A
+conservative structural domain check recognizes independently total
+assumptions, including parameter comparisons. Their trivial domain questions
+need no hypotheses. Partial assumptions retain the other assumptions and
+explicit edges to their checks. When those others are also partial, the
+questions and dependent requests carry an unresolved reason. `ready` means
+this dependency rule is supported, not that any question has been proved.
+Guard and binding entries conservatively depend on earlier checks in their
+body; these edges are prerequisites, never Boolean premises. No aggregate
+verification success is produced.
+
+The native `oir`, `oirControls` and `oirProperties` jobs exercise actual
+source production. The fixed source checks unused functions, both Boolean
+operands, lets and shadowing, calls and actual equations, nominal match
+guards, later assumptions, empty/contradictory blocks and unresolved mutual
+partiality. Direct Plausible runs 100 samples with mandatory admitted,
+partial, contradictory and rejected classes and no discarded premises; a
+19-source census records the same classes. Independent negative controls
+remove a question, change an owner/origin or local slot, add an ordinary
+operand guard, move a let check, insert the goal as a premise, flip polarity
+and remove equations. Missing and wrong-origin obligations remain well-sorted
+but fail the source controls. Finite formula observations use the existing
+test-only LIR observer, not extraction as their oracle or a solver backend.
+
+The checked test item below is finite evidence. All eight `oir.walking.*`
+rules still require universal actual-pass laws; neither the primitive facts
+nor these tests prove the unchecked statements:
 
 - [ ] For every actual successful admitted LIR production, extraction either
   produces well-formed contextual questions for every retained verification
@@ -281,7 +319,7 @@ The primitive facts prove none of the following whole-pass statements:
   owned Sat and validity request agrees in both directions with the formulas
   above over the complete parameter domains. Never infer validity from its
   own goal or consistency from bounded search.
-- [ ] Test the actual producer directly, with premise counts for admitted,
+- [x] Test the actual producer directly, with premise counts for admitted,
   partial, contradictory and unsupported classes. Delete a check, use the
   wrong owner or slot, guard an ordinary operand, move a let check, insert a
   goal as a premise and flip counterexample polarity as negative controls.
@@ -292,5 +330,5 @@ The primitive facts prove none of the following whole-pass statements:
 
 The existing MIR request laws and LIR constructor equations establish useful
 retention and local structure. They are not OIR extraction proofs. This
-chapter leaves general pipeline soundness and the actual producer to later
-units while making their required boundary explicit.
+chapter leaves universal extraction and pipeline soundness to later units;
+the producer evidence above establishes the current implementation boundary.

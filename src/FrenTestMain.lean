@@ -4531,6 +4531,7 @@ def jobs : IO (Array (List String)) := do
     ++ #[["nativeObservation"]]
     ++ #[["fren2", "mir"], ["fren2", "mirProperties"]]
     ++ #[["fren2", "lir"], ["fren2", "lirProperties"]]
+    ++ #[["fren2", "oir"], ["fren2", "oirControls"], ["fren2", "oirProperties"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4666,7 +4667,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     let out ← IO.Process.output { cmd := "python3", args := #["test/Fren2Driver/deadlines.py", ".lake/build/bin/fren2_test"] }
     return if out.exitCode == 0 then #[] else #[s!"Fren2 deadline controls failed:\n{out.stdout}{out.stderr}"]
   | ["fren2", job] => do
-    unless ["resolver", "resolverProperties", "walking", "walkingProperties", "typing", "typingOperators", "typingProperties", "evaluator", "evaluatorProperties", "desugaring", "mir", "mirProperties", "lir", "lirProperties"].contains job do
+    unless ["resolver", "resolverProperties", "walking", "walkingProperties", "typing", "typingOperators", "typingProperties", "evaluator", "evaluatorProperties", "desugaring", "mir", "mirProperties", "lir", "lirProperties", "oir", "oirControls", "oirProperties"].contains job do
       throw (IO.userError s!"unknown Fren2 job `{job}`")
     let out ← IO.Process.output { cmd := ".lake/build/bin/fren2_test", args := #["--job", job] }
     return if out.exitCode == 0 then #[] else #[s!"Fren2 {job} failed:\n{out.stdout}{out.stderr}"]
