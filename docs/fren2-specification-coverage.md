@@ -76,7 +76,8 @@ It does not prove `TypePassContract`, `CoverageContract` or
 The desugaring unit below adds its own actual-code contracts. The MIR unit
 below adds theory-construction and semantic contracts. The LIR unit below
 adds actual term, scope and interpretation contracts.
-The remaining OIR/SMT narrative edits do not complete their formal specifications.
+The OIR unit below adds contextual extraction, request and interpretation
+contracts. The SMT normative correction remains owed.
 
 Continue the same correction objective with these separate chapter units:
 
@@ -92,10 +93,10 @@ Continue the same correction objective with these separate chapter units:
    constructor laws are specified below. Prove their universal producer,
    interpretation and request contracts. Closed sharing, quantifiers and
    additional source forms require their own specified extensions.
-4. **OIR** (`SCoir`, 1026): actual contextual question/extraction judgments,
-   independent prerequisite evidence, owner/origin/context completeness,
-   polarity and two-way validity correspondence. Keep the mutually partial
-   assumption dependency rule unresolved until separately justified.
+4. **OIR extensions** (`SCoir`, 1026): the formal core contracts below specify
+   actual extraction and owned contextual questions. Prove the remaining
+   whole-pass construction, sorting, model and semantic correspondence laws.
+   Keep mutually partial assumption dependencies unresolved until justified.
 5. **SMT** (`SCsmt`, 1027): actual query/answer relation, symbol freshness,
    environment and polarity preservation, unknown/resource outcomes, model
    decoding and static source confirmation. Solver responses alone do not
@@ -103,6 +104,103 @@ Continue the same correction objective with these separate chapter units:
 
 These are retained substantive obligations, not completed chapters or a
 separate plan replacing the implemented shared-core and THIR correction.
+
+## OIR contracts and proof boundary
+
+`Spec/Compiler/Oir.md` now defines actual OIR domains, parameters, definition
+pairs, contextual questions, dependencies, readiness and answer polarity over
+the accepted LIR objects. Its displayed reference block is exactly the
+wrapper's compiled definitions. `DomainFor`/`ParametersFor` preserve nominal
+inventories and ordered typed parameters. `Extracts` is an unbounded ordered
+judgment on real verification trees and real extraction leaves, not a second
+executable pass. `SiteFor`/`FramesFor` connect each leaf to accepted LIR sites,
+including the original lexical contexts through interleaved guards/binders.
+`BodyQuestionFor`, `BodyGroup`, `AssumptionGroups`, `RequestGroup`,
+`RequestGroups` and `DeclarationGroups` constrain complete question layout,
+owner/member/source identity, conditions, hypotheses, scopes and prerequisite
+IDs. `Constructs` requires both exact declaration inventories and complete
+ordered question groups, independently of producer equality.
+
+`Uses` defines structural application occurrences, including unused let
+value/domain terms. `DefinitionEdges` requires exact support of definition
+dependencies while allowing repeated edges from the assumption update.
+`LocalEdges` preserves ordered earlier-context prerequisites. `Others`,
+`AssumptionState` and `RequestState` compute the actual dependency policy from
+retained bodies/questions; they do not take supplied decisions or proofs.
+Structurally total assumptions need no hypotheses; a partial assumption keeps
+its other owning assumptions. Mutually partial groups and dependent requests
+remain explicitly unresolved. No aggregate verification result is introduced.
+
+`Active`, `SearchHolds`, `Violation`, `ConditionValid`, `QuestionTrue`,
+`EquationsHold` and `RequestMeaning` use the same `Lir.Meaning`, slot pairs,
+symbols, zero-divisor totalizations and typed assignments as LIR.
+`PassContract`, `SearchContract` and `RequestContract` state separate
+construction, formula/frame and two-way request obligations. The request
+contract also requires the relevant domain questions under the independently
+stated sufficient LIR safety domain. It does not assume source functionality
+on fabricated expressions or OIR soundness as a premise. `request_to_source`
+proves conditional composition with the named LIR request contract; neither
+upstream contract is silently discharged.
+
+The wrapper proves actual producer retention/admission, uniqueness, source
+success factorization, failure exclusion, definition-equation retention and
+search polarity. `walk_extracts` proves, by induction on the actual bounded
+traversal, that every successful walk has its unbounded ordered extraction
+derivation. It covers every constructor and threads exact origin, path,
+frames, availability and prerequisites. It proves neither converse depth
+adequacy nor the complete whole-pass contract. Actual ordinary/binding
+extraction equations retain both checks and preserve the let-value location
+and prerequisite. `active_nil`, `false_guard_inactive` and `literal_search`
+prove contextual/interpretation facts, not solver claims.
+
+`empty_witness_constructs` constructively proves the entire OIR `Constructs`
+relation for a complete empty-block production shape; `empty_witness_sat`
+exhibits its typed empty assignment and search meaning. The real source
+producer admits such a block, and the wrapper requires its entire output to
+match that proved shape. A separate admitted function `1 div 2` generates a
+nonempty divisor question. Matching its actual condition supplies equality
+evidence to `constant_divisor_valid`, which proves `ConditionValid` for that
+question over every assignment, lexical continuation and zero-divisor
+totalization, without an assumed universal pass theorem. Another admitted
+source has two nonempty function bodies, three divisor sites, unused-let
+and explicit-guard contexts, and a
+goal with its later assumption and safety dependency. These finite checks
+show the intended domain is usable; they do not establish general source
+semantic preservation. `wrong_condition_rejected` and `wrong_frame_rejected`
+prove that independently changed condition/context records fail `SearchFor`.
+Three well-sorted output edits are additionally checked against the retained
+LIR request as an independent oracle: deleted hypotheses, changed condition
+and an inserted false guard. External failed-proof and Fren controls retain
+their physical failures. Existing direct actual-code OIR native, control and
+Plausible jobs remain bounded evidence with explicit premise counts.
+
+- [ ] Prove whole-pass `PassContract`, including extraction-to-LIR `SiteFor`,
+  source correspondence, complete group layout and dependency construction.
+- [ ] Prove bounded sort-checker correspondence and structural-totality
+  recognizer soundness for actual admitted bodies; neither is established by
+  `walk_extracts` or the empty-block witness.
+- [ ] Prove `SearchContract` and `RequestContract`, including typed Boolean
+  completeness/functionality of term/frame interpretation, guarded and bound
+  environments, and complete domains. Do not infer them from finite tests.
+- [ ] Prove compatibility/existence of actual LIR equation/source models and
+  the upstream LIR/MIR semantic premises, preserving their existing proof
+  inventories. The empty-definition witness does not prove general models.
+- [ ] Justify mutually partial assumption dependencies separately before
+  reporting verified results for them. Retain their unresolved edges/reasons.
+- [ ] Restate recursive extraction and interpretation contracts in Fren once
+  Fren2 supports their actual recursive carriers and judgments. No Fren1
+  recursion extension or copied executable pass is a prerequisite.
+- [ ] Complete the separate SMT normative correction. Source model decoding,
+  evaluation confirmation and aggregate verdict delivery remain later work.
+
+The FLS/SML primary-source material already consulted for the Language/LIR
+correction was read from its retained cache while network access was paused:
+FLS 1.1.1/1.1.2/1.1.4 and expression legality/evaluation structure; SML Revised
+4.1/4.2 semantic objects, 4.10 context judgments and 6.2/6.3/6.7 dynamic
+objects/environments/inference conventions. OIR uses the separation of
+semantic objects, judgments and side conditions without adopting Rust or ML
+language behavior. The exact consulted excerpts and hashes are recorded in
+the external phase provenance.
 
 ## MIR contracts and proof boundary
 
@@ -279,9 +377,9 @@ and deliberate failing mutations are recorded in the external check receipts.
 - [ ] Restate these recursive actual-code relations in Fren when its recursive
   types/judgments permit them, without extending Fren1 as a prerequisite.
 
-MIR and LIR now have substantive formal core contracts above; OIR and SMT
-remain separate substantive correction units, with universal pass proofs
-still open at all non-identity boundaries.
+MIR, LIR and OIR now have substantive formal core contracts; the SMT
+normative correction remains a separate unit. Universal pass proofs remain
+open at all non-identity boundaries.
 No production pass or broader source admission changes in this unit.
 
 ## Residual technical spellings
@@ -447,9 +545,10 @@ and remove equations. Missing and wrong-origin obligations remain well-sorted
 but fail the source controls. Finite formula observations use the existing
 test-only LIR observer, not extraction as their oracle or a solver backend.
 
-The checked test item below is finite evidence. All eight `oir.walking.*`
-rules still require universal actual-pass laws; neither the primitive facts
-nor these tests prove the unchecked statements:
+The checked test item below is finite evidence. The eight `oir.walking.*`
+rules now have the formal relations and partial proofs inventoried above;
+the remaining universal whole-pass laws are still unproved. Neither the
+primitive facts nor these tests prove the unchecked statements:
 
 - [ ] For every actual successful admitted LIR production, extraction either
   produces well-formed contextual questions for every retained verification
@@ -474,9 +573,10 @@ nor these tests prove the unchecked statements:
   pass model or plausible-only `impl` substitutes for these laws.
 
 The existing MIR request laws and LIR constructor equations establish useful
-retention and local structure. They are not OIR extraction proofs. This
-chapter leaves universal extraction and pipeline soundness to later units;
-the producer evidence above establishes the current implementation boundary.
+retention and local structure. They are not OIR extraction proofs.
+`walk_extracts` now proves successful traversal satisfies its extraction
+judgment. Whole-pass construction and pipeline soundness remain unproved;
+that theorem does not change the source/solver proof boundary.
 
 ## LIR contracts and proof boundary
 

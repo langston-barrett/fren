@@ -1,225 +1,525 @@
 # Obligations (OIR)
 
-Obligation generation turns retained verification information into logical
-questions. A question records what must hold, under which assumptions and
-branch guards, for which parameters, and at which source occurrence. Keeping
-only a Boolean goal would lose the difference between an undefined assumption,
-contradictory assumptions, an undefined goal and a false goal.
+Obligation generation relates an admitted [LIR program](Lir.md) to ordered
+logical questions. Each question retains its complete typed parameter domain,
+owner, optional request and subject, source occurrence, lexical frames,
+condition, hypotheses and prerequisites. A condition is an actual
+`FrenLir.Term` of Bool sort; OIR introduces no second expression language.
+Value preservation, static safety, satisfiability and validity are separate
+judgments. A false expectation remains an admitted question.
 
-This chapter specifies obligation generation from [logical lowering](Lir.md).
-Its input is an admitted program with scoped verification information.
-Its output is contextual questions, with domains and prerequisites retained.
-Solver answers and source confirmation have separate rules below.
+## 1. Semantic objects and admission
 
-## Input and questions
+`FrenOir.Program` contains `lir`, `enumerations`, `definitions` and
+`questions`. A `Definition` pairs a canonical signature with its actual LIR
+body. Its `value` and `domain` projections are the body's value term and
+verification summary. Neither projection is an axiom that the body is total.
+`Domain` is `boolean`, `integer`, or `enumeration owner constructors`.
+`Parameter` retains the entire typed parameter together with that domain.
+
+**Legality rules**
+
+r[oir.terms.sorts]
+`DomainFor` relates complete parameter domains to declared source types.
+Bool has two values, Int all mathematical integers, and an enum exactly its
+own canonical constructors in declaration order. `ParametersFor` preserves
+written parameter order and multiplicity. Questions retain the nearest-first
+body context, the reverse of that parameter order. Parameters have true local
+domain components; this interpretation rule is not a block hypothesis.
+Every question's search must satisfy the shared unbounded `Lir.Sorted`
+judgment at Bool. Constructor identity, call signatures, local types, origin
+contexts and binder scope have exactly the LIR sorting rules.
 
 **Proof obligations**
 
 r[oir.walking.input]
-The input is an actual successful `FrenFlatToLir.produce p` result, together
-with that success and the accepted source witness. An arbitrary
-edited `Program`, or a successful scope audit alone, is insufficient.
+`Produces p out` is the actual `FrenLirToOir.produce` success relation on the
+same evidence-carrying source program as LIR. It runs actual LIR production;
+a caller-edited logical program or a successful scope audit is insufficient.
+`Rejects` retains the exact generation failure. `fromSource` first performs
+actual parsing, resolution, typing, coverage and non-recursion admission.
+It distinguishes `SourceFailure.admission` from `SourceFailure.generation`.
+Generation failures distinguish invalid input, unsupported equations,
+resource exhaustion and a retained LIR lowering diagnostic. Traversal depth
+is 10000; exhaustion cannot become an empty obligation list, ill-sorting,
+false, or a successful verification result.
 
-The admitted fragment has Bool, mathematical Int, nominal payload-free enums,
-nonrecursive named functions, lexical lets, explicit conditionals and exhaustive
-constructor matches, and global expectation blocks. The retained MIR and typed
-source establish identities and contexts. This boundary adds no syntax,
-recursive unfolding, procedure relations, general quantifiers, subset types,
-closures or full mono/fo/flat pipeline. The quantifiers in the mathematical
-contract below describe questions over parameters, not new source constructs.
+The source domain is the shared Bool/Int/payload-free nominal enum core,
+nonrecursive named functions, lexical lets, explicit if and exhaustive
+constructor matches, and global assumption/expectation blocks. Definitions
+and blocks retain their complete LIR/MIR/source records. No source assertion,
+local assumption, subset, closure, procedure relation or general quantifier
+constructor is added. Mathematical quantification over parameters below is
+part of the question's meaning.
 
-r[oir.walking.requests]
-Generate separate assumption-definedness, assumption-satisfiability,
-goal-definedness and goal-validity questions from the actual retained bodies
-and verification trees. Definitions retain their own verification questions,
-even when unused. No required question may disappear because another passes.
+## 2. Owned requests and prerequisite groups
 
-`FrenMir.Block.requests` supplies one Sat request first, even for an empty
-block, then a validity request for each written expectation. Its assumptions
-are all and only that block's assumptions, including those written after a
-goal. The corresponding LIR `CheckRequest` carries `source`, `assumptions`,
-`question` and static `demand` roots. These roots are bodies to inspect, not
-already proved facts or an execution trace. Generate assumption checks once
-or share their results explicitly across requests of the same owner; preserve
-every goal's identity and dependencies. Separate blocks never supply premises
-to one another.
-
-For a well-typed parameter assignment `i`, write `A_j(i)` for assumption
-values, `A(i)` for their conjunction, and `E(i)` for one goal value. These
-formulas use the retained definitions with their actual meanings. Once the
-applicable definedness checks are established:
-
-| Question | Mathematical condition | Solver search formula |
-|---|---|---|
-| Assumptions can hold | `exists i, A(i)` | `A(i)` |
-| Goal follows | `forall i, A(i) implies E(i)` | `A(i) and not E(i)` |
-
-Free parameters in a solver search range existentially over their complete
-typed domains. Bool has two values, Int all integers, and each enum exactly
-its own canonical constructors. The empty conjunction is true. The empty
-parameter tuple has one assignment. These domains are inhabited in this
-source domain, so an empty block's Sat question succeeds mathematically.
-Contradictory assumptions make validity vacuous and Sat fail; a vacuous
-validity result cannot establish a successful block.
-
-## Definedness and hypotheses
+A `Question` has fields `id`, `kind`, `owner`, `parameters`, `context`,
+`request`, `subject`, `origin`, `path`, `hypotheses`, `frames`, `condition`,
+`dependencies` and `readiness`. `Kind` is `functionDefinedness`,
+`assumptionDefinedness`, `goalDefinedness`, `assumptionsSatisfiable`, or
+`validity`. IDs are zero-based positions in the single question array.
+`Dependency.question id` names an actual generated question;
+`Dependency.definition id` names an actual definition equation pair.
+A dependency is evidence still required, not a Boolean hypothesis.
 
 **Proof obligations**
 
-r[oir.walking.definedness]
-Generate each domain condition from the retained `Verification` tree in its
-lexical and conditional context, independently of the truth of its owner's
-goal. Undefined assumptions cannot be treated as false to filter assignments,
-make Sat fail, or make validity pass.
+r[oir.walking.requests]
+`DeclarationGroups`, `RequestGroups`, `RequestGroup`, `AssumptionGroups`
+and `BodyGroup` specify the complete ordered inventory. Process declarations
+in written order. Each function, including an unused one, emits its domain
+leaves with no hypotheses or request index. For each block, process its
+retained LIR requests in order: one Sat request, even for an empty block,
+then one validity request for every written expectation. All and only the
+block's assumptions apply, including assumptions written after the goal.
+A goal, sibling goal or another block's assumption is never a premise.
 
-Let `H` be the admissible hypotheses for an occurrence, `B` its explicit
-branch guard and `C` its required domain condition. Its proof question is
-`forall i, (H(i) and B(i)) implies C(i)`; its counterexample search is
-`H(i) and B(i) and not C(i)`, with any local binders still scoped. The
-condition and its context come from actual terms, never a supplied
-"already defined" flag. Solver failure to prove `C` does not create
-mathematical undefinedness. Values of partial operations outside their
-domains are unspecified and cannot discharge these conditions.
+At Sat, emit each assumption's domain group once, then the Sat search.
+Validity reuses those assumption groups, emits the goal's domain leaves,
+then the validity search. Domain questions retain their exact typed body and
+leaf origin. Sat has condition true and no subject; validity has the actual
+goal value and complete goal subject. Both have empty frames, no leaf origin
+and empty path, and retain the source request index. Goal-domain questions
+also retain that index; shared assumption and function groups have none.
 
-The existing [definedness hypotheses](../../Reqs/Check.md#definedness)
-permit the other assumptions when checking an assumption; its own value is
-excluded. A global expectation's goal uses its block assumptions, never
-itself or sibling goals. A function body has no written
-preconditions, hence no block hypotheses: its written domain obligations
-must be checked over its own parameters, even when the function is unused.
-Definitions supply value and domain equations for their actual bodies, not
-arbitrary axioms asserting that the bodies are always defined. A call also
-retains argument checks and the callee-domain application.
+`Constructs` requires exact ordered enumeration/definition inventories and
+this full question layout, including multiplicity. `DefinitionEdges` requires
+all and only symbols structurally used by the actual search, through every
+argument, branch, let value, let domain and let body. Such symbols must have
+real equation pairs in `definitions`. Repeated definition edges are allowed:
+assumption-group construction checks dependencies before and after adding
+its hypotheses. Question-edge lists retain their order and multiplicity.
 
 r[oir.walking.dependencies]
-A hypothesis used for a definedness or validity result must have justified
-definedness in the relevant context. Neither an unproved goal nor an
-unjustified domain assumption may establish itself through a dependency
-cycle. Results record these dependencies and retain unresolved ones.
+For an assumption body whose actual `structurallyTotal` test succeeds,
+`Others` is empty. This conservative syntactic recognizer follows true,
+parameter/let domain slots, conjunction, both conditional branches and
+lexical domain bindings. It does not guess divisor checks or applications
+true, and is not a solver or general totality decision procedure.
+For another body, `Others` retains every other assumption of that owner,
+excluding the entire subject by source identity. Its domain questions depend
+on every generated domain question of those others. If all others are
+structurally total, the dependency rule is `ready`; otherwise it is
+`unresolved` with the exact mutually-partial-assumptions reason in the formal
+definitions. Sat, goal domains and validity depend on all assumption-domain
+groups and retain their unresolved state. Validity additionally depends on
+every question in its own goal-domain group.
 
-There is a concrete unresolved semantic choice at this boundary. The legacy
-other-assumptions rule does not specify how to establish the definedness of
-those *other* assumptions without circularity. For example, two assumptions
-`1 div d = 0` and `1 div d != 0` must not jointly discharge both divisor
-checks merely because their Boolean conjunction is contradictory. Likewise
-neither may use its own truth to prove `d != 0`. By contrast, the independent,
-total assumption `d != 0` can justify a sibling division's domain check.
+`ready` describes support for the dependency rule; it establishes no question
+and no equation. Cyclic partial-assumption edges are retained, with their
+unresolved reason, rather than jointly discharged by contradiction. A single
+partial assumption may use independently total siblings. For example,
+`d != 0` can justify a sibling division check; two partial contradictory
+assumptions cannot establish each other's safety. No rule here admits a
+verified result for that unresolved dependency class.
 
-Before admitting general mutually partial assumptions, the producer needs a
-precise, sound rule for this dependency problem, compatible with contextual
-definedness. Possible approaches require a justified dependency ordering or
-a separately proved simultaneous rule; this chapter chooses neither. It does
-not silently replace the legacy rule with unconditional definedness of every
-assumption over all parameters. A consumer lacking that rule must retain the
-questions and report the affected result unresolved/unsupported, with the
-reason, rather than claim a verified block. The supported domain excludes a verified result for this unresolved class.
-The development coverage document records the remaining semantic obligation.
+<a id="static-traversal-guards-and-bindings"></a>
 
-## Static traversal, guards and bindings
+## 3. Static traversal, guards and bindings
 
 **Proof obligations**
 
 r[oir.walking.traversal]
-Visit both sides of every ordinary operator and every written definition.
-Only explicit branch scopes add conditional contexts. Do not use a raw
-left-to-right short-circuit trace to select static obligations.
+`Extracts` is the unbounded ordered extraction judgment on actual
+`Verification` trees and actual `Leaf` records. `empty` has no leaves;
+`check` has one with its current origin, path, frames and prerequisites.
+`both` concatenates both child lists, passing earlier leaf paths as available
+checks to the right. `branch` retains both alternatives under positive and
+negative guard frames. `letE` retains a value/domain binding frame around
+its body. `at` sets the current source origin. Child indices append 0 then 1;
+`at` and a binder append 0. A check without an origin has no derivation.
 
-For the actual `FrenLir.Verification` constructors:
-
-| Tree | Condition generation |
-|---|---|
-| `empty` | no domain question |
-| `check C` | require `C` under the current context |
-| `both a b` | visit both in the same incoming context |
-| `branch c a b` | visit `a` under `B and c`, `b` under `B and not c` |
-| `letE binder ty value domain body` | keep the exact scoped value/domain binding while visiting `body` |
-| `at origin body` | retain that occurrence's origin while visiting `body` |
-
-The surrounding tree retains the condition's own obligations before its
-branch. A guard's use requires its own definedness; treating an undefined
-condition as false is unsound. Constructor matches retain nominal tests and
-the corresponding arm guards. Keep even constant-false guarded occurrences
-for attribution; proving their guarded questions trivial does not erase the
-written checks. `Lowered.defined` is a formula summary of this tree, not an
-independent proof and not a replacement for per-occurrence attribution.
-
-Ordinary `a and b`, `a or b`, `iff` and equality retain both operand
-domains in the incoming context. A let retains its definition's checks there
-even when the body ignores it; its body's checks stay under the binder.
+Both ordinary Boolean operands retain their obligations in the same incoming
+context. A let value retains its checks before the binder, even when unused;
+only the body is under that binder. Explicit if/match alternatives add guards.
 Thus `false and (1 div 0 = 0)`, `true or (1 div 0 = 0)` and
-`let x := 1 div 0 in 0` retain an unguarded nonzero-divisor obligation.
-`if false then 1 div 0 else 0` retains that obligation under false;
-`if d != 0 then n div d else 0` retains it under `d != 0`.
-The raw [evaluator](Evaluator.md) may return a value for skipped operands or
-unused lets; that execution does not discharge any of these source checks.
+`let x := 1 div 0 in 0` have unguarded divisor checks. In contrast,
+`if false then 1 div 0 else 0` retains a false-guarded check, and
+`if d != 0 then n div d else 0` checks its divisor under that explicit guard.
+No execution trace or operand value selects the static inventory.
 
 r[oir.walking.scope]
-Retain ordered typed parameters, nearest-first local slots, canonical symbol
-identities, explicit guards, owner and source occurrence through extraction,
-sharing and substitution. No open condition becomes an unconditional global
-fact, and equal conditions at different occurrences remain attributable.
+`SiteFor` relates each extracted leaf to the accepted LIR `Site` judgment,
+including its exact path, source origin, leaf context and ordered frames.
+`FramesFor` removes only the incoming type contexts that are redundant in
+OIR's nested frame representation. A `guard condition positive` wraps a
+search by conjunction with the condition or its negation. A
+`binding binder type value domain` wraps it by the actual LIR let. Folding
+outermost frames around innermost ones keeps an outer guard outside a later
+binder. No shifting, hoisting or reinterpreting a guard at a shadowing slot
+is permitted. A let interprets value/domain in the incoming environment,
+then prepends their pair. Calls use positional callee arguments, without
+caller locals, as in `Lir.Meaning`.
 
-A let value is interpreted in the incoming context; its body prepends the
-binder. Shadowed names remain distinct slots. Substitution must transport
-both value and domain components without capture. Calls enter the callee's
-ordered parameter context without caller locals. In particular, the check
-for `let x := 1 div d in if d != 0 then x else 0` belongs at the let
-definition, outside the conditional. Moving it under the use's guard changes
-the source policy. Closed term sharing may share formulas, but must preserve
-the distinct diagnostic occurrences, guards and dependency edges. Emit
-questions deterministically in declaration and child order, not hash order.
+Entering a guard or binder adds all available earlier checks of that body to
+the context prerequisites; earlier checks already required remain required.
+These are question edges, never additional Boolean guards. Ordinary siblings
+do not guard each other. `LocalEdges` requires every prerequisite to name an
+earlier leaf in the same body group. Equal predicates at separate paths stay
+separate diagnostic occurrences. Moving the division in
+`let x := 1 div d in if d != 0 then x else 0` under the use's guard violates
+this relation. Its original incoming divisor obligation remains required.
 
-Scoped assume/assert expressions and subset conditions are consumers
-of this interface, as specified in [Expressions](../Language/Expressions.md).
-They retain local assumptions and asserted predicates until extraction;
-assertions require proof, and subset introduction/coercion requires proving
-the predicate for the introduced value. An already-established parameter
-predicate may be a scoped body hypothesis. None of these forms is admitted
-by the source grammar defined here.
+r[oir.walking.definedness]
+Every written partiality obligation retained by LIR becomes its contextual
+condition: division/remainder nonzero checks, local domain reads, callee
+domain applications, argument checks and unused definition/value checks.
+`Active` interprets the frame path using the same `Lir.Meaning`, `Slots`,
+`Symbols` and `ZeroValues` as LIR. `ConditionValid` requires the leaf's true
+condition for every well-typed assignment satisfying its hypotheses and
+every active continuation of its frames. A false guard makes that continuation
+inactive; it does not remove the occurrence. Earlier safety prerequisites
+justify use of guards/bindings. An arbitrary value chosen for zero division
+cannot establish its nonzero check. Undefinedness, a false condition and
+failure to prove a condition are distinct.
 
-## Answers and source confirmation
+Global assume and expect members have exactly the groups above. In this
+admitted grammar the occurrence sets of written assert expressions, local
+assume expressions and subset introduction/coercion are empty: neither AST
+nor LIR has their constructors. An extension must add their source and LIR
+rules before condition generation: assert and introduced subset predicates
+require checks; local assumptions and established parameter predicates stay
+in their lexical body contexts; invariant checks and partiality remain
+retained. This interface supplies no implicit admission or erasure for them.
+
+## 4. Interpretation and correspondence
+
+**Dynamic semantics**
+
+r[oir.meaning.search]
+`Question.search` is the conjunction of the complete hypothesis values for
+Sat. For every other kind it is that conjunction and the frame-wrapped
+negation of the condition. Hypotheses stay outside all local frames.
+`SearchHolds` interprets the search on nearest-first total parameter slots;
+`Violation` independently requires true hypotheses, an active frame path and
+a false leaf condition. `SearchContract` states the correspondence between
+these judgments. `QuestionTrue` is existence of a typed satisfying assignment
+for Sat and absence of such a counterexample for every other kind.
+
+The empty conjunction is true, and the empty parameter tuple has one
+assignment. Domains are complete, not finite search bounds. Contradictory
+assumptions can make validity vacuous while Sat fails. Neither result proves
+assumption definedness. No undefined assumption may be treated as false to
+make validity pass or Sat fail.
+
+**Proof obligations**
+
+r[oir.contract.correspondence]
+`EquationsHold` interprets each actual retained definition's value and domain
+symbols by its LIR body, on typed positional arguments. It is separate from
+`Lir.Models`, which relates those symbols to declarative source meanings.
+`PassContract` states actual output construction. `SearchContract` states
+formula/frame correspondence. `RequestContract` relates each main OIR
+question in both directions to `Lir.QuestionMeaning`, and requires function,
+owning-assumption and relevant goal-domain questions to be valid under the
+independent sufficient `Lir.VerificationDomain`. These are named obligations,
+not axioms or assumed universal producer theorems.
+
+Their premises retain actual production, LIR construction, OIR construction,
+`Mir.SemanticDomain`, source-definition models and LIR equation meanings.
+In particular, root-restricted source functionality/coverage, model existence,
+LIR interpretation and sorting/checker correspondence are not consequences
+of a finite OIR check. The source contract composes this request equivalence
+with `Lir.RequestContract` and the MIR source request meaning; each upstream
+contract must be established with its own premises. It never assumes OIR
+soundness as an input Boolean or unrestricted source semantic functionality.
+The sufficient independently safe LIR domain is stronger than the supported
+single-partial-assumption rule; this theorem does not assert the converse
+safety equivalence for all contextual assumption configurations.
+
+The following block is compiled verbatim by the [chapter wrapper](Oir.lean).
+It defines relations over production objects; none is a new runtime pass.
+
+```lean
+abbrev Input := FrenThirDesugar.Program
+
+def Produces (p : Input) (out : FrenOir.Program) : Prop :=
+  FrenLirToOir.produce p = .ok out
+
+def Rejects (p : Input) (failure : FrenLirToOir.Failure) : Prop :=
+  FrenLirToOir.produce p = .error failure
+
+inductive DomainFor (p : FrenLir.Program) : FrenExpr.Ty → Domain → Prop where
+  | boolean : DomainFor p .bool .boolean
+  | integer : DomainFor p .int .integer
+  | enumeration : Declaration.enumeration e ∈ p.declarations.toList →
+      DomainFor p (.enum e.id) (.enumeration e.id (e.constructors.map Prod.fst))
+
+def ParametersFor (p : FrenLir.Program) (source : Array TypedParameter) (ps : Array FrenOir.Parameter) : Prop :=
+  Lir.Pairs (fun s a => a.source = s ∧ DomainFor p s.type a.domain) source.toList ps.toList
+
+/-- Ordered extraction judgment, without the implementation's depth bound.
+Available paths are earlier checks; required paths are context prerequisites. -/
+inductive Extracts : Verification → Option Origin → List Nat → List FrenOir.Frame →
+    List (List Nat) → List (List Nat) → List FrenLirToOir.Leaf → Prop where
+  | empty : Extracts .empty origin path frames available required []
+  | check : Extracts (.check c) (some o) path frames available required [⟨o, path, frames, c, required⟩]
+  | both : Extracts a origin (path ++ [0]) frames available required left →
+      Extracts b origin (path ++ [1]) frames (available ++ left.map (·.path)) required right →
+      Extracts (.both a b) origin path frames available required (left ++ right)
+  | branch : Extracts a origin (path ++ [0]) (frames ++ [.guard c true]) available (required ++ available) yes →
+      Extracts b origin (path ++ [1]) (frames ++ [.guard c false]) available (required ++ available) no →
+      Extracts (.branch c a b) origin path frames available required (yes ++ no)
+  | binding : Extracts body origin (path ++ [0]) (frames ++ [.binding name ty v d])
+      available (required ++ available) leaves →
+      Extracts (.letE name ty v d body) origin path frames available required leaves
+  | at : Extracts body (some o) (path ++ [0]) frames available required leaves →
+      Extracts (.at o body) origin path frames available required leaves
+
+/-- Erase only redundant incoming type contexts, not frame order or terms. -/
+inductive FramesFor : List Lir.Frame → List FrenOir.Frame → Prop where
+  | nil : FramesFor [] []
+  | guard : FramesFor rest out → FramesFor (.guard ctx c selected :: rest) (.guard c selected :: out)
+  | binding : FramesFor rest out →
+      FramesFor (.binder ctx name ty v d :: rest) (.binding name ty v d :: out)
+
+def SiteFor (b : Body) (leaf : FrenLirToOir.Leaf) : Prop :=
+  ∃ fs, Lir.Site b.source.context none b.term.verification leaf.path fs
+    leaf.origin.context (some leaf.origin) leaf.condition ∧ FramesFor fs leaf.frames
+
+/-- Structural application occurrence, including both components of every let. -/
+inductive Uses (id : FrenBase.ItemId) : Term → Prop where
+  | app {sig : Signature} : sig.id = id → Uses id (.app sig component args)
+  | argument : a ∈ args → Uses id a → Uses id (.app sig component args)
+  | unary : Uses id a → Uses id (.unary op a)
+  | left : Uses id a → Uses id (.binary op a b)
+  | right : Uses id b → Uses id (.binary op a b)
+  | condition : Uses id c → Uses id (.ite c a b)
+  | yes : Uses id a → Uses id (.ite c a b)
+  | no : Uses id b → Uses id (.ite c a b)
+  | value : Uses id v → Uses id (.letE name ty v d b)
+  | domain : Uses id d → Uses id (.letE name ty v d b)
+  | body : Uses id b → Uses id (.letE name ty v d b)
+  | at : Uses id a → Uses id (.at origin a)
+
+def QuestionEdges (q : FrenOir.Question) : List Dependency :=
+  q.dependencies.toList.filter fun d => match d with | .question _ => true | _ => false
+
+/-- Definition edges may repeat after the assumption update. Their support is
+exact; neither a missing equation nor an unrelated symbol is permitted. -/
+def DefinitionEdges (q : FrenOir.Question) : Prop :=
+  ∀ id, Dependency.definition id ∈ q.dependencies.toList ↔ Uses id q.search
+
+def AssumptionEdges (all : Array FrenOir.Question) (bs : Array Body) : List Dependency :=
+  all.toList.filterMap fun q =>
+    if q.kind == .assumptionDefinedness && bs.any (fun b => q.subject == some b.source)
+    then some (.question q.id) else none
+
+def Others (r : CheckRequest) (b : Body) : Array Body :=
+  if FrenLirToOir.structurallyTotal b then #[] else r.assumptions.filter (fun a => a.source != b.source)
+
+def AssumptionState (r : CheckRequest) (b : Body) : Readiness :=
+  if (Others r b).all FrenLirToOir.structurallyTotal then .ready
+  else .unresolved "mutually partial assumptions: contextual definedness dependency rule unresolved"
+
+def RequestState (all : Array FrenOir.Question) (r : CheckRequest) : Readiness :=
+  if (AssumptionEdges all r.assumptions).any (fun d => match d with
+      | .question id => all[id]?.any (fun q => q.readiness != .ready) | _ => false) then
+    .unresolved "mutually partial assumptions: contextual definedness dependency rule unresolved"
+  else .ready
+
+def LocalEdges (leaves : List FrenLirToOir.Leaf) (start index : Nat)
+    (leaf : FrenLirToOir.Leaf) (edges : List Dependency) : Prop :=
+  Lir.Pairs (fun path edge => ∃ i, i < index ∧
+    (leaves[i]?.map (·.path)) = some path ∧ edge = .question (start + i)) leaf.prerequisites edges
+
+def BodyQuestionFor (p : FrenLir.Program) (start : Nat) (leaves : List FrenLirToOir.Leaf)
+    (kind : Kind) (ps : Array TypedParameter) (request : Option Nat) (b : Body)
+    (hypotheses : Array Body) (edges : List Dependency) (state : Readiness)
+    (entry : FrenLirToOir.Leaf × Nat) (q : FrenOir.Question) : Prop :=
+  let leaf := entry.1
+  q.id = start + entry.2 ∧ q.kind = kind ∧ q.owner = b.source.owner ∧
+  ParametersFor p ps q.parameters ∧ q.context = b.source.context ∧ q.request = request ∧
+  q.subject = some b.source ∧ q.origin = some leaf.origin ∧ q.path = leaf.path ∧
+  q.frames = leaf.frames ∧ q.condition = leaf.condition ∧ q.hypotheses = hypotheses ∧
+  q.readiness = state ∧ SiteFor b leaf ∧
+  leaf.origin.owner = b.source.owner ∧ leaf.origin.member = b.source.member ∧
+  (∃ o ∈ b.source.occurrences.toList,
+    o.expression = leaf.origin.expression ∧ o.context = leaf.origin.context) ∧
+  Lir.Sorted p.mir.source q.context q.search .bool ∧ DefinitionEdges q ∧
+  ∃ localEdges, LocalEdges leaves start entry.2 leaf localEdges ∧
+    QuestionEdges q = (if kind = .assumptionDefinedness then localEdges ++ edges else edges ++ localEdges)
+
+def BodyGroup (p : FrenLir.Program) (start : Nat) (kind : Kind) (ps : Array TypedParameter)
+    (request : Option Nat) (b : Body) (hypotheses : Array Body) (edges : List Dependency)
+    (state : Readiness) (qs : List FrenOir.Question) : Prop :=
+  ∃ leaves, Extracts b.term.verification none [] [] [] [] leaves ∧
+    Lir.Pairs (BodyQuestionFor p start leaves kind ps request b hypotheses edges state) leaves.zipIdx qs
+
+def SearchFor (p : FrenLir.Program) (index id : Nat) (r : CheckRequest) (kind : Kind)
+    (subject : Option TypedBody) (condition : Term) (edges : List Dependency)
+    (state : Readiness) (q : FrenOir.Question) : Prop :=
+  q.id = id ∧ q.kind = kind ∧ q.owner = r.source.owner ∧
+  ParametersFor p r.source.parameters q.parameters ∧ q.context = r.source.context ∧
+  q.request = some index ∧ q.subject = subject ∧ q.origin = none ∧ q.path = [] ∧ q.frames = [] ∧
+  q.hypotheses = r.assumptions ∧ q.condition = condition ∧ q.readiness = state ∧
+  QuestionEdges q = edges ∧ DefinitionEdges q ∧ Lir.Sorted p.mir.source q.context q.search .bool
+
+inductive AssumptionGroups (p : FrenLir.Program) (all : Array FrenOir.Question) (r : CheckRequest) :
+    Nat → List Body → List FrenOir.Question → Prop where
+  | nil : AssumptionGroups p all r start [] []
+  | cons : BodyGroup p start .assumptionDefinedness r.source.parameters none b (Others r b)
+      (AssumptionEdges all (Others r b)) (AssumptionState r b) first →
+      AssumptionGroups p all r (start + first.length) rest more →
+      AssumptionGroups p all r start (b :: rest) (first ++ more)
+
+inductive RequestGroup (p : FrenLir.Program) (all : Array FrenOir.Question)
+    (start index : Nat) (r : CheckRequest) : List FrenOir.Question → Prop where
+  | sat : r.question = .assumptionsSatisfiable →
+      AssumptionGroups p all r start r.assumptions.toList first →
+      SearchFor p index (start + first.length) r .assumptionsSatisfiable none (.bool true)
+        (AssumptionEdges all r.assumptions) (RequestState all r) q →
+      RequestGroup p all start index r (first ++ [q])
+  | validity : r.question = .validity goal →
+      BodyGroup p start .goalDefinedness r.source.parameters (some index) goal r.assumptions
+        (AssumptionEdges all r.assumptions) (RequestState all r) first →
+      SearchFor p index (start + first.length) r .validity (some goal.source) goal.term.value
+        (AssumptionEdges all r.assumptions ++ (List.range first.length).map (fun i => .question (start + i)))
+        (RequestState all r) q → RequestGroup p all start index r (first ++ [q])
+
+inductive RequestGroups (p : FrenLir.Program) (all : Array FrenOir.Question) :
+    Nat → List (CheckRequest × Nat) → List FrenOir.Question → Prop where
+  | nil : RequestGroups p all start [] []
+  | cons : RequestGroup p all start index r first →
+      RequestGroups p all (start + first.length) rest more →
+      RequestGroups p all start ((r, index) :: rest) (first ++ more)
+
+inductive DeclarationGroups (p : FrenLir.Program) (all : Array FrenOir.Question) :
+    Nat → List Declaration → List FrenOir.Question → Prop where
+  | nil : DeclarationGroups p all start [] []
+  | enumeration : DeclarationGroups p all start rest qs →
+      DeclarationGroups p all start (.enumeration e :: rest) qs
+  | function : BodyGroup p start .functionDefinedness sig.parameters none b #[] [] .ready first →
+      DeclarationGroups p all (start + first.length) rest more →
+      DeclarationGroups p all start (.function sig b :: rest) (first ++ more)
+  | block : RequestGroups p all start
+      (p.requests.toList.zipIdx.filter (fun ri => ri.1.source.owner == block.owner)) first →
+      DeclarationGroups p all (start + first.length) rest more →
+      DeclarationGroups p all start (.block block members :: rest) (first ++ more)
+
+/-- Complete output contract. Upstream LIR construction is a separate premise. -/
+def Constructs (out : FrenOir.Program) : Prop :=
+  out.enumerations = out.lir.declarations.filterMap (fun d => match d with
+    | .enumeration e => some e | _ => none) ∧
+  out.definitions = out.lir.declarations.filterMap (fun d => match d with
+    | .function sig b => some ⟨sig, b⟩ | _ => none) ∧
+  DeclarationGroups out.lir out.questions 0 out.lir.declarations.toList out.questions.toList ∧
+  (∀ q ∈ out.questions.toList, ∀ id, Uses id q.search → ∃ d ∈ out.definitions.toList, d.signature.id = id)
+
+/-- Meaning of active frames in their original environments. A false guard
+has no active continuation; binding interprets value/domain before extending. -/
+inductive Active (symbols : Lir.Symbols) (zero : Lir.ZeroValues) :
+    Lir.Slots → List FrenOir.Frame → Lir.Slots → Prop where
+  | nil : Active symbols zero env [] env
+  | guard : Lir.Meaning symbols zero env c (.bool selected) → Active symbols zero env rest leaf →
+      Active symbols zero env (.guard c selected :: rest) leaf
+  | binding : Lir.Meaning symbols zero env v value → Lir.Meaning symbols zero env d (.bool domain) →
+      Active symbols zero ((value, domain) :: env) rest leaf →
+      Active symbols zero env (.binding name ty v d :: rest) leaf
+
+def Assignment (out : FrenOir.Program) (q : FrenOir.Question) (values : List FrenEval.Value) : Prop :=
+  Mir.Assignment out.lir.mir.source q.context values
+
+def SearchHolds (symbols : Lir.Symbols) (zero : Lir.ZeroValues)
+    (q : FrenOir.Question) (values : List FrenEval.Value) : Prop :=
+  Lir.Meaning symbols zero (values.map (fun v => (v, true))) q.search (.bool true)
+
+def Violation (symbols : Lir.Symbols) (zero : Lir.ZeroValues)
+    (q : FrenOir.Question) (values : List FrenEval.Value) : Prop :=
+  Lir.AllTrue symbols zero (values.map (fun v => (v, true))) q.hypotheses ∧
+    ∃ leaf, Active symbols zero (values.map (fun v => (v, true))) q.frames leaf ∧
+      Lir.Meaning symbols zero leaf q.condition (.bool false)
+
+def ConditionValid (out : FrenOir.Program) (symbols : Lir.Symbols) (zero : Lir.ZeroValues)
+    (q : FrenOir.Question) : Prop :=
+  ∀ values, Assignment out q values →
+    Lir.AllTrue symbols zero (values.map (fun v => (v, true))) q.hypotheses →
+    ∀ leaf, Active symbols zero (values.map (fun v => (v, true))) q.frames leaf →
+      Lir.Meaning symbols zero leaf q.condition (.bool true)
+
+def QuestionTrue (out : FrenOir.Program) (symbols : Lir.Symbols) (zero : Lir.ZeroValues)
+    (q : FrenOir.Question) : Prop :=
+  if q.kind = .assumptionsSatisfiable then ∃ values, Assignment out q values ∧ SearchHolds symbols zero q values
+  else ¬ ∃ values, Assignment out q values ∧ SearchHolds symbols zero q values
+
+/-- Model equations use actual LIR bodies, with total parameter-domain slots. -/
+def EquationsHold (out : FrenOir.Program) (symbols : Lir.Symbols) (zero : Lir.ZeroValues) : Prop :=
+  ∀ d ∈ out.definitions.toList, ∀ args,
+    Mir.Assignment out.lir.mir.source d.body.source.context args.reverse →
+    Lir.Meaning symbols zero (args.reverse.map (fun v => (v, true))) d.value (symbols d.signature .value args) ∧
+    Lir.Meaning symbols zero (args.reverse.map (fun v => (v, true))) d.domain (symbols d.signature .domain args)
+
+def RequestMeaning (out : FrenOir.Program) (symbols : Lir.Symbols) (zero : Lir.ZeroValues)
+    (index : Nat) : Prop :=
+  ∃ q ∈ out.questions.toList, q.request = some index ∧
+    (q.kind = .assumptionsSatisfiable ∨ q.kind = .validity) ∧ QuestionTrue out symbols zero q
+
+/-- Named universal obligations, not assumed theorems. The sufficient LIR
+domain is independent of OIR search results and does not assume this conclusion. -/
+def PassContract : Prop := ∀ p out, Produces p out → Constructs out
+
+def SearchContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.lir → Constructs out →
+  Mir.SemanticDomain p → ∀ symbols, Lir.Models p symbols → ∀ zero,
+  EquationsHold out symbols zero → ∀ q ∈ out.questions.toList, ∀ values, Assignment out q values →
+    (SearchHolds symbols zero q values ↔
+      if q.kind = .assumptionsSatisfiable then
+        Lir.AllTrue symbols zero (values.map (fun v => (v, true))) q.hypotheses
+      else Violation symbols zero q values)
+
+def RequestContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.lir → Constructs out →
+  Mir.SemanticDomain p → ∀ symbols, Lir.Models p symbols → ∀ zero,
+  EquationsHold out symbols zero → ∀ index r, out.lir.requests[index]? = some r →
+  Lir.VerificationDomain out.lir symbols zero r →
+    (RequestMeaning out symbols zero index ↔ Lir.QuestionMeaning out.lir symbols zero r) ∧
+    (∀ q ∈ out.questions.toList,
+      q.kind = .functionDefinedness ∨ q.kind = .assumptionDefinedness ∧ q.owner = r.source.owner ∨
+        q.kind = .goalDefinedness ∧ q.request = some index → ConditionValid out symbols zero q)
+```
+
+## 5. Answers and source confirmation
 
 **Proof obligations**
 
 r[oir.walking.answers]
-Interpret Sat and validity answers with their distinct polarities. Preserve
-unknown, unsupported, invalid-input and resource-exhaustion results and their
-reasons. None is false, a proof, or permission to drop a required question.
+`Question.interpret` classifies raw search evidence only. Sat on the
+assumption search gives a candidate witness; Unsat means that assumption
+search is unsatisfiable. Sat on every negated-condition search gives a
+candidate counterexample; Unsat gives no counterexample. Unknown,
+unsupported and resource-exhausted answers retain their reasons and establish
+neither polarity. No bounded failure to find a witness establishes Unsat.
 
-For the assumption search `A`, Sat supplies a candidate witness and Unsat
-establishes contradictory assumptions. For `A and not E`, Sat supplies a
-candidate counterexample and Unsat establishes validity, subject to the
-definedness and dependency checks above. Domain counterexamples use the same
-negated-condition polarity. Unknown establishes neither side. Report each
-required result separately, including consistency and vacuity, and cap any
-aggregate success by unresolved dependencies, following
-[Checks](../../Reqs/Check.md#global-expectations) and
-[Evidence](../../Reqs/Evidence.md). A bounded search finding no witness does
-not establish Unsat. Bounded satisfiability or finite tests do not establish
-general consistency of a theory or universal validity. A confirmed witness
-from bounded search can establish this particular existential Sat question;
-it says nothing about the other questions.
+A source verification result additionally requires all applicable domain,
+definition and question dependencies, including function checks, to be
+justified independently in their exact contexts. `readiness` must support
+the dependency rule; it does not discharge any dependency. A vacuous validity
+result cannot replace the separate Sat result, and unresolved results remain
+unresolved. There is no aggregate-verdict constructor in OIR. Solver query
+translation is governed by the separate [SMT chapter](Smt.md).
 
 r[oir.walking.confirmation]
-Before reporting a solver model as a source witness or counterexample,
-confirm the relevant assumptions, guards, domains and failing goal against
-the retained source meanings and complete parameter assignment.
+A model becomes a source witness or counterexample only after confirming its
+complete typed assignment against retained source meanings, assumptions,
+guards and static obligations. A validity counterexample has true, defined
+assumptions and a defined false goal. A domain counterexample has a true
+admissible context and active guard with a false domain condition, and must
+be reported as that condition's failure. A Sat witness has true, defined
+assumptions. Preserve canonical nominal values, owner, member label and source
+span. Raw lazy evaluation can skip static obligations and is insufficient.
+Unsupported or exhausted confirmation retains an unconfirmed candidate and
+its reason. Confirming one assignment is not a universal preservation proof.
 
-For a validity counterexample, all block assumptions must be true and
-defined, the goal defined and false. For a domain failure, confirm its
-admissible context and guard and the failed domain condition instead; an
-undefined goal is not a false goal. For a Sat witness, confirm the assumptions
-and their domains. Retain owner, member label, source span and nominal values
-in each report. Raw evaluation alone is insufficient when it skips static
-checks. Unsupported or exhausted confirmation leaves a candidate unconfirmed,
-with its reason; it cannot become a source failure or pass. Finite model
-confirmation validates that assignment, not a universal preservation theorem.
+The constructor equations, contextual interpretation laws, admitted positive
+cases and mutation controls in the wrapper are described with their exact
+proof boundaries in the
+[development coverage document](../../../docs/fren2-specification-coverage.md).
 
-## Logical primitives
+## 6. Logical primitives
 
 These independent Fren1 facts specify truth-table and quantifier primitives.
-They do not copy an IR, implement extraction, take a precomputed pass decision
-as input, or bind a nonexistent producer with `impl`. The procedure and
+They specialize negated-condition search, frame guards, retained operand
+domains and the distinct Sat/validity quantifiers. They do not prove the
+recursive extraction or request contracts. The procedure and
 quantifier syntax below do not extend source admission.
 
 **Dynamic semantics**
@@ -259,6 +559,3 @@ false at `assumption? = true, goal? = false`. Replacing `not selected?`
 with `selected?` on the right of `then_guard` is false at
 `selected? = false, d = 0`. These controls must actually fail the checker;
 their counterexamples are primitive Fren1 results, not Fren2 solver models.
-
-Implementation correspondence and proof coverage are recorded in the
-[development coverage document](../../../docs/fren2-specification-coverage.md).
