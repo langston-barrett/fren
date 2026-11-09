@@ -461,7 +461,11 @@ after that boundary enter the same route. Unsupported selected syntax and missin
 required setup fail closed. Ambiguous discovery resolves every argument before
 selection, including suffixless/differently suffixed aliases
 to selected sources. The pure scan is bound to a Fren requirement; real compiler
-controls cover resolution and complete argv traversal. This covers bare `lean`
+controls cover resolution and complete argv traversal. The metadata subset is
+not a complete native arity table: an unknown option stops mode scanning with
+file eligibility, because a later apparent query/run flag may be its operand.
+Possible selected invocations are then refused as unsupported metadata, including
+incremental snapshot and diagnostic options. This covers bare `lean`
 after `lake env`, not arbitrary executable paths or shell commands. Source
 paths must remain stable between classification and execution. The registered
 `entrypoint` partition includes raw argument, setup denial and real direct
@@ -469,6 +473,9 @@ compilation controls in `module_memory_test.py direct`; the `cohort` partition
 checks that `--run` and `-r` bypass compiler admission in `directRun`, while
 `directTerminator0` and `directTerminator1` check literal selected aliases for
 every excluded flag in two bounded batches.
+`directOperands0` (entrypoint) and `directOperands1` (cohort) check native snapshot
+and diagnostic operands in their long and short forms. The raw controls cover all
+operand-taking options in the pinned native table, plus unknown future options.
 
 Each invocation prints and retains a new private temporary directory containing
 the overlay, session and records under `state`. Remove it when no longer

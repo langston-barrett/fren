@@ -32,6 +32,21 @@ def main (args : List String) : IO Unit := do
       unless !Heavy.ModuleMemory.directFile [valueFlag, "--", flag, selected] &&
           Heavy.ModuleMemory.directFile [valueFlag, flag, "--", flag] do
         throw (IO.userError "option operands precede terminator recognition")
+  -- Pinned native option table and Lean.Shell.process operand handlers,
+  -- including aliases outside metadata syntax and uncertain future options.
+  let operands := ["-o", "--o", "-i", "--i", "-c", "--c", "-b", "--bc", "-R", "--root", "--setup",
+    "-j", "--threads", "-s", "--tstack", "-M", "--memory", "-T", "--timeout", "-t", "--trust",
+    "-D", "-C", "--debug", "-p", "--plugin", "--load-dynlib", "-E", "--error",
+    "-Y", "--incr-save", "-Z", "--incr-load", "-H", "--incr-header-save", "--future-option", "-j1"]
+  for option in operands do
+    for flag in modes do
+      unless Heavy.ModuleMemory.directFile [option, flag, selected] do
+        throw (IO.userError "possible native operand is not a mode exclusion")
+  for neutral in ["--json", "-q", "--stats", "-Dweak.fren.runChecks=false", "--quiet", "--profile", "-P",
+      "--deps", "-d", "--src-deps", "--deps-json", "--exitOnPanic", "-e", "-a", "--server", "--worker"] do
+    for flag in modes do
+      unless !Heavy.ModuleMemory.directFile [neutral, flag, selected] do
+        throw (IO.userError "known neutral prefix preserves genuine modes")
   let second := "/source/FrenSource/Span.lean"
   for (candidates, expected) in [([], ""), (["/other/source-alias"], ""),
       (["/other/source-alias", selected], selected), ([selected, "/other/a.txt"], selected),

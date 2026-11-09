@@ -6,10 +6,18 @@ namespace Heavy.ModuleMemory
 
 def defaultBytes : Nat := 1073741824
 
+/-- Audited native zero-operand options may precede an unambiguous mode flag.
+Other options remain uncertain even when native Lean happens to accept them. -/
+def directPlainFlag (arg : String) : Bool :=
+  Heavy.Process.plainFlag arg || arg == "--quiet" || arg == "--profile" || arg == "-P" ||
+    arg == "--deps" || arg == "-d" || arg == "--src-deps" || arg == "--deps-json" ||
+    arg == "--exitOnPanic" || arg == "-e" || arg == "-a" || arg == "--server" || arg == "--worker"
+
 /-- Ordinary direct compilation excludes query, stdin and program execution.
 Consume known option operands first, so an output named --run cannot bypass it.
 After a genuine -- terminator, every remaining argument is a literal operand.
-Unknown syntax remains eligible for the observer's fail-closed source check. -/
+Stop at unknown options: their operands may look like later exclusion flags.
+Eligibility is conservative; it does not assert supported compiler metadata. -/
 def directFile : List String → Bool
   | [] => true
   | arg :: rest =>
@@ -17,6 +25,7 @@ def directFile : List String → Bool
       match rest with | [] => true | _ :: tail => directFile tail
     else if arg == "--" then true
     else if arg == "--run" || arg == "-r" || arg == "--stdin" || Heavy.Process.queryFlag arg then false
+    else if Heavy.Process.optionLike arg && !directPlainFlag arg then true
     else directFile rest
 
 def inRoot (root source owner : String) : Bool :=

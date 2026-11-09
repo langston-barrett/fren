@@ -2,6 +2,7 @@
 """Actual selected-module scope/readback/physical controls; no numerical model."""
 import json
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -430,61 +431,79 @@ def direct_run_controls(work):
     print(f'direct Lean run controls passed: {work}')
 
 
-def direct_terminator_controls(work, shard):
-    """Every excluded flag can instead be a literal selected filename."""
+def direct_option_controls(work, shard, operand=False):
+    """Apparent mode flags can instead be filenames or option operands."""
     real=Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())/'bin/lean'
     selected=ROOT/'src/FrenBase/Identity.lean'
     home=work/'home';home.mkdir()
     env=dict(os.environ,HOME=str(home),TMPDIR=str(work),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off',HEAVY_SLOTS='2')
     for key in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG'):
         env.pop(key,None)
-    flags=('--run','-r','--stdin','--version','-v','--short-version','-V',
-           '--githash','-g','--help','-h','--features','--print-prefix','--print-libdir')
-    flags=flags[shard::2]
+    prefix='operand' if operand else 'terminator'
+    if operand:
+        cases=[('long-save',['--incr-save','--version',str(selected)],'--version'),
+               ('long-header',['--incr-header-save','--run',str(selected)],'--run'),
+               ('long-error',['--error','--run',str(selected)],None),
+               ('short-save',['-Y','--version',str(selected)],'--version'),
+               ('short-header',['-H','--run',str(selected)],'--run'),
+               ('short-error',['-E','--run',str(selected)],None)][3*shard:3*shard+3]
+    else:
+        flags=('--run','-r','--stdin','--version','-v','--short-version','-V',
+               '--githash','-g','--help','-h','--features','--print-prefix','--print-libdir')
+        cases=[(flag,['--',flag],None) for flag in flags[shard::2]]
     start=time.monotonic();results=[]
-    for flag in flags:
-        (work/flag).symlink_to(selected)
-    def case(flag):
-        native_command=[str(real.parent/'lake'),'-d',str(ROOT),'--offline','env','lean','--',flag]
+    if not operand:
+        for flag,_,_ in cases:(work/flag).symlink_to(selected)
+    def case(item):
+        flag,args,snapshot_name=item
+        cwd=work/flag if operand else work
+        if operand:cwd.mkdir()
+        native_command=[str(real.parent/'lake'),'-d',str(ROOT),'--offline','env','lean',*args]
         # The existing owned dispatch owns this helper and all descendants.
         # Each subprocess waits for its exact child; an exception
         # leaves the outer dispatch responsible for bounded family cleanup.
-        native=subprocess.run(native_command,cwd=work,env=env,capture_output=True,timeout=5)
+        native=subprocess.run(native_command,cwd=cwd,env=env,capture_output=True,timeout=5)
+        snapshot=cwd/snapshot_name if snapshot_name else None
+        snapshot_bytes=snapshot.read_bytes() if snapshot and snapshot.exists() else None
         wrapped_command=[str(ROOT/'scripts/heavy'),'--offline',*native_command]
-        wrapped=subprocess.run(wrapped_command,cwd=work,env=env,capture_output=True,timeout=5)
+        wrapped=subprocess.run(wrapped_command,cwd=cwd,env=env,capture_output=True,timeout=5)
         match=re.search(rb'fren-build: retained private state: ([^\n]+)',wrapped.stderr)
         state=Path(os.fsdecode(match[1]))/'state' if match else None
         records=[json.loads(p.read_text()) for p in (state/'overlay/records').glob('process-*.json')] if state else []
-        row=dict(flag=flag,native_command=native_command,wrapped_command=wrapped_command,cwd=str(work),
+        row=dict(flag=flag,args=args,native_command=native_command,wrapped_command=wrapped_command,cwd=str(cwd),
                  native_status=native.returncode,status=wrapped.returncode,
                  native_stdout=native.stdout.decode(),native_stderr=native.stderr.decode(),
                  stdout=wrapped.stdout.decode(),stderr=wrapped.stderr.decode(),records=records)
+        if snapshot_name:
+            row['snapshot']=dict(path=str(snapshot),bytes=len(snapshot_bytes) if snapshot_bytes is not None else 0,
+                sha256=hashlib.sha256(snapshot_bytes).hexdigest() if snapshot_bytes is not None else None)
         if state:
             row['setup']=json.loads((state/'module-memory-setup.json').read_text())
             row['session']=json.loads((state/'session/module-memory-result.json').read_text())
-        (work/('terminator-'+flag+'.json')).write_text(json.dumps(row,indent=2)+'\n')
+        (work/(prefix+'-'+flag+'.json')).write_text(json.dumps(row,indent=2)+'\n')
         assert native.returncode==0 and native.stdout==native.stderr==b'',row
+        if snapshot_name:assert snapshot_bytes and snapshot.read_bytes()==snapshot_bytes,row
         selected_records=[r for r in records if r.get('compiler_memory_selected')]
         assert wrapped.returncode==125 and len(selected_records)==1,row
         r=selected_records[0]
-        assert r['args']==['--',flag] and r['compiler_memory_source']==str(selected),row
+        assert r['args']==args and r['compiler_memory_source']==str(selected),row
         assert r['input_kind']=='unknown' and not r['child_present'] and r['compiler_memory_applied_bytes'] is None,row
         assert row['setup']['status']=='available' and row['session']['module_memory_cleanup_errno']==0,row
         assert not Path(row['setup']['modules']).exists(),row
         return row
     # Prepare the owned hierarchy before concurrent callers exist. Each later
     # caller has a private build root; ordinary Heavy admission still applies.
-    results.append(case(flags[0]))
+    results.append(case(cases[0]))
     with ThreadPoolExecutor(max_workers=2) as pool:
-        for row in pool.map(case,flags[1:]):
+        for row in pool.map(case,cases[1:]):
             results.append(row)
-            (work/'terminator-results.json').write_text(json.dumps(results,indent=2)+'\n')
+            (work/(prefix+'-results.json')).write_text(json.dumps(results,indent=2)+'\n')
     logs=[json.loads(line) for line in (home/'.cache/heavy/log.jsonl').read_text().splitlines()]
-    assert len(logs)==len(flags) and all(r['compiler_budget'] and r['exit_status']==125 for r in logs),logs
-    (work/'terminator-summary.json').write_text(json.dumps(dict(status='passed',shard=shard,cases=len(results),
+    assert len(logs)==len(cases) and all(r['compiler_budget'] and r['exit_status']==125 for r in logs),logs
+    (work/(prefix+'-summary.json')).write_text(json.dumps(dict(status='passed',shard=shard,cases=len(results),
         control_wall_seconds=time.monotonic()-start,cgroup=Path('/proc/self/cgroup').read_text(),
-        results=str(work/'terminator-results.json')),indent=2)+'\n')
-    print(f'direct Lean terminator controls passed: {work}')
+        results=str(work/(prefix+'-results.json'))),indent=2)+'\n')
+    print(f'direct Lean {prefix} controls passed: {work}')
 
 
 def actual_compile(work):
@@ -516,11 +535,13 @@ def actual_compile(work):
 
 
 if __name__=='__main__':
-    part=sys.argv[1];assert part in ('producer','negative','lifecycle','direct','directRun','directTerminator0','directTerminator1')
+    part=sys.argv[1];assert part in ('producer','negative','lifecycle','direct','directRun',
+        'directTerminator0','directTerminator1','directOperands0','directOperands1')
     parent=Path(os.environ.get('HEAVY_MODULE_TEST_ROOT',HERE/'test-work'));parent.mkdir(parents=True,exist_ok=True)
     work=Path(tempfile.mkdtemp(prefix='module-'+part+'-',dir=parent))
     if part=='direct':direct_controls(work)
     elif part=='directRun':direct_run_controls(work)
-    elif part.startswith('directTerminator'):direct_terminator_controls(work,int(part[-1]))
+    elif part.startswith('directTerminator'):direct_option_controls(work,int(part[-1]))
+    elif part.startswith('directOperands'):direct_option_controls(work,int(part[-1]),operand=True)
     else:controls(work,part)
     if part=='producer':actual_compile(work)

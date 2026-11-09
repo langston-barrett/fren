@@ -574,10 +574,16 @@ theorem direct_file_eq (args : List String) :
   | case5 arg rest hv hd hq =>
     cases rest <;> simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments,
       ← value_flag_eq, ← query_flag_eq, Str.lit] <;> (intros; simp_all)
-  | case6 arg rest hv hd hq ih =>
+  | case6 arg rest hv hd hq hu =>
     cases rest <;> simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments,
-      Heavy.Process.valueFlag, Heavy.Process.queryFlag, testing.process_value_flag?,
-      testing.process_query_flag?, Str.lit]
+      Heavy.Process.valueFlag, Heavy.Process.queryFlag, Heavy.Process.optionLike, Heavy.ModuleMemory.directPlainFlag,
+      Heavy.Process.plainFlag, testing.process_value_flag?, testing.process_query_flag?,
+      testing.direct_plain_flag?, testing.process_plain_flag?, Str.startsWith, Str.lit, Bool.and_assoc]
+  | case7 arg rest hv hd hq hu ih =>
+    cases rest <;> simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments,
+      Heavy.Process.valueFlag, Heavy.Process.queryFlag, Heavy.Process.optionLike, Heavy.ModuleMemory.directPlainFlag,
+      Heavy.Process.plainFlag, testing.process_value_flag?, testing.process_query_flag?,
+      testing.direct_plain_flag?, testing.process_plain_flag?, Str.startsWith, Str.lit, Bool.and_assoc]
 
 impl direct_lean_file: testing::heavy_direct_lean_file for (args : List String) {
   args := arguments args,

@@ -1627,6 +1627,12 @@ A genuine `--` terminates mode/query flag interpretation after known option
 operands have been consumed. A selected alias named like a mode or query flag
 after that boundary must enter the selected route; unsupported metadata then
 fails before compiler exec. An option operand named `--` is not that boundary.
+The metadata option subset is not a native arity table. Mode scanning continues
+through known operands and audited native zero-operand prefixes. Any other option
+stops the scan with file eligibility instead of treating a later token as a
+definitive mode/query flag: that token may be an operand.
+Possible selected sources then stay on the fail-closed route, including native
+incremental snapshot, diagnostic, numeric and plugin options and their aliases.
 
 Before the first selected compiler executes, the wrapper requires an owned,
 finite aggregate cgroup-v2 scope. It does not create sibling scopes. In a dedicated
@@ -1990,6 +1996,9 @@ pub proc heavy_process_arguments(args: ProcessArguments): (det parsed: Option<Pr
     out parsed := process_metadata_loop(args, process_empty_metadata("file"))
 }
 
+pub fn direct_plain_flag?(arg: String) :=
+    process_plain_flag?(arg) or arg is "--quiet" | "--profile" | "-P" | "--deps" | "-d" | "--src-deps" | "--deps-json" | "--exitOnPanic" | "-e" | "-a" | "--server" | "--worker"
+
 pub fn direct_lean_file?(args: ProcessArguments) := match args {
     ProcessArguments::Nil => true,
     ProcessArguments::Cons(arg, rest) =>
@@ -1999,6 +2008,7 @@ pub fn direct_lean_file?(args: ProcessArguments) := match args {
         }
         else if arg = "--" then true
         else if arg is "--run" | "-r" | "--stdin" or process_query_flag?(arg) then false
+        else if arg.starts_with?("-") and not direct_plain_flag?(arg) then true
         else direct_lean_file?(rest),
 }
 

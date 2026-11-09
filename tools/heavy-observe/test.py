@@ -69,9 +69,11 @@ def main():
         modules("directRun")
         modules("directTerminator0")
         modules("directTerminator1")
+        modules("directOperands1")
     if "entrypoint" in selected:
         modules("direct")
         modules("producer")
+        modules("directOperands0")
     if not ({"cohort", "core"} & selected): return
     (HERE / "test-work").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=HERE / "test-work"))
