@@ -3,6 +3,8 @@
 The fixture knows exact fork/Popen children independently of the runner. It
 never accepts the runner's own empty remaining list as proof of reaping.
 """
+import ast
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -25,6 +27,44 @@ def children():
     result = set()
     for task in Path('/proc/self/task').iterdir():
         result.update(map(int, (task / 'children').read_text().split()))
+    return result
+
+
+def consumer_controls(work, env, unknown, failed):
+    """Bind the actual direct success guard to actual IO outcomes.
+
+    Zero root status cannot establish cleanup. This is a Python consumer
+    regression, not a numerical model or another Lake/compiler workload.
+    """
+    source = Path(__file__).resolve().parents[2] / 'scripts/heavy_build_test.py'
+    text = source.read_text()
+    function = next(n for n in ast.parse(text).body
+                    if isinstance(n, ast.FunctionDef) and n.name == 'review_fixes')
+    call, = [n for n in ast.walk(function) if isinstance(n, ast.Assign)
+             and isinstance(n.value, ast.Call) and isinstance(n.value.func, ast.Name)
+             and n.value.func.id == 'run' and n.value.args
+             and isinstance(n.value.args[0], ast.Constant)
+             and n.value.args[0].value == 'existing-target-route']
+    guard, = [n for n in ast.walk(function) if isinstance(n, ast.Assert)
+              and n.lineno == call.end_lineno + 1]
+    code = compile(ast.Expression(guard.test), str(source), 'eval')
+    p = owned_run([sys.executable, '-I', '-c',
+                   'print("consumer stdout"); __import__("sys").stderr.write("consumer stderr\\n")'],
+                  directory=work, label='consumer-success', env=env, timeout=2, check=True)
+    positive = json.loads((work / 'consumer-success.json').read_text())
+    assert (p.returncode, p.stdout, p.stderr) == (0, b'consumer stdout\n', b'consumer stderr\n')
+    assert positive['physical_status_known'] and positive['root_wait_observation']['raw_wait_status'] == 0
+    assert positive['cleanup']['outcome'] == 'complete' and positive['product_success']
+    assert unknown['physical_status_known'] and unknown['status'] == 0 and unknown['failure'] is None
+    assert unknown['cleanup']['outcome'] == 'unknown' and not unknown['product_success']
+    assert failed['status'] == 7 and failed['cleanup']['outcome'] == 'complete'
+    decisions = [eval(code, {'row': row}) for row in (unknown, failed, positive)]
+    assert decisions == [False, False, True], decisions
+    result = dict(source=str(source), source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                  line=guard.lineno, predicate=ast.get_source_segment(text, guard.test),
+                  outcomes=['successful-root/unknown-cleanup', 'exit7/complete', 'exit0/complete'],
+                  accepts=decisions, rows=[unknown, failed, positive])
+    (work / 'consumer-result.json').write_text(json.dumps(result, indent=2) + '\n')
     return result
 
 
@@ -139,6 +179,7 @@ time.sleep(.1)
             finally:
                 if live_fd is not None:
                     os.close(live_fd)
+    result['consumer'] = consumer_controls(work, env, result['receipt'], result['foreign']['receipt'])
     (work / 'orphan-result.json').write_text(json.dumps(result, indent=2) + '\n')
     return result
 

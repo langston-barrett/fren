@@ -371,7 +371,7 @@ def review_fixes(work, family_only=False):
         # this validates routing without recompiling unchanged Lean for a new SHA.
         row,stdout,stderr=run('existing-target-route',[HEAVY,'--offline',native,'-d',str(tools),
             'build','--dir',str(ROOT),'+Heavy.Process:olean','--no-build','--offline','--no-cache'])
-        assert row['status']==0 and not row['failure'],(row,stdout,stderr)
+        assert row['product_success'],(row,stdout,stderr)
 
     fake=work/'bin';fake.mkdir();(fake/'lean').symlink_to(real)
     lake=fake/'lake'
