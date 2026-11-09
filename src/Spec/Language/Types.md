@@ -921,6 +921,8 @@ r[types.layer.call-arity] spec::types::call_arity::equal
 If `argument_types?(args, Δ)`, then `|args| = |Δ|`.
 
 ```fren
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc call_arity(args: Snoc<Typing>, params: Ctx): (holds?) {
     ensure output: holds?
@@ -957,6 +959,8 @@ pub fn children(form: ExprF<Typing>): Snoc<Typing> := match form {
 
 pub fn children_ok?(symb: Symb, form: ExprF<Typing>) := typings_ok?(symb, children(form))
 
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc layer_regularity(symb: Symb, ctx: Ctx, form: ExprF<Typing>, ty: Ty): (holds?) {
     ensure output: holds?
@@ -970,6 +974,8 @@ r[types.derivation.regularity] spec::types::table_regularity::regular
 In a valid table over a well-formed Σ, every row's type is well formed.
 
 ```fren
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc table_regularity(symb: Symb, rows: Snoc<Row>, pos: Int, found: Row): (holds?) {
     ensure output: holds?
@@ -983,6 +989,8 @@ If `derivation?(Σ, rows, Γ, τ)`, then `Σ ⊢ τ ok`: if `Σ; Γ ⊢ e : τ`,
 is well formed.
 
 ```fren
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc judgment_regularity(symb: Symb, rows: Snoc<Row>, ctx: Ctx, ty: Ty): (holds?) {
     ensure output: holds?
@@ -995,6 +1003,8 @@ Every local of a valid table is in scope: if a row `#i` has context Γ, then
 `0 ≤ i < |Γ|`.
 
 ```fren
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc table_scoping(symb: Symb, rows: Snoc<Row>, pos: Int, found: Row, level: Int): (holds?) {
     ensure output: holds?
@@ -1016,6 +1026,8 @@ pub fn same_shape?(left: Snoc<Row>, right: Snoc<Row>) := match left, right {
     _, _ => false,
 }
 
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc table_uniqueness(symb: Symb, left: Snoc<Row>, right: Snoc<Row>): (holds?) {
     ensure output: holds?
@@ -1093,6 +1105,8 @@ pub fn weaken_layer(form: ExprF<Typing>, cutoff: Int, extra: Ty): ExprF<Typing> 
     ),
 }
 
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc layer_weakening(
     symb: Symb,
@@ -1118,6 +1132,8 @@ The step for locals: if `0 ≤ n ≤ |Γ|`, the shifted level of i in Γ with σ
 inserted at level n holds `Γ(i)`, and level n holds σ.
 
 ```fren
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc lookup_shifting(ctx: Ctx, cutoff: Int, extra: Ty, level: Int): (holds?) {
     ensure output: holds?
@@ -1155,6 +1171,8 @@ pub fn contexts_reach?(rows: Snoc<Row>, cutoff: Int) := match rows {
     Extend(earlier, row) => 0 <= cutoff <= length(row.ctx) and contexts_reach?(earlier, cutoff),
 }
 
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc table_weakening(symb: Symb, rows: Snoc<Row>, cutoff: Int, extra: Ty): (holds?) {
     ensure output: holds?
@@ -1172,6 +1190,8 @@ e that the root unfolded to with every local level of at least `|Γ|`, those
 bound within e, shifted by one; so if `Σ; Γ ⊢ e : τ` then `Σ; Γ, σ ⊢ e' : τ`.
 
 ```fren
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc judgment_weakening(symb: Symb, rows: Snoc<Row>, ctx: Ctx, ty: Ty, extra: Ty): (holds?) {
     ensure output: holds?
@@ -1278,6 +1298,8 @@ the two tables' sharing of rows and extra rows. This is open: its
 procedure has no `impl`, and a `trusted` claim says so.
 
 ```fren
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc expression_uniqueness(
     symb: Symb,
@@ -1499,6 +1521,8 @@ pub const PROGRAM_EXAMPLE: Bool := prog_ok?(
 
 -- The examples are constant judgments, which the wrapper evaluates.
 set_option fren.lint.assertions_on_constants "allow" in
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
 pub proc worked_examples(): (holds?) {
     ensure output: holds?
