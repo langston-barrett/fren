@@ -242,9 +242,11 @@ The check computes the two lists that a rejected match reports. `uncovered`
 lists the inventory's constructors that no arm names, in inventory order.
 `repeats` lists the pattern of each arm that an earlier arm already names, in
 written order. The functions `production_missing` and `production_repeated` stand for the
-lists that the production check `FrenHirToThir.coverage`, which decides every
-match of a program, computes; the wrapper interprets them by that check, and
-`check_coverage` states that they are these lists
+two lists that the production function `FrenHirToThir.coverage` computes from
+an inventory and the arms' targets; the wrapper interprets them by that
+function, and `check_coverage` states that they are `uncovered` and `repeats`.
+The production check's choice of inventory, its extraction of the arms'
+targets and its final verdict are not bound here.
 
 ```fren
 pub fn uncovered<E>(constructors: Snoc<ItemId>, arms: Snoc<ArmF<E>>): Snoc<ItemId> :=
@@ -281,7 +283,9 @@ A match that does not cover its scrutinee's enumeration is rejected with an
 error that names the enumeration, the missing constructors in declaration
 order and the repeated patterns in written order. The compiler reports a
 missing constructor at the `match` keyword and a repeated pattern at the first
-repeated arm; source positions are outside the Core. The error has no
+repeated arm; source positions are outside the Core. A match on a type that
+is not an enumeration has no coverage error here: its owner has no
+constructors to cover, and the typing rules reject it. The error has no
 catalogue code yet, and its rendering is not specified here.
 
 ```fren
@@ -464,8 +468,8 @@ pub proc selection_typed(
 
 r[patterns.matching.progress] spec::patterns::match_progress::selected
 An admitted match on a value of its scrutinee's enumeration selects an arm,
-and that arm's body has the match's type. This is the part of type safety that
-concerns matching.
+and that arm's body has the match's type. The chapter has no values or evaluation step, so this is a statement about
+the typing of the selected arm, not a proof of type safety.
 
 ```fren
 set_option fren.evidence "random" in
