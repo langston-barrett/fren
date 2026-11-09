@@ -20,6 +20,8 @@ def main():
     parser.add_argument('--fallback-kib', required=True)
     parser.add_argument('--timeout-ms', required=True)
     parser.add_argument('--requests', required=True, type=Path)
+    parser.add_argument('--direct-lean-index', type=int,
+                        help='index of the bare lean command in an ordinary Lake env invocation')
     parser.add_argument('command', nargs=argparse.REMAINDER, help='-- absolute command and arguments')
     args = parser.parse_args()
     if "HEAVY_BUDGET_DIR" in os.environ:
@@ -50,6 +52,11 @@ def main():
         spec.loader.exec_module(module)
         args.state.mkdir(mode=0o700, parents=False, exist_ok=False)
         overlay = module.create(args.state / 'overlay', args.real_lean, observer)
+        if args.direct_lean_index is not None:
+            index = args.direct_lean_index + 1  # command includes the -- separator.
+            if index < 2 or index >= len(command) or command[index] != 'lean':
+                raise ValueError('invalid direct Lean executable position')
+            command[index] = str(overlay / 'bin/lean')
         # Read-only optional evidence is frozen once for this session. No
         # subprocess, blocking lock, per-compiler directory scan or estimator.
         env = os.environ.copy()

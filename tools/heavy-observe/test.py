@@ -65,7 +65,9 @@ def main():
             script = "automatic_test.py" if mode in ("positive", "evidence", "store") else "automatic_io_test.py"
             owned_run([sys.executable, "-I", str(HERE / script), mode], directory=fresh,
                       label="dispatch", env=env, timeout=23, grace=5, check=True)
-    if "entrypoint" in selected: modules("producer")
+    if "entrypoint" in selected:
+        modules("direct")
+        modules("producer")
     if not ({"cohort", "core"} & selected): return
     (HERE / "test-work").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=HERE / "test-work"))

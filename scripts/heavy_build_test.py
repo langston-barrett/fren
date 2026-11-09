@@ -524,6 +524,23 @@ sys.exit(m['main'](['--offline',*sys.argv[3:]],state=os.environ['TEST_STATE']))
     print(f'review-fix controls passed: {work}')
 
 
+def direct_routes(work):
+    build = load(ROOT / 'scripts/fren-build')
+    pin = (ROOT / 'lean-toolchain').read_text().strip()
+    direct_source = str(ROOT / 'src/FrenBase/Identity.lean')
+    for argv in (["lake", "env", "lean", direct_source],
+                 ["lake", "+" + pin, "--dir", str(work), "env", "lean", direct_source],
+                 ["lake", "-K", "env", "--quiet=env", "lean", direct_source]):
+        route = build.lake_route(argv)
+        assert argv[route[2]] == 'lean' and argv[route[2] + 1:] == [direct_source], argv
+        assert build.heavy_command(argv, 1000000)[1] == '--heavy-direct', argv
+    for args in (["--run", direct_source], ["--stdin", direct_source], ["--version"],
+                 ["-o", direct_source, "Legacy.lean"],
+                 [str(ROOT / 'src/FrenTestMain.lean')]):
+        argv = ['lake', 'env', 'lean', *args]
+        assert build.heavy_command(argv, 1000000) == argv, argv
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
@@ -552,6 +569,7 @@ def main():
         assert build.lake_build(command) is None, command
     boot = ['lake', '-d', str(ROOT / 'tools/heavy-observe'), 'build', 'budget_session']
     assert build.heavy_command(boot, 1000000) == boot
+    direct_routes(work)
     assert build.outer_allowance(1000000) <= 900000
     with mock.patch.object(build.Path, 'read_text', return_value='0::/../bad\n'):
         try:

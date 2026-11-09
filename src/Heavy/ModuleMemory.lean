@@ -1,10 +1,21 @@
-import Std
+import Heavy.Process
 
 /-! Selected-module policy and raw application checks; no Fren or OS imports.
 The IO caller supplies canonical source paths and raw kernel readbacks. -/
 namespace Heavy.ModuleMemory
 
 def defaultBytes : Nat := 1073741824
+
+/-- Ordinary direct compilation excludes query, stdin and program execution.
+Consume known option operands first, so an output named --run cannot bypass it.
+Unknown syntax remains eligible for the observer's fail-closed source check. -/
+def directFile : List String → Bool
+  | [] => true
+  | arg :: rest =>
+    if Heavy.Process.valueFlag arg then
+      match rest with | [] => true | _ :: tail => directFile tail
+    else if arg == "--run" || arg == "--stdin" || Heavy.Process.queryFlag arg then false
+    else directFile rest
 
 def inRoot (root source owner : String) : Bool :=
   source == root ++ "/" ++ owner ++ ".lean" || (root ++ "/" ++ owner ++ "/").toList.isPrefixOf source.toList

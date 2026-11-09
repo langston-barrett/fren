@@ -447,6 +447,20 @@ That short command retains its nearest caller `lean-toolchain` pin selection and
 passes each argument literally after `lake build`. Neither entrypoint builds
 missing tools automatically.
 
+`scripts/heavy lake env lean FILE.lean` also uses the selected Fren2 family
+memory bound. The standalone observer classifies the raw Lean arguments and
+canonical source path before Heavy chooses its control mode. Selected calls
+reuse the private overlay and session, replacing only env's bare `lean`
+executable; the compiler's arguments, cwd, streams and physical status are
+retained. Queries, stdin, `--run` and nonselected legacy sources keep their
+existing route. Known option operands are consumed before excluding those
+modes, so an output named `--run` does not bypass the bound. Ambiguous selected
+file syntax and missing required setup fail closed. This covers bare `lean`
+after `lake env`, not arbitrary executable paths or shell commands. Source
+paths must remain stable between classification and execution. The registered
+`entrypoint` partition includes raw argument, setup denial and real direct
+compilation controls in `module_memory_test.py direct`.
+
 Each invocation prints and retains a new private temporary directory containing
 the overlay, session and records under `state`. Remove it when no longer
 needed. By default it also contains an empty request manifest. Compiler

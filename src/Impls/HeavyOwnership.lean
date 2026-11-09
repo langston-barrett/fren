@@ -542,6 +542,30 @@ theorem query_flag_eq (arg : String) : testing.process_query_flag? arg = Heavy.P
 theorem plain_flag_eq (arg : String) : testing.process_plain_flag? arg = Heavy.Process.plainFlag arg := by
   simp [testing.process_plain_flag?, Heavy.Process.plainFlag]
 
+set_option linter.unusedSimpArgs false in
+theorem direct_file_eq (args : List String) :
+    Heavy.ModuleMemory.directFile args = testing.direct_lean_file? (arguments args) := by
+  induction args using Heavy.ModuleMemory.directFile.induct with
+  | case1 => rfl
+  | case2 arg hv =>
+    simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments, ← value_flag_eq]
+  | case3 arg value tail hv ih =>
+    simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments, ← value_flag_eq]
+  | case4 arg rest hv hq =>
+    cases rest <;> simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments,
+      ← value_flag_eq, ← query_flag_eq, Str.lit]
+  | case5 arg rest hv hq ih =>
+    cases rest <;> simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments,
+      Heavy.Process.valueFlag, Heavy.Process.queryFlag, testing.process_value_flag?,
+      testing.process_query_flag?, Str.lit]
+
+impl direct_lean_file: testing::heavy_direct_lean_file for (args : List String) {
+  args := arguments args,
+  file? := Heavy.ModuleMemory.directFile args,
+} by
+  intro args _
+  simpa [fren_spec] using direct_file_eq args
+
 theorem metadata_source (m : Heavy.Process.Metadata) : (metadata m).source = m.source := rfl
 
 set_option linter.unusedSimpArgs false in

@@ -28,9 +28,10 @@ if args==['--githash']: print('f'*40);sys.exit(0)
 relative=next(s[3:] for s in pathlib.Path('/proc/self/cgroup').read_text().splitlines() if s.startswith('0::'))
 cg=pathlib.Path('/sys/fs/cgroup')/relative.lstrip('/')
 mode=os.environ['MODE'];marker=pathlib.Path(os.environ['MARKER'])
-info=dict(pid=os.getpid(),parent=os.getppid(),scope=str(cg),inode=cg.stat().st_ino,maximum=(cg/'memory.max').read_text().strip(),swap=(cg/'memory.swap.max').read_text().strip())
+info=dict(args=args,cwd=os.getcwd(),pid=os.getpid(),parent=os.getppid(),scope=str(cg),inode=cg.stat().st_ino,maximum=(cg/'memory.max').read_text().strip(),swap=(cg/'memory.swap.max').read_text().strip())
 marker.write_text(json.dumps(info))
 print('fixture stdout',flush=True);print('fixture stderr',file=sys.stderr,flush=True)
+if mode=='term':os.kill(os.getpid(),signal.SIGTERM)
 if mode in ('oom','cancel','leftover'):
  child=os.fork()
  if child==0:
@@ -47,7 +48,7 @@ if mode in ('oom','cancel','leftover'):
   deadline=time.monotonic()+2
   while not pathlib.Path(str(marker)+'.child').exists() and time.monotonic()<deadline:time.sleep(.005)
   assert pathlib.Path(str(marker)+'.child').exists()
-  if '-o' in args:pathlib.Path(args[args.index('-o')+1]).write_bytes(b'fixture artifact')
+  if '-o' in args and os.environ.get('NO_ARTIFACT')!='1':pathlib.Path(args[args.index('-o')+1]).write_bytes(b'fixture artifact')
   sys.exit(0)
  if mode=='cancel':
   signal.signal(signal.SIGTERM,signal.SIG_IGN)
@@ -58,7 +59,7 @@ if mode in ('oom','cancel','leftover'):
 else:
  data=bytearray(16*1024*1024)
  for i in range(0,len(data),4096):data[i]=1
- if '-o' in args:pathlib.Path(args[args.index('-o')+1]).write_bytes(b'fixture artifact')
+ if '-o' in args and os.environ.get('NO_ARTIFACT')!='1':pathlib.Path(args[args.index('-o')+1]).write_bytes(b'fixture artifact')
  sys.exit(7 if mode=='exit7' else 0)
 ''')
     compiler.chmod(0o755)
@@ -241,6 +242,13 @@ static int target(int fd,const char *file) {
  ssize_t n=readlink(link,path,sizeof(path)-1);if(n<0)return 0;path[n]=0;
  return strstr(path,"/heavy-modules-")&&strstr(path,"/m-")&&strstr(path,file);
 }
+int mkdir(const char *path,mode_t mode) {
+ const char *fault=getenv("MODULE_FAULT");
+ if(fault&&!strcmp(fault,"prepare")&&strstr(path,"/heavy-modules-")&&strstr(path,"/build-")) {
+  errno=EACCES;return -1;
+ }
+ return syscall(SYS_mkdir,path,mode);
+}
 ssize_t write(int fd,const void *p,size_t n) {
  const char *mode=getenv("MODULE_FAULT");
  static int held=0;
@@ -288,6 +296,95 @@ int unlinkat(int dir,const char *name,int flags) {
     return library
 
 
+def direct_controls(work):
+    """Ordinary Heavy/Lake env dispatch with actual session/kernel readbacks."""
+    from owned_test import _build
+    _build.direct_routes(work)
+    start=time.monotonic()
+    compiler,_,home,_=fixture(work)
+    lake=compiler.parent/'lake'
+    lake.write_text('#!'+sys.executable+'\n'+r'''
+import os,pathlib,subprocess,sys
+args=sys.argv[1:];tail=args[args.index('env')+1:]
+exe=str(pathlib.Path(__file__).parent/'lean') if tail[0]=='lean' else tail[0]
+p=subprocess.run([exe,*tail[1:]])
+sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
+''')
+    lake.chmod(0o755)
+    env=dict(os.environ,HOME=str(home),TMPDIR=str(work),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off')
+    for k in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG',
+              'HEAVY_COMPILER_CPU_SECONDS','HEAVY_COMPILER_WALL_MS','HEAVY_COMPILER_MEMORY_BYTES',
+              'FREN_BUILD_REQUESTS_FILE','FREN_BUILD_ALLOWANCE_KIB','FREN_BUILD_HEADROOM_KIB',
+              'FREN_BUILD_FALLBACK_KIB','FREN_BUILD_TIMEOUT_MS'):
+        env.pop(k,None)
+    results=[]
+    def case(label,args,mode='below',executable=lake,script=ROOT/'scripts/heavy',extra=None):
+        marker=work/(label+'.marker')
+        command=[str(script),'--offline',str(executable),'env','lean',*map(str,args)]
+        p=run(command,directory=work,label=label,cwd=ROOT,
+              env=dict(env,MODE=mode,MARKER=str(marker),NO_ARTIFACT='1',**(extra or {})),timeout=8,grace=3)
+        match=re.search(rb'fren-build: retained private state: ([^\n]+)',p.stderr)
+        state=Path(os.fsdecode(match[1]))/'state' if match else None
+        rows=[json.loads(f.read_text()) for f in (state/'overlay/records').glob('process-*.json')] if state else []
+        row=dict(case=label,command=command,status=p.returncode,stdout=p.stdout.decode(),stderr=p.stderr.decode(),
+                 marker=json.loads(marker.read_text()) if marker.exists() else None,records=rows,state=str(state))
+        if state:
+            row['setup']=json.loads((state/'module-memory-setup.json').read_text())
+            row['session']=json.loads((state/'session/module-memory-result.json').read_text())
+        results.append(row);(work/'direct-results.json').write_text(json.dumps(results,indent=2)+'\n')
+        return row
+    selected=ROOT/'src/FrenBase/Identity.lean'
+    # Real mkdir denial at the mandatory per-build delegation boundary, also
+    # when this job has already prepared its aggregate for another partition.
+    library=faults(work)
+    r=case('direct-unavailable',[selected],extra={'LD_PRELOAD':str(library),'MODULE_FAULT':'prepare'})
+    assert r['status']==125 and r['marker'] is None,r
+    assert r['setup']['status']=='unavailable' and 'PermissionError' in r['setup']['error'],r
+    assert r['records'][0]['child_present'] is False,r
+    # direct_routes checks exact unchanged argv for every excluded mode using
+    # the actual native classifier and wrapper adapter. One legacy process
+    # witnesses the unchanged end-to-end path; avoid repeating that transport.
+    r=case('direct-legacy',[ROOT/'src/FrenTestMain.lean'])
+    assert r['status']==0 and not r['records'] and r['state']=='None',r
+    args=['-o','--run','src/FrenBase/Identity.lean']
+    r=case('direct-selected',args,'exit7')
+    assert r['status']==7 and r['stdout']=='fixture stdout\n',r
+    assert r['stderr'].endswith('fixture stderr\n') and r['marker']['cwd']==str(ROOT),r
+    assert r['marker']['args']==list(map(str,args)),r
+    record=r['records'][0];marker=r['marker']
+    assert record['raw_wait_status']==7*256 and record['real_compiler']==str(compiler),r
+    assert record['compiler_memory_ack_pid']==record['child_pid']==marker['pid'],r
+    assert record['compiler_memory_expected_inode']==record['compiler_memory_observed_inode']==marker['inode'],r
+    assert record['compiler_memory_applied_bytes']==record['compiler_memory_readback_bytes']==1073741824,r
+    assert record['compiler_memory_effective_bytes']==1073741824 and marker['swap']=='0',r
+    assert record['compiler_memory_cleanup_errno']==0 and record['compiler_memory_populated_after']==0,r
+    assert r['session']['module_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
+    r=case('direct-ambiguous',[selected,'--unsupported'])
+    assert r['status']==125 and r['marker'] is None and not r['records'][0]['child_present'],r
+    r=case('direct-signal',[selected],mode='term')
+    assert r['status']==143 and r['records'][0]['raw_wait_status']==15,r
+    assert r['records'][0]['compiler_memory_cleanup_errno']==0 and not Path(r['setup']['modules']).exists(),r
+    missing=work/'missing/scripts';missing.mkdir(parents=True)
+    for name in ('heavy','fren-build','heavy-lean-build'):
+        p=missing/name;p.write_bytes((ROOT/'scripts'/name).read_bytes());p.chmod(0o755)
+    r=case('direct-missing-tools',[selected],script=missing/'heavy')
+    assert r['status']==125 and r['marker'] is None and not r['records'],r
+    real=Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())/'bin/lean'
+    artifact=work/'Identity λ $literal.olean'
+    r=case('direct-actual-lean',[selected,'-o',artifact],executable=real.parent/'lake')
+    records=[v for v in r['records'] if v.get('compiler_memory_selected')]
+    assert r['status']==0 and artifact.is_file() and len(records)==1,r
+    record=records[0]
+    assert record['args']==[str(selected),'-o',str(artifact)] and record['cwd']==str(ROOT),r
+    assert record['compiler_memory_applied_bytes']==record['compiler_memory_effective_bytes']==1073741824,r
+    assert record['compiler_memory_ack_pid']==record['child_pid'] and record['compiler_memory_expected_inode']==record['compiler_memory_observed_inode'],r
+    assert record['raw_wait_status']==0 and record['compiler_memory_cleanup_errno']==0 and record['compiler_memory_populated_after']==0,r
+    assert not Path(record['compiler_memory_scope']).exists() and not Path(r['setup']['modules']).exists(),r
+    (work/'direct-summary.json').write_text(json.dumps(dict(status='passed',cases=len(results),
+        control_wall_seconds=time.monotonic()-start,results=str(work/'direct-results.json')),indent=2)+'\n')
+    print(f'direct Lean controls passed: {work}')
+
+
 def actual_compile(work):
     """One existing small Fren2 module; only owned outputs/cache are cold."""
     package=work/'real-package';package.mkdir()
@@ -317,7 +414,9 @@ def actual_compile(work):
 
 
 if __name__=='__main__':
-    part=sys.argv[1];assert part in ('producer','negative','lifecycle')
+    part=sys.argv[1];assert part in ('producer','negative','lifecycle','direct')
     parent=Path(os.environ.get('HEAVY_MODULE_TEST_ROOT',HERE/'test-work'));parent.mkdir(parents=True,exist_ok=True)
-    work=Path(tempfile.mkdtemp(prefix='module-'+part+'-',dir=parent));controls(work,part)
+    work=Path(tempfile.mkdtemp(prefix='module-'+part+'-',dir=parent))
+    if part=='direct':direct_controls(work)
+    else:controls(work,part)
     if part=='producer':actual_compile(work)
