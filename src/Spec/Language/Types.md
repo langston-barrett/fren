@@ -27,13 +27,13 @@ The chapter's judgments, and the Fren definitions that state them:
 
 | Judgment | Meaning | Fren |
 | --- | --- | --- |
-| `Σ ⊢ τ ok` | τ is a well-formed type | `type_ok?` |
-| `Σ ⊢ Γ ok` | every type of Γ is well formed | `context_ok?` |
-| `⊢ Σ ok` | Σ is a well-formed symbol environment | `symbols_ok?` |
+| `Σ ⊢ τ ok` | τ is a well-formed type | `ty_ok?` |
+| `Σ ⊢ Γ ok` | every type of Γ is well formed | `ctx_ok?` |
+| `⊢ Σ ok` | Σ is a well-formed symbol environment | `symb_ok?` |
 | `Σ; Γ ⊢ e : τ` | e has type τ in Γ | `derivation?`, with a table whose root unfolds to e |
 | `Σ; Γ ⊢ l ▷ τ` | one layer l, its children already typed, has type τ | `rule?` |
-| `Σ ⊢ d ok` | a declaration is well typed | `declaration_ok?` |
-| `⊢ (Σ, ds) ok` | a program is well typed | `program_ok?` |
+| `Σ ⊢ d ok` | a declaration is well typed | `decl_ok?` |
+| `⊢ (Σ, ds) ok` | a program is well typed | `prog_ok?` |
 
 The typing rules are summarized below, in the notation of
 [The Definition of Standard ML](https://smlfamily.github.io/sml97-defn.pdf).
@@ -153,16 +153,16 @@ Extension leaves every existing level unchanged: if `0 ≤ i < |Γ|`, then
 <!-- status: smt -->
 
 ```fren
-pub type Context := Snoc<Ty>
+pub type Ctx := Snoc<Ty>
 
-expect lookup_bound(context: Context, level: Int, ty: Ty) {
-    expect below: when lookup(context, level) = Some(ty), 0 <= level < length(context)
+expect lookup_bound(ctx: Ctx, level: Int, ty: Ty) {
+    expect below: when lookup(ctx, level) = Some(ty), 0 <= level < length(ctx)
 }
 
-expect lookup_weakening(context: Context, extra: Ty, level: Int) {
-    expect older: when 0 <= level < length(context),
-        lookup(Extend(context, extra), level) = lookup(context, level)
-    expect newest: lookup(Extend(context, extra), length(context)) = Some(extra)
+expect lookup_weakening(ctx: Ctx, extra: Ty, level: Int) {
+    expect older: when 0 <= level < length(ctx),
+        lookup(Extend(ctx, extra), level) = lookup(ctx, level)
+    expect newest: lookup(Extend(ctx, extra), length(ctx)) = Some(extra)
 }
 ```
 
@@ -190,25 +190,25 @@ twice.
 <!-- status: open -->
 
 ```fren
-pub struct Signature { parameters: Context, result: Ty }
-pub enum ItemKind { Function(Signature), Constructor(ItemId), Enumeration(Snoc<ItemId>) }
+pub struct Sig { params: Ctx, result: Ty }
+pub enum ItemKind { Function(Sig), Constructor(ItemId), Enumeration(Snoc<ItemId>) }
 pub struct Entry { item: ItemId, kind: ItemKind }
-pub type Symbols := Snoc<Entry>
+pub type Symb := Snoc<Entry>
 
-pub fn entry(symbols: Symbols, item: ItemId): Option<ItemKind> := match symbols {
+pub fn entry(symb: Symb, item: ItemId): Option<ItemKind> := match symb {
     Empty => None,
     Extend(earlier, binding) =>
         if binding.item = item then Some(binding.kind) else entry(earlier, item),
 }
 
-pub fn type_ok?(symbols: Symbols, ty: Ty) := match ty {
-    Ty::Nominal(owner) => entry(symbols, owner) is Some(ItemKind::Enumeration(_)),
+pub fn ty_ok?(symb: Symb, ty: Ty) := match ty {
+    Ty::Nominal(owner) => entry(symb, owner) is Some(ItemKind::Enumeration(_)),
     _ => true,
 }
 
-pub fn context_ok?(symbols: Symbols, context: Context) := match context {
+pub fn ctx_ok?(symb: Symb, ctx: Ctx) := match ctx {
     Empty => true,
-    Extend(earlier, ty) => type_ok?(symbols, ty) and context_ok?(symbols, earlier),
+    Extend(earlier, ty) => ty_ok?(symb, ty) and ctx_ok?(symb, earlier),
 }
 
 pub fn member?(items: Snoc<ItemId>, item: ItemId) := match items {
@@ -216,34 +216,34 @@ pub fn member?(items: Snoc<ItemId>, item: ItemId) := match items {
     Extend(earlier, other) => other = item or member?(earlier, item),
 }
 
-pub fn constructors_ok?(symbols: Symbols, constructors: Snoc<ItemId>, owner: ItemId) :=
+pub fn constructors_ok?(symb: Symb, constructors: Snoc<ItemId>, owner: ItemId) :=
     match constructors {
         Empty => true,
         Extend(earlier, constructor) =>
-            entry(symbols, constructor) = Some(ItemKind::Constructor(owner))
+            entry(symb, constructor) = Some(ItemKind::Constructor(owner))
             and not member?(earlier, constructor)
-            and constructors_ok?(symbols, earlier, owner),
+            and constructors_ok?(symb, earlier, owner),
     }
 
-pub fn binding_ok?(symbols: Symbols, binding: Entry) := match binding.kind {
-    ItemKind::Function(signature) =>
-        context_ok?(symbols, signature.parameters) and type_ok?(symbols, signature.result),
-    ItemKind::Constructor(owner) => match entry(symbols, owner) {
+pub fn binding_ok?(symb: Symb, binding: Entry) := match binding.kind {
+    ItemKind::Function(sig) =>
+        ctx_ok?(symb, sig.params) and ty_ok?(symb, sig.result),
+    ItemKind::Constructor(owner) => match entry(symb, owner) {
         Some(ItemKind::Enumeration(constructors)) => member?(constructors, binding.item),
         _ => false,
     },
-    ItemKind::Enumeration(constructors) => constructors_ok?(symbols, constructors, binding.item),
+    ItemKind::Enumeration(constructors) => constructors_ok?(symb, constructors, binding.item),
 }
 
-pub fn bindings_ok?(symbols: Symbols, bindings: Symbols) := match bindings {
+pub fn bindings_ok?(symb: Symb, bindings: Symb) := match bindings {
     Empty => true,
     Extend(earlier, binding) =>
         entry(earlier, binding.item) = None
-        and binding_ok?(symbols, binding)
-        and bindings_ok?(symbols, earlier),
+        and binding_ok?(symb, binding)
+        and bindings_ok?(symb, earlier),
 }
 
-pub fn symbols_ok?(symbols: Symbols) := bindings_ok?(symbols, symbols)
+pub fn symb_ok?(symb: Symb) := bindings_ok?(symb, symb)
 ```
 
 <a id="finite-expression-derivations"></a>
@@ -285,7 +285,7 @@ or the level of a row of a table. A *typing* records a context and a type.
 <!-- status: definition -->
 
 ```fren
-pub struct Typing { context: Context, ty: Ty }
+pub struct Typing { ctx: Ctx, ty: Ty }
 ```
 
 r[types.judgment.layer] spec::types::rule?
@@ -352,7 +352,7 @@ If `Γ(i) = τ`, then `Σ; Γ ⊢ #i : τ`.
 <!-- status: definition -->
 
 ```fren
-pub fn local_rule?(context: Context, level: Int, ty: Ty) := lookup(context, level) = Some(ty)
+pub fn local_rule?(ctx: Ctx, level: Int, ty: Ty) := lookup(ctx, level) = Some(ty)
 ```
 
 r[types.expression.constructor] spec::types::constructor_rule?
@@ -360,7 +360,7 @@ If `Σ(c)` is a constructor of a, then `Σ; Γ ⊢ c : Nominal(a)`.
 <!-- status: definition -->
 
 ```fren
-pub fn constructor_rule?(symbols: Symbols, item: ItemId, ty: Ty) := match entry(symbols, item) {
+pub fn constructor_rule?(symb: Symb, item: ItemId, ty: Ty) := match entry(symb, item) {
     Some(ItemKind::Constructor(owner)) => ty = Ty::Nominal(owner),
     _ => false,
 }
@@ -371,8 +371,8 @@ If `Σ; Γ ⊢ e : σ` and `unary_type?(⊖, σ, τ)`, then `Σ; Γ ⊢ ⊖ e : 
 <!-- status: definition -->
 
 ```fren
-pub fn unary_rule?(context: Context, op: UnaryOp, operand: Typing, ty: Ty) :=
-    operand.context = context
+pub fn unary_rule?(ctx: Ctx, op: UnaryOp, operand: Typing, ty: Ty) :=
+    operand.ctx = ctx
     and unary_type?(op, operand.ty, ty)
 ```
 
@@ -382,9 +382,9 @@ If `Σ; Γ ⊢ l : σ`, `Σ; Γ ⊢ r : υ` and `binary_type?(⊕, σ, υ, τ)`,
 <!-- status: definition -->
 
 ```fren
-pub fn binary_rule?(context: Context, op: BinaryOp, left: Typing, right: Typing, ty: Ty) :=
-    left.context = context
-    and right.context = context
+pub fn binary_rule?(ctx: Ctx, op: BinaryOp, left: Typing, right: Typing, ty: Ty) :=
+    left.ctx = ctx
+    and right.ctx = ctx
     and binary_type?(op, left.ty, right.ty, ty)
 ```
 
@@ -395,24 +395,24 @@ If `Σ(f)` is a function with parameters σ₀, …, σₙ₋₁ and result τ, 
 <!-- status: definition -->
 
 ```fren
-pub fn in_context?(children: Snoc<Typing>, context: Context) := match children {
+pub fn in_context?(children: Snoc<Typing>, ctx: Ctx) := match children {
     Empty => true,
-    Extend(earlier, child) => child.context = context and in_context?(earlier, context),
+    Extend(earlier, child) => child.ctx = ctx and in_context?(earlier, ctx),
 }
 
-pub fn argument_types?(args: Snoc<Typing>, parameters: Context) := match args, parameters {
+pub fn argument_types?(args: Snoc<Typing>, params: Ctx) := match args, params {
     Empty, Empty => true,
-    Extend(earlier, arg), Extend(earlier_parameters, parameter) =>
-        arg.ty = parameter and argument_types?(earlier, earlier_parameters),
+    Extend(earlier, arg), Extend(earlier_params, param) =>
+        arg.ty = param and argument_types?(earlier, earlier_params),
     _, _ => false,
 }
 
-pub fn call_rule?(symbols: Symbols, context: Context, item: ItemId, args: Snoc<Typing>, ty: Ty) :=
-    match entry(symbols, item) {
-        Some(ItemKind::Function(signature)) =>
-            ty = signature.result
-            and in_context?(args, context)
-            and argument_types?(args, signature.parameters),
+pub fn call_rule?(symb: Symb, ctx: Ctx, item: ItemId, args: Snoc<Typing>, ty: Ty) :=
+    match entry(symb, item) {
+        Some(ItemKind::Function(sig)) =>
+            ty = sig.result
+            and in_context?(args, ctx)
+            and argument_types?(args, sig.params),
         _ => false,
     }
 ```
@@ -428,10 +428,10 @@ pub fn annotation_matches?(annotation: Option<Ty>, ty: Ty) := match annotation {
     None => true,
 }
 
-pub fn let_rule?(context: Context, annotation: Option<Ty>, value: Typing, body: Typing, ty: Ty) :=
-    value.context = context
+pub fn let_rule?(ctx: Ctx, annotation: Option<Ty>, value: Typing, body: Typing, ty: Ty) :=
+    value.ctx = ctx
     and annotation_matches?(annotation, value.ty)
-    and body.context = Extend(context, value.ty)
+    and body.ctx = Extend(ctx, value.ty)
     and body.ty = ty
 ```
 
@@ -442,17 +442,17 @@ then `Σ; Γ ⊢ if c then t else e : τ`.
 
 ```fren
 pub fn if_rule?(
-    context: Context,
+    ctx: Ctx,
     condition: Typing,
     then_branch: Typing,
     else_branch: Typing,
     ty: Ty
 ) :=
-    condition.context = context
+    condition.ctx = ctx
     and condition.ty = Ty::Boolean
-    and then_branch.context = context
+    and then_branch.ctx = ctx
     and then_branch.ty = ty
-    and else_branch.context = context
+    and else_branch.ctx = ctx
     and else_branch.ty = ty
 ```
 
@@ -463,31 +463,31 @@ entry is a constructor of a, and `Σ; Γ ⊢ b : τ` for each arm body b, then
 <!-- status: definition -->
 
 ```fren
-pub fn arm_bodies?(arms: Snoc<ArmF<Typing>>, context: Context, ty: Ty) := match arms {
+pub fn arm_bodies?(arms: Snoc<ArmF<Typing>>, ctx: Ctx, ty: Ty) := match arms {
     Empty => true,
     Extend(earlier, arm) =>
-        arm.body.context = context and arm.body.ty = ty and arm_bodies?(earlier, context, ty),
+        arm.body.ctx = ctx and arm.body.ty = ty and arm_bodies?(earlier, ctx, ty),
 }
 
-pub fn arm_patterns?(symbols: Symbols, arms: Snoc<ArmF<Typing>>, owner: ItemId) := match arms {
+pub fn arm_patterns?(symb: Symb, arms: Snoc<ArmF<Typing>>, owner: ItemId) := match arms {
     Empty => true,
     Extend(earlier, arm) =>
-        entry(symbols, arm.constructor) = Some(ItemKind::Constructor(owner))
-        and arm_patterns?(symbols, earlier, owner),
+        entry(symb, arm.constructor) = Some(ItemKind::Constructor(owner))
+        and arm_patterns?(symb, earlier, owner),
 }
 
 pub fn match_rule?(
-    symbols: Symbols,
-    context: Context,
+    symb: Symb,
+    ctx: Ctx,
     scrutinee: Typing,
     arms: Snoc<ArmF<Typing>>,
     ty: Ty
 ) :=
-    scrutinee.context = context
+    scrutinee.ctx = ctx
     and arms != Empty
-    and arm_bodies?(arms, context, ty)
+    and arm_bodies?(arms, ctx, ty)
     and match scrutinee.ty {
-        Ty::Nominal(owner) => arm_patterns?(symbols, arms, owner),
+        Ty::Nominal(owner) => arm_patterns?(symb, arms, owner),
         _ => false,
     }
 ```
@@ -495,18 +495,18 @@ pub fn match_rule?(
 The one-layer judgment dispatches on the form:
 
 ```fren
-pub fn rule?(symbols: Symbols, context: Context, form: ExprF<Typing>, ty: Ty) := match form {
+pub fn rule?(symb: Symb, ctx: Ctx, form: ExprF<Typing>, ty: Ty) := match form {
     ExprF::BooleanLiteral(_) => boolean_rule?(ty),
     ExprF::IntegerLiteral(_) => integer_rule?(ty),
-    ExprF::Local(level) => local_rule?(context, level, ty),
-    ExprF::Constructor(item) => constructor_rule?(symbols, item, ty),
-    ExprF::Unary(op, operand) => unary_rule?(context, op, operand, ty),
-    ExprF::Binary(op, left, right) => binary_rule?(context, op, left, right, ty),
-    ExprF::Call(item, args) => call_rule?(symbols, context, item, args, ty),
-    ExprF::Let(annotation, value, body) => let_rule?(context, annotation, value, body, ty),
+    ExprF::Local(level) => local_rule?(ctx, level, ty),
+    ExprF::Constructor(item) => constructor_rule?(symb, item, ty),
+    ExprF::Unary(op, operand) => unary_rule?(ctx, op, operand, ty),
+    ExprF::Binary(op, left, right) => binary_rule?(ctx, op, left, right, ty),
+    ExprF::Call(item, args) => call_rule?(symb, ctx, item, args, ty),
+    ExprF::Let(annotation, value, body) => let_rule?(ctx, annotation, value, body, ty),
     ExprF::If(condition, then_branch, else_branch) =>
-        if_rule?(context, condition, then_branch, else_branch, ty),
-    ExprF::Match(scrutinee, arms) => match_rule?(symbols, context, scrutinee, arms, ty),
+        if_rule?(ctx, condition, then_branch, else_branch, ty),
+    ExprF::Match(scrutinee, arms) => match_rule?(symb, ctx, scrutinee, arms, ty),
 }
 ```
 
@@ -524,10 +524,10 @@ including rows that no other row uses.
 ```fren
 pub type Form := ExprF<Int>
 pub type Arm := ArmF<Int>
-pub struct Row { form: Form, context: Context, ty: Ty }
+pub struct Row { form: Form, ctx: Ctx, ty: Ty }
 
 pub fn typing_at(rows: Snoc<Row>, position: Int): Option<Typing> := match lookup(rows, position) {
-    Some(row) => Some(Typing { context := row.context, ty := row.ty }),
+    Some(row) => Some(Typing { ctx := row.ctx, ty := row.ty }),
     None => None,
 }
 
@@ -583,13 +583,13 @@ pub fn annotate(rows: Snoc<Row>, form: Form): Option<ExprF<Typing>> := match for
     },
 }
 
-pub fn rows_valid?(symbols: Symbols, rows: Snoc<Row>) := match rows {
+pub fn rows_valid?(symb: Symb, rows: Snoc<Row>) := match rows {
     Empty => true,
     Extend(earlier, row) =>
-        rows_valid?(symbols, earlier)
-        and context_ok?(symbols, row.context)
+        rows_valid?(symb, earlier)
+        and ctx_ok?(symb, row.ctx)
         and match annotate(earlier, row.form) {
-            Some(form) => rule?(symbols, row.context, form, row.ty),
+            Some(form) => rule?(symb, row.ctx, form, row.ty),
             None => false,
         },
 }
@@ -613,25 +613,25 @@ table is valid in this way with such a root.
 <!-- status: definition -->
 
 ```fren
-pub fn extends?(context: Context, base: Context) :=
-    context = base or match context {
+pub fn extends?(ctx: Ctx, base: Ctx) :=
+    ctx = base or match ctx {
         Empty => false,
         Extend(earlier, _) => extends?(earlier, base),
     }
 
-pub fn rows_extend?(rows: Snoc<Row>, base: Context) := match rows {
+pub fn rows_extend?(rows: Snoc<Row>, base: Ctx) := match rows {
     Empty => true,
-    Extend(earlier, row) => extends?(row.context, base) and rows_extend?(earlier, base),
+    Extend(earlier, row) => extends?(row.ctx, base) and rows_extend?(earlier, base),
 }
 
-pub fn derivation?(symbols: Symbols, rows: Snoc<Row>, context: Context, ty: Ty) :=
-    symbols_ok?(symbols)
-    and context_ok?(symbols, context)
-    and rows_valid?(symbols, rows)
-    and rows_extend?(rows, context)
+pub fn derivation?(symb: Symb, rows: Snoc<Row>, ctx: Ctx, ty: Ty) :=
+    symb_ok?(symb)
+    and ctx_ok?(symb, ctx)
+    and rows_valid?(symb, rows)
+    and rows_extend?(rows, ctx)
     and match rows {
         Empty => false,
-        Extend(_, root) => root.context = context and root.ty = ty,
+        Extend(_, root) => root.ctx = ctx and root.ty = ty,
     }
 ```
 
@@ -649,27 +649,27 @@ newest arm is repeated, or dropped while another arm remains.
 
 ```fren
 expect coverage_separate(
-    symbols: Symbols,
-    context: Context,
+    symb: Symb,
+    ctx: Ctx,
     scrutinee: Typing,
     earlier: Snoc<ArmF<Typing>>,
     last: ArmF<Typing>,
     ty: Ty,
 ) {
     let typed? := rule?(
-        symbols,
-        context,
+        symb,
+        ctx,
         ExprF::Match(scrutinee, Extend(earlier, last)),
         ty
     )
     expect repeated: not typed?
         or rule?(
-            symbols,
-            context,
+            symb,
+            ctx,
             ExprF::Match(scrutinee, Extend(Extend(earlier, last), last)),
             ty
         )
-    expect omitted: not typed? or earlier = Empty or rule?(symbols, context, ExprF::Match(scrutinee, earlier), ty)
+    expect omitted: not typed? or earlier = Empty or rule?(symb, ctx, ExprF::Match(scrutinee, earlier), ty)
 }
 ```
 
@@ -709,43 +709,43 @@ check.
 <!-- status: definition -->
 
 ```fren
-pub enum Declaration { Function(ItemId, Snoc<Row>), Condition(Context, Snoc<Row>) }
+pub enum Decl { Function(ItemId, Snoc<Row>), Condition(Ctx, Snoc<Row>) }
 
-pub fn declaration_ok?(symbols: Symbols, declaration: Declaration) := match declaration {
-    Declaration::Function(item, body) => match entry(symbols, item) {
-        Some(ItemKind::Function(signature)) =>
-            derivation?(symbols, body, signature.parameters, signature.result),
+pub fn decl_ok?(symb: Symb, decl: Decl) := match decl {
+    Decl::Function(item, body) => match entry(symb, item) {
+        Some(ItemKind::Function(sig)) =>
+            derivation?(symb, body, sig.params, sig.result),
         _ => false,
     },
-    Declaration::Condition(parameters, body) => derivation?(symbols, body, parameters, Ty::Boolean),
+    Decl::Condition(params, body) => derivation?(symb, body, params, Ty::Boolean),
 }
 
-pub fn declarations_ok?(symbols: Symbols, declarations: Snoc<Declaration>) := match declarations {
+pub fn decls_ok?(symb: Symb, decls: Snoc<Decl>) := match decls {
     Empty => true,
-    Extend(earlier, declaration) =>
-        declaration_ok?(symbols, declaration) and declarations_ok?(symbols, earlier),
+    Extend(earlier, decl) =>
+        decl_ok?(symb, decl) and decls_ok?(symb, earlier),
 }
 
-pub fn bodies_of(declarations: Snoc<Declaration>, item: ItemId): Int := match declarations {
+pub fn bodies_of(decls: Snoc<Decl>, item: ItemId): Int := match decls {
     Empty => 0,
-    Extend(earlier, declaration) =>
-        bodies_of(earlier, item) + match declaration {
-            Declaration::Function(name, _) => if name = item then 1 else 0,
-            Declaration::Condition(_, _) => 0,
+    Extend(earlier, decl) =>
+        bodies_of(earlier, item) + match decl {
+            Decl::Function(name, _) => if name = item then 1 else 0,
+            Decl::Condition(_, _) => 0,
         },
 }
 
-pub fn functions_defined?(bindings: Symbols, declarations: Snoc<Declaration>) := match bindings {
+pub fn functions_defined?(bindings: Symb, decls: Snoc<Decl>) := match bindings {
     Empty => true,
     Extend(earlier, binding) =>
-        (not binding.kind is ItemKind::Function(_) or bodies_of(declarations, binding.item) = 1)
-        and functions_defined?(earlier, declarations),
+        (not binding.kind is ItemKind::Function(_) or bodies_of(decls, binding.item) = 1)
+        and functions_defined?(earlier, decls),
 }
 
-pub fn program_ok?(symbols: Symbols, declarations: Snoc<Declaration>) :=
-    symbols_ok?(symbols)
-    and declarations_ok?(symbols, declarations)
-    and functions_defined?(symbols, declarations)
+pub fn prog_ok?(symb: Symb, decls: Snoc<Decl>) :=
+    symb_ok?(symb)
+    and decls_ok?(symb, decls)
+    and functions_defined?(symb, decls)
 ```
 
 ## Properties of typing
@@ -771,8 +771,8 @@ expect operator_unique(unary_op: UnaryOp, op: BinaryOp, left: Ty, right: Ty, a: 
     expect binary: when binary_type?(op, left, right, a) and binary_type?(op, left, right, b), a = b
 }
 
-expect layer_unique(symbols: Symbols, context: Context, form: ExprF<Typing>, a: Ty, b: Ty) {
-    expect unique: when rule?(symbols, context, form, a) and rule?(symbols, context, form, b), a = b
+expect layer_unique(symb: Symb, ctx: Ctx, form: ExprF<Typing>, a: Ty, b: Ty) {
+    expect unique: when rule?(symb, ctx, form, a) and rule?(symb, ctx, form, b), a = b
 }
 
 pub fn unary_result(op: UnaryOp, operand: Ty): Option<Ty> := match op, operand {
@@ -789,55 +789,55 @@ pub fn binary_result(op: BinaryOp, left: Ty, right: Ty): Option<Ty> :=
 -- The type `ty`, provided that the premises `holds?` hold.
 pub fn provided(holds?, ty: Option<Ty>): Option<Ty> := if holds? then ty else None
 
-pub fn infer_layer(symbols: Symbols, context: Context, form: ExprF<Typing>): Option<Ty> :=
+pub fn infer_layer(symb: Symb, ctx: Ctx, form: ExprF<Typing>): Option<Ty> :=
     match form {
         ExprF::BooleanLiteral(_) => Some(Ty::Boolean),
         ExprF::IntegerLiteral(_) => Some(Ty::Integer),
-        ExprF::Local(level) => lookup(context, level),
-        ExprF::Constructor(item) => match entry(symbols, item) {
+        ExprF::Local(level) => lookup(ctx, level),
+        ExprF::Constructor(item) => match entry(symb, item) {
             Some(ItemKind::Constructor(owner)) => Some(Ty::Nominal(owner)),
             _ => None,
         },
         ExprF::Unary(op, operand) =>
-            provided(operand.context = context, unary_result(op, operand.ty)),
+            provided(operand.ctx = ctx, unary_result(op, operand.ty)),
         ExprF::Binary(op, left, right) => provided(
-            left.context = context and right.context = context,
+            left.ctx = ctx and right.ctx = ctx,
             binary_result(op, left.ty, right.ty)
         ),
-        ExprF::Call(item, args) => match entry(symbols, item) {
-            Some(ItemKind::Function(signature)) => provided(
-                in_context?(args, context) and argument_types?(args, signature.parameters),
-                Some(signature.result)
+        ExprF::Call(item, args) => match entry(symb, item) {
+            Some(ItemKind::Function(sig)) => provided(
+                in_context?(args, ctx) and argument_types?(args, sig.params),
+                Some(sig.result)
             ),
             _ => None,
         },
         ExprF::Let(annotation, value, body) => provided(
-            value.context = context
+            value.ctx = ctx
                 and annotation_matches?(annotation, value.ty)
-                and body.context = Extend(context, value.ty),
+                and body.ctx = Extend(ctx, value.ty),
             Some(body.ty)
         ),
         ExprF::If(condition, then_branch, else_branch) => provided(
-            condition.context = context
+            condition.ctx = ctx
                 and condition.ty = Ty::Boolean
-                and then_branch.context = context
-                and else_branch.context = context
+                and then_branch.ctx = ctx
+                and else_branch.ctx = ctx
                 and then_branch.ty = else_branch.ty,
             Some(then_branch.ty)
         ),
         ExprF::Match(scrutinee, arms) => match scrutinee.ty, arms {
             Ty::Nominal(owner), Extend(_, last) => provided(
-                scrutinee.context = context
-                    and arm_bodies?(arms, context, last.body.ty)
-                    and arm_patterns?(symbols, arms, owner),
+                scrutinee.ctx = ctx
+                    and arm_bodies?(arms, ctx, last.body.ty)
+                    and arm_patterns?(symb, arms, owner),
                 Some(last.body.ty)
             ),
             _, _ => None,
         },
     }
 
-expect layer_inference(symbols: Symbols, context: Context, form: ExprF<Typing>, ty: Ty) {
-    expect exact: rule?(symbols, context, form, ty) iff infer_layer(symbols, context, form) = Some(ty)
+expect layer_inference(symb: Symb, ctx: Ctx, form: ExprF<Typing>, ty: Ty) {
+    expect exact: rule?(symb, ctx, form, ty) iff infer_layer(symb, ctx, form) = Some(ty)
 }
 ```
 
@@ -851,9 +851,9 @@ typing's type is well formed and `Σ; Γ ⊢ l ▷ τ`, then `Σ ⊢ τ ok`.
 <!-- status: lean Spec.Language.Types.layer_regular -->
 
 ```fren
-pub fn typings_ok?(symbols: Symbols, typings: Snoc<Typing>) := match typings {
+pub fn typings_ok?(symb: Symb, typings: Snoc<Typing>) := match typings {
     Empty => true,
-    Extend(earlier, typing) => type_ok?(symbols, typing.ty) and typings_ok?(symbols, earlier),
+    Extend(earlier, typing) => ty_ok?(symb, typing.ty) and typings_ok?(symb, earlier),
 }
 
 pub fn arm_typings(arms: Snoc<ArmF<Typing>>): Snoc<Typing> := match arms {
@@ -872,7 +872,7 @@ pub fn children(form: ExprF<Typing>): Snoc<Typing> := match form {
     _ => Empty,
 }
 
-pub fn children_ok?(symbols: Symbols, form: ExprF<Typing>) := typings_ok?(symbols, children(form))
+pub fn children_ok?(symb: Symb, form: ExprF<Typing>) := typings_ok?(symb, children(form))
 ```
 
 r[types.derivation.regularity]
@@ -898,7 +898,7 @@ and contexts, row by row, have the same types row by row.
 pub fn same_shape?(left: Snoc<Row>, right: Snoc<Row>) := match left, right {
     Empty, Empty => true,
     Extend(left_earlier, l), Extend(right_earlier, r) =>
-        l.form = r.form and l.context = r.context and same_shape?(left_earlier, right_earlier),
+        l.form = r.form and l.ctx = r.ctx and same_shape?(left_earlier, right_earlier),
     _, _ => false,
 }
 ```
@@ -912,15 +912,15 @@ one, provided `0 ≤ n ≤ |Γ|`.
 ```fren
 pub fn shift(level: Int, cutoff: Int): Int := if level >= cutoff then level + 1 else level
 
-pub fn insert_type(context: Context, cutoff: Int, extra: Ty): Context := match context {
+pub fn insert_type(ctx: Ctx, cutoff: Int, extra: Ty): Ctx := match ctx {
     Empty => if cutoff = 0 then Extend(Empty, extra) else Empty,
     Extend(earlier, ty) =>
-        if cutoff = length(earlier) + 1 then Extend(context, extra)
+        if cutoff = length(earlier) + 1 then Extend(ctx, extra)
         else Extend(insert_type(earlier, cutoff, extra), ty),
 }
 
 pub fn weaken_typing(typing: Typing, cutoff: Int, extra: Ty): Typing := Typing {
-    context := insert_type(typing.context, cutoff, extra),
+    ctx := insert_type(typing.ctx, cutoff, extra),
     ty := typing.ty,
 }
 
@@ -992,7 +992,7 @@ pub fn weaken(rows: Snoc<Row>, cutoff: Int, extra: Ty): Snoc<Row> := match rows 
         weaken(earlier, cutoff, extra),
         Row {
             form := shift_form(row.form, cutoff),
-            context := insert_type(row.context, cutoff, extra),
+            ctx := insert_type(row.ctx, cutoff, extra),
             ty := row.ty,
         }
     ),
@@ -1000,7 +1000,7 @@ pub fn weaken(rows: Snoc<Row>, cutoff: Int, extra: Ty): Snoc<Row> := match rows 
 
 pub fn contexts_reach?(rows: Snoc<Row>, cutoff: Int) := match rows {
     Empty => true,
-    Extend(earlier, row) => 0 <= cutoff <= length(row.context) and contexts_reach?(earlier, cutoff),
+    Extend(earlier, row) => 0 <= cutoff <= length(row.ctx) and contexts_reach?(earlier, cutoff),
 }
 ```
 
@@ -1177,7 +1177,7 @@ pub const F: ItemId := ["M", "f"]
 
 pub fn bind(item: ItemId, kind: ItemKind): Entry := Entry { item, kind }
 
-pub const EXAMPLE_SYMBOLS: Symbols := Extend(
+pub const EXAMPLE_SYMB: Symb := Extend(
     four(
         bind(LIGHT, ItemKind::Enumeration(two(LIGHT_RED, LIGHT_GREEN))),
         bind(LIGHT_RED, ItemKind::Constructor(LIGHT)),
@@ -1187,20 +1187,20 @@ pub const EXAMPLE_SYMBOLS: Symbols := Extend(
     bind(SIGNAL_RED, ItemKind::Constructor(SIGNAL))
 )
 
-pub const SYMBOLS: Symbols := Extend(
-    EXAMPLE_SYMBOLS,
+pub const SYMB: Symb := Extend(
+    EXAMPLE_SYMB,
     bind(
         F,
         ItemKind::Function(
-            Signature {
-                parameters := one(Ty::Integer),
+            Sig {
+                params := one(Ty::Integer),
                 result := Ty::Integer,
             }
         )
     )
 )
 
-pub fn row(form: Form, context: Context, ty: Ty): Row := Row { form, context, ty }
+pub fn row(form: Form, ctx: Ctx, ty: Ty): Row := Row { form, ctx, ty }
 ```
 
 `Σ; ·, Boolean, Integer ⊢ #0 : Boolean`: level 0 is the oldest entry.
@@ -1243,17 +1243,17 @@ context `·, Integer`, is well typed, with this table for the body:
 | 2 | `row 0 + row 1` | `·, Integer` | Integer |
 
 ```fren
-pub const BOOLEAN_INTEGER: Context := two(Ty::Boolean, Ty::Integer)
+pub const BOOLEAN_INTEGER: Ctx := two(Ty::Boolean, Ty::Integer)
 
 pub const OLDEST_LEVEL_EXAMPLE: Bool := derivation?(
-    SYMBOLS,
+    SYMB,
     one(row(ExprF::Local(0), BOOLEAN_INTEGER, Ty::Boolean)),
     BOOLEAN_INTEGER,
     Ty::Boolean
 )
 
 pub const LET_EXAMPLE: Bool := derivation?(
-    SYMBOLS,
+    SYMB,
     three(
         row(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
         row(ExprF::Local(0), one(Ty::Integer), Ty::Integer),
@@ -1264,7 +1264,7 @@ pub const LET_EXAMPLE: Bool := derivation?(
 )
 
 pub const MATCH_EXAMPLE: Bool := derivation?(
-    SYMBOLS,
+    SYMB,
     four(
         row(ExprF::Constructor(LIGHT_RED), Empty, Ty::Nominal(LIGHT)),
         row(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
@@ -1286,7 +1286,7 @@ pub const MATCH_EXAMPLE: Bool := derivation?(
 )
 
 pub const CALL_EXAMPLE: Bool := derivation?(
-    SYMBOLS,
+    SYMB,
     two(
         row(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
         row(ExprF::Call(F, one(0)), Empty, Ty::Integer)
@@ -1295,10 +1295,10 @@ pub const CALL_EXAMPLE: Bool := derivation?(
     Ty::Integer
 )
 
-pub const PROGRAM_EXAMPLE: Bool := program_ok?(
-    SYMBOLS,
+pub const PROGRAM_EXAMPLE: Bool := prog_ok?(
+    SYMB,
     one(
-        Declaration::Function(
+        Decl::Function(
             F,
             three(
                 row(ExprF::Local(0), one(Ty::Integer), Ty::Integer),
@@ -1325,8 +1325,8 @@ of a function with one parameter.
 
 ```fren
 expect rejected(
-    symbols: Symbols,
-    context: Context,
+    symb: Symb,
+    ctx: Ctx,
     item: ItemId,
     owner: ItemId,
     other: ItemId,
@@ -1335,28 +1335,28 @@ expect rejected(
     third: Typing,
     ty: Ty,
 ) {
-    expect out_of_scope: not rule?(symbols, Empty, ExprF::Local(0), ty)
+    expect out_of_scope: not rule?(symb, Empty, ExprF::Local(0), ty)
     expect branches: when second.ty = Ty::Integer and third.ty = Ty::Boolean,
-        not rule?(symbols, context, ExprF::If(first, second, third), ty)
+        not rule?(symb, ctx, ExprF::If(first, second, third), ty)
     expect foreign_pattern: when first.ty = Ty::Nominal(owner)
-        and entry(symbols, item) = Some(ItemKind::Constructor(other))
+        and entry(symb, item) = Some(ItemKind::Constructor(other))
         and other != owner,
         not rule?(
-            symbols,
-            context,
+            symb,
+            ctx,
             ExprF::Match(first, one(ArmF { constructor := item, body := second })),
             ty
         )
-    expect no_arms: not rule?(symbols, context, ExprF::Match(first, Empty), ty)
-    expect extra_argument: when entry(symbols, item) = Some(
+    expect no_arms: not rule?(symb, ctx, ExprF::Match(first, Empty), ty)
+    expect extra_argument: when entry(symb, item) = Some(
         ItemKind::Function(
-            Signature {
-                parameters := one(third.ty),
+            Sig {
+                params := one(third.ty),
                 result := ty,
             }
         )
     ),
-        not rule?(symbols, context, ExprF::Call(item, two(first, second)), ty)
+        not rule?(symb, ctx, ExprF::Call(item, two(first, second)), ty)
 }
 ```
 

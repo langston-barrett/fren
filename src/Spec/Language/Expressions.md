@@ -3,7 +3,7 @@
 A well-typed expression whose partial operations are within their domains
 denotes a value in an interpretation of its declarations and an assignment
 to its free locals. [Core typing](Types.md)
-defines the shared `Ty`, `Symbols`, `Context` and expression forms.
+defines the shared `Ty`, `Symb`, `Ctx` and expression forms.
 This chapter specifies how their meanings and source obligations compose.
 The domain is Booleans, integers, payload-free nominal enums, locals, named
 calls, unary and binary operators, lets, conditionals and constructor matches.
@@ -26,7 +26,7 @@ constructor of its canonical enum owner; `value_type` gives its type.
 pub mod spec
 pub mod spec::expressions
 
-use spec::types::{ArmF, BinaryOp, ExprF, ItemId, ItemKind, Snoc, Symbols, Ty, UnaryOp, entry}
+use spec::types::{ArmF, BinaryOp, ExprF, ItemId, ItemKind, Snoc, Symb, Ty, UnaryOp, entry}
 
 pub enum Value { Boolean(Bool), Integer(Int), Nominal(ItemId, ItemId) }
 
@@ -36,9 +36,9 @@ pub fn value_type(value: Value): Ty := match value {
     Value::Nominal(owner, _) => Ty::Nominal(owner),
 }
 
-pub fn value_valid?(symbols: Symbols, value: Value) := match value {
+pub fn value_valid?(symb: Symb, value: Value) := match value {
     Value::Nominal(owner, item) =>
-        entry(symbols, item) = Option::Some(ItemKind::Constructor(owner)),
+        entry(symb, item) = Option::Some(ItemKind::Constructor(owner)),
     _ => true,
 }
 ```

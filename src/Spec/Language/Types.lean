@@ -82,7 +82,7 @@ theorem rule_unique (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF Typ
 /-- Every local of a valid table is in scope in its row's context. -/
 theorem table_scoped (symbols : Snoc Entry) (rows : Snoc Row) (position level : Int) (r : Row)
     (valid : rows_valid? symbols rows = true) (found : lookup _ rows position = some r)
-    (form : r.form = .Local level) : 0 ≤ level ∧ level < length _ r.context := by
+    (form : r.form = .Local level) : 0 ≤ level ∧ level < length _ r.ctx := by
   induction rows with
   | Empty => simp [lookup] at found
   | Extend earlier last ih =>
@@ -205,23 +205,23 @@ theorem lookup_shift (context : Snoc Ty) (cutoff : Int) (extra : Ty) (h0 : 0 ≤
 /-! ## Regularity -/
 
 theorem lookup_ok (symbols : Snoc Entry) (context : Snoc Ty) (level : Int) (ty : Ty)
-    (hc : context_ok? symbols context = true) (h : lookup _ context level = some ty) :
-    type_ok? symbols ty = true := by
+    (hc : ctx_ok? symbols context = true) (h : lookup _ context level = some ty) :
+    ty_ok? symbols ty = true := by
   induction context with
   | Empty => simp [lookup] at h
   | Extend earlier last ih =>
-    simp only [context_ok?, decide_eq_true_eq] at hc
+    simp only [ctx_ok?, decide_eq_true_eq] at hc
     simp only [lookup] at h
     split at h
     · have := Option.some.inj h; subst this
       have h1 := hc.1
-      cases last <;> simp_all [type_ok?, fren_spec]
+      cases last <;> simp_all [ty_ok?, fren_spec]
     · exact ih hc.2 h
 
 theorem entry_kind_ok (symbols bindings : Snoc Entry) (item : Fren.Seq String) (kind : ItemKind)
     (hb : bindings_ok? symbols bindings = true) (h : entry bindings item = some kind) :
-    (∀ owner, kind = .Constructor owner → type_ok? symbols (.Nominal owner) = true) ∧
-    (∀ signature, kind = .Function signature → type_ok? symbols signature.result = true) := by
+    (∀ owner, kind = .Constructor owner → ty_ok? symbols (.Nominal owner) = true) ∧
+    (∀ signature, kind = .Function signature → ty_ok? symbols signature.result = true) := by
   induction bindings with
   | Empty => simp [entry] at h
   | Extend earlier last ih =>
@@ -234,7 +234,7 @@ theorem entry_kind_ok (symbols bindings : Snoc Entry) (item : Fren.Seq String) (
       constructor
       · intro owner hk
         simp only at hk; subst hk
-        simp only [type_ok?]
+        simp only [ty_ok?]
         cases he : entry symbols owner with
         | none => simp [he, fren_spec] at h2
         | some k => cases k <;> simp [he, fren_spec] at h2 ⊢
@@ -243,30 +243,30 @@ theorem entry_kind_ok (symbols bindings : Snoc Entry) (item : Fren.Seq String) (
         simp [fren_spec] at h2
         have h3 := h2.2
         generalize signature.result = t at h3 ⊢
-        cases t <;> simp [type_ok?, fren_spec] at h3 ⊢
+        cases t <;> simp [ty_ok?, fren_spec] at h3 ⊢
         exact h3
     · exact ih hb.2 h
 
 /-- A constructor's owner, and a function's result, are well formed. -/
-theorem entry_types_ok (symbols : Snoc Entry) (item : Fren.Seq String) (hs : symbols_ok? symbols = true) :
-    (∀ owner, entry symbols item = some (.Constructor owner) → type_ok? symbols (.Nominal owner) = true) ∧
+theorem entry_types_ok (symbols : Snoc Entry) (item : Fren.Seq String) (hs : symb_ok? symbols = true) :
+    (∀ owner, entry symbols item = some (.Constructor owner) → ty_ok? symbols (.Nominal owner) = true) ∧
     (∀ signature, entry symbols item = some (.Function signature) →
-      type_ok? symbols signature.result = true) := by
-  have hs' : bindings_ok? symbols symbols = true := by simpa [symbols_ok?] using hs
+      ty_ok? symbols signature.result = true) := by
+  have hs' : bindings_ok? symbols symbols = true := by simpa [symb_ok?] using hs
   exact ⟨fun owner h => (entry_kind_ok symbols symbols item _ hs' h).1 owner rfl,
     fun signature h => (entry_kind_ok symbols symbols item _ hs' h).2 signature rfl⟩
 
 theorem typings_ok_extend (symbols : Snoc Entry) (earlier : Snoc Typing) (t : Typing) :
     typings_ok? symbols (.Extend earlier t) = true ↔
-      type_ok? symbols t.ty = true ∧ typings_ok? symbols earlier = true := by
+      ty_ok? symbols t.ty = true ∧ typings_ok? symbols earlier = true := by
   rcases t with ⟨c, ty⟩
-  cases ty <;> simp [typings_ok?, type_ok?, fren_spec]
+  cases ty <;> simp [typings_ok?, ty_ok?, fren_spec]
 
 /-- One layer: a typed layer over well-formed children has a well-formed type. -/
 theorem layer_regular (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF Typing) (ty : Ty)
-    (hs : symbols_ok? symbols = true) (hc : context_ok? symbols context = true)
+    (hs : symb_ok? symbols = true) (hc : ctx_ok? symbols context = true)
     (hch : children_ok? symbols form = true) (h : rule? symbols context form ty = true) :
-    type_ok? symbols ty = true := by
+    ty_ok? symbols ty = true := by
   simp only [children_ok?, decide_eq_true_eq] at hch
   cases form with
   | BooleanLiteral _ => simp [rule?, boolean_rule?] at h; subst h; rfl
@@ -286,7 +286,7 @@ theorem layer_regular (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF T
       | _ => simp [rule?, constructor_rule?, he, fren_spec] at h
   | Unary op operand =>
     cases op <;> simp [rule?, unary_rule?, unary_type?, fren_spec] at h <;>
-      simp [h, type_ok?, fren_spec]
+      simp [h, ty_ok?, fren_spec]
   | Binary op left right =>
     cases op <;> simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?,
       boolean_binary?, fren_spec] at h <;> (rw [h.2.2]; rfl)
@@ -330,7 +330,7 @@ theorem typing_at_row (rows : Snoc Row) (position : Int) (t : Typing)
     exact ⟨r, rfl, by rw [← h]⟩
 
 theorem annotate_arguments_ok (symbols : Snoc Entry) (rows : Snoc Row)
-    (child : ∀ p t, typing_at rows p = some t → type_ok? symbols t.ty = true)
+    (child : ∀ p t, typing_at rows p = some t → ty_ok? symbols t.ty = true)
     (args : Snoc Int) (typed : Snoc Typing) (h : annotate_arguments rows args = some typed) :
     typings_ok? symbols typed = true := by
   induction args generalizing typed with
@@ -348,7 +348,7 @@ theorem annotate_arguments_ok (symbols : Snoc Entry) (rows : Snoc Row)
         exact (typings_ok_extend _ _ _).2 ⟨child arg t ht, ih te ha⟩
 
 theorem annotate_arms_ok (symbols : Snoc Entry) (rows : Snoc Row)
-    (child : ∀ p t, typing_at rows p = some t → type_ok? symbols t.ty = true)
+    (child : ∀ p t, typing_at rows p = some t → ty_ok? symbols t.ty = true)
     (arms : Snoc (ArmF Int)) (typed : Snoc (ArmF Typing)) (h : annotate_arms rows arms = some typed) :
     typings_ok? symbols (arm_typings typed) = true := by
   induction arms generalizing typed with
@@ -368,10 +368,10 @@ theorem annotate_arms_ok (symbols : Snoc Entry) (rows : Snoc Row)
 
 /-- Every child typing that a table supplies has a well-formed type. -/
 theorem annotate_children_ok (symbols : Snoc Entry) (rows : Snoc Row)
-    (ok : ∀ p r, lookup _ rows p = some r → type_ok? symbols r.ty = true)
+    (ok : ∀ p r, lookup _ rows p = some r → ty_ok? symbols r.ty = true)
     (form : ExprF Int) (typed : ExprF Typing) (h : annotate rows form = some typed) :
     children_ok? symbols typed = true := by
-  have child : ∀ p t, typing_at rows p = some t → type_ok? symbols t.ty = true := by
+  have child : ∀ p t, typing_at rows p = some t → ty_ok? symbols t.ty = true := by
     intro p t ht
     obtain ⟨r, hr, hty⟩ := typing_at_row rows p t ht
     rw [hty]; exact ok p r hr
@@ -445,15 +445,15 @@ theorem annotate_children_ok (symbols : Snoc Entry) (rows : Snoc Row)
   | _ => simp [annotate, fren_spec] at h; subst h; rfl
 
 theorem context_ok_extend (symbols : Snoc Entry) (context : Snoc Ty) (t : Ty) :
-    context_ok? symbols (.Extend context t) = true ↔
-      type_ok? symbols t = true ∧ context_ok? symbols context = true := by
-  cases t <;> simp [context_ok?, type_ok?, fren_spec]
+    ctx_ok? symbols (.Extend context t) = true ↔
+      ty_ok? symbols t = true ∧ ctx_ok? symbols context = true := by
+  cases t <;> simp [ctx_ok?, ty_ok?, fren_spec]
 
 /-- Over a well-formed environment, every row of a valid table has a
 well-formed type. -/
 theorem table_regular (symbols : Snoc Entry) (rows : Snoc Row)
-    (hs : symbols_ok? symbols = true) (hv : rows_valid? symbols rows = true) :
-    ∀ p r, lookup _ rows p = some r → type_ok? symbols r.ty = true := by
+    (hs : symb_ok? symbols = true) (hv : rows_valid? symbols rows = true) :
+    ∀ p r, lookup _ rows p = some r → ty_ok? symbols r.ty = true := by
   induction rows with
   | Empty => intro p r h; simp [lookup] at h
   | Extend earlier last ih =>
@@ -468,18 +468,18 @@ theorem table_regular (symbols : Snoc Entry) (rows : Snoc Row)
       | none => simp [ha] at hl
       | some form =>
         simp only [ha] at hl
-        exact layer_regular symbols last.context form last.ty hs hv.1.2
+        exact layer_regular symbols last.ctx form last.ty hs hv.1.2
           (annotate_children_ok symbols earlier ok last.form form ha) hl
     · exact ok p r h
 
 /-- If `derivation?(Σ, rows, Γ, τ)`, then τ is well formed. -/
 theorem judgment_regular (symbols : Snoc Entry) (rows : Snoc Row) (context : Snoc Ty) (ty : Ty)
-    (h : derivation? symbols rows context ty = true) : type_ok? symbols ty = true := by
+    (h : derivation? symbols rows context ty = true) : ty_ok? symbols ty = true := by
   cases rows with
   | Empty => simp [derivation?, fren_spec] at h
   | Extend earlier root =>
     simp only [derivation?, decide_eq_true_eq] at h
-    have hs : symbols_ok? symbols = true := by simp only [symbols_ok?, decide_eq_true_eq]; exact h.1.1.1.1
+    have hs : symb_ok? symbols = true := by simp only [symb_ok?, decide_eq_true_eq]; exact h.1.1.1.1
     have hroot := h.2
     simp [fren_spec] at hroot
     have := table_regular symbols _ hs h.1.1.2 (length _ earlier) root (by simp [lookup])
@@ -558,7 +558,7 @@ theorem layer_weakening (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF
     | some kind =>
       cases kind with
       | Function signature =>
-        have ha := argument_types_weaken args signature.parameters cutoff extra
+        have ha := argument_types_weaken args signature.params cutoff extra
         simp [rule?, call_rule?, he, fren_spec] at h ⊢
         exact ⟨⟨h.1.1, hi h.1.2⟩, ha h.2⟩
       | _ => simp [rule?, call_rule?, he, fren_spec] at h
@@ -582,7 +582,7 @@ theorem layer_weakening (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF
 
 /-- A row with σ inserted at level `cutoff` of its context and its local shifted. -/
 def weakenRow (cutoff : Int) (extra : Ty) (r : Row) : Row :=
-  { form := shift_form r.form cutoff, context := insert_type r.context cutoff extra, ty := r.ty }
+  { form := shift_form r.form cutoff, ctx := insert_type r.ctx cutoff extra, ty := r.ty }
 
 theorem length_weaken (rows : Snoc Row) (cutoff : Int) (extra : Ty) :
     length _ (weaken rows cutoff extra) = length _ rows := by
@@ -648,9 +648,9 @@ theorem annotate_weaken (rows : Snoc Row) (cutoff : Int) (extra : Ty) (form : Ex
   | _ => simp [annotate, weaken_layer, fren_spec]
 
 theorem context_ok_insert (symbols : Snoc Entry) (context : Snoc Ty) (cutoff : Int) (extra : Ty)
-    (hx : type_ok? symbols extra = true) (hc : context_ok? symbols context = true)
+    (hx : ty_ok? symbols extra = true) (hc : ctx_ok? symbols context = true)
     (h0 : 0 ≤ cutoff) (hn : cutoff ≤ length _ context) :
-    context_ok? symbols (insert_type context cutoff extra) = true := by
+    ctx_ok? symbols (insert_type context cutoff extra) = true := by
   induction context with
   | Empty =>
     simp [length] at hn
@@ -670,7 +670,7 @@ theorem context_ok_insert (symbols : Snoc Entry) (context : Snoc Ty) (cutoff : I
 /-- Weakening a valid table whose row contexts reach the cutoff, by a
 well-formed type, keeps it valid. -/
 theorem table_weakening (symbols : Snoc Entry) (rows : Snoc Row) (cutoff : Int) (extra : Ty)
-    (hx : type_ok? symbols extra = true) (h0 : 0 ≤ cutoff) (hv : rows_valid? symbols rows = true)
+    (hx : ty_ok? symbols extra = true) (h0 : 0 ≤ cutoff) (hv : rows_valid? symbols rows = true)
     (hr : contexts_reach? rows cutoff = true) :
     rows_valid? symbols (weaken rows cutoff extra) = true := by
   induction rows with
@@ -679,7 +679,7 @@ theorem table_weakening (symbols : Snoc Entry) (rows : Snoc Row) (cutoff : Int) 
     simp only [rows_valid?, decide_eq_true_eq] at hv
     simp only [contexts_reach?, decide_eq_true_eq] at hr
     simp only [weaken, rows_valid?, decide_eq_true_eq]
-    refine ⟨⟨ih hv.1.1 hr.2, context_ok_insert symbols last.context cutoff extra hx hv.1.2 h0 hr.1.2⟩, ?_⟩
+    refine ⟨⟨ih hv.1.1 hr.2, context_ok_insert symbols last.ctx cutoff extra hx hv.1.2 h0 hr.1.2⟩, ?_⟩
     have hl := hv.2
     have ha := annotate_weaken earlier cutoff extra last.form
     cases hf : annotate earlier last.form with
@@ -687,7 +687,7 @@ theorem table_weakening (symbols : Snoc Entry) (rows : Snoc Row) (cutoff : Int) 
     | some form =>
       simp only [hf] at hl ha
       simp only [ha, Option.map]
-      exact layer_weakening symbols last.context form last.ty cutoff extra h0 hr.1.2 hl
+      exact layer_weakening symbols last.ctx form last.ty cutoff extra h0 hr.1.2 hl
 
 theorem insert_at_end (context : Snoc Ty) (extra : Ty) :
     insert_type context (length _ context) extra = .Extend context extra := by
@@ -730,7 +730,7 @@ theorem rows_extend_reach (rows : Snoc Row) (base : Snoc Ty) (h : rows_extend? r
   | Extend earlier row ih =>
     simp only [rows_extend?, decide_eq_true_eq] at h
     simp only [contexts_reach?, decide_eq_true_eq]
-    have := extends_length row.context base h.1
+    have := extends_length row.ctx base h.1
     exact ⟨⟨by omega, by exact_mod_cast this⟩, ih h.2⟩
 
 theorem rows_extend_weaken (rows : Snoc Row) (base : Snoc Ty) (extra : Ty)
@@ -741,12 +741,12 @@ theorem rows_extend_weaken (rows : Snoc Row) (base : Snoc Ty) (extra : Ty)
   | Extend earlier row ih =>
     simp only [rows_extend?, decide_eq_true_eq] at h
     simp only [weaken, rows_extend?, decide_eq_true_eq]
-    exact ⟨extends_insert row.context base extra h.1, ih h.2⟩
+    exact ⟨extends_insert row.ctx base extra h.1, ih h.2⟩
 
 /-- Weakening: if `derivation?(Σ, rows, Γ, τ)` and σ is well formed, then
 `derivation?(Σ, weaken(rows, |Γ|, σ), (Γ, σ), τ)`. -/
 theorem judgment_weakening (symbols : Snoc Entry) (rows : Snoc Row) (context : Snoc Ty) (ty extra : Ty)
-    (hx : type_ok? symbols extra = true) (h : derivation? symbols rows context ty = true) :
+    (hx : ty_ok? symbols extra = true) (h : derivation? symbols rows context ty = true) :
     derivation? symbols (weaken rows (length _ context) extra) (.Extend context extra) ty = true := by
   cases rows with
   | Empty => simp [derivation?, fren_spec] at h
@@ -775,7 +775,7 @@ abbrev t3 {α : Type} (a b c : α) : Snoc α := .Extend (t2 a b) c
 abbrev t4 {α : Type} (a b c d : α) : Snoc α := .Extend (t3 a b c) d
 
 /-- Typed in the empty context at `ty` against the example environment. -/
-abbrev typed (rows : Snoc Row) (ty : Ty) : Bool := derivation? SYMBOLS rows .Empty ty
+abbrev typed (rows : Snoc Row) (ty : Ty) : Bool := derivation? SYMB rows .Empty ty
 
 abbrev int (n : Int) : Row := row (.IntegerLiteral n) .Empty .Integer
 abbrev bool (b : Bool) : Row := row (.BooleanLiteral b) .Empty .Boolean
@@ -790,7 +790,7 @@ example : typed (t1 (bool true)) .Boolean = true := by decide
 -- This table, for · ⊢ #0, is rejected: level 0 has no entry.
 example : typed (t1 (row (.Local 0) .Empty .Integer)) .Integer = false := by decide
 -- A table for ·, Boolean, Integer ⊢ #1 : Integer is valid.
-example : derivation? SYMBOLS (t1 (row (.Local 1) BOOLEAN_INTEGER .Integer))
+example : derivation? SYMB (t1 (row (.Local 1) BOOLEAN_INTEGER .Integer))
     BOOLEAN_INTEGER .Integer = true := by decide
 -- A table for ⊢ -1 : Integer is valid; one for -true at Integer is rejected.
 example : typed (t2 (int 1) (row (.Unary .Neg 0) .Empty .Integer)) .Integer = true := by decide
@@ -820,7 +820,7 @@ example : typed (t3 (int 1) (row (.Local 0) (.Extend .Empty .Integer) .Integer)
 example : typed (t3 (int 1) (row (.Local 0) (.Extend .Empty .Integer) .Integer)
     (row (.Let (some .Boolean) 0 1) .Empty .Integer)) .Integer = false := by decide
 -- A table for ·, Boolean ⊢ let 1 in #1 : Integer is valid: its binder has level 1.
-example : derivation? SYMBOLS
+example : derivation? SYMB
     (t3 (row (.IntegerLiteral 1) (.Extend .Empty .Boolean) .Integer)
       (row (.Local 1) BOOLEAN_INTEGER .Integer)
       (row (.Let none 0 1) (.Extend .Empty .Boolean) .Integer))
@@ -846,9 +846,9 @@ example : typed (t1 (row (.Constructor F) .Empty .Integer)) .Integer = false := 
 -- This table, typing a constructor at Integer, is rejected.
 example : typed (t1 (row (.Constructor LIGHT_RED) .Empty .Integer)) .Integer = false := by decide
 -- This environment, which binds M::f twice, is ill formed.
-example : symbols_ok? (.Extend SYMBOLS (bind F (.Constructor LIGHT))) = false := by decide
+example : symb_ok? (.Extend SYMB (bind F (.Constructor LIGHT))) = false := by decide
 -- This environment, whose constructor's owner is unbound, is ill formed.
-example : symbols_ok? (.Extend .Empty (bind LIGHT_RED (.Constructor LIGHT))) = false := by decide
+example : symb_ok? (.Extend .Empty (bind LIGHT_RED (.Constructor LIGHT))) = false := by decide
 -- Instances of the `?` suffix rule.
 example : parameter_type? none true .Boolean = true := by decide
 example : parameter_type? none false .Boolean = false := by decide
@@ -856,17 +856,17 @@ example : parameter_type? (some .Integer) true .Integer = false := by decide
 example : let_annotation? none true (some .Boolean) = true := by decide
 
 -- These programs give M::f no body, two bodies and one body; only the last is well typed.
-example : program_ok? SYMBOLS .Empty = false := by decide
-example : program_ok? SYMBOLS (.Extend (.Extend .Empty
+example : prog_ok? SYMB .Empty = false := by decide
+example : prog_ok? SYMB (.Extend (.Extend .Empty
     (.Function F (t1 (row (.Local 0) (.Extend .Empty .Integer) .Integer))))
     (.Function F (t1 (row (.Local 0) (.Extend .Empty .Integer) .Integer)))) = false := by decide
-example : program_ok? SYMBOLS (.Extend .Empty
+example : prog_ok? SYMB (.Extend .Empty
     (.Function F (t1 (row (.Local 0) (.Extend .Empty .Integer) .Integer)))) = true := by decide
 
 -- These tables are rejected: their environment, or their context, is ill formed.
 example : derivation? (.Extend .Empty (bind LIGHT_RED (.Constructor LIGHT))) (t1 (int 7))
     .Empty .Integer = false := by decide
-example : derivation? SYMBOLS (t1 (row (.Local 0) (t1 (.Nominal LIGHT_RED)) (.Nominal LIGHT_RED)))
+example : derivation? SYMB (t1 (row (.Local 0) (t1 (.Nominal LIGHT_RED)) (.Nominal LIGHT_RED)))
     (t1 (.Nominal LIGHT_RED)) (.Nominal LIGHT_RED) = false := by decide
 
 /-- These two tables, a match that omits a constructor and one that repeats one, are valid. -/
