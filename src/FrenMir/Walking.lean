@@ -35,12 +35,12 @@ inductive Declaration where
   | block (value : Block)
   deriving Repr, BEq
 
-/-- The full syntax and occurrence contexts are the demand program: if/match
-select branches, let binds outcomes, and only and/or may skip their right side.
-This asks a downstream consumer to account for demanded definedness. It is
-NOT a list of every partial operation asserted without its guards. Consumers
-must retain undefined/exhausted/invalid/unsupported outcomes separately from
-Boolean results. No analysis or discharge of this request has occurred here. -/
+/-- Full syntax and lexical occurrences are retained static verification roots.
+Both Boolean operands and unused definitions contribute obligations in their
+incoming contexts; explicit if/match branches supply conditional contexts.
+Consumers retain scopes and origins until condition generation. Raw
+undefined/exhausted/invalid/unsupported outcomes stay separate from Boolean
+values and do not select obligations. No discharge has occurred here. -/
 structure Demand where
   root : TypedBody
   deriving Repr, BEq
@@ -52,8 +52,8 @@ inductive Question where
 
 /-- Assumptions are all and only the written assumptions of one block,
 including later ones. No definition is an arbitrary axiom or unproved goal.
-Demand roots request source-outcome definedness before Boolean interpretation;
-an undefined assumption cannot serve as a false filtering predicate. -/
+Static roots request declarative source well-definedness, independently of
+raw evaluation traces; an undefined assumption is not a false predicate. -/
 structure CheckRequest where
   owner : FrenBase.ItemId
   parameters : Array TypedParameter
