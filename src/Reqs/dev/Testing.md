@@ -1607,6 +1607,11 @@ FrenTestMain, Impls and unrelated legacy modules and queries are not selected.
 An ambiguous argv containing a possible selected source fails closed; missing
 sources retain their compiler diagnostic when the requested scope can be set up.
 
+If the entrypoint cannot prepare the delegated module memory scope, it fails
+before launching the build or direct compiler command and tells the user to run
+under `fd job`. This applies to the whole controlled session because a Lake build
+can select modules only after it starts.
+
 The ordinary `scripts/heavy lake env lean FILE.lean` route uses the same selected
 source policy, observer and budget session as Lake builds. Leading Lake options
 and installed elan toolchain selection retain their meaning. The wrapper replaces
@@ -1687,6 +1692,7 @@ pub fn module_memory_selected?(root: String, source: String) :=
         module_memory_in_root?(root, source, "FrenAst") or
         module_memory_in_root?(root, source, "FrenModule") or
         module_memory_in_root?(root, source, "FrenExpr") or
+        module_memory_in_root?(root, source, "FrenWalking") or
         module_memory_in_root?(root, source, "FrenMir") or
         module_memory_in_root?(root, source, "FrenLir") or
         module_memory_in_root?(root, source, "FrenOir") or
@@ -1715,6 +1721,7 @@ pub fn module_memory_selected?(root: String, source: String) :=
         module_memory_in_root?(root, source, "FrenAstTests") or
         module_memory_in_root?(root, source, "FrenModuleTests") or
         module_memory_in_root?(root, source, "FrenExprTests") or
+        module_memory_in_root?(root, source, "FrenWalkingTests") or
         module_memory_in_root?(root, source, "FrenMirTests") or
         module_memory_in_root?(root, source, "FrenLirTests") or
         module_memory_in_root?(root, source, "FrenOirTests") or

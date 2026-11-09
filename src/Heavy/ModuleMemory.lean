@@ -41,6 +41,7 @@ def selected (root source : String) : Bool :=
     inRoot root source "FrenAst" ||
     inRoot root source "FrenModule" ||
     inRoot root source "FrenExpr" ||
+    inRoot root source "FrenWalking" ||
     inRoot root source "FrenMir" ||
     inRoot root source "FrenLir" ||
     inRoot root source "FrenOir" ||
@@ -69,6 +70,7 @@ def selected (root source : String) : Bool :=
     inRoot root source "FrenAstTests" ||
     inRoot root source "FrenModuleTests" ||
     inRoot root source "FrenExprTests" ||
+    inRoot root source "FrenWalkingTests" ||
     inRoot root source "FrenMirTests" ||
     inRoot root source "FrenLirTests" ||
     inRoot root source "FrenOirTests" ||

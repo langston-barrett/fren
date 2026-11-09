@@ -62,7 +62,9 @@ def main():
         env = os.environ.copy()
         sys.path.insert(0, str(TOOLS))
         from module_memory import configure
-        configure(env, args.state / 'module-memory-setup.json', ROOT / 'src')
+        setup = configure(env, args.state / 'module-memory-setup.json', ROOT / 'src')
+        if setup['status'] != 'available':
+            parser.exit(125, 'heavy-lean-build: cannot prepare delegated compiler memory scope; run under fd job (see src/Reqs/dev/Testing.md#heavy-jobs)\n')
         # Private numeric override: on ANY optional transaction failure, zero
         # reaches the existing native padding policy even if cleanup also fails.
         env.pop('HEAVY_AUTOMATIC_PADDING_KIB', None)

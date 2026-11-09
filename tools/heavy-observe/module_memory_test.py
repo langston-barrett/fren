@@ -149,7 +149,8 @@ def controls(work, part):
         rows=[json.loads(f.read_text()) for f in (state/'overlay/records').glob('process-*.json')]
         record=next((r for r in rows if r.get('schema')==3),None)
         setup=json.loads((state/'module-memory-setup.json').read_text())
-        session=json.loads((state/'session/module-memory-result.json').read_text())
+        session_path=state/'session/module-memory-result.json'
+        session=json.loads(session_path.read_text()) if session_path.exists() else None
         item=dict(case=label,status=p.returncode,stdout=p.stdout.decode(),stderr=p.stderr.decode(),record=record,setup=setup,session=session,
                   marker=json.loads(marker.read_text()) if marker.exists() else None,
                   child=json.loads(Path(str(marker)+'.child').read_text()) if Path(str(marker)+'.child').exists() else None,
@@ -168,7 +169,7 @@ def controls(work, part):
             assert record['compiler_memory_swap_readback_bytes']==0,item
             if not unknown:
                 assert record['compiler_memory_cleanup_errno']==0 and record['compiler_memory_populated_after']==0,item
-        if not unknown:
+        if not unknown and session is not None:
             assert session['module_memory_cleanup_errno']==0,item
             assert not Path(setup.get('modules','/not-created')).exists(),item
         return item
@@ -216,6 +217,7 @@ def controls(work, part):
         try:
             a=case('foreign-preparation');assert a['status']==125 and a['marker'] is None,a
             assert a['setup']['status']=='unavailable' and 'foreign' in a['setup']['error'],a
+            assert a['record'] is None and a['session'] is None and 'run under fd job' in a['stderr'],a
             assert foreign.poll() is None and Path(f'/proc/{foreign.pid}/cgroup').read_text()==before
         finally:
             signal.pidfd_send_signal(fd,signal.SIGTERM);foreign.wait(timeout=2);os.close(fd)
@@ -358,7 +360,8 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
                  marker=json.loads(marker.read_text()) if marker.exists() else None,records=rows,state=str(state))
         if state:
             row['setup']=json.loads((state/'module-memory-setup.json').read_text())
-            row['session']=json.loads((state/'session/module-memory-result.json').read_text())
+            session_path=state/'session/module-memory-result.json'
+            row['session']=json.loads(session_path.read_text()) if session_path.exists() else None
         results.append(row);(work/'direct-results.json').write_text(json.dumps(results,indent=2)+'\n')
         return row
     selected=ROOT/'src/FrenBase/Identity.lean'
@@ -368,7 +371,7 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
     r=case('direct-unavailable',[selected],extra={'LD_PRELOAD':str(library),'MODULE_FAULT':'prepare'})
     assert r['status']==125 and r['marker'] is None,r
     assert r['setup']['status']=='unavailable' and 'PermissionError' in r['setup']['error'],r
-    assert r['records'][0]['child_present'] is False,r
+    assert not r['records'] and r['session'] is None and 'run under fd job' in r['stderr'],r
     # direct_routes checks exact unchanged argv for every excluded mode using
     # the actual native classifier and wrapper adapter. One legacy process
     # witnesses the unchanged end-to-end path; avoid repeating that transport.

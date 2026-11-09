@@ -51,7 +51,12 @@ def main (args : List String) : IO Unit := do
   unless Heavy.ModuleMemory.selected "/source" newRoot &&
       Heavy.ModuleMemory.selected "/source" "/source/Fren2CheckMain/Nested.lean" do
     throw (IO.userError "new root selection")
-  for path in ["/source/Fren2CheckMainExtra.lean", "/source/Fren2CheckMainx/Nested.lean",
+  for path in ["/source/FrenWalking.lean", "/source/FrenWalking/Walk.lean",
+      "/source/FrenWalkingTests.lean", "/source/FrenWalkingTests/Walk.lean"] do
+    unless Heavy.ModuleMemory.selected "/source" path do
+      throw (IO.userError "walking root selection")
+  for path in ["/source/FrenWalkingExtra.lean", "/source/FrenWalkingTestsExtra.lean",
+      "/source/Fren2CheckMainExtra.lean", "/source/Fren2CheckMainx/Nested.lean",
       "/other/Fren2CheckMain.lean", "/source/FrenTestMain.lean"] do
     unless !Heavy.ModuleMemory.selected "/source" path do
       throw (IO.userError "new root near miss or legacy selection")
