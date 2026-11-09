@@ -310,4 +310,12 @@ example : value_valid? EXAMPLE_SYMBOLS (.Nominal LIGHT LIGHT_RED) = true := by d
 example : value_valid? EXAMPLE_SYMBOLS (.Nominal SIGNAL LIGHT_RED) = false := by decide
 example : direct_item? (.Call F .Empty) F = true := by decide
 
+-- A program needs exactly one body for each function: none and two are rejected.
+example : program_ok? EXAMPLE_SYMBOLS .Empty = false := by decide
+example : program_ok? EXAMPLE_SYMBOLS (.Extend (.Extend .Empty
+    (.Function F (one (row (.Local 0) (.Extend .Empty .Integer) .Integer))))
+    (.Function F (one (row (.Local 0) (.Extend .Empty .Integer) .Integer)))) = false := by decide
+example : program_ok? EXAMPLE_SYMBOLS (.Extend .Empty
+    (.Function F (one (row (.Local 0) (.Extend .Empty .Integer) .Integer)))) = true := by decide
+
 end Spec.Language.Types

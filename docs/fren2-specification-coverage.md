@@ -75,6 +75,7 @@ compiler is specified later.
 | `types.derivation.scoped`, `types.derivation.unique` | `Spec.Language.Types.table_scoped` and `table_unique` over all valid tables, by induction in Lean |
 | `types.derivation.weakening-lookup` | `Spec.Language.Types.lookup_shift` in Lean |
 | `types.derivation.weakening` | Open: preservation of `rows_valid?` under `weaken`, by induction over rows |
+| `types.derivation.unique-expression` | Open: relate tables that represent the same expression with different sharing or extra rows |
 | `types.safety` | Open: needs the dynamic semantics of the Expressions chapter as a Fren definition |
 | `types.value.examples` | Fren expectation for the stated arithmetic examples only; the general operator meanings are not checked here |
 | `types.examples.derivations` | `Spec.Language.Types.worked_examples` by `decide`; the wrapper checks further cases, at least one for each rule; finite evidence only |

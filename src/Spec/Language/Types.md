@@ -600,9 +600,10 @@ Each assume or expect body has a derivation at Boolean in its parameter
 context, whose types are well formed.
 <!-- status: definition -->
 
-r[types.program.typing] spec::types::{declarations_ok?, program_ok?}
-A Core program is well typed when its symbol environment is well formed and
-every declaration is well typed in that one environment. A source program
+r[types.program.typing] spec::types::{declarations_ok?, bodies_of, functions_defined?, program_ok?}
+A Core program is well typed when its symbol environment is well formed,
+every declaration is well typed in that one environment, and every function
+that the environment binds has exactly one body among the declarations. A source program
 is well typed exactly when its translation into the Core is; the
 [derived forms](../Compiler/Desugaring.md) define that translation.
 <!-- status: definition -->
@@ -626,8 +627,26 @@ pub fn declarations_ok?(symbols: Symbols, declarations: Snoc<Declaration>) := ma
         declaration_ok?(symbols, declaration) and declarations_ok?(symbols, earlier),
 }
 
+pub fn bodies_of(declarations: Snoc<Declaration>, item: ItemId): Int := match declarations {
+    Empty => 0,
+    Extend(earlier, declaration) =>
+        bodies_of(earlier, item) + match declaration {
+            Declaration::Function(name, _) => if name = item then 1 else 0,
+            Declaration::Condition(_, _) => 0,
+        },
+}
+
+pub fn functions_defined?(bindings: Symbols, declarations: Snoc<Declaration>) := match bindings {
+    Empty => true,
+    Extend(earlier, binding) =>
+        (not binding.kind is ItemKind::Function(_) or bodies_of(declarations, binding.item) = 1)
+        and functions_defined?(earlier, declarations),
+}
+
 pub fn program_ok?(symbols: Symbols, declarations: Snoc<Declaration>) :=
-    symbols_ok?(symbols) and declarations_ok?(symbols, declarations)
+    symbols_ok?(symbols)
+    and declarations_ok?(symbols, declarations)
+    and functions_defined?(symbols, declarations)
 ```
 
 ## Properties of typing
@@ -642,7 +661,7 @@ has its context entry's type, and a typed constructor's entry is a
 constructor whose owner is the type.
 <!-- status: smt -->
 
-r[types.expression.items] spec::types::item_inversion::{constructor, call, match_scrutinee}
+r[types.expression.items] spec::types::item_inversion::{constructor, call, call_result, match_scrutinee}
 Only constructor items are values and only function items are callable: a
 typed constructor's entry is a constructor, a typed call's entry is a
 function whose result is the type, and a typed match's scrutinee is nominal.
@@ -680,12 +699,15 @@ expect item_inversion(
     args: Snoc<Typing>,
     scrutinee: Typing,
     arms: Snoc<ArmF<Typing>>,
+    signature: Signature,
     ty: Ty,
 ) {
     expect constructor: when rule?(symbols, context, ExprF::Constructor(item), ty),
         entry(symbols, item) is Option::Some(ItemKind::Constructor(_))
     expect call: when rule?(symbols, context, ExprF::Call(item, args), ty),
         entry(symbols, item) is Option::Some(ItemKind::Function(_))
+    expect call_result: when rule?(symbols, context, ExprF::Call(item, args), ty)
+        and entry(symbols, item) = Option::Some(ItemKind::Function(signature)), signature.result = ty
     expect match_scrutinee: when rule?(symbols, context, ExprF::Match(scrutinee, arms), ty),
         scrutinee.ty is Ty::Nominal(_) and arms != Empty
 }
@@ -708,8 +730,9 @@ introduce no binder.
 <!-- status: smt -->
 
 r[types.layer.each] spec::types::children_each::{argument, arm_body}
-The child at every level of a call's arguments, and the arm at every level
-of a match, has the context and type its rule requires.
+The argument at every level of a call uses Γ, and the arm body at every
+level of a match uses Γ and has the match's type. That each argument has
+its parameter's type is `argument_types?` itself.
 <!-- status: smt -->
 
 r[types.layer.call-arity]
@@ -825,10 +848,15 @@ Every local of a valid table is in scope: if a row `#i` has context Γ, then
 <!-- status: lean Spec.Language.Types.table_scoped -->
 
 r[types.derivation.unique] spec::types::same_shape?
-Typing is deterministic: two valid tables with the same forms and contexts,
-row by row, have the same types row by row, so the same expression with the
-same resolved identities and local levels has one type.
+Typing is deterministic for a table: two valid tables with the same forms
+and contexts, row by row, have the same types row by row.
 <!-- status: lean Spec.Language.Types.table_unique -->
+
+r[types.derivation.unique-expression]
+Typing is deterministic for an expression: two valid tables that represent
+the same expression, with any sharing of rows and any extra rows, give its
+root the same type.
+<!-- status: open -->
 
 ```fren
 pub fn same_shape?(left: Snoc<Row>, right: Snoc<Row>) := match left, right {
@@ -841,8 +869,8 @@ pub fn same_shape?(left: Snoc<Row>, right: Snoc<Row>) := match left, right {
 
 r[types.derivation.weakening] spec::types::{shift, insert_type, weaken, long_enough?}
 Typing is preserved by inserting a type at level n into every row's context
-and adding one to every local level of at least n, provided every row's
-context has at least n entries. With n = |Γ|, this extends Γ by a fresh
+and adding one to every local level of at least n, provided `0 ≤ n` and
+every row's context has at least n entries. With n = |Γ|, this extends Γ by a fresh
 entry, leaves levels below |Γ| unchanged, and renumbers the locals bound
 within the expression.
 <!-- status: open -->
@@ -881,7 +909,7 @@ pub fn weaken(rows: Snoc<Row>, cutoff: Int, extra: Ty): Snoc<Row> := match rows 
 
 pub fn long_enough?(rows: Snoc<Row>, cutoff: Int) := match rows {
     Empty => true,
-    Extend(earlier, row) => cutoff <= length(row.context) and long_enough?(earlier, cutoff),
+    Extend(earlier, row) => 0 <= cutoff <= length(row.context) and long_enough?(earlier, cutoff),
 }
 ```
 
