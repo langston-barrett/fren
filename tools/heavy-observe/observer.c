@@ -51,8 +51,10 @@ static int wall_notify(const char *name, int ownerfd, const struct wall_message 
 
 static int wall_deadline(b_lean_obj_arg control, uint64_t limit, uint64_t *sample, int *error);
 
+#include "module_memory.c"
+
 static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int guarded, uint64_t cpu_limit,
-                                 uint64_t wall_ms, b_lean_obj_arg control, const char *wall_name, int ownerfd) {
+                                 uint64_t wall_ms, b_lean_obj_arg control, const char *wall_name, int ownerfd, struct module_memory *memory) {
     uint64_t v[18] = {0};
     size_t n = lean_array_size(args);
     char **argv = calloc(n + 2, sizeof(char *));
@@ -64,6 +66,10 @@ static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int gu
     for (size_t i = 0; i < n; ++i)
         argv[i + 1] = (char *)lean_string_cstr(lean_array_get_core(args, i));
     if (pipe2(pipefd, O_CLOEXEC) < 0) { v[0] = errno; goto done; }
+    if (memory) {
+        int me = mm_prepare(memory); memory->v[1] = me;
+        if (me) { v[0] = me; goto done; }
+    }
     if (clock_gettime(CLOCK_MONOTONIC, &t) < 0) v[3] = errno;
     else v[6] = (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
     if (wall_ms && v[3]) { v[0] = v[3]; goto done; }
@@ -77,6 +83,7 @@ static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int gu
             if (prctl(PR_SET_PDEATHSIG, SIGKILL) < 0) e = -errno;
             else if (getppid() != parent) e = -EOWNERDEAD;
         }
+        if (!e && memory) { int me = mm_child(memory); if (me) e = -me; }
         if (!e && cpu_limit) {
             struct rlimit limit = {(rlim_t)cpu_limit, (rlim_t)cpu_limit};
             if (setrlimit(RLIMIT_CPU, &limit) < 0) e = -errno;
@@ -101,6 +108,10 @@ static lean_obj_res observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args, int gu
         _exit(code);
     }
     v[5] = (uint64_t)pid;
+    if (memory) {
+        int me = mm_parent(memory, pid, control); memory->v[1] = me;
+        if (me) { v[0] = me; kill(pid, SIGKILL); }
+    }
     close(pipefd[1]); pipefd[1] = -1;
     int status = 0;
     struct rusage usage = {0};
@@ -190,7 +201,7 @@ done:
 }
 
 LEAN_EXPORT lean_obj_res heavy_observe_wait(b_lean_obj_arg exe, b_lean_obj_arg args) {
-    return observe_wait(exe, args, 0, 0, 0, NULL, "", -1);
+    return observe_wait(exe, args, 0, 0, 0, NULL, "", -1, NULL);
 }
 
 /* Preserve a child's signal termination after Lean has flushed its record. */

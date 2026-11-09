@@ -39,6 +39,14 @@ def main():
         selected = {args[1]}
     else:
         raise SystemExit("usage: test.py [--controls-only | --part {publisher,forecast,entrypoint,cohort,core,automatic,automaticEvidence,automaticStore,automaticIO,automaticOwnership}]")
+    def modules(mode):
+        fresh = Path(tempfile.mkdtemp(prefix="heavy-module-partition-"))
+        env = dict(os.environ, HEAVY_MODULE_TEST_ROOT=str(fresh / "test-work"))
+        owned_run([sys.executable, "-I", str(HERE / "module_memory_test.py"), mode],
+                  directory=fresh, label="module-dispatch", env=env,
+                  timeout=15, grace=3, check=True)
+    # Preparation's foreign-member control must run before this job migrates.
+    if "automaticIO" in selected: modules("negative")
     for part, script in (("publisher", "publish_test.py"), ("forecast", "forecast_test.py"),
                          ("entrypoint", "entrypoint_test.py")):
         if part in selected:
@@ -57,6 +65,7 @@ def main():
             script = "automatic_test.py" if mode in ("positive", "evidence", "store") else "automatic_io_test.py"
             owned_run([sys.executable, "-I", str(HERE / script), mode], directory=fresh,
                       label="dispatch", env=env, timeout=23, grace=5, check=True)
+    if "entrypoint" in selected: modules("producer")
     if not ({"cohort", "core"} & selected): return
     (HERE / "test-work").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=HERE / "test-work"))

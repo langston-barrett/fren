@@ -126,6 +126,14 @@ class OwnedRun:
                     self.errors.append(message)
 
     def collect(self):
+        def observed_stat(path):
+            text = path.read_text()
+            try:
+                return self.heavy.process_stat(text)
+            except ValueError as error:
+                # Preserve an actual rejected procfs sample for review. Keep
+                # the existing fail/cleanup boundary; never omit the worker.
+                raise ValueError(f'{path}: {error}; raw stat={text!r}') from error
         marker = ('HEAVY_TEST_OWNER=' + self.token).encode()
         inherited = ('HEAVY_TEST_OWNED_' + self.token + '=1').encode()
         rows = {}
@@ -137,12 +145,12 @@ class OwnedRun:
                 environment = (path / 'environ').read_bytes().split(b'\0')
                 if marker not in environment and inherited not in environment:
                     continue
-                row = self.heavy.process_stat((path / 'stat').read_text())
+                row = observed_stat(path / 'stat')
                 key = row['pid'], row['start']
                 if key not in self.handles:
                     fd = os.pidfd_open(row['pid'])
                     try:
-                        after = self.heavy.process_stat((path / 'stat').read_text())
+                        after = observed_stat(path / 'stat')
                         pinned = next(int(s.split()[1]) for s in Path(f'/proc/self/fdinfo/{fd}').read_text().splitlines()
                                       if s.startswith('Pid:'))
                         if (after['pid'], after['start'], pinned) != (*key, key[0]):
@@ -159,7 +167,7 @@ class OwnedRun:
         # Retain their zombies until an owned nonblocking wait reaps them.
         for key, fd in self.handles.items():
             try:
-                row = self.heavy.process_stat(Path(f'/proc/{key[0]}/stat').read_text())
+                row = observed_stat(Path(f'/proc/{key[0]}/stat'))
                 pinned = next(int(s.split()[1]) for s in Path(f'/proc/self/fdinfo/{fd}').read_text().splitlines()
                               if s.startswith('Pid:'))
                 if (row['pid'], row['start'], pinned) == (*key, key[0]):

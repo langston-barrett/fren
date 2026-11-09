@@ -257,6 +257,51 @@ memory-calibration evidence. Warm direct pairs still measure observe-only
 cost. Requirements/impls bind the actual row charge and budget decisions;
 the arithmetic theorem applies only to completed registry-locked snapshots.
 
+## Selected-module hard memory
+
+Ordinary `scripts/heavy lake build` uses the candidate 1 GiB process-family
+cap for the current Fren2 source inventory in `Heavy.ModuleMemory`.
+`HEAVY_COMPILER_MEMORY_BYTES` accepts a positive decimal byte count at most
+2^50. This default is an engineering choice, not a universal demand bound.
+Legacy `FrenTestMain`/`Impls` modules, queries and stdin keep their existing
+behavior. Unknown argv containing a possible selected file fails closed.
+Canonical path selection describes that resolution instant; it is not a
+transitive input identity or a sandbox against concurrent hostile mutation.
+
+A supported Linux cgroup-v2 aggregate must be a finite dedicated transient job
+scope started with `Delegate=yes` and `OOMPolicy=continue`. The entrypoint
+checks the actual manager properties and native cgroup, moves only verified
+launch-chain members into a driver leaf, and enables memory below the same
+aggregate. Foreign members prevent migration. It creates no sibling scope
+and changes no aggregate limit or service property. An unsupported envelope
+is recorded as unavailable; selected compilation fails before uncapped exec.
+In particular, a scope started with `Delegate=no`/`OOMPolicy=stop` cannot be
+repaired by this wrapper. The installed job launcher must supply a supported
+envelope before those selected builds can run through it.
+
+The native observer creates a private module leaf with `memory.max`, zero
+swap and group OOM. The compiler joins itself before exec and acknowledges
+its actual PID, cgroup path and inode. The same raw Lean application check
+used by the Req binding validates size/readback/PID/inode before release.
+`compiler_memory_applied_bytes` and `compiler_memory_effective_bytes` require
+that handshake. Effective bytes are the minimum positive ancestor readback
+and requested child cap. Raw OOM deltas, peak, root wait status, cleanup error
+and populated state are separate fields; no exact OOM kill count is assumed.
+The observer and session controller use bounded leaf cleanup and exact adopted
+child waits. Unknown cleanup returns 125 while retaining the physical root
+status. Only the selected compiler family receives this hard cap; planning
+reservations and the existing sampled Heavy backstop retain their meanings.
+
+The existing `entrypoint` partition now includes actual below/over-cap,
+separate-session descendant and cancellation controls plus one small current
+`FrenBase.Identity` ordinary Lake compile into owned outputs/cache. The
+`automaticIO` partition adds foreign-member refusal, invalid configuration,
+legacy exit/stream preservation, injected native write/readback failures and
+successful-root/unknown-cleanup controls. Both retain the 30-second job
+budget and all earlier assertions. These physical tests require the supported
+startup scope. Pure Req/impl and standalone tests establish raw policy
+conformance, not kernel enforcement or Python/cgroup IO correctness.
+
 ## Deadline and waitable-owner checks
 
 The admission timeout uses raw monotonic nanoseconds and one fixed deadline.

@@ -2,6 +2,7 @@
 import Fren.Impl
 import Heavy.Budget
 import Heavy.CompilerForecast
+import Heavy.ModuleMemory
 import Heavy.Ownership
 import Heavy.Process
 import Reqs.Testing
@@ -417,6 +418,48 @@ impl process_request_excess: testing::heavy_process_request_excess
           simp [fren_spec, Heavy.Process.requestExcess, hz, hp, hsub]
         · have hsub : peak - request = 0 := Nat.sub_eq_zero_of_le (by omega)
           simp [fren_spec, Heavy.Process.requestExcess, hz, hp, hsub]
+
+theorem module_selected_eq (root source : String) :
+    Heavy.ModuleMemory.selected root source = Fren.Generated.testing.module_memory_selected? root source := by
+  apply Bool.eq_iff_iff.mpr
+  simp [Heavy.ModuleMemory.selected, Heavy.ModuleMemory.inRoot, Fren.Generated.testing.module_memory_selected?,
+    Fren.Generated.testing.module_memory_in_root?, Str.lit, Str.startsWith]
+
+impl module_memory_limit: testing::heavy_module_memory_limit for (root source kind : String) (configured : Nat) {
+  root := root, source := source, kind := kind, configured := configured,
+  limit := (Heavy.ModuleMemory.limit root source kind configured).map Int.ofNat,
+} by
+  intro root source kind configured _
+  have hg : (1125899906842624 < (configured : Int)) ↔ 1125899906842624 < configured := by omega
+  simp only [fren_spec, Heavy.ModuleMemory.limit, module_selected_eq]
+  split <;> simp_all <;> split <;> simp_all <;> split <;> simp_all
+  all_goals simp_all [Str.lit, hg] <;> omega
+
+def memoryLimits : List Nat → testing.ModuleMemoryLimits
+  | [] => .Nil
+  | x :: xs => .Cons (x : Int) (memoryLimits xs)
+
+theorem memory_effective_eq (limits : List Nat) (requested : Nat) :
+    (Heavy.ModuleMemory.effective limits requested : Int) =
+      testing.module_memory_effective (memoryLimits limits) requested := by
+  induction limits generalizing requested with
+  | nil => rfl
+  | cons x xs ih =>
+    by_cases h : 0 < x ∧ x < requested <;>
+      simp [Heavy.ModuleMemory.effective, memoryLimits, testing.module_memory_effective, ih, h]
+
+impl module_memory_applied: testing::heavy_module_memory_applied
+    for (error requested readback swap expectedPid observedPid expectedInode observedInode : Nat)
+      (limits : List Nat) {
+  error := error, requested := requested, readback := readback, swap := swap,
+  expected_pid := expectedPid, observed_pid := observedPid,
+  expected_inode := expectedInode, observed_inode := observedInode, limits := memoryLimits limits,
+  applied := (Heavy.ModuleMemory.applied error requested readback swap expectedPid observedPid expectedInode observedInode limits).map (fun p => (p.1 : Int)),
+  effective := (Heavy.ModuleMemory.applied error requested readback swap expectedPid observedPid expectedInode observedInode limits).map (fun p => (p.2 : Int)),
+} by
+  intro error requested readback swap expectedPid observedPid expectedInode observedInode limits _
+  simp only [fren_spec, Heavy.ModuleMemory.applied]
+  split <;> simp_all [memory_effective_eq] <;> omega
 
 impl compiler_cpu_limit: testing::heavy_compiler_cpu_limit for (seconds : Nat) (gated query : Bool) {
   seconds := seconds, gated? := gated, query? := query,

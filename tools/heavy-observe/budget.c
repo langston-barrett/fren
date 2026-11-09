@@ -182,7 +182,8 @@ static int budget_lock(b_lean_obj_arg control, int fd, uint64_t deadline) {
  * stored ticket/state/demand/owner and an independent procfs observation.
  * No ownership/fit Boolean is supplied to Lean. */
 LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg args,
-    b_lean_obj_arg path, uint64_t demand, uint64_t cpu_limit, uint64_t wall_ms, b_lean_obj_arg decide, b_lean_obj_arg control) {
+    b_lean_obj_arg path, uint64_t demand, uint64_t cpu_limit, uint64_t wall_ms, uint64_t memory_limit, b_lean_obj_arg decide, b_lean_obj_arg control) {
+    struct module_memory memory; mm_init(&memory, memory_limit);
     uint64_t extra[7] = {0}; /* error, admission wait ns, ticket, held, allowance, parent */
     lean_object *result = NULL;
     int dir = -1, registry = -1, owner = -1, ticketfd = -1, counter = -1, config = -1;
@@ -326,7 +327,8 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
                 if ((e = budget_identity((pid_t)owner_pid, observed, sizeof(observed)))) goto done;
                 if (strcmp(expected, observed)) { e = EOWNERDEAD; goto done; }
             }
-            result = observe_wait(exe, args, 1, cpu_limit, wall_ms, control, wall_name, ownerfd);
+            memory.owner = (pid_t)owner_pid;
+            result = observe_wait(exe, args, 1, cpu_limit, wall_ms, control, wall_name, ownerfd, &memory);
             if (budget_cancelled) e = ECANCELED;
             goto done;
         }
@@ -358,6 +360,8 @@ done:
     extra[0] = e;
     if (!extra[1] && begin) { uint64_t now = budget_now(); if (now) extra[1] = now - begin; }
     for (int i = 0; i < 7; ++i) a = lean_array_push(a, lean_box_uint64(extra[i]));
+    mm_finish(&memory);
+    for (int i = 0; i < 16; ++i) a = lean_array_push(a, lean_box_uint64(memory.v[i]));
     return lean_io_result_mk_ok(a);
 }
 
@@ -382,11 +386,11 @@ static void budget_wall_signal(int sig) { budget_wall = sig == SIGUSR2 ? 2 : 1; 
 
 LEAN_EXPORT lean_obj_res heavy_budget_session(b_lean_obj_arg path, b_lean_obj_arg config,
     b_lean_obj_arg requests, b_lean_obj_arg exe, b_lean_obj_arg args, b_lean_obj_arg control) {
-    uint64_t values[11] = {0}; /* control, command status, cleanup, cause, raw message present and fields */
+    uint64_t values[12] = {0}; /* control, command status, cleanup, cause, raw message present and fields */
     int dir = -1, owner = -1, fd = -1, pipefd[2] = {-1, -1};
     pid_t child = -1, last_reaped = 0;
     int previous_wait_error = 0;
-    int handlers = 0, wall_socket = -1, wall_handlers = 0;
+    int handlers = 0, wall_socket = -1, wall_handlers = 0, memory_subreaper = 0, memory_changed = 0;
     int wall_enabled = getenv("HEAVY_COMPILER_WALL_MS") != NULL;
     struct wall_message wall_message = {0};
     int wall_message_present = 0;
@@ -434,6 +438,13 @@ LEAN_EXPORT lean_obj_res heavy_budget_session(b_lean_obj_arg path, b_lean_obj_ar
             }
         }
         if (wall_socket < 0) wall_name[0] = 0;
+    }
+    if (getenv("HEAVY_MODULE_MEMORY_ROOT")) {
+        int members=0;
+        values[0]=mm_children(0,&members);
+        if(values[0]||members){if(!values[0])values[0]=EBUSY;goto done;}
+        if(prctl(PR_GET_CHILD_SUBREAPER,&memory_subreaper)<0){values[0]=errno;goto done;}
+        if(!memory_subreaper){if(prctl(PR_SET_CHILD_SUBREAPER,1)<0){values[0]=errno;goto done;}memory_changed=1;}
     }
     size_t n = lean_array_size(args);
     argv = calloc(n + 2, sizeof(char *));
@@ -517,6 +528,17 @@ cleanup:
             struct timespec short_pause = {0, 10000000}; nanosleep(&short_pause, NULL);
         }
     }
+    values[11]=mm_session_cleanup(getpid());
+    if(getenv("HEAVY_MODULE_MEMORY_ROOT")) {
+        for(int i=0;i<100;++i){
+            int members=0,e=mm_children(1,&members);
+            if(e){values[11]=e;break;}
+            if(!members)break;
+            if(i==99){values[11]=ETIMEDOUT;break;}
+            struct timespec pause={0,10000000};nanosleep(&pause,NULL);
+        }
+    }
+    if(values[11]&&!values[2])values[2]=values[11];
     /* Retain all metadata. Cleanup succeeds only after every inherited lease
      * is unlocked; a stuck/escaped descendant yields a bounded control error. */
     if (child > 0 && dir >= 0) {
@@ -569,7 +591,8 @@ done:
     if (dir >= 0) close(dir);
     free(argv);
     if (handlers) { int restore = budget_handlers(old, 0); if (!values[0]) values[0] = restore; }
-    lean_object *out = lean_alloc_array(0, 11);
-    for (int i = 0; i < 11; ++i) out = lean_array_push(out, lean_box_uint64(values[i]));
+    if(memory_changed&&prctl(PR_SET_CHILD_SUBREAPER,memory_subreaper)<0&&!values[2])values[2]=errno;
+    lean_object *out = lean_alloc_array(0, 12);
+    for (int i = 0; i < 12; ++i) out = lean_array_push(out, lean_box_uint64(values[i]));
     return lean_io_result_mk_ok(out);
 }

@@ -5,7 +5,7 @@ package heavyObserve
 
 lean_lib Heavy where
   srcDir := "../../src"
-  globs := #[`Heavy.Process, `Heavy.Budget, `Heavy.Ownership, `Heavy.Forecast, `Heavy.CompilerForecast]
+  globs := #[`Heavy.Process, `Heavy.Budget, `Heavy.Ownership, `Heavy.Forecast, `Heavy.CompilerForecast, `Heavy.ModuleMemory]
 
 lean_lib BudgetAdapter
 
@@ -14,7 +14,8 @@ lean_lib CompilerRecords
 target observer.o pkg : FilePath := do
   let src ← inputTextFile (pkg.dir / "observer.c")
   let gate ← inputTextFile (pkg.dir / "budget.c")
-  let src := src.zipWith (fun path _ => path) gate
+  let memory ← inputTextFile (pkg.dir / "module_memory.c")
+  let src := (src.zipWith (fun path _ => path) gate).zipWith (fun path _ => path) memory
   buildO (pkg.buildDir / "observer.o") src #["-I", (← getLeanIncludeDir).toString]
     #["-std=gnu17", "-fPIC", "-O2", "-Wall", "-Wextra", "-Werror"]
 
