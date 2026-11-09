@@ -45,16 +45,19 @@ class OwnedRun:
         self.token = os.urandom(24).hex()
         self.handles = {}
         self.errors = []
+        self.cancelled = None
 
     def collect(self):
         marker = ('HEAVY_TEST_OWNER=' + self.token).encode()
+        inherited = ('HEAVY_TEST_OWNED_' + self.token + '=1').encode()
         rows = {}
         for name in os.listdir('/proc'):
             if not name.isdigit():
                 continue
             try:
                 path = Path('/proc') / name
-                if marker not in (path / 'environ').read_bytes().split(b'\0'):
+                environment = (path / 'environ').read_bytes().split(b'\0')
+                if marker not in environment and inherited not in environment:
                     continue
                 row = self.heavy.process_stat((path / 'stat').read_text())
                 key = row['pid'], row['start']
@@ -95,7 +98,7 @@ class OwnedRun:
         signal.pidfd_send_signal(self.handles[keys[0]], sig)
 
     def execute(self, argv, *, cwd, env, ready=None, action=None, timeout=20,
-                ready_timeout=15, grace=8):
+                ready_timeout=15, grace=8, input_data=b'input \xce\xbb\n'):
         start = time.monotonic()
         row = {'case': self.label, 'argv': list(map(str, argv)), 'status': None,
                'physical_status': None, 'failure': None, 'cleanup': {}}
@@ -107,16 +110,24 @@ class OwnedRun:
         with self.heavy.child_subreaper() as subreaper, \
              outpath.open('wb') as stdout, errpath.open('wb') as stderr, \
              tempfile.TemporaryFile() as stdin:
-            stdin.write('input λ\n'.encode()); stdin.seek(0)
+            stdin.write(input_data); stdin.seek(0)
             try:
                 assert subreaper, "fixture subreaper unavailable"
+                if self.cancelled is not None:
+                    raise InterruptedError('owned runner cancelled before launch')
+                child_env = dict(env, HEAVY_TEST_OWNER=self.token)
+                # Retain ancestor ownership through nested runners even when
+                # their private HEAVY_TEST_OWNER changes.
+                child_env['HEAVY_TEST_OWNED_' + self.token] = '1'
                 p = subprocess.Popen(list(map(str, argv)), cwd=cwd,
-                    env=dict(env, HEAVY_TEST_OWNER=self.token), stdin=stdin,
+                    env=child_env, stdin=stdin,
                     stdout=stdout, stderr=stderr, start_new_session=True)
                 self.collect()
                 if ready is not None:
                     deadline = time.monotonic() + ready_timeout
                     while not ready.exists() and p.poll() is None and time.monotonic() < deadline:
+                        if self.cancelled is not None:
+                            raise InterruptedError('owned runner cancelled during readiness')
                         self.collect(); time.sleep(.02)
                     if not ready.exists():
                         raise RuntimeError('readiness failure')
@@ -124,7 +135,11 @@ class OwnedRun:
                         action(self, p, json.loads(ready.read_text()))
                 deadline = time.monotonic() + timeout
                 while p.poll() is None and time.monotonic() < deadline:
+                    if self.cancelled is not None:
+                        raise InterruptedError('owned runner cancelled')
                     self.collect(); time.sleep(.02)
+                if self.cancelled is not None:
+                    raise InterruptedError('owned runner cancelled')
                 if p.poll() is None:
                     raise TimeoutError('wrapper timeout')
                 survivors = [r for r in self.collect().values() if r['state'] not in ('Z', 'X')]

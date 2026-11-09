@@ -19,42 +19,58 @@ import time
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from owned_test import run as owned_run
 from overlay import create
 from abi_check import check as check_abi
 from regressions import file_controls, metadata_controls, metadata_reuse_controls
 
 HERE = Path(__file__).resolve().parent
 # Test-only discovery; the launcher itself always uses explicit configuration.
-REAL = Path(os.environ.get("HEAVY_TEST_REAL_LEAN") or
-            (subprocess.check_output(["lean", "--print-prefix"], text=True).strip() + "/bin/lean")).resolve(strict=True)
 OBSERVER = HERE / ".lake/build/bin/heavy_observe"
 
 
 def main():
     args = sys.argv[1:]
     parts = {"publisher", "forecast", "entrypoint", "cohort", "core",
-             "automatic", "automaticEvidence", "automaticStore"}
+             "automatic", "automaticEvidence", "automaticStore", "automaticIO", "automaticOwnership"}
     if args in ([], ["--controls-only"]):
         selected = parts
     elif len(args) == 2 and args[0] == "--part" and args[1] in parts:
         selected = {args[1]}
     else:
-        raise SystemExit("usage: test.py [--controls-only | --part {publisher,forecast,entrypoint,cohort,core,automatic,automaticEvidence,automaticStore}]")
+        raise SystemExit("usage: test.py [--controls-only | --part {publisher,forecast,entrypoint,cohort,core,automatic,automaticEvidence,automaticStore,automaticIO,automaticOwnership}]")
     for part, script in (("publisher", "publish_test.py"), ("forecast", "forecast_test.py"),
                          ("entrypoint", "entrypoint_test.py")):
         if part in selected:
-            subprocess.run([sys.executable, "-I", str(HERE / script)], check=True)
+            dispatch = Path(tempfile.mkdtemp(prefix="heavy-process-dispatch-"))
+            owned_run([sys.executable, "-I", str(HERE / script)], directory=dispatch,
+                      label="dispatch", timeout=30, grace=5, check=True)
     for part, mode in (("automatic", "positive"), ("automaticEvidence", "evidence"),
-                       ("automaticStore", "store")):
+                       ("automaticStore", "store"), ("automaticIO", "io"),
+                       ("automaticOwnership", "ownership")):
         if part in selected:
-            subprocess.run([sys.executable, "-I", str(HERE / "automatic_test.py"), mode], check=True)
+            # Every registered partition starts in its own empty fixture tree.
+            # The child, not another test group, creates test-work itself.
+            fresh = Path(tempfile.mkdtemp(prefix="heavy-automatic-partition-"))
+            env = dict(os.environ, HEAVY_AUTOMATIC_TEST_ROOT=str(fresh / "test-work"),
+                       HEAVY_AUTOMATIC_REQUIRE_FRESH="1")
+            script = "automatic_test.py" if mode in ("positive", "evidence", "store") else "automatic_io_test.py"
+            owned_run([sys.executable, "-I", str(HERE / script), mode], directory=fresh,
+                      label="dispatch", env=env, timeout=23, grace=5, check=True)
     if not ({"cohort", "core"} & selected): return
     (HERE / "test-work").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=HERE / "test-work"))
     if "cohort" in selected:
-        subprocess.run([sys.executable, "-I", str(HERE / "cohort_gate_test.py"),
-                        str(work / "cohort-gate")], check=True)
+        owned_run([sys.executable, "-I", str(HERE / "cohort_gate_test.py"),
+                   str(work / "cohort-gate")], directory=work, label="cohort-dispatch",
+                  timeout=20, grace=5, check=True)
     if "core" not in selected: return
+    configured = os.environ.get("HEAVY_TEST_REAL_LEAN")
+    if configured is None:
+        prefix = owned_run(["lean", "--print-prefix"], directory=work, label="prefix",
+                           timeout=3, check=True).stdout.decode().strip()
+        configured = prefix + "/bin/lean"
+    REAL = Path(configured).resolve(strict=True)
     overlay = create(work / "overlay", REAL, OBSERVER)
     records = overlay / "records"
     shim = overlay / "bin/lean"

@@ -111,11 +111,12 @@ fork through wait4, excluding fingerprinting, version probes and publishing.
 Measure caller wall time for total observer overhead.
 
 The registered Linux `heavyProcess` jobs build the standalone targets and run
-eight disjoint harness selections as part of `lake test`: `publisher`,
-`forecast`, `entrypoint`, `cohort`, `core`, `automatic`, `automaticEvidence`
-and `automaticStore`. With the repository driver already built, run a selection with `scripts/heavy --offline lake env
+ten disjoint harness selections as part of `lake test`: `publisher`,
+`forecast`, `entrypoint`, `cohort`, `core`, `automatic`, `automaticEvidence`,
+`automaticStore`, `automaticIO` and `automaticOwnership`. With the repository
+driver already built, run a selection with `scripts/heavy --offline lake env
 .lake/build/bin/fren_test --job heavyProcess publisher` (substitute another
-selection). The manual `--job heavyProcess` runs all eight in one job, and
+selection). The manual `--job heavyProcess` runs all ten in one job, and
 `--job heavyProcess controls` runs them with only the pre-scratch core controls.
 The normal `core` selection and the no-argument aggregate also retain the later changed-source assertions, warm
 pairs and concurrent discovery checks. Neither manual aggregate is a
@@ -657,3 +658,24 @@ runtime assets must remain immutable; compiler/store bounds are unchanged.
 controls, each with the existing 30-second target. They retain positive charged
 admission, manifest precedence/no-launch, artifact/status, raw mismatch and
 bounded optional-store controls.
+
+Optional setup errors include snapshot/helper failures, history and padding
+output failures and cleanup failures. The entrypoint retains the command and
+mandatory budget session, using a private `HEAVY_AUTOMATIC_PADDING_KIB=0`
+override on any such error. Normal setup clears that private override and uses
+the regular padding file. The native numerical policy still decides whether
+the value yields a request; no Python eligibility/estimation policy is added.
+Leftover valid-looking metadata after a cleanup failure cannot enable advice.
+
+The five automatic partitions each start in a fresh empty fixture tree and
+create their own `test-work` parent. They retain all earlier assertions and the
+30-second target. `automaticIO` uses a scripted compiler fixture with the actual
+observer/session to check optional ENOSPC/import/cleanup faults, physical exit
+and streams, explicit precedence and required failures; these are not new real
+Lean performance measurements. `automaticOwnership` uses harmless owned sleepers
+to check timeout after readiness and repeated cancellation during cleanup.
+The harness reuses `scripts/heavy_build_test.py`'s nonce/pidfd/subreaper runner,
+with file-backed streams and TERM-before-KILL cleanup. Nested runners preserve
+ancestor markers; signals never abort cleanup, and unestablished ownership is
+reported as a failed/unknown cleanup, not silently treated as success. The pure
+sample/request/controller impl proofs do not prove these Python IO boundaries.

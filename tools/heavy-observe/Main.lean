@@ -125,10 +125,14 @@ def automaticPeak (root : FilePath) (context : Heavy.CompilerForecast.Context)
     let now ← IO.monoNanosNow
     let (peak, samples) := Heavy.CompilerForecast.advice records context boot
       (now - 604800000000000) now 2 2
-    let some paddingBytes ← readRegular (root / "compiler-padding").toString
-        (fun mode size => decide (mode / 4096 % 16 = 8 ∧ size ≤ 32))
-      | return (none, samples)
-    let some paddingText := String.fromUTF8? paddingBytes | return (none, samples)
+    let paddingText ← match (← IO.getEnv "HEAVY_AUTOMATIC_PADDING_KIB") with
+      | some text => pure (some text)
+      | none => do
+        let bytes ← readRegular (root / "compiler-padding").toString
+          (fun mode size => decide (mode / 4096 % 16 = 8 ∧ size ≤ 32))
+        pure (bytes.bind String.fromUTF8?)
+    let some paddingText := paddingText | return (none, samples)
+    if paddingText.utf8ByteSize > 32 then return (none, samples)
     let some padding := paddingText.toNat? | return (none, samples)
     return (Heavy.CompilerForecast.forSession peak padding allowance parent, samples)
   catch _ => return (none, 0)

@@ -52,16 +52,24 @@ def main():
         overlay = module.create(args.state / 'overlay', args.real_lean, observer)
         # Read-only optional evidence is frozen once for this session. No
         # subprocess, blocking lock, per-compiler directory scan or estimator.
-        sys.path.insert(0, str(TOOLS))
-        from history import snapshot
+        env = os.environ.copy()
+        # Private numeric override: on ANY optional transaction failure, zero
+        # reaches the existing native padding policy even if cleanup also fails.
+        env.pop('HEAVY_AUTOMATIC_PADDING_KIB', None)
         try:
+            sys.path.insert(0, str(TOOLS))
+            from history import snapshot
             history = snapshot(os.path.expanduser('~'))
             if history is not None:
                 (overlay / 'compiler-history.json').write_bytes(history)
-        except (OSError, ValueError):
-            (overlay / 'compiler-history.json').unlink(missing_ok=True)
-        (overlay / 'compiler-padding').write_text(padding)
-        env = os.environ.copy()
+            (overlay / 'compiler-padding').write_text(padding)
+        except Exception:
+            env['HEAVY_AUTOMATIC_PADDING_KIB'] = '0'
+            for name in ('compiler-history.json', 'compiler-padding'):
+                try:
+                    (overlay / name).unlink(missing_ok=True)
+                except Exception:
+                    pass  # Optional cleanup cannot replace the command status.
         env.update(LAKE_OVERRIDE_LEAN='true', LEAN_SYSROOT=str(overlay),
                    HEAVY_OBSERVE_DIR=str(overlay / 'records'),
                    HEAVY_OBSERVE_PUBLISHER=str(TOOLS / 'publish.py'))

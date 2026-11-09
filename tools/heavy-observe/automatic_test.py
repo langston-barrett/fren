@@ -18,14 +18,26 @@ ROOT = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 from publish import publish
 from history import snapshot
+from owned_test import run as owned_run
 
 
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else 'positive'
     assert mode in ('positive', 'evidence', 'store')
-    real = Path(os.environ.get('HEAVY_TEST_REAL_LEAN') or
-                subprocess.check_output(['lean', '--print-prefix'], text=True).strip() + '/bin/lean').resolve()
-    work = Path(tempfile.mkdtemp(prefix='automatic-', dir=HERE / 'test-work'))
+    parent = Path(os.environ.get('HEAVY_AUTOMATIC_TEST_ROOT', HERE / 'test-work'))
+    parent_existed = parent.exists()
+    if os.environ.get('HEAVY_AUTOMATIC_REQUIRE_FRESH') == '1':
+        assert not parent_existed, parent
+    parent.mkdir(parents=True, exist_ok=True)
+    work = Path(tempfile.mkdtemp(prefix='automatic-', dir=parent))
+    (work / 'setup.json').write_text(json.dumps(dict(mode=mode, parent=str(parent),
+        parent_preexisting=parent_existed, created_parent=True)))
+    configured = os.environ.get('HEAVY_TEST_REAL_LEAN')
+    if configured is None:
+        prefix = owned_run(['lean', '--print-prefix'], directory=work, label='prefix',
+                           timeout=3, check=True).stdout.decode().strip()
+        configured = prefix + '/bin/lean'
+    real = Path(configured).resolve()
     pkg = work / 'pkg'; pkg.mkdir()
     (pkg / 'lean-toolchain').write_text((ROOT / 'lean-toolchain').read_text())
     (pkg / 'lakefile.toml').write_text('name = "auto_control"\nenableArtifactCache = false\n[[lean_lib]]\nname = "Tiny"\n')
@@ -58,9 +70,9 @@ def main():
         (pkg / '.lake/build/lib/lean/Tiny.olean').unlink(missing_ok=True)
         before = set(work.glob('fren-build-*'))
         start = time.monotonic()
-        p = subprocess.run([str(ROOT / 'scripts/heavy'), '--offline', str(real.parent / 'lake'),
+        p = owned_run([str(ROOT / 'scripts/heavy'), '--offline', str(real.parent / 'lake'),
                             'build', '+Tiny', '--offline', '--no-cache', '--wfail'],
-                           cwd=pkg, env=dict(env, **(extra or {})), capture_output=True, timeout=12)
+                           cwd=pkg, env=dict(env, **(extra or {})), directory=work, label=label, timeout=12)
         states = set(work.glob('fren-build-*')) - before
         rows = [json.loads(path.read_bytes()) for state in states
                 for path in (state / 'state/overlay/records').glob('process-*.json')]
@@ -143,8 +155,9 @@ def main():
         assert explicit_padding['request_provenance'] == 'explicit-source-request' and explicit_padding['requested_reservation_kib'] == 444444
         failed = build('automatic-compiler-error', {'AUTO_TEST_FAIL': 'yes'}, expect=1, compiler_error=True)
         assert failed['request_provenance'] == 'automatic-cohort-estimate' and failed['automatic_sample_count'] == 2
-        native = subprocess.run([str(real), *failed['args']], cwd=pkg,
-                                env=dict(env, AUTO_TEST_FAIL='yes'), capture_output=True, timeout=5)
+        native = owned_run([str(real), *failed['args']], cwd=pkg,
+                           env=dict(env, AUTO_TEST_FAIL='yes'), directory=work,
+                           label='native-error-comparison', timeout=5)
         assert native.returncode == failed['shell_code'] == 1
         assert b'intentional compiler failure' in native.stdout and 'intentional compiler failure' in receipts[-1]['stdout']
         receipts[-1]['native_comparison'] = dict(status=native.returncode, stdout=native.stdout.decode(), stderr=native.stderr.decode())
@@ -172,8 +185,8 @@ def main():
                 request = work / 'advice.json'
                 request.write_text(json.dumps(dict(real_compiler=str(real), args=a['args'], records=[str(p) for p in spool.glob('*.json')],
                                                    cutoff_monotonic_ns=0, recent_count=2, minimum_samples=2)))
-                p = subprocess.run([str(HERE / '.lake/build/bin/compiler_advice'), str(request)], cwd=pkg,
-                                   env=env, capture_output=True, timeout=3)
+                p = owned_run([str(HERE / '.lake/build/bin/compiler_advice'), str(request)], cwd=pkg,
+                              env=env, directory=work, label='advice-' + key, timeout=3)
                 assert p.returncode == 0 and json.loads(p.stdout)['status'] == 'unknown', (key, p)
         raw_rows([dict(a, peak_rss_kib=2000000, measured_peak_rss_kib=2000000),
                   dict(second, peak_rss_kib=2000000, measured_peak_rss_kib=2000000)])
@@ -219,7 +232,8 @@ int open(const char *p, int flags, ...) {
 }
 ''')
         lib = work / 'mutate.so'
-        subprocess.run(['cc', '-shared', '-fPIC', str(hook), '-o', str(lib)], check=True, timeout=5)
+        owned_run(['cc', '-shared', '-fPIC', str(hook), '-o', str(lib)], directory=work,
+                  label='mutation-helper', check=True, timeout=5)
         marker = work / 'mutated'
         row = build('source-mutated-after-capture', {'LD_PRELOAD': str(lib),
                     'AUTO_MUTATE_SOURCE': str(source), 'AUTO_MUTATE_MARKER': str(marker)})

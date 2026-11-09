@@ -2026,6 +2026,26 @@ count and the actual charged reservation/admission fields. Unknown or failed
 optional selection leaves `explicit-unknown-fallback` and the compiler's
 physical outcome, streams and existing cancellation/cleanup path intact.
 
+Optional snapshot and padding output, helper import and cleanup are one IO
+boundary. Failure makes advice unavailable even when cleanup cannot remove
+written files: the entrypoint supplies a private numeric zero padding override,
+which the native padding/request primitives reject as unknown. Required overlay
+and budget-session setup, and explicit manifest validation, remain mandatory.
+The sample/request and native lifecycle impl proofs do not prove these Python
+filesystem exceptions, fixture initialization or harness cleanup. Focused IO
+controls inject optional ENOSPC and cleanup errors at the actual entrypoint,
+then inspect the real session, fallback observation and physical fixture status.
+
+Every registered automatic partition creates its fixture parent in its own
+empty tree. Its harness uses the existing nonce/pidfd/subreaper ownership
+runner, requests TERM before KILL, waits within bounded cleanup intervals and
+retains unsuccessful cleanup as unknown rather than signalling unverified
+processes. Ancestor markers preserve ownership through nested harnesses and
+separate sessions. Cancellation signals are recorded while cleanup continues;
+a repeated signal does not interrupt cleanup. These are tested OS/Python IO
+claims, not consequences of the pure native controller lifecycle theorem.
+Kernel delays or a killed harness can still prevent a cleanup guarantee.
+
 The opt-in `scripts/heavy-lean-build` entrypoint prepares a new owned overlay
 using the selected real compiler and the existing helper, then replaces itself
 with the existing budget session. It passes the command after `--` as argv,
