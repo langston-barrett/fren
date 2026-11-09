@@ -502,13 +502,28 @@ fallback. That each agrees with `select` on an admitted match, and so with the
 others, is not yet proved: no function
 of the production code computes the selection by itself for the proof to bind.
 
+Here `production_pick` stands for the arm that whichever production path is
+considered picks, the evaluator, the confirmation or the lowering alike; the
+equality is claimed only for an admitted match and a constructor of its
+scrutinee's enumeration, where lowering's fallback arm cannot differ.
+
 ```fren
 pub fn production_pick(Snoc<ArmF<Typing>>, ItemId): Option<ArmF<Typing>>
 
 set_option fren.evidence "random" in
-pub proc production_selection(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (holds?) {
+pub proc production_selection(
+    symb: Symb,
+    ctx: Ctx,
+    scrutinee: Typing,
+    arms: Snoc<ArmF<Typing>>,
+    ty: Ty,
+    owner: ItemId,
+    constructor: ItemId,
+): (holds?) {
     ensure output: holds?
-    ensure first: production_pick(arms, constructor) = select(arms, constructor)
+    ensure first: when symb_ok?(symb) and match_admitted?(symb, ctx, scrutinee, arms, ty)
+        and scrutinee.ty = Ty::Nominal(owner) and pattern_rule?(symb, constructor, owner),
+        production_pick(arms, constructor) = select(arms, constructor)
 }
 
 trusted production_selection: "open: the evaluator and confirmation loops select inline and lowering builds branches, and no extracted function computes the selection that a proof could bind to select"
