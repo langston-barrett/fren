@@ -27,7 +27,8 @@ private def allowed : List (String × List String) :=
    ("FrenMonoToFo", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
    ("FrenFoToFlat", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
    ("FrenMirToLean", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
-   ("FrenFlatToLir", base ++ ["FrenExpr", "FrenMir", "FrenLir"]),
+   -- Direct walking lowering requires the real admitted MIR producer.
+   ("FrenFlatToLir", base ++ ["FrenExpr", "FrenMir", "FrenLir", "FrenThirToMir"]),
    ("FrenLirToOir", base ++ ["FrenLir", "FrenOir"]),
    ("FrenOirToSmt", base ++ ["FrenOir"]),
    -- The walking adapter proves admission with the actual checked producer.
@@ -44,15 +45,19 @@ private def tests : List String := roots.map (· ++ "Tests")
 -- Spec wrappers and FrenTestMain remain Fren1 infrastructure, not Fren2 roots.
 private def owners : List String := roots ++ tests ++
   ["FrenTextTests", "FrenTextTestsTests", "FrenTextDemo", "FrenTextDemoTests",
-   "Fren2TestMain", "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing", "FrenTest.Fren2Mir"]
+   "Fren2TestMain", "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing",
+   "FrenTest.Fren2Mir", "FrenTest.Fren2Lir"]
 
 private def testOnly (owner : String) : Bool :=
   tests.contains owner || ["FrenTextTestsTests", "FrenTextDemoTests", "Fren2TestMain",
-    "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing", "FrenTest.Fren2Mir"].contains owner
+    "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing",
+    "FrenTest.Fren2Mir", "FrenTest.Fren2Lir"].contains owner
 
 private def permits (owner imported : String) : Bool := Id.run do
   if ["Lean", "Std", "Init"].contains imported then return true
   if owner == imported then return true
+  if owner == "FrenTest.Fren2Lir" then return imported == "FrenFlatToLirTests"
+  if owner == "FrenFlatToLirTests" && ["Plausible", "FrenEval"].contains imported then return true
   if owner == "FrenTest.Fren2Mir" then return imported == "FrenThirToMirTests"
   if owner == "FrenThirToMirTests" && ["Plausible", "FrenEval"].contains imported then return true
   if owner == "FrenTest.Fren2Typing" then return imported == "FrenHirToThirTests"
@@ -94,6 +99,8 @@ private def permits (owner imported : String) : Bool := Id.run do
 #guard permits "FrenEvalTests" "Plausible"
 #guard !permits "FrenEval" "Plausible"
 #guard !permits "FrenEval" "FrenCore"
+#guard permits "FrenFlatToLir" "FrenThirToMir"
+#guard !permits "FrenFlatToLir" "FrenEval"
 #guard !permits "FrenLirEval" "FrenHirToThir"
 
 private def rootOf (name : Lean.Name) : String :=

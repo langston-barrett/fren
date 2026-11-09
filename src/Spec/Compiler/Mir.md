@@ -139,18 +139,18 @@ remain inconclusive, never successful evidence.
 **Proof obligations**
 
 r[mir.walking.partiality]
-Construction preserves partial operations, their operands, demand contexts
+Construction preserves partial operations, their operands, verification contexts
 and source occurrences, with the information needed for their definedness
 obligations; it never substitutes false, a default value or an unexplained
 axiom for an undefined operation.
 
 For example, division and remainder require a nonzero divisor. In
-`if d != 0 then n div d else 0`, the condition selects the branch in which
-that operation is demanded. A future logical encoding must account for
-partiality as well as the result; retaining only an equation about a result
-is insufficient. An undefined assumption cannot silently exclude assignments
-as though it were a false Boolean, and an undefined expectation is not a
-proved or refuted expectation.
+`if d != 0 then n div d else 0`, that obligation has the explicit branch
+context `d != 0`. Ordinary `and`/`or` retain both operands' obligations in
+the incoming context. An unused let definition retains its own obligations.
+The required contexts come from written syntax, not a concrete execution
+trace. An undefined assumption cannot silently exclude assignments as a
+false Boolean, and an undefined expectation is not a verified goal.
 
 **Proof obligations**
 
@@ -171,30 +171,19 @@ the same value. Assuming `at_most` rather than checking it makes a false
 claim pass. Using the wrong local slot changes both function values and
 the meaning of assumptions.
 
-The [walking evaluator](Evaluator.md) now follows the Language's
-[let rules](../../Reqs/Lang/EvaluationRules.md#let-expressions) and
-[lazy Boolean rules](../../Reqs/Lang/EvaluationRules.md#lazy-boolean-expressions):
-let definitions affect the outcome only where their slots are read, and
-`and`/`or` skip their right operands when the left decides the result.
-`iff`, Boolean equality/inequality and ordinary call arguments remain strict.
-For example, `let x := 1 div 0 in 0` now returns 0. Actual admitted-source
-regressions include unused and guarded lets, nested lexical shadowing,
-skipped and demanded Boolean operands, and both assumption and expectation
-bodies. Lean laws constrain the real walker's outcome binding, local reads
-and deciding-left branches; a bound primitive Fren contract independently
-checks the right-operand demand decision. This corrects the reported strict
-reference behavior before dependent encoding. It does not establish general
-partial-outcome simulation for downstream logical encodings. Explicit operational
-depth and the evaluator's remaining correspondence limits still apply.
+The raw [walking evaluator](Evaluator.md) implements a lazy value strategy:
+an unused `let x := 1 div 0 in 0` returns 0, and deciding-left Boolean
+operands may skip their right side. Those concrete outcomes do not establish
+source well-definedness. Declarative verification traverses all written
+expressions, retaining both ordinary Boolean operands' checks and unused
+definitions' checks. Only explicit if/match/guard scopes make them conditional.
+[LIR](Lir.md) retains the actual scoped verification trees and value/domain
+symbols; it does not yet generate or solve OIR conditions.
 
-The actual interpreter also distinguishes semantic undefinedness,
-operational depth exhaustion, invalid requests/arguments and unsupported
-operations, with associated spans and details. These distinctions must
-remain visible in any evaluator correspondence used to validate construction;
-exhaustion is not a logical falsehood or an unsatisfiable assumption set.
-A later solver may encode unspecified values as required by the Language
-semantics, but that is separate from concrete interpreter outcomes and must
-retain the required definedness obligations and their guards.
+The interpreter's undefined, exhausted, invalid and unsupported failures
+remain distinct. Exhaustion cannot become logical falsehood, an unsatisfiable
+assumption set or evidence of validity. Value correspondence under established
+well-definedness and static obligation completeness are separate obligations.
 
 ## Walking example and independent facts
 
@@ -296,8 +285,10 @@ block's assumptions, including later assumptions, with the block's parameters
 and context. Each request also carries structured `Demand` roots: complete
 assumption bodies, plus the goal body for validity. Their original syntax,
 occurrences, lexical contexts and call targets remain available. Definedness
-is requested with source demand semantics before interpreting Boolean
-results; no partial operation is flattened into an unguarded assertion.
+is requested by static source verification before interpreting Boolean
+results; no conditional operation is flattened into an unguarded assertion.
+The legacy `Demand` name denotes retained source roots, not an instruction
+to use the raw evaluator's demand trace as the verification policy.
 Definitions remain definitions in the same theory. These data are unresolved
 requests, not discharged obligations, logical formulas or solver verdicts.
 
@@ -316,8 +307,10 @@ no assumptions, empty blocks, contradictory assumptions, nominal spellings
 and unused definitions. Negative controls omit assumptions or declarations,
 change roles, reorder declarations, substitute owners, parameters, contexts
 or local slots, remove demand roots and alter guards. Concrete probes of the
-retained source cover lazy lets and Boolean demand, strict operators and call
-arguments, and exact failure provenance. These tests are finite evidence;
+retained source cover the raw value strategy's lazy lets and Boolean demand,
+strict operators and call arguments, and exact failure provenance. Those
+operational probes are not evidence of static obligation completeness.
+These tests are finite evidence;
 concrete false results are not solver counterexamples.
 
 The three primitive facts above retain their independent Fren1 checks.

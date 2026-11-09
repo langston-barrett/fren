@@ -12,6 +12,7 @@ import FrenHirToThirTests
 import FrenEvalTests
 import FrenThirDesugarTests
 import FrenThirToMirTests
+import FrenFlatToLirTests
 
 fren_test_runners textRunners
 
@@ -37,6 +38,12 @@ private def runJob (args : List String) : IO UInt32 := do
     return 0
   if args == ["--job", "typingProperties"] then
     FrenHirToThirTests.runProperties
+    return 0
+  if args == ["--job", "lir"] then
+    FrenFlatToLirTests.runCases
+    return 0
+  if args == ["--job", "lirProperties"] then
+    FrenFlatToLirTests.runProperties
     return 0
   if args == ["--job", "mir"] then
     FrenThirToMirTests.runCases
@@ -119,7 +126,8 @@ public def main (args : List String) : IO UInt32 := do
       ["--job", "walking"], ["--job", "walkingProperties"], ["--job", "typing"],
       ["--job", "typingOperators"], ["--job", "typingProperties"],
       ["--job", "evaluator"], ["--job", "evaluatorProperties"], ["--job", "desugaring"],
-      ["--job", "mir"], ["--job", "mirProperties"]] do
+      ["--job", "mir"], ["--job", "mirProperties"],
+      ["--job", "lir"], ["--job", "lirProperties"]] do
     let status ← bounded job
     if status != 0 then return status
   for name in ["run", "derive", "phase"] do

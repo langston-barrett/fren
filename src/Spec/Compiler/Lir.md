@@ -5,11 +5,13 @@ for asking logical questions. It must preserve both a term's value and
 where that value is defined. Keeping only Boolean formulas would lose the
 difference between a false expectation and an undefined one.
 
-This chapter specifies the next walking boundary after the actual
-[MIR producer](Mir.md). There is no LIR producer, logical evaluator or solver
-backend yet: `FrenLir`, `FrenFlatToLir` and `FrenLirEval` are stubs. The
-contract below concerns their eventual real code. The checked primitive
-facts at the end are independent tests of the contract's ingredients.
+This chapter specifies the walking boundary after the actual
+[MIR producer](Mir.md). [FrenLir](../../FrenLir/Walking.lean) now provides
+first-order values and scoped verification information, and
+[FrenFlatToLir](../../FrenFlatToLir/Walking.lean) lowers the admitted walking
+fragment directly. No mono, closure or flat pass is claimed. `FrenLirEval`
+remains a stub; there is no production logical evaluator or solver backend.
+The checked primitive facts below remain independent contract tests.
 
 ## Input and retained program
 
@@ -44,17 +46,16 @@ functions and block owners; spelling or structural equality cannot replace
 them. Each enum domain contains exactly its declared constructors, distinct
 from those of every other enum. Bool has its two values; Int has all
 integers, with no machine overflow or restriction to nonnegative values.
-Arithmetic, precedence and branch selection come from the existing
-[Language rules](../../Reqs/Lang/Expressions.md#operators) and
-[evaluation rules](../../Reqs/Lang/EvaluationRules.md), not a new LIR language
-semantics.
+Arithmetic and precedence retain their existing meanings. The pure fragment's
+[declarative verification policy](../Language/Expressions.md) governs source
+obligations independently of the concrete evaluator's execution strategy.
 
 The walking logical vocabulary needs typed local variables, literals and
 nominal constructor constants, first-order symbol applications, primitives,
 conditionals (`ite`), constructor tests and scoped local lets. Exhaustive
 matches can become constructor tests and conditionals, provided the selected
-arm's value and demand are preserved. Partial-operation obligations remain
-attached to their demand structure until condition generation; no solver
+arm's value and conditional verification context are preserved. Partial-operation
+obligations remain scoped until condition generation; no solver
 assertion is emitted merely because an operation was encountered.
 
 Parameters retain written order and nearest-first local slots. A let value
@@ -86,76 +87,87 @@ make validity vacuous while Sat fails. Undefined assumptions cannot be
 silently treated as false to make either question pass. These meanings
 specialize the existing [global checks](../../Reqs/Check.md#global-expectations).
 
-## Values travel with demand
+## Values and declarative verification
 
 **Proof obligations**
 
 r[lir.walking.demand]
-Lowering preserves the source demand structure until it has an explicit
-encoding that guards every partial-operation obligation correctly. It
-preserves assumption and goal demand roots separately from Boolean values.
+Lowering statically traverses all written expressions and retains every
+applicable source obligation with its lexical context, owner and origin.
+Ordinary Boolean values and verification information remain separate. An
+unproved goal is never a hypothesis for itself or a sibling goal.
 
-For reasoning, write `V(e)` for the symbolic value and `WD(e)` for semantic
-definedness. This notation is not a second interpreter or a delivered pair
-datatype. Outside its domain a partial operation has an unspecified but
-fixed symbolic value; its required definedness check still exists. That
-symbolic value does not discharge definedness, and an interpreter's undefined
-outcome is not Boolean false.
-In particular, simplifying `e = e` to true must not discard the demand for
-`e` when equality is strict.
+Write `V(e)` for a symbolic value and `WD(e)` for declarative source
+well-definedness. `FrenLir.Lowered` retains a value and a scoped
+`Verification` tree; `defined` derives a formula summary from that tree.
+The tree keeps individual checks, conjunctions, explicit branch guards and
+scoped let binders until LIR -> OIR. This summary does not generate or
+prove OIR conditions. Outside its domain a partial operation has an
+unspecified symbolic value, which cannot discharge its obligation.
 
-The [walking evaluator](Evaluator.md) already distinguishes undefined,
-exhausted, invalid and unsupported outcomes. Its operational depth is not
-a logical domain restriction. A later comparison of evaluators must account
-for sufficient depth explicitly; exhaustion cannot become undefined, false,
-a Sat failure or evidence of validity.
+- Every ordinary unary or binary operand contributes its obligations in
+  the incoming context. In particular `and`, `or`, `iff`, equality and
+  inequality all retain both operands' obligations, regardless of their
+  Boolean values. There is no source proof policy of short-circuiting.
+- Division and remainder also require a nonzero divisor in that context.
+- A call retains all positional argument obligations and the named
+  definition's domain application. The callee uses its own parameter
+  context. Every definition retains its verification tree even if unused;
+  a call graph or concrete execution trace cannot erase it.
+- A let retains its definition's obligations in the incoming context,
+  whether or not the body reads the binder. Its body is verified in the
+  extended lexical context, with exact value/domain substitution.
+- An explicit conditional retains its condition's obligations and both
+  written branches, under the condition and its negation respectively.
+  A match likewise retains each written arm under its constructor context.
+  Only these explicit scopes guard obligations in the walking grammar.
 
-The following demand rules are inherited from the Language and the actual
-`FrenEval.walk`, rather than replacements for them:
+Thus ordinary `a and b` and `a or b` both have
+`WD(a) and WD(b)`. A conditional has `WD(c)` together with
+`V(c) implies WD(then)` and `not V(c) implies WD(else)`.
+A let has `WD(value)` together with its scoped body's obligations;
+unused binding does not remove `WD(value)`. An unguarded conjunction of
+both conditional branches' obligations is wrong, as is guarding an ordinary
+Boolean right operand by the left value.
 
-- Ordinary unary and binary operations demand their operands, left to right.
-  Division and remainder also require a nonzero divisor. `iff` and Boolean
-  equality and inequality are strict, even where their values agree with a
-  formula that could short-circuit.
-- Calls demand every positional argument, even if the function body does
-  not read its parameter. The body then uses those values in the callee's
-  context. Inlining must preserve this argument demand.
-- A let binds an outcome. Its definition's partiality matters only where
-  the bound slot is read; binding alone imposes no unguarded `WD` obligation.
-- `a and b` demands `a`, and demands `b` only where `a` is true.
-  `a or b` demands `a`, and demands `b` only where `a` is false.
-- A conditional demands its condition and only the selected branch. A match
-  demands its scrutinee and only the arm selected by its canonical constructor.
+The current walking grammar has no local assert/assume expressions or
+subset syntax. For the existing check blocks, assumptions, goals, parameter
+contexts and their independent verification roots remain explicit IR data.
+Future assertion and subset introduction/coercion predicates use the same
+scoped mechanism: preserve the obligation and applicable assumptions until
+condition generation, without unconditional global hoisting. A parameter's
+established subset predicate may become a scoped body assumption; the
+introduced value's predicate must first be proved. These forms are not
+implemented or silently admitted by this slice.
 
-Thus, for defined Boolean `c`, branch obligations are guarded by `c` for
-then and `not c` for else. More generally a conditional requires `WD(c)`
-as well as `(V(c) implies WD(then))` and
-`(not V(c) implies WD(else))`. An unguarded conjunction of both branches'
-definedness is wrong. A bare branch value does not justify using its guard
-without establishing the condition's definedness. A shared or inlined let
-must retain the guards at its uses, rather than demand its definition at
-the binding site.
+The raw [walking evaluator](Evaluator.md) uses a lazy value strategy.
+Its outcome on one input does not determine which verification obligations
+exist. In particular, a concrete value from an unused partial let or a
+skipped Boolean operand does not establish source well-definedness.
+Operational exhaustion remains a failure, never false, Sat or validity.
+A verification-aware debugger must check applicable executable conditions
+where possible and report unresolved predicates honestly. Proved conditions
+may then be erased for value evaluation; one execution is not their proof.
 
-These concrete regressions constrain the eventual producer and consumer;
-`bad` abbreviates `1 div 0` in this table, not a new source construct.
+Here `bad` abbreviates `1 div 0` only for this table:
 
-| Source expression or call | Required concrete outcome |
-|---|---|
-| `let x := bad in 0` | defined, 0 |
-| `let x := bad in if d != 0 then x else 0`, at `d = 0` | defined, 0 |
-| the preceding let at `d = 1` | undefined |
-| `false and (bad = 0)`; `true or (bad = 0)` | defined, false; defined, true |
-| `true and (bad = 0)`; `false or (bad = 0)` | undefined |
-| `false iff (bad = 0)`; `(bad = bad)` | undefined |
-| `if d != 0 then n div d else 0`, at `d = 0` | defined, 0 |
-| `match l { Light::Red => bad, Light::Green => 0 }`, at Green | defined, 0 |
-| `ignore(bad)`, where `ignore(x: Int): Int := 0` | undefined |
+| Source | Declarative obligation | Raw lazy value outcome |
+|---|---|---|
+| `let x := bad in 0` | nonzero-divisor check in incoming context | 0 |
+| `let x := bad in if d != 0 then x else 0` | same incoming check, even at `d = 0` | 0 at `d = 0` |
+| `false and (bad = 0)`; `true or (bad = 0)` | right-side check in incoming context | false; true |
+| `false iff (bad = 0)`; `bad = bad` | same incoming check | undefined |
+| `if false then bad else 0` | retained check under false guard | 0 |
+| `if d != 0 then n div d else 0` | retained check under `d != 0` | 0 at `d = 0` |
+| `ignore(bad)`, with `ignore(x: Int): Int := 0` | argument check retained | undefined |
 
-The match row uses exactly the two-constructor enum below. Static admission
-still visits unselected written branches. These examples must also be tested
-inside retained assumption and expectation bodies, with unused and repeated
-let reads, nested shadowing and calls. They are future actual-path regression
-targets here, not claimed executions of LIR.
+The [native controls](../../FrenFlatToLirTests/Verification.lean) inspect
+actual retained checks without evaluating guards, including checks beneath
+constant-false branches, unused definitions and lexical lets. Independent
+formula probes distinguish incoming from conditional contexts and kill the
+old lazy-demand formulas as mutants. Value comparisons use only cases
+with independently expected true verification domains. They do not prove
+universal source-obligation completeness or solver correspondence.
 
 ## Sharing and attribution
 
@@ -170,9 +182,9 @@ capture avoided and the original typed contexts respected.
 Closed means no free lexical slots; a term may still mention declared
 symbols. Sharing `x + 1` from one function or let context in a global table
 would lose its binding. Closed sharing must not hoist a partial operation's
-obligation out of its demand guard. Acyclic references permit finite
+obligation out of its explicit guard. Acyclic references permit finite
 expansion; expansion and local-let substitution must preserve values and
-demand, not just textual equality. Sharing is optional in the first walking
+verification contexts, not just textual equality. Sharing is optional in the first walking
 implementation; emitting no table is preferable to an unsound one.
 
 r[lir.walking.attribution]
@@ -273,40 +285,62 @@ control: `assumption? = true, goal? = false` refutes it. Removing the
 `not` before `selected?` in `then_guard` is refuted at `selected? = false,
 d = 0`. These are primitive counterexamples, not Fren2 solver models.
 
-## Actual-producer laws still to establish
+## Actual-producer evidence and remaining laws
+
+[Producer laws](../../FrenFlatToLir/Walking.lean) prove actual admission,
+retention of the complete MIR and typed source, determinism, rejection
+propagation and success of the output scope/retention checker. The latter
+includes Boolean declaration/request retention certificates; it is not a
+proof of their equality from unproved lawful-equality instances.
+[Combinator laws](../../FrenLir/Walking.lean) prove the actual branch, let,
+ordinary-operator and call domain equations, including both Boolean operands
+and unused definitions. The retained `Verification` tree is the source of
+the formula summary; no independently supplied definedness bit is accepted.
+[Direct Plausible
+properties](../../FrenFlatToLirTests/Properties.lean) exercise the actual
+producer on mandatory admitted, rejected and partial classes, with explicit
+premise counts and independent arithmetic/request expectations. Native
+controls retain nominal identities, owned request roots and lexical origins,
+and kill source, domain and retention mutants.
+
+The universal laws below remain obligations, beyond those checked facts.
 
 For every `p : FrenThirDesugar.Program` and `t : FrenMir.Theory` with
-`FrenThirToMir.produce p = .ok t`, the eventual real logical-lowering
-producer must succeed on this walking domain and return a well-formed
-program satisfying the retention, requests, demand and sharing rules above.
+`FrenThirToMir.produce p = .ok t`, the logical-lowering producer must
+succeed on this walking domain and return a well-formed program satisfying
+the retention, requests, verification and sharing rules above.
 For every retained value body or occurrence, in its recorded lexical
 context, relate source and logical environments slot by slot at their
 actual Bool, Int or canonical enum types. Under corresponding definition
-interpretations and environments, definedness must agree in both
-directions; where defined, values must correspond at the recorded result
-type. Lets require outcome-aware environments, not just lists of values.
+interpretations and environments, declarative source obligations and LIR
+verification information must correspond in both directions. Where those
+obligations hold, values must correspond at the recorded result type. Raw
+interpreter comparisons additionally require sufficient operational depth;
+their undefinedness is not the source verification judgment. Lets require
+exact scoped value/domain bindings, not just lists of unscoped values.
 
 After the applicable definedness obligations are accounted for, assumption
 satisfiability and each owned validity question must agree in both
 directions over the same parameter domains. This includes empty blocks,
 contradictory assumptions, assumptions after goals, nominal enums, unused
-definitions and the demand regressions above. These are laws about the
+definitions and the declarative regressions above. These are laws about the
 actual eventual producer and evaluators, not universal simulation theorems
 proved by the six primitive facts.
 
-- [ ] Implement the real representation and producer, then state and test
-  these laws directly in Lean, with Plausible over admitted, rejected and
-  partial inputs and reported premise counts; prove structural laws where cheap.
-- [ ] Establish whole-term value, definedness and request preservation;
-  test actual guards and negative controls without a copied compiler model.
+- [x] Implement the walking representation and producer, with actual-code
+  structural laws, direct Plausible over admitted, rejected and partial inputs,
+  reported premise counts and independent native verification/context controls.
+- [ ] Establish whole-term value, definedness and request preservation,
+  beyond the actual static-scope audits and negative controls already tested.
 - [ ] Restate these laws in Fren when recursive typed syntax, scoped
   outcome environments and recursive evaluation judgments can be expressed
   against the real code. No general quantifier or recursive-unfolding model
   is needed to deliver this nonrecursive walking slice.
 
-The next OIR step must generate conditions from the retained demand,
-separating a goal from its active assumptions and branch guards. It must
-follow the existing [definedness hypotheses](../../Reqs/Check.md#definedness),
+The next OIR step must generate conditions from the retained scoped
+verification information, separating each goal from its active assumptions
+and branch guards. It must follow the existing
+[definedness hypotheses](../../Reqs/Check.md#definedness),
 including other assumptions when checking an assumption, rather than let
 an undefined predicate disappear as false. Solver translation, Sat/validity
 polarity, limits, unknown results and source-model confirmation then need
