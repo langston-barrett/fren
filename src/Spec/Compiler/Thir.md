@@ -21,8 +21,25 @@ No equality between those two presentations is assumed as an input.
 `AtContext` is its reflexive structural closure. In particular, a let value
 uses the parent context and only its body receives the value's type. A match
 arm receives no extra binder. All branches, arguments and unused definitions
-are traversed. `OccurrenceTyping` requires an entry for each actual descendant,
-so deleting an occurrence cannot make a quantified obligation disappear.
+are traversed. `OccurrenceTyping` requires a sound entry for each actual
+descendant and requires every output entry to have the source context and
+meaning. Callable names and their retained parentheses use `HasCallable`.
+`OccurrenceInventory` requires the exact structural inventory in postorder:
+callee before arguments; condition before then and else branches; let value
+before body; scrutinee before arm bodies. Arguments and arms retain written
+order. Each visit contributes one entry after its children, including the
+root. Pattern paths, binder tokens and punctuation contribute no separate
+entry. Neither surplus entries nor a permutation of distinct visits is allowed.
+
+Inventory is local to each `TypedBody`, whose owner and optional member are
+constrained by `BodyInventory`. The relation counts structural visits, rather
+than distinct expression/context pairs: if an arbitrary AST repeats an equal
+subtree, both visits remain. In parsed source, tokens retain file, byte span
+and tape position. The lookup API compares the complete expression token
+sequence within one body; it does not compare just the first token, rendered
+text, context or another body's expressions. No global uniqueness of equal
+expression/context pairs is assumed.
+
 `DeclaresBody` derives each body's declared result and nearest-first parameter
 context from actual source declarations and resolved signatures. `BodyInventory`
 requires exactly one retained entry for every source body, including unused
@@ -34,8 +51,8 @@ actual production types; the source audit checks this displayed block against it
 
 r[thir.contract.typing]
 Every successful production satisfies `TypePassContract`, including recursive
-body and occurrence typing, exact signatures and body inventory, admission
-and exact retained resolved input.
+body and occurrence typing, exact ordered occurrence inventory, signatures
+and body inventory, admission and exact retained resolved input.
 
 r[thir.contract.coverage]
 On actual successful type-only output, coverage validation holds exactly
@@ -82,17 +99,74 @@ def BodyTyping (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
   ∀ body ∈ out.bodies.toList,
     FrenHirToThir.HasValue input out.signatures body.context body.expression body.type
 
-/-- Every written value or callee occurrence has the exact context and meaning. -/
+/-- Callable meaning propagates through retained callee parentheses. -/
+inductive HasCallable (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+    FrenModule.TypeContext → FrenAst.Expr → FrenModule.Signature → Prop where
+  | name : FrenHirToThir.Selects input ctx path .expression (.item sig.id) →
+      FrenHirToThir.signatureAt sigs sig.id = some sig →
+      HasCallable input sigs ctx (.name path) sig
+  | paren : HasCallable input sigs ctx e sig →
+      HasCallable input sigs ctx (.paren o e c) sig
+
+def OccurrenceMeaning (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature)
+    (occurrence : FrenModule.TypedOccurrence) : Prop :=
+  match occurrence.type with
+  | .value ty => FrenHirToThir.HasValue input sigs occurrence.context occurrence.expression ty
+  | .callable sig => HasCallable input sigs occurrence.context occurrence.expression sig
+
+/-- Ordered immediate children. Pattern paths and binder tokens are not expressions. -/
+inductive WrittenChildren (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+    FrenModule.TypeContext → FrenAst.Expr →
+      List (FrenModule.TypeContext × FrenAst.Expr) → Prop where
+  | bool : WrittenChildren r sigs ctx (.bool t b) []
+  | integer : WrittenChildren r sigs ctx (.integer t n) []
+  | name : WrittenChildren r sigs ctx (.name p) []
+  | paren : WrittenChildren r sigs ctx (.paren o e c) [(ctx, e)]
+  | unary : WrittenChildren r sigs ctx (.unary t op e) [(ctx, e)]
+  | binary : WrittenChildren r sigs ctx (.binary a t op b) [(ctx, a), (ctx, b)]
+  | call : WrittenChildren r sigs ctx (.call f o args commas c)
+      ((ctx, f) :: args.toList.map (ctx, ·))
+  | ifE : WrittenChildren r sigs ctx (.ifE i b t yes e no)
+      [(ctx, b), (ctx, yes), (ctx, no)]
+  | letE : FrenHirToThir.HasValue r sigs ctx value vt →
+      WrittenChildren r sigs ctx (.letE l name assign value i body)
+        [(ctx, value), ((name, vt) :: ctx, body)]
+  | matchE : WrittenChildren r sigs ctx (.matchE m scrutinee o arms c)
+      ((ctx, scrutinee) :: arms.toList.map (fun arm => (ctx, arm.2.2.1)))
+
+mutual
+  /-- One entry per structural visit, after all ordered child entries. No key deduplication. -/
+  inductive OccurrenceOrder (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+      FrenModule.TypeContext → FrenAst.Expr → List FrenModule.TypedOccurrence → Prop where
+    | node : WrittenChildren r sigs ctx expr children →
+        OccurrenceForest r sigs children nodes →
+        OccurrenceOrder r sigs ctx expr (nodes ++ [⟨expr, ctx, ty⟩])
+
+  /-- Child subtrees concatenate in written order, retaining their multiplicities. -/
+  inductive OccurrenceForest (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+      List (FrenModule.TypeContext × FrenAst.Expr) → List FrenModule.TypedOccurrence → Prop where
+    | nil : OccurrenceForest r sigs [] []
+    | cons : OccurrenceOrder r sigs ctx expr first →
+        OccurrenceForest r sigs rest remaining →
+        OccurrenceForest r sigs ((ctx, expr) :: rest) (first ++ remaining)
+end
+
+/-- Exact per-body source inventory, including multiplicity and postorder. -/
+def OccurrenceInventory (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
+  ∀ body ∈ out.bodies.toList,
+    OccurrenceOrder input out.signatures body.context body.expression body.occurrences.toList
+
+/-- Both source-to-output coverage and soundness of every output entry. -/
 def OccurrenceTyping (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
-  ∀ body ∈ out.bodies.toList, ∀ ctx expr,
+  (∀ body ∈ out.bodies.toList, ∀ ctx expr,
     AtContext input out.signatures body.context body.expression ctx expr →
     ∃ occurrence ∈ body.occurrences.toList,
       occurrence.expression = expr ∧ occurrence.context = ctx ∧
-      match occurrence.type with
-      | .value ty => FrenHirToThir.HasValue input out.signatures ctx expr ty
-      | .callable sig => ∃ path,
-          expr = .name path ∧ FrenHirToThir.Selects input ctx path .expression (.item sig.id) ∧
-          FrenHirToThir.signatureAt out.signatures sig.id = some sig
+      OccurrenceMeaning input out.signatures occurrence) ∧
+  (∀ body ∈ out.bodies.toList, ∀ occurrence ∈ body.occurrences.toList,
+    AtContext input out.signatures body.context body.expression
+      occurrence.context occurrence.expression ∧
+    OccurrenceMeaning input out.signatures occurrence)
 
 /-- Source declarations determine body owner, result type and parameter context. -/
 inductive DeclaresBody (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
@@ -126,7 +200,8 @@ def BodyInventory (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop 
 def TypePassContract : Prop := ∀ input out, Produces input out →
   FrenHirToThir.Admitted input ∧ out.resolved = input ∧
     FrenHirToThir.signatures input = .ok out.signatures ∧
-    BodyInventory input out ∧ BodyTyping input out ∧ OccurrenceTyping input out
+    BodyInventory input out ∧ BodyTyping input out ∧
+    OccurrenceInventory input out ∧ OccurrenceTyping input out
 
 /-- Coverage quantifies over actual AST descendants, not just a supplied table. -/
 def MatchCoverage (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
@@ -177,7 +252,13 @@ The `body_contract_iff` theorem equates the body component with the existing
 `FrenHirToThir.TypingSound` obligation. It does not prove that obligation.
 The wrapper proves admission/retention, uniqueness, failure exclusion and the
 exact factorization of the public static boundary using actual-code theorems.
-The unproved recursive correspondence laws stay explicit in
+`TypePassContract`, including the general occurrence inventory and context
+correspondence, remains unproved. The wrapper proves the exact table relation
+and actual inference law for integer addition with literal operands, for all
+inputs, tokens and contexts. Its raw-output mutation controls check a proved
+necessary projection of that relation. These laws and controls do not prove
+the universal contract. `CoverageContract` and `NonrecursionContract` also
+remain unproved; the correspondence obligations are retained in
 [development coverage](../../../docs/fren2-specification-coverage.md).
 
 ## Input admission
