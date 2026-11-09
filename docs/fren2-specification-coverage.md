@@ -194,8 +194,9 @@ correspondence. The informative source examples' diagnostics, such as
   compiler representations, including the level-to-index conversion.
 - [ ] Prove the complete occurrence/context-preserving source-to-Core
   correspondence and actual checker's `TypingSound` theorem and converse.
-- [ ] Prove universal match-coverage and call-graph correspondence separately
-  from typing, preserving all branch bodies and unused definitions.
+- [ ] Prove universal call-graph correspondence separately from typing,
+  preserving all branch bodies and unused definitions. The match-coverage
+  half is the Patterns chapter below.
 - [ ] Formalize interpretation/free-local/mentioned-item recursive closure
   against actual binding and expression code, including capture avoidance.
 - [ ] Establish universal value and declarative source-obligation preservation
@@ -1830,3 +1831,29 @@ checks that each rule of the three chapters links the Fren items after it:
 - [ ] `parsing.diagnostic.first` is open: tests check diagnostic positions
   of chosen texts, not that each is the first point where the grammar
   cannot continue.
+
+## Patterns and matching: src/Spec/Language/Patterns.md
+
+The chapter reuses the Core's identities, `Snoc`, `Symb` and `ArmF`. Its
+wrapper proves in Lean, over every arm sequence, that selection takes the
+first written arm for a constructor, agrees with the arm at the first index,
+and is unaffected by the order of arms when a constructor has one; that the
+coverage check is exactly "every constructor selects an arm and no arm is
+repeated", that covering arms select an arm for every constructor of the
+enumeration, and that the selected arm keeps the match's body type and
+pattern type. `check_coverage` is bound to the production
+`FrenHirToThir.coverage`, which `validateCoverage` calls, through adapters
+between snoc sequences and arrays. The worked examples are evaluated with
+`decide`.
+
+- [x] Bind the production coverage computation (missing and repeated
+  constructors) to the specification's `uncovered` and `repeats`.
+- [x] Prove selection, exhaustiveness, characterization and typing of the
+  selected arm for all arm sequences.
+- [ ] Bind the evaluator, strict-confirmation and lowering arm loops to
+  `select`; each takes the first matching arm inline, so no function exists
+  for a proof to bind (the one `trusted` open property of the chapter).
+- [ ] Give `WalkingFailure.coverage` a catalogue code and specify its
+  rendering; the chapter specifies the diagnostic's content only.
+- [ ] Restate selection once patterns can bind payloads or nest; Fren2
+  patterns are constructor identities only.

@@ -846,7 +846,7 @@ def ruleAdjacentChapters : Array String :=
     "src/Spec/Language/StaticSemantics.md", "src/Spec/Language/DenotationalSemantics.md",
     "src/Spec/Language/DynamicSemantics.md",
     "src/Spec/Compiler/AstAndParsing.md",
-    "src/Spec/Language/PropertiesAndChecks.md"]
+    "src/Spec/Language/PropertiesAndChecks.md", "src/Spec/Language/Patterns.md"]
 
 /-- The chapters whose properties carry Fren's own evidence
 (`Spec/dev/Style#properties-and-evidence`): the list grows as chapters are

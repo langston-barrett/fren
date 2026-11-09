@@ -33,6 +33,18 @@ def constructors (t : Typed) (owner : FrenBase.ItemId) : Array FrenBase.ItemId :
   t.resolved.scope.items.filterMap fun item =>
     if item.kind == .constructor && item.id.parent == some owner then some item.id else none
 
+/-- The coverage inventory of one match: the owner's constructors that no arm
+targets, in inventory order, and each arm target that an earlier arm already
+targeted, in written order. A match covers its owner exactly when both are
+empty, so that every constructor has exactly one arm. Generic in the item
+type so that the specification binds this function itself. -/
+@[expose] def coverage {α : Type} [BEq α] (inventory targets : Array α) : Array α × Array α :=
+  let missing := inventory.filter fun c => !targets.contains c
+  let repeated := (targets.foldl (init := ((#[] : Array α), (#[] : Array α)))
+    fun (seen, repeated) t =>
+      (seen.push t, if seen.contains t then repeated.push t else repeated)).2
+  (missing, repeated)
+
 /-- Requires genuine successful check output. Check every retained match
 occurrence, including nested scrutinees and unreachable written arms in
 functions, assumptions and expectations. Current AST patterns are constructor
@@ -45,7 +57,6 @@ def validateCoverage (t : Typed) : ValidationResult := do
           | throw (.invalidMetadata keyword.span)
         let inventory := constructors t owner
         let mut seen := #[]
-        let mut repeated := #[]
         let mut repeatedSpan := none
         for (path, _, _, _) in arms do
           let some ref := t.resolved.referenceAt path.head.slice
@@ -54,10 +65,9 @@ def validateCoverage (t : Typed) : ValidationResult := do
           unless ref.role == .pattern && inventory.contains id do
             throw (.invalidMetadata path.head.span)
           if seen.contains id then
-            repeated := repeated.push id
             if repeatedSpan.isNone then repeatedSpan := some path.head.span
           seen := seen.push id
-        let missing := inventory.filter (!seen.contains ·)
+        let (missing, repeated) := coverage inventory seen
         unless missing.isEmpty && repeated.isEmpty do
           throw (.coverage (repeatedSpan.getD keyword.span) owner missing repeated)
   return ()
