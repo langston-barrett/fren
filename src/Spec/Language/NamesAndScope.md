@@ -1,197 +1,1182 @@
-# Names and scope
+# Resolution
 
-Name resolution connects a written name to a declaration. A *scope* is the
-set of declarations available at that occurrence. This chapter specifies
-a single-file source domain; [HIR](../Compiler/Hir.md) describes the
-resolved result. The parser already accepts these forms, including names
-that will fail resolution. Parsing does not establish that a name exists.
+Resolution is the first part of static semantics. It replaces every written
+name of a module by what the name denotes: a local by its level in the
+enclosing scope, an item by its canonical identity. Its results are the
+symbol environment Σ and the Core expression forms that
+[Core typing](Types.md) consumes; the Core itself has no names. The
+[syntax chapter](Syntax.md) owns the written forms, and typing owns every
+question about types beyond which enumeration a written type names.
 
-## 1. Declarations and source scope
-
-The source file starts with one `mod M` or `pub mod M`, where `M` is one
-name. Its remaining declarations are payload-free enumerations,
-expression-bodied functions, and global expectations with typed parameters.
-Types are `Bool`, `Int` and named enumerations. Expressions are the forms
-listed in [Syntax](Syntax.md).
-The end-to-end programs use non-recursive functions. Resolving a
-reference alone does not establish non-recursion.
+The domain is one module of enumerations with payload-free variants and
+functions over `Bool`, `Int` and those enumerations, whose bodies are
+literals, paths, operators, calls of a written path, `let`, `if` and
+`match` on variant patterns.
 
 r[names.walking.domain]
-Resolution of this source domain accepts one complete file in the source domain
-and reports unsupported module structure before treating it as resolved.
+Resolution is defined for one complete module of this domain. A module
+outside it is rejected as unsupported before any of its names is resolved.
 
-r[names.collection.complete]
-The module's enumerations, functions and global expectations are collected
-before any parameter annotation, result annotation or body is resolved.
+## Judgments
 
-r[names.collection.duplicates]
-Two declarations with the same name in the module are an error (`F0206`),
-independently of their kinds or source order.
+| Judgment | Meaning | Fren |
+| --- | --- | --- |
+| `S(x) = i` | in scope S the name x denotes the local at level i | `resolve_local` |
+| `R; S ⊢ p ⇒ t` | the path p denotes the target t | `path_target` |
+| `R ⊢ T ⇒ τ` | the written type T denotes the type τ | `resolve_type` |
+| `R; S ⊢ l ⇒ l'` | the source layer l resolves to the Core layer l' | `resolve_layer` |
+| `R; S ⊢ e ⇒ e'` | the expression e resolves to the Core expression e' | `resolve_expression`, given a table for e |
+| `m ⊢ ds ⇒ Σ` | the declarations ds of module m collect to Σ | `collect` |
+| `⊢ m, ds resolves` | every name of the module resolves | `module_resolves?` |
 
-r[names.collection.members]
-Variant names within one enumeration and parameter names within one
-parameter list are distinct; a repeated name is an error (`F0213`).
+r[names.overview.function]
+Every judgment of this chapter is a function of its inputs: a name, path,
+written type, layer, expression or module has at most one resolution, and
+each Fren definition above computes it, with `None` when there is none.
+Resolution is therefore decidable, and it never consults a type, a value
+or a solver. The [interface](#r-names.overview.interface) at the end of
+the chapter states the function for expressions as a contract of
+uninterpreted functions. The other laws are stated where their subjects
+are defined: [nearest binding](#r-names.locals.nearest) and
+[weakening](#r-names.locals.weakening) for scopes,
+[weakening for a layer](#r-names.expression.weakening),
+[well-scoped results](#r-names.handoff.scoped) and [bound
+items](#r-names.handoff.items) for expressions, and, for collection,
+[independence of declaration order](#r-names.collection.order) and the
+[well-formed environment](#r-names.handoff.environment) that typing assumes.
 
-A module has one item namespace. A constructor belongs to its enumeration,
-not directly to the module: `Light::Red` and `Signal::Red` are distinct.
-Expectation member labels name checks, not expression variables. Labels
-within an expectation are distinct, including conflicts with its parameters
-(`F0213`); neither `assume` nor `expect` introduces a local expression slot.
-No duplicate is resolved by choosing the first or last declaration. A failed
-collection may retain data for diagnostics but cannot produce a successful
-resolved module.
+## Scopes and levels
 
-This order-free collection is intentional. Fren1's declaration-order
-restriction is not the Fren2 rule. The following file must resolve even
-though the function and enumeration are used before their declarations:
+r[names.scope.levels] spec::names::{Scope, resolve_local}
+A *scope* S is the snoc sequence of the names of the locals in scope,
+oldest first. It is parallel to the typing context: the local whose name is
+at level i of S has its type at level i of Γ. `S(x)` is the level of the
+newest entry of S whose name is x, and is undefined when S has no such
+entry.
 
 ```text
-pub mod signals
-pub fn use_next(l: Light): Light := next(l)
-expect forward(l: Light) { expect same: next(l) = next(l) }
-pub fn next(l: Light): Light := Light::Red
-pub enum Light { Red, Green }
+                       x ≠ y   S(x) = i
+  (S, x)(x) = |S|      ────────────────
+                       (S, y)(x) = i
 ```
-
-## 2. Local scopes
-
-A local context lists binder entries nearest first. A reference is a de
-Bruijn index into that exact context, as in the
-[binding contracts](../Compiler/Bindings.md#contexts-and-scope). An index
-is not an item identity or a globally stable number for a binder.
-
-r[names.locals.parameters]
-All parameters are in scope in their function body or every member body of
-their global expectation, with the last written parameter at index zero.
-
-r[names.locals.annotations]
-Parameter and result type annotations resolve in the collected module
-scope, without the declaration's local parameter slots.
-
-r[names.locals.let]
-A `let x := value in body` resolves `value` in the incoming context and
-`body` in that context extended by a newest slot named `x`.
-
-r[names.locals.shadowing]
-An unqualified expression name selects the nearest local with that spelling
-before consulting the collected module items.
-
-r[names.locals.siblings]
-A local introduced inside one expression child or match arm is unavailable
-in its siblings and outside that child or arm.
-
-The current match patterns are qualified payload-free constructors. They
-introduce zero binders. Each arm body starts in the scrutinee's incoming
-context; a `let` inside an arm is lexical to that arm body. Payload patterns
-and their binders require a later contract extension. Reusing a parameter's
-name in a nested `let` is shadowing, not a same-list duplicate. The parser writes that name without Fren1's `!` shadowing suffix.
-
-For `fn f(x: Int, y: Int): Int := let x := x + y in x + y`, the value's
-context is `[y, x]`: its uses are indices 1 and 0. The body's context is
-`[x(let), y, x(parameter)]`: its uses are 0 and 1. In
-`let x := x in x` with no incoming `x` and no module item `x`, the value's
-`x` is unknown; the body binder cannot resolve it.
-
-## 3. Written paths and unknown names
-
-A *qualified path* has segments separated by `::`. Looking up the head
-selects a declaration; each following segment selects a member of that
-declaration. Qualification does not search for an unrelated matching suffix.
-
-r[names.paths.head]
-An expression path resolves its head among nearest locals, module items,
-and then the current module's own name, in that order.
-
-r[names.paths.members]
-Only a module or enumeration has path members in the source domain; module
-members are its collected items and enumeration members are its variants.
-
-r[names.paths.types]
-A written named type resolves to an enumeration through the module scope;
-the AST's built-in `Bool` and `Int` forms denote those built-in types.
-
-r[names.paths.unknown]
-An absent unqualified expression name is an error (`F0201`) at that written
-occurrence, with the message `cannot find NAME in this scope` where `NAME`
-is displayed in backticks.
-
-The current module's name provides `signals::Light::Red` as well as
-`Light::Red`. A nearer local named `Light` blocks `Light::Red`; it does not
-silently fall back to the enumeration. Qualification through a local or a
-function fails, and a missing variant fails. The resolver must return
-diagnostic data for these failures, using the established diagnostic
-catalogue; this source domain assigns no new diagnostic codes. A bare `Red` is
-unknown unless it names a local or module item. There are no imports or
-opened variants in this source domain.
-
-A spelling is compared exactly, including a final `?`. The parser's implicit
-`Bool` parameter annotation for `b?` remains distinct from a written
-annotation; `b?: Int` resolves its written `Int`, leaving suffix/type
-consistency to typing. Full paths such as `Int::T` are named type paths,
-not a built-in type followed by ignored text. Redefining the built-in type
-names as enumerations is outside this source domain.
-
-## 4. Name equality and nearest lookup
-
-These finite contracts isolate deciding facts. Integer atoms stand for
-names compared only for equality. The output of each procedure is
-constrained from its raw inputs; no caller-supplied "resolved" or "valid"
-Boolean is assumed. They define equality and nearest-slot decisions used by the local-context
-rules; the arbitrary-context closure is specified by the Lean obligation
-listed in the development coverage document.
-
-r[names.primitive.nearest] spec::names::nearest_two::{meaning, newest, older, absent, shadowed}
-In a two-slot nearest-first context, lookup returns the first equal name,
-or -1 when neither slot matches.
 
 ```fren
 pub mod spec
 pub mod spec::names
 
-pub proc nearest_two(near: Int, far: Int, query: Int): (slot: Int) {
-    ensure meaning: slot = if query = near then 0 else if query = far then 1 else -1
+use spec::types::{ArmF, BinaryOp, Ctx, Entry, ExprF, Form, ItemId, ItemKind, Sig, Snoc, Symb, Ty, UnaryOp, entry, length, lookup, shift, shift_form, symb_ok?}
+use spec::types::Snoc::{Empty, Extend}
 
-    expect newest: when query = near, slot = 0
-    expect older: when query != near and query = far, slot = 1
-    expect absent: when query != near and query != far, slot = -1
-    expect shadowed: when near = far and query = far, slot != 1
+pub type Scope := Snoc<String>
+
+pub fn resolve_local(scope: Scope, name: String): Option<Int> := match scope {
+    Empty => None,
+    Extend(earlier, newest) =>
+        if newest = name then Some(length(earlier)) else resolve_local(earlier, name),
 }
 ```
 
-r[names.primitive.duplicates] spec::names::same_scope::{meaning, repeated, distinct}
-Two names declared in one scope conflict exactly when their spellings are
-equal.
+r[names.locals.shadowing] spec::names::shadowing::{newest, passes}
+A new binder of x *shadows* every earlier one: `(S, x)(x) = |S|`. A binder
+of another name changes nothing: if `x ≠ y`, then `(S, y)(x) = S(x)`, so the
+level that a name denotes does not change while its binder is in scope.
 
 ```fren
-pub proc same_scope(first: Int, second: Int): (duplicate?) {
-    ensure meaning: duplicate? iff first = second
-
-    expect repeated: when first = second, duplicate?
-    expect distinct: when first != second, not duplicate?
+expect shadowing(scope: Scope, name: String, other: String) {
+    expect newest: resolve_local(Extend(scope, name), name) = Some(length(scope))
+    expect passes: when other != name,
+        resolve_local(Extend(scope, other), name) = resolve_local(scope, name)
 }
 ```
 
-The wrapper defines the arbitrary-context nearest-name obligation in Lean
-and proves fresh/older slot lookup facts about the existing binding core.
-The finite Fren procedures are checked contracts, not production `impl`
-bindings. Their examples establish consequences of the contracts, not that
-a complete name-search traversal satisfies them.
+r[names.locals.nearest] spec::names::local_binding::{bound, nearest, complete}
+If `S(x) = i`, then the entry at level i of S is x, so `0 ≤ i < |S|`, and
+no entry at a level above i is x. If `S(x)` is undefined, then no entry of
+S is x.
 
-## 5. Worked failures
+```fren
+set_option fren.evidence "random" in
+pub proc local_binding(scope: Scope, name: String, level: Int, other: Int): (holds?) {
+    ensure output: holds?
+    ensure bound: when resolve_local(scope, name) = Some(level), lookup(scope, level) = Some(name)
+    ensure nearest: when resolve_local(scope, name) = Some(level) and level < other,
+        lookup(scope, other) != Some(name)
+    ensure complete: when resolve_local(scope, name) = None, lookup(scope, other) != Some(name)
+}
+```
 
-These isolated examples pin the established messages.
+r[names.locals.weakening] spec::names::{insert_name, shifted, local_weakening::shifted}
+Inserting a binder of another name y at level n of S, with `0 ≤ n ≤ |S|`,
+shifts the levels of at least n by one and changes nothing else: `S(x)` is
+defined exactly when the new scope's is, and the new level is the old one
+shifted at n. `shift` is the shift of [typing's
+weakening](Types.md#r-types.layer.weakening).
+
+```fren
+pub fn insert_name(scope: Scope, cutoff: Int, extra: String): Scope := match scope {
+    Empty => if cutoff = 0 then Extend(Empty, extra) else Empty,
+    Extend(earlier, name) =>
+        if cutoff = length(earlier) + 1 then Extend(scope, extra)
+        else Extend(insert_name(earlier, cutoff, extra), name),
+}
+
+pub fn shifted(level: Option<Int>, cutoff: Int): Option<Int> := match level {
+    Some(found) => Some(shift(found, cutoff)),
+    None => None,
+}
+
+set_option fren.evidence "random" in
+pub proc local_weakening(scope: Scope, cutoff: Int, extra: String, name: String): (holds?) {
+    ensure output: holds?
+    ensure shifted: when 0 <= cutoff <= length(scope) and name != extra,
+        resolve_local(insert_name(scope, cutoff, extra), name)
+            = shifted(resolve_local(scope, name), cutoff)
+}
+```
+
+r[names.primitive.nearest] spec::names::nearest_index::converse
+The resolver numbers locals by *index*, nearest first: the newest local
+has index 0. An index and a level name the same entry of a scope when they
+sum to `|S| - 1`. The resolver's search returns the index that corresponds
+to `S(x)`, and none when `S(x)` is undefined.
+
+```fren
+pub proc nearest_index(scope: Scope, name: String): (index: Option<Int>) {
+    ensure converse: index = match resolve_local(scope, name) {
+        Some(level) => Some(length(scope) - 1 - level),
+        None => None,
+    }
+}
+```
+
+r[names.primitive.duplicates] spec::names::same_name::{meaning, repeated, distinct}
+Names are compared by spelling: two names are the same name exactly when
+their spellings are equal. Every lookup and every duplicate check of this
+chapter uses this one comparison.
+
+```fren
+pub proc same_name(first: String, second: String): (same?) {
+    ensure meaning: same? iff first = second
+
+    expect repeated: when first = second, same?
+    expect distinct: when first != second, not same?
+}
+```
+
+## Item identities
+
+r[names.identity.child] spec::names::{child, identity::{injective, proper, deeper}}
+The identity of a module is the sequence of names that leads to it. The
+identity of an item x declared in the module m is `m · x`, the identity of
+m extended by x, and the identity of a variant v of the enumeration a is
+`a · v`. Extension is injective and lengthens the identity, so distinct
+names of one parent have distinct identities, and a variant never has the
+identity of an item of its enumeration's module.
+
+```fren
+-- Extension concatenates sequences, which is outside the decidable core;
+-- the solver still proves the three laws below.
+set_option fren.lint.undecidable "allow" in
+pub fn child(parent: ItemId, name: String): ItemId := parent ++ [name]
+
+expect identity(parent: ItemId, other: ItemId, name: String, second: String, third: String) {
+    expect injective: when child(parent, name) = child(other, second),
+        parent = other and name = second
+    expect proper: child(parent, name) != parent
+    expect deeper: child(child(parent, name), second) != child(parent, third)
+}
+```
+
+r[names.environment.module] spec::names::{Env, module_of}
+A *resolution environment* R is the identity of the module's parent, the
+module's own name and a symbol environment Σ. The module's identity is its
+parent's extended by its name. A module has one item namespace:
+enumerations and functions are found by the same lookup, and a variant is
+found only through its enumeration.
+
+```fren
+pub struct Env { parent: ItemId, name: String, symb: Symb }
+
+pub fn module_of(env: Env): ItemId := child(env.parent, env.name)
+```
+
+## Paths
+
+r[names.paths.syntax] spec::names::{Path, Target}
+A *path* is a name or a shorter path followed by `::` and a name. A path
+denotes a *target*: a local, by its level; an item, by its identity; or
+the module itself.
+
+```fren
+pub enum Path { Name(String), Member(Path, String) }
+pub enum Target { Local(Int), Item(ItemId), Module }
+```
+
+r[names.paths.head] spec::names::{item_target, head}
+The first name x of a path resolves, in this order, to the local `S(x)`
+when that is defined, else to the item `m · x` when Σ binds it, else to the
+module when x is the module's own name. Locals therefore shadow items, and
+items shadow the module's name.
+
+```text
+  S(x) = i                 S(x) undefined   Σ(m · x) defined
+  ─────────────────────    ─────────────────────────────────
+  R; S ⊢ x ⇒ local i       R; S ⊢ x ⇒ item m · x
+
+  S(x) undefined   Σ(m · x) undefined   x is the name of m
+  ────────────────────────────────────────────────────────
+  R; S ⊢ x ⇒ module
+```
+
+```fren
+pub fn item_target(symb: Symb, item: ItemId): Option<Target> := match entry(symb, item) {
+    Some(_) => Some(Target::Item(item)),
+    None => None,
+}
+
+pub fn head(env: Env, scope: Scope, name: String): Option<Target> :=
+    match resolve_local(scope, name) {
+        Some(level) => Some(Target::Local(level)),
+        None => match item_target(env.symb, child(module_of(env), name)) {
+            Some(target) => Some(target),
+            None => if name = env.name then Some(Target::Module) else None,
+        },
+    }
+```
+
+r[names.paths.members] spec::names::{descend, path_target}
+Only the module and an enumeration have members. A member x of the module
+is the item `m · x`; a member v of the enumeration a is its variant
+`a · v`. A local has no members (`F0204`), and neither has a function or a
+variant (`F0204`); a name that the enumeration does not declare is an error
+(`F0203`). Qualification commits to the target of the shorter path: a
+failed member is never retried in another scope.
+
+```text
+  R; S ⊢ p ⇒ module   Σ(m · x) defined
+  ────────────────────────────────────
+  R; S ⊢ p::x ⇒ item m · x
+
+  R; S ⊢ p ⇒ item a   Σ(a) = enumeration   Σ(a · v) defined
+  ─────────────────────────────────────────────────────────
+  R; S ⊢ p::v ⇒ item a · v
+```
+
+```fren
+pub fn descend(env: Env, target: Target, name: String): Option<Target> := match target {
+    Target::Local(_) => None,
+    Target::Module => item_target(env.symb, child(module_of(env), name)),
+    Target::Item(item) => match entry(env.symb, item) {
+        Some(ItemKind::Enumeration(_)) => item_target(env.symb, child(item, name)),
+        _ => None,
+    },
+}
+
+pub fn path_target(env: Env, scope: Scope, path: Path): Option<Target> := match path {
+    Path::Name(name) => head(env, scope, name),
+    Path::Member(qualifier, name) => match path_target(env, scope, qualifier) {
+        Some(target) => descend(env, target, name),
+        None => None,
+    },
+}
+```
+
+r[names.paths.unknown] spec::names::unknown::absent
+A first name that is no local, no item and not the module's name is an
+error (`F0201`) at that occurrence, with the message
+`cannot find NAME in this scope`, where `NAME` is displayed in backticks.
+No name is substituted for it and nothing is deferred to a later pass: in
+the empty scope and the empty environment a name other than the module's
+denotes nothing.
+
+```fren
+expect unknown(parent: ItemId, own: String, name: String) {
+    expect absent: when name != own,
+        head(Env { parent, name := own, symb := Empty }, Empty, name) = None
+}
+```
+
+r[names.paths.local-members] spec::names::local_members::{first, none}
+A name with a binder in scope denotes that local, even when the module
+declares an item of the name, and a local has no members: the path `x::y`
+denotes nothing while a local `x` is in scope.
+
+```fren
+expect local_members(env: Env, scope: Scope, name: String, member: String, level: Int) {
+    expect first: head(env, Extend(scope, name), name) = Some(Target::Local(length(scope)))
+    expect none: descend(env, Target::Local(level), member) = None
+}
+```
+
+r[names.paths.positions] spec::names::{value_form, callee_item, pattern_item}
+What a path may denote depends on its position. In value position it
+denotes a local, giving the Core local of that level, or a variant, giving
+the Core constructor of that identity. The callee of a call denotes a
+function. A match pattern denotes a variant (else `F0210`, `expected a
+variant`). A path that denotes anything else has no resolution in that
+position.
+
+```fren
+pub fn value_form<E>(env: Env, scope: Scope, path: Path): Option<ExprF<E>> :=
+    match path_target(env, scope, path) {
+        Some(Target::Local(level)) => Some(ExprF::Local(level)),
+        Some(Target::Item(item)) => match entry(env.symb, item) {
+            Some(ItemKind::Constructor(_)) => Some(ExprF::Constructor(item)),
+            _ => None,
+        },
+        _ => None,
+    }
+
+pub fn callee_item(env: Env, scope: Scope, path: Path): Option<ItemId> :=
+    match path_target(env, scope, path) {
+        Some(Target::Item(item)) => match entry(env.symb, item) {
+            Some(ItemKind::Function(_)) => Some(item),
+            _ => None,
+        },
+        _ => None,
+    }
+
+pub fn pattern_item(env: Env, scope: Scope, path: Path): Option<ItemId> :=
+    match path_target(env, scope, path) {
+        Some(Target::Item(item)) => match entry(env.symb, item) {
+            Some(ItemKind::Constructor(_)) => Some(item),
+            _ => None,
+        },
+        _ => None,
+    }
+```
+
+r[names.paths.types] spec::names::{TypeName, type_item, resolve_type}
+A written type is `Bool`, `Int` or a path. `Bool` and `Int` are reserved
+type names and denote the built-in types. A path in type position resolves
+in the empty scope, so no local is visible in it, and denotes an
+enumeration a, giving the type `Nominal(a)` (else `F0210`, `expected a
+type`).
+
+```text
+                                        R; · ⊢ p ⇒ item a   Σ(a) = enumeration
+  R ⊢ Bool ⇒ Bool     R ⊢ Int ⇒ Int     ──────────────────────────────────────
+                                        R ⊢ p ⇒ Nominal(a)
+```
+
+```fren
+pub enum TypeName { Boolean, Integer, Named(Path) }
+
+pub fn type_item(env: Env, path: Path): Option<ItemId> := match path_target(env, Empty, path) {
+    Some(Target::Item(item)) => match entry(env.symb, item) {
+        Some(ItemKind::Enumeration(_)) => Some(item),
+        _ => None,
+    },
+    _ => None,
+}
+
+pub fn resolve_type(env: Env, written: TypeName): Option<Ty> := match written {
+    TypeName::Boolean => Some(Ty::Boolean),
+    TypeName::Integer => Some(Ty::Integer),
+    TypeName::Named(path) => match type_item(env, path) {
+        Some(item) => Some(Ty::Nominal(item)),
+        None => None,
+    },
+}
+```
+
+## Expressions
+
+r[names.expression.syntax] spec::names::{SrcArm, SrcF}
+A *source layer* is one written expression form over its children. It
+differs from a [Core layer](Types.md#r-types.expression.syntax) only where
+the Core has an identity or a level: a source layer has a path in value
+position, a path as a call's callee, a path as each arm's pattern, and a
+binder name and an optional written type in a `let`.
+
+```fren
+pub struct SrcArm<E> { pattern: Path, body: E }
+
+pub enum SrcF<E> {
+    BooleanLiteral(Bool),
+    IntegerLiteral(Int),
+    Name(Path),
+    Unary(UnaryOp, E),
+    Binary(BinaryOp, E, E),
+    Call(Path, Snoc<E>),
+    Let(String, Option<TypeName>, E, E),
+    If(E, E, E),
+    Match(E, Snoc<SrcArm<E>>),
+}
+```
+
+r[names.expression.layer] spec::names::{resolve_arms, resolve_annotation, resolve_layer}
+A source layer resolves, in R and S, to the Core layer of the same form
+with the same children. Its paths resolve in S as their positions require,
+and a `let`'s written type resolves as a type. The layer has no resolution
+when one of them has none. A `let` binder without a written type has none
+in the Core layer; the [suffix rule](Types.md#r-types.surface.suffix) of
+typing supplies `Bool` for a binder that ends in `?`.
+
+```text
+  R; S ⊢ p ⇒ local i      R; S ⊢ p ⇒ item c   Σ(c) = constructor
+  ─────────────────       ──────────────────────────────────────
+  R; S ⊢ p ⇒ #i           R; S ⊢ p ⇒ c
+
+  R; S ⊢ p ⇒ item f   Σ(f) = function
+  ─────────────────────────────────────
+  R; S ⊢ p(e₀, …, eₙ) ⇒ f(e₀, …, eₙ)
+
+  R ⊢ T ⇒ τ
+  ─────────────────────────────────────────────────
+  R; S ⊢ let x: T := e₁ in e₂ ⇒ let τ := e₁ in e₂
+
+  R; S ⊢ pₖ ⇒ item cₖ   Σ(cₖ) = constructor   (each k)
+  ──────────────────────────────────────────────────────────────────
+  R; S ⊢ match e { p₀ => e₀, …, pₙ => eₙ } ⇒ match e { c₀ => e₀, …, cₙ => eₙ }
+```
+
+```fren
+pub fn resolve_arms<E>(env: Env, scope: Scope, arms: Snoc<SrcArm<E>>): Option<Snoc<ArmF<E>>> :=
+    match arms {
+        Empty => Some(Empty),
+        Extend(earlier, arm) =>
+            match resolve_arms(env, scope, earlier), pattern_item(env, scope, arm.pattern) {
+                Some(resolved), Some(constructor) =>
+                    Some(Extend(resolved, ArmF { constructor, body := arm.body })),
+                _, _ => None,
+            },
+    }
+
+pub fn resolve_annotation(env: Env, written: Option<TypeName>): Option<Option<Ty>> :=
+    match written {
+        None => Some(None),
+        Some(name) => match resolve_type(env, name) {
+            Some(ty) => Some(Some(ty)),
+            None => None,
+        },
+    }
+
+pub fn resolve_layer<E>(env: Env, scope: Scope, form: SrcF<E>): Option<ExprF<E>> := match form {
+    SrcF::BooleanLiteral(value?) => Some(ExprF::BooleanLiteral(value?)),
+    SrcF::IntegerLiteral(value) => Some(ExprF::IntegerLiteral(value)),
+    SrcF::Name(path) => value_form(env, scope, path),
+    SrcF::Unary(op, operand) => Some(ExprF::Unary(op, operand)),
+    SrcF::Binary(op, left, right) => Some(ExprF::Binary(op, left, right)),
+    SrcF::Call(path, args) => match callee_item(env, scope, path) {
+        Some(item) => Some(ExprF::Call(item, args)),
+        None => None,
+    },
+    SrcF::Let(_, annotation, value, body) => match resolve_annotation(env, annotation) {
+        Some(core) => Some(ExprF::Let(core, value, body)),
+        None => None,
+    },
+    SrcF::If(condition, then_branch, else_branch) =>
+        Some(ExprF::If(condition, then_branch, else_branch)),
+    SrcF::Match(scrutinee, arms) => match resolve_arms(env, scope, arms) {
+        Some(resolved) => Some(ExprF::Match(scrutinee, resolved)),
+        None => None,
+    },
+}
+```
+
+r[names.handoff.items] spec::names::bound_items::{constructor, function, pattern}
+The items of a resolved layer are bound as typing requires: a resolved
+constructor is bound in Σ as a constructor, a resolved callee as a
+function, and the item of a resolved pattern as a constructor.
+
+```fren
+set_option fren.evidence "random" in
+pub proc bound_items(
+    env: Env,
+    scope: Scope,
+    form: SrcF<Int>,
+    path: Path,
+    args: Snoc<Int>,
+    item: ItemId,
+): (holds?) {
+    ensure output: holds?
+    ensure constructor: when resolve_layer(env, scope, form) = Some(ExprF::Constructor(item)),
+        entry(env.symb, item) is Some(ItemKind::Constructor(_))
+    ensure function: when resolve_layer(env, scope, form) = Some(ExprF::Call(item, args)),
+        entry(env.symb, item) is Some(ItemKind::Function(_))
+    ensure pattern: when pattern_item(env, scope, path) = Some(item),
+        entry(env.symb, item) is Some(ItemKind::Constructor(_))
+}
+```
+
+r[names.expression.weakening] spec::names::{path_head, arms_mention?, mentions?, shifted_form, layer_weakening::shifted}
+A layer *mentions* a name when it is the first name of one of the layer's
+paths in value, callee or pattern position. Inserting a binder of a name
+that the layer does not mention at level n of S, with `0 ≤ n ≤ |S|`, shifts
+the layer's resolution at n and changes nothing else, as `shift_form` of
+[typing's weakening](Types.md#r-types.derivation.weakening) does. So the
+resolution of an expression survives a new binder around it that captures
+none of its names.
+
+```fren
+pub fn path_head(path: Path): String := match path {
+    Path::Name(name) => name,
+    Path::Member(qualifier, _) => path_head(qualifier),
+}
+
+pub fn arms_mention?(arms: Snoc<SrcArm<Int>>, name: String) := match arms {
+    Empty => false,
+    Extend(earlier, arm) => path_head(arm.pattern) = name or arms_mention?(earlier, name),
+}
+
+pub fn mentions?(form: SrcF<Int>, name: String) := match form {
+    SrcF::Name(path) => path_head(path) = name,
+    SrcF::Call(path, _) => path_head(path) = name,
+    SrcF::Match(_, arms) => arms_mention?(arms, name),
+    _ => false,
+}
+
+pub fn shifted_form(form: Option<Form>, cutoff: Int): Option<Form> := match form {
+    Some(core) => Some(shift_form(core, cutoff)),
+    None => None,
+}
+
+set_option fren.evidence "random" in
+pub proc layer_weakening(env: Env, scope: Scope, form: SrcF<Int>, cutoff: Int, extra: String): (
+    holds?,
+) {
+    ensure output: holds?
+    ensure shifted: when 0 <= cutoff <= length(scope) and not mentions?(form, extra),
+        resolve_layer(env, insert_name(scope, cutoff, extra), form)
+            = shifted_form(resolve_layer(env, scope, form), cutoff)
+}
+```
+
+r[names.locals.let] spec::names::{SrcRow, has_scope?, arguments_scoped?, arms_scoped?, children_scoped?}
+An expression is given as a *source table*: a snoc sequence of rows, each a
+source layer whose children are the levels of earlier rows, with the scope
+in which the layer is read. Every child of a layer is read in the layer's
+own scope, with one exception: the body of `let x := e₁ in e₂` is read in
+`S, x`, while e₁ is read in S. A child level that names no earlier row
+fails.
+
+```fren
+pub struct SrcRow { form: SrcF<Int>, scope: Scope }
+
+pub fn has_scope?(rows: Snoc<SrcRow>, position: Int, scope: Scope) :=
+    match lookup(rows, position) {
+        Some(row) => row.scope = scope,
+        None => false,
+    }
+
+pub fn arguments_scoped?(rows: Snoc<SrcRow>, args: Snoc<Int>, scope: Scope) := match args {
+    Empty => true,
+    Extend(earlier, arg) =>
+        arguments_scoped?(rows, earlier, scope) and has_scope?(rows, arg, scope),
+}
+
+pub fn arms_scoped?(rows: Snoc<SrcRow>, arms: Snoc<SrcArm<Int>>, scope: Scope) := match arms {
+    Empty => true,
+    Extend(earlier, arm) =>
+        arms_scoped?(rows, earlier, scope) and has_scope?(rows, arm.body, scope),
+}
+
+pub fn children_scoped?(rows: Snoc<SrcRow>, scope: Scope, form: SrcF<Int>) := match form {
+    SrcF::Unary(_, operand) => has_scope?(rows, operand, scope),
+    SrcF::Binary(_, left, right) =>
+        has_scope?(rows, left, scope) and has_scope?(rows, right, scope),
+    SrcF::Call(_, args) => arguments_scoped?(rows, args, scope),
+    SrcF::Let(name, _, value, body) =>
+        has_scope?(rows, value, scope) and has_scope?(rows, body, Extend(scope, name)),
+    SrcF::If(condition, then_branch, else_branch) =>
+        has_scope?(rows, condition, scope)
+        and has_scope?(rows, then_branch, scope)
+        and has_scope?(rows, else_branch, scope),
+    SrcF::Match(scrutinee, arms) =>
+        has_scope?(rows, scrutinee, scope) and arms_scoped?(rows, arms, scope),
+    _ => true,
+}
+```
+
+r[names.locals.siblings] spec::names::siblings::{value, operand}
+A binder is in scope only in its `let`'s body: the scope of a `let`'s
+value, and of both operands of an operator, is the scope of the layer
+itself, whatever its other children bind.
+
+```fren
+set_option fren.evidence "random" in
+pub proc siblings(
+    rows: Snoc<SrcRow>,
+    scope: Scope,
+    name: String,
+    annotation: Option<TypeName>,
+    op: BinaryOp,
+    first: Int,
+    second: Int,
+    row: SrcRow,
+): (holds?) {
+    ensure output: holds?
+    ensure value: when children_scoped?(rows, scope, SrcF::Let(name, annotation, first, second))
+        and lookup(rows, first) = Some(row),
+        row.scope = scope
+    ensure operand: when children_scoped?(rows, scope, SrcF::Binary(op, first, second))
+        and lookup(rows, second) = Some(row),
+        row.scope = scope
+}
+```
+
+r[names.expression.table] spec::names::{resolve_rows, resolve_expression}
+A source table resolves to the snoc sequence of its rows' Core layers, row
+by row, when every row's children have their scopes and every row's layer
+resolves; a resolved row keeps its level, so child levels mean the same in
+both tables. An expression resolves in S when its table resolves and its
+root, the last row, has scope S. Rows that no other row uses are resolved
+too.
+
+```fren
+pub fn resolve_rows(env: Env, rows: Snoc<SrcRow>): Option<Snoc<Form>> := match rows {
+    Empty => Some(Empty),
+    Extend(earlier, row) =>
+        match resolve_rows(env, earlier), resolve_layer(env, row.scope, row.form) {
+            Some(resolved), Some(form) =>
+                if children_scoped?(earlier, row.scope, row.form) then Some(Extend(resolved, form))
+                else None,
+            _, _ => None,
+        },
+}
+
+pub fn resolve_expression(env: Env, scope: Scope, rows: Snoc<SrcRow>): Option<Snoc<Form>> :=
+    match rows {
+        Empty => None,
+        Extend(_, root) => if root.scope = scope then resolve_rows(env, rows) else None,
+    }
+```
+
+r[names.handoff.scoped] spec::names::table_scoping::{aligned, in_scope}
+Resolution's result is well scoped for typing. A resolved table has one
+Core layer for each source row, and every Core local `#i` of it lies in
+the scope of its source row: `0 ≤ i < |S|`. A context parallel to that
+scope therefore has an entry at level i, as the [local
+rule](Types.md#r-types.expression.local) of typing requires.
+
+```fren
+set_option fren.evidence "random" in
+pub proc table_scoping(
+    env: Env,
+    rows: Snoc<SrcRow>,
+    forms: Snoc<Form>,
+    position: Int,
+    row: SrcRow,
+    level: Int,
+): (holds?) {
+    ensure output: holds?
+    ensure aligned: when resolve_rows(env, rows) = Some(forms), length(forms) = length(rows)
+    ensure in_scope: when resolve_rows(env, rows) = Some(forms)
+        and lookup(rows, position) = Some(row)
+        and lookup(forms, position) = Some(ExprF::Local(level)),
+        0 <= level < length(row.scope)
+}
+```
+
+## Declarations and collection
+
+r[names.collection.syntax] spec::names::{Param, SrcDecl, decl_name, item_names, param_names}
+A module's declarations are enumerations, each with a name and its
+variants' names in written order, and functions, each with a name, its
+parameters in written order, a written result type and the source table of
+its body. A parameter has a name and a written type; a parameter written
+without a type is the derived form that [typing's annotation
+rule](Types.md#r-types.surface.annotation) defines.
+
+```fren
+pub struct Param { name: String, ty: TypeName }
+
+pub enum SrcDecl {
+    Enumeration(String, Snoc<String>),
+    Function(String, Snoc<Param>, TypeName, Snoc<SrcRow>),
+}
+
+pub fn decl_name(decl: SrcDecl): String := match decl {
+    SrcDecl::Enumeration(name, _) => name,
+    SrcDecl::Function(name, _, _, _) => name,
+}
+
+pub fn item_names(decls: Snoc<SrcDecl>): Scope := match decls {
+    Empty => Empty,
+    Extend(earlier, decl) => Extend(item_names(earlier), decl_name(decl)),
+}
+
+pub fn param_names(params: Snoc<Param>): Scope := match params {
+    Empty => Empty,
+    Extend(earlier, param) => Extend(param_names(earlier), param.name),
+}
+```
+
+r[names.collection.duplicates] spec::names::{distinct?, reserved?, decl_names_ok?, decls_names_ok?, names_ok?}
+Two declarations of one module with the same name are an error (`F0206`),
+whatever their kinds and order. A declaration named `Bool` or `Int` is an
+error (`F0212`): these are reserved type names.
+
+```fren
+pub fn distinct?(names: Scope) := match names {
+    Empty => true,
+    Extend(earlier, name) => resolve_local(earlier, name) = None and distinct?(earlier),
+}
+
+pub fn reserved?(name: String) := name is "Bool" | "Int"
+
+pub fn decl_names_ok?(decl: SrcDecl) :=
+    not reserved?(decl_name(decl))
+    and match decl {
+        SrcDecl::Enumeration(_, variants) => distinct?(variants),
+        SrcDecl::Function(_, params, _, _) => distinct?(param_names(params)),
+    }
+
+pub fn decls_names_ok?(decls: Snoc<SrcDecl>) := match decls {
+    Empty => true,
+    Extend(earlier, decl) => decls_names_ok?(earlier) and decl_names_ok?(decl),
+}
+
+pub fn names_ok?(decls: Snoc<SrcDecl>) := distinct?(item_names(decls)) and decls_names_ok?(decls)
+```
+
+r[names.collection.members]
+The variant names of one enumeration are distinct, and so are the
+parameter names of one function; a repeated name is an error (`F0213`).
+`decl_names_ok?` above states both. Two enumerations may declare variants
+of the same name: their identities differ.
+
+r[names.collection.complete] spec::names::{constructors, bind_constructors, collect_types}
+Collection has two steps, and both read every declaration before any body
+is resolved, so a declaration is visible in the whole module, before and
+after the place where it is written. The first step binds every
+enumeration `a = m · x` with its variants' identities in written order,
+and each variant `a · v` as a constructor of a.
+
+```fren
+pub fn constructors(owner: ItemId, variants: Snoc<String>): Snoc<ItemId> := match variants {
+    Empty => Empty,
+    Extend(earlier, variant) => Extend(constructors(owner, earlier), child(owner, variant)),
+}
+
+pub fn bind_constructors(symb: Symb, owner: ItemId, variants: Snoc<String>): Symb :=
+    match variants {
+        Empty => symb,
+        Extend(earlier, variant) => Extend(
+            bind_constructors(symb, owner, earlier),
+            Entry { item := child(owner, variant), kind := ItemKind::Constructor(owner) }
+        ),
+    }
+
+pub fn collect_types(module: ItemId, decls: Snoc<SrcDecl>): Symb := match decls {
+    Empty => Empty,
+    Extend(earlier, decl) => match decl {
+        SrcDecl::Enumeration(name, variants) => bind_constructors(
+            Extend(
+                collect_types(module, earlier),
+                Entry {
+                    item := child(module, name),
+                    kind := ItemKind::Enumeration(constructors(child(module, name), variants)),
+                }
+            ),
+            child(module, name),
+            variants
+        ),
+        SrcDecl::Function(_, _, _, _) => collect_types(module, earlier),
+    },
+}
+```
+
+r[names.locals.annotations] spec::names::{resolve_params, signature, collect_functions, collect}
+The second step binds every function `m · f` with its signature. The
+written types of its parameters and result resolve in the environment of
+the first step, which binds every enumeration of the module; no parameter
+is in scope in them. The signature's parameter context has the resolved
+types in written order. Collection yields the environment of both steps,
+and yields none when a name is repeated or reserved or a written type has
+no resolution.
+
+```text
+  names of ds distinct, none reserved   m ⊢ ds ⇒ Σ₀ (enumerations and variants)
+  (m, Σ₀) ⊢ Tₖ ⇒ τₖ and (m, Σ₀) ⊢ T ⇒ τ, for each function f(x₀: T₀, …, xₙ: Tₙ): T of ds
+  ───────────────────────────────────────────────────────────────────────────────────
+  m ⊢ ds ⇒ Σ₀, …, m · f = function (τ₀, …, τₙ) → τ, …
+```
+
+```fren
+pub fn resolve_params(env: Env, params: Snoc<Param>): Option<Ctx> := match params {
+    Empty => Some(Empty),
+    Extend(earlier, param) => match resolve_params(env, earlier), resolve_type(env, param.ty) {
+        Some(ctx), Some(ty) => Some(Extend(ctx, ty)),
+        _, _ => None,
+    },
+}
+
+pub fn signature(env: Env, params: Snoc<Param>, result: TypeName): Option<Sig> :=
+    match resolve_params(env, params), resolve_type(env, result) {
+        Some(ctx), Some(ty) => Some(Sig { params := ctx, result := ty }),
+        _, _ => None,
+    }
+
+pub fn collect_functions(env: Env, decls: Snoc<SrcDecl>): Option<Symb> := match decls {
+    Empty => Some(env.symb),
+    Extend(earlier, decl) => match decl {
+        SrcDecl::Enumeration(_, _) => collect_functions(env, earlier),
+        SrcDecl::Function(name, params, result, _) =>
+            match collect_functions(env, earlier), signature(env, params, result) {
+                Some(symb), Some(sig) => Some(
+                    Extend(
+                        symb,
+                        Entry { item := child(module_of(env), name), kind := ItemKind::Function(sig) }
+                    )
+                ),
+                _, _ => None,
+            },
+    },
+}
+
+pub fn collect(parent: ItemId, name: String, decls: Snoc<SrcDecl>): Option<Symb> :=
+    if names_ok?(decls) then collect_functions(
+        Env { parent, name, symb := collect_types(child(parent, name), decls) },
+        decls
+    )
+    else None
+```
+
+r[names.collection.rejected] spec::names::rejected::{duplicate, repeated_variant, reserved_name, repeated_parameter}
+Collection yields no environment for two declarations of one name, for an
+enumeration with a repeated variant, for a declaration named `Bool`, or for
+a function with a repeated parameter.
+
+```fren
+set_option fren.evidence "random" in
+pub proc rejected(
+    parent: ItemId,
+    module: String,
+    name: String,
+    variant: String,
+    first: Snoc<String>,
+    second: Snoc<String>,
+    ty: TypeName,
+    body: Snoc<SrcRow>,
+): (holds?) {
+    ensure output: holds?
+    ensure duplicate: collect(
+        parent,
+        module,
+        Extend(
+            Extend(Empty, SrcDecl::Enumeration(name, first)),
+            SrcDecl::Enumeration(name, second)
+        )
+    ) = None
+    ensure repeated_variant: collect(
+        parent,
+        module,
+        Extend(
+            Empty,
+            SrcDecl::Enumeration(name, Extend(Extend(Empty, variant), variant))
+        )
+    ) = None
+    ensure reserved_name: collect(parent, module, Extend(Empty, SrcDecl::Enumeration("Bool", first)))
+        = None
+    ensure repeated_parameter: collect(
+        parent,
+        module,
+        Extend(
+            Empty,
+            SrcDecl::Function(
+                name,
+                Extend(
+                    Extend(Empty, Param { name := variant, ty }),
+                    Param { name := variant, ty }
+                ),
+                ty,
+                body
+            )
+        )
+    ) = None
+}
+```
+
+r[names.collection.order] spec::names::collection_order::{accepted, bindings}
+Collection does not depend on the order of declarations: exchanging the
+last two declarations changes neither whether collection yields an
+environment nor what that environment binds to any identity. That every
+permutation of the declarations is likewise immaterial follows by
+induction on the declarations after the exchanged pair; that induction is
+not stated in Fren and is open.
+
+```fren
+set_option fren.evidence "random" in
+pub proc collection_order(
+    parent: ItemId,
+    name: String,
+    decls: Snoc<SrcDecl>,
+    first: SrcDecl,
+    second: SrcDecl,
+    left: Symb,
+    right: Symb,
+    item: ItemId,
+): (holds?) {
+    ensure output: holds?
+    ensure accepted: (collect(parent, name, Extend(Extend(decls, first), second)) = None)
+        iff (collect(parent, name, Extend(Extend(decls, second), first)) = None)
+    ensure bindings: when collect(parent, name, Extend(Extend(decls, first), second)) = Some(left)
+        and collect(parent, name, Extend(Extend(decls, second), first)) = Some(right),
+        entry(left, item) = entry(right, item)
+}
+
+trusted collection_order: "open: the exchange law needs that collected identities are distinct, which is not yet proved in Lean"
+```
+
+r[names.handoff.environment] spec::names::collection_well_formed::well_formed
+The environment that collection yields is well formed, `⊢ Σ ok`: it binds
+each identity once, every signature's types name enumerations that it
+binds, and every enumeration lists exactly its own constructors. This is
+the premise that [typing assumes of
+resolution](Types.md#r-types.symbols.resolution).
+
+```fren
+set_option fren.evidence "random" in
+pub proc collection_well_formed(parent: ItemId, name: String, decls: Snoc<SrcDecl>, symb: Symb): (
+    holds?,
+) {
+    ensure output: holds?
+    ensure well_formed: when collect(parent, name, decls) = Some(symb), symb_ok?(symb)
+}
+
+trusted collection_well_formed: "open: not yet proved in Lean; random testing has found no counterexample"
+```
+
+r[names.locals.parameters] spec::names::{parameters_parallel::parallel, bodies_resolve?, module_resolves?}
+A function's body resolves in the scope of its parameter names in written
+order: the first parameter has level 0, and no other local is in scope.
+That scope is parallel to the signature's parameter context, which has one
+type for each parameter name. A module *resolves* when its declarations
+collect to an environment Σ and every function's body resolves in
+`(m, Σ)` and its parameter scope.
+
+```fren
+set_option fren.evidence "random" in
+pub proc parameters_parallel(env: Env, params: Snoc<Param>, result: TypeName, sig: Sig): (holds?) {
+    ensure output: holds?
+    ensure parallel: when signature(env, params, result) = Some(sig),
+        length(sig.params) = length(param_names(params))
+}
+
+pub fn bodies_resolve?(env: Env, decls: Snoc<SrcDecl>) := match decls {
+    Empty => true,
+    Extend(earlier, decl) =>
+        bodies_resolve?(env, earlier)
+        and match decl {
+            SrcDecl::Enumeration(_, _) => true,
+            SrcDecl::Function(_, params, _, body) =>
+                resolve_expression(env, param_names(params), body) != None,
+        },
+}
+
+pub fn module_resolves?(parent: ItemId, name: String, decls: Snoc<SrcDecl>) :=
+    match collect(parent, name, decls) {
+        Some(symb) => bodies_resolve?(Env { parent, name, symb }, decls),
+        None => false,
+    }
+```
+
+## Examples
+
+r[names.examples.resolved] spec::names::{ROOT, LIGHT_PATH, RED_PATH, GREEN_PATH, NEXT_BODY, NEXT_DECLS, NEXT_SYMB, NEXT_ENV, NEXT_FORMS, COLLECT_EXAMPLE, BODY_EXAMPLE, MODULE_EXAMPLE, SHADOW_ROWS, SHADOW_EXAMPLE, SIBLING_ROWS, SIBLING_EXAMPLE, worked_examples::valid}
+The module `M` declares `enum Light { Red, Green }` and
+
+```text
+  fn next(l: Light): Light := match l { Light::Red => Light::Green, Light::Green => Light::Red }
+```
+
+Collection yields the environment that binds `M · Light` as an enumeration
+listing `M · Light · Red` and `M · Light · Green`, both as its
+constructors, and `M · next` as a function from `Nominal(M · Light)` to
+`Nominal(M · Light)`. The body's table and its resolution, in the scope
+`l`, are:
+
+```text
+  0   l                                    #0
+  1   Light::Green                         M · Light · Green
+  2   Light::Red                           M · Light · Red
+  3   match 0 { Light::Red => 1,           match 0 { M · Light · Red => 1,
+                Light::Green => 2 }                  M · Light · Green => 2 }
+```
+
+In `let x := 1 in let x := true in x` the last `x` is read in the scope
+`x, x` and resolves to `#1`, the newer binder. In `(let x := 1 in x) + x`
+the right operand is read in the empty scope, as its sibling's binder is
+not in scope there, and has no resolution.
+
+```fren
+use spec::types::{LIGHT, LIGHT_GREEN, LIGHT_RED, one, two}
+
+pub const ROOT: ItemId := []
+pub const LIGHT_PATH: Path := Path::Name("Light")
+pub const RED_PATH: Path := Path::Member(LIGHT_PATH, "Red")
+pub const GREEN_PATH: Path := Path::Member(LIGHT_PATH, "Green")
+
+pub const NEXT_BODY: Snoc<SrcRow> := Extend(
+    Extend(
+        Extend(
+            Extend(Empty, SrcRow { form := SrcF::Name(Path::Name("l")), scope := one("l") }),
+            SrcRow { form := SrcF::Name(GREEN_PATH), scope := one("l") }
+        ),
+        SrcRow { form := SrcF::Name(RED_PATH), scope := one("l") }
+    ),
+    SrcRow {
+        form := SrcF::Match(
+            0,
+            two(SrcArm { pattern := RED_PATH, body := 1 }, SrcArm { pattern := GREEN_PATH, body := 2 })
+        ),
+        scope := one("l"),
+    }
+)
+
+pub const NEXT_DECLS: Snoc<SrcDecl> := two(
+    SrcDecl::Enumeration("Light", two("Red", "Green")),
+    SrcDecl::Function(
+        "next",
+        one(Param { name := "l", ty := TypeName::Named(LIGHT_PATH) }),
+        TypeName::Named(LIGHT_PATH),
+        NEXT_BODY
+    )
+)
+
+pub const NEXT_SYMB: Symb := Extend(
+    Extend(
+        Extend(
+            Extend(
+                Empty,
+                Entry { item := LIGHT, kind := ItemKind::Enumeration(two(LIGHT_RED, LIGHT_GREEN)) }
+            ),
+            Entry { item := LIGHT_RED, kind := ItemKind::Constructor(LIGHT) }
+        ),
+        Entry { item := LIGHT_GREEN, kind := ItemKind::Constructor(LIGHT) }
+    ),
+    Entry {
+        item := ["M", "next"],
+        kind := ItemKind::Function(
+            Sig { params := one(Ty::Nominal(LIGHT)), result := Ty::Nominal(LIGHT) }
+        ),
+    }
+)
+
+pub const NEXT_ENV: Env := Env { parent := ROOT, name := "M", symb := NEXT_SYMB }
+
+pub const NEXT_FORMS: Snoc<Form> := Extend(
+    Extend(
+        Extend(Extend(Empty, ExprF::Local(0)), ExprF::Constructor(LIGHT_GREEN)),
+        ExprF::Constructor(LIGHT_RED)
+    ),
+    ExprF::Match(
+        0,
+        two(
+            ArmF { constructor := LIGHT_RED, body := 1 },
+            ArmF { constructor := LIGHT_GREEN, body := 2 }
+        )
+    )
+)
+
+pub const COLLECT_EXAMPLE: Bool := collect(ROOT, "M", NEXT_DECLS) = Some(NEXT_SYMB)
+pub const BODY_EXAMPLE: Bool := resolve_expression(NEXT_ENV, one("l"), NEXT_BODY) = Some(NEXT_FORMS)
+pub const MODULE_EXAMPLE: Bool := module_resolves?(ROOT, "M", NEXT_DECLS)
+
+pub const SHADOW_ROWS: Snoc<SrcRow> := Extend(
+    Extend(
+        Extend(
+            Extend(
+                Extend(Empty, SrcRow { form := SrcF::IntegerLiteral(1), scope := Empty }),
+                SrcRow { form := SrcF::BooleanLiteral(true), scope := one("x") }
+            ),
+            SrcRow { form := SrcF::Name(Path::Name("x")), scope := two("x", "x") }
+        ),
+        SrcRow { form := SrcF::Let("x", None, 1, 2), scope := one("x") }
+    ),
+    SrcRow { form := SrcF::Let("x", None, 0, 3), scope := Empty }
+)
+
+pub const SHADOW_EXAMPLE: Bool := resolve_expression(NEXT_ENV, Empty, SHADOW_ROWS) = Some(
+    Extend(
+        Extend(
+            Extend(
+                Extend(Extend(Empty, ExprF::IntegerLiteral(1)), ExprF::BooleanLiteral(true)),
+                ExprF::Local(1)
+            ),
+            ExprF::Let(None, 1, 2)
+        ),
+        ExprF::Let(None, 0, 3)
+    )
+)
+
+pub const SIBLING_ROWS: Snoc<SrcRow> := Extend(
+    Extend(
+        Extend(
+            Extend(
+                Extend(Empty, SrcRow { form := SrcF::IntegerLiteral(1), scope := Empty }),
+                SrcRow { form := SrcF::Name(Path::Name("x")), scope := one("x") }
+            ),
+            SrcRow { form := SrcF::Let("x", None, 0, 1), scope := Empty }
+        ),
+        SrcRow { form := SrcF::Name(Path::Name("x")), scope := Empty }
+    ),
+    SrcRow { form := SrcF::Binary(BinaryOp::Add, 2, 3), scope := Empty }
+)
+
+pub const SIBLING_EXAMPLE: Bool := resolve_expression(NEXT_ENV, Empty, SIBLING_ROWS) = None
+
+-- The examples are constant judgments, which the wrapper evaluates.
+set_option fren.lint.assertions_on_constants "allow" in
+set_option fren.evidence "random" in
+pub proc worked_examples(): (holds?) {
+    ensure output: holds?
+    ensure valid: COLLECT_EXAMPLE and BODY_EXAMPLE and MODULE_EXAMPLE and SHADOW_EXAMPLE and SIBLING_EXAMPLE
+}
+```
+
+## Interface
+
+r[names.overview.interface] spec::resolution::{resolved, resolves?}
+The overview's interface: `resolves?` and `resolved` are uninterpreted
+functions over this chapter's types, whose contract states that the
+resolution of an expression is the value of a function of the environment,
+the scope and the expression's table, and that it has one Core layer for
+each source row. The chapter's wrapper interprets `resolves?` by
+`resolve_expression` and so proves the contract for the detailed
+definitions: the interpretation is the refinement relation.
+
+```fren
+pub mod spec::resolution
+
+use spec::names::{Env, Scope, SrcRow}
+use spec::types::{Form, Snoc, length}
+
+pub fn resolved(Env, Scope, Snoc<SrcRow>): Snoc<Form>
+
+pub fn resolves?(env: Env, scope: Scope, rows: Snoc<SrcRow>, forms: Snoc<Form>): (holds?) {
+    ensure function: when holds?, forms = resolved(env, scope, rows)
+    ensure aligned: when holds?, length(forms) = length(rows)
+}
+```
+
+r[names.overview.determinism] spec::resolution::determinism::unique
+An expression has at most one resolution.
+
+```fren
+expect determinism(env: Env, scope: Scope, rows: Snoc<SrcRow>, a: Snoc<Form>, b: Snoc<Form>) {
+    expect unique: not resolves?(env, scope, rows, a) or not resolves?(env, scope, rows, b) or a = b
+}
+```
+
+## Informative source examples
+
+These source programs are checked, with the diagnostics they expect, by
+both of today's front ends. They are informative: the correspondence
+between written source text and this chapter's source tables belongs to
+the [syntax chapter](Syntax.md).
 
 ```fren example
+--@ reference: names.paths.unknown
 pub mod bad
 
 pub fn f(x: Int): Int := y + 1  --~ error: cannot find `y` in this scope
 ```
 
-The input parses successfully in Fren2. Resolution must fail at `y` with
-`F0201`; it must not substitute `x`, invent a binder or defer the unknown
-name to the solver.
-
 ```fren example
+--@ reference: names.collection.duplicates
 pub mod duplicate
 
 pub enum Light { Red }
@@ -199,10 +1184,8 @@ pub enum Light { Green }  --~ error: the name `Light` is already defined in modu
 ```
 
 ```fren example
+--@ reference: names.collection.members
 pub mod duplicate_variant
 
 pub enum Light { Red, Red }  --~ error: variant `Red` is defined multiple times
 ```
-
-Implementation correspondence and proof coverage are recorded in the
-[development coverage document](../../../docs/fren2-specification-coverage.md).
