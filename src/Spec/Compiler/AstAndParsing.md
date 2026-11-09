@@ -26,20 +26,24 @@ typing and solver verdicts.
 <!-- status: tested Spec.Language.Syntax.grammar_agrees -->
 
 r[parsing.grammar.trees]
-The parser's tree of an accepted text, without parentheses and trivia, is
-the abstract syntax tree that `syntax.tree.productions` gives, with its
-written grouping and order.
+The parser's tree of an accepted expression, without parentheses and
+trivia, is the abstract syntax tree that `syntax.tree.productions` gives,
+with its written grouping and order.
 <!-- status: tested Spec.Language.Syntax.roundtrip_agrees -->
+
+r[parsing.grammar.declaration-trees]
+The parser's tree of an accepted file, without parentheses and trivia, is
+the sequence of declaration trees that `syntax.tree.productions` gives.
+<!-- status: tested Spec.Language.Syntax.trees_agree -->
 
 ## One parser and its entries
 
 Each driver hands Fren text to the same parser, with an entry category.
 
 r[parsing.shared.entry]
-The parser's entry categories are one parser: the file and context
-categories read a `File` and give the same tree or the same diagnostic
-for the same text and file identity, and the expression category reads an
-`ExpressionEntry`. Each consumes its whole input.
+The file and context categories are one parser: for the same text and file
+identity, they give the same tree or the same diagnostic. Which texts each
+category accepts is `syntax.file.syntax`.
 <!-- status: tested FrenParseTests.entriesAgree -->
 
 r[parsing.shared.drivers]
@@ -73,10 +77,10 @@ half-open UTF-8 byte offsets within that source's byte length.
 <!-- status: tested FrenParseTests.audit -->
 
 r[parsing.source.utf8]
-The parser reads source text as `lexical.source.encoding` defines it.
-Token, trivia and diagnostic endpoints lie on character boundaries, with
-the end of input at the byte length, and invalid bytes fail before any
-tree is built.
+The parser reads source text as `lexical.source.encoding` defines it,
+which also rejects invalid bytes before any tree is built. Token, trivia
+and diagnostic endpoints lie on character boundaries, with the end of input
+at the byte length.
 <!-- status: tested FrenParseTests.audit -->
 
 > **Note:** Tree nodes may reference or enclose slices, so the span of a
@@ -110,12 +114,17 @@ the same result, tree and diagnostic.
 <!-- status: lean FrenParse.deterministic -->
 
 r[parsing.diagnostic.anchor]
-A syntax diagnostic is at the first token, rejected text or end of input
-where the grammar cannot continue, and says what was expected there. A
-missing `}`, or an arm that ends at `=>`, is reported at the end of input
-with the empty span `[size, size)`; an extra `}` after a valid
-declaration, at that `}`; and rejected text, at its bytes.
+A syntax diagnostic is at a token, rejected text or the end of input, with
+the empty span `[size, size)` there, and says what was expected.
 <!-- status: tested FrenParseTests.audit -->
+
+r[parsing.diagnostic.first]
+A syntax diagnostic is at the first token, rejected text or end of input
+where the grammar cannot continue, and what it says was expected is what
+the grammar would accept there. A missing `}`, or an arm that ends at
+`=>`, is reported at the end of input; an extra `}` after a valid
+declaration, at that `}`; and rejected text, at its bytes.
+<!-- status: open -->
 
 The [Syntax](../Language/Syntax.md) chapter's rejected examples state
 their diagnostics, which its wrapper checks.

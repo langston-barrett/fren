@@ -1403,10 +1403,13 @@ Evidence of these chapters, and its bounds:
   trees and files, and the texts near them (`grammar_agrees`), and a
   mutation control of 34 wrong grammars is caught (`mutants_caught`); not
   proved for all texts.
-- [ ] Printing and parsing round-trip 2000 seeded random trees and every
+- [ ] Printing and parsing round-trip 1000 seeded random trees and every
   operator pair, with minimal parentheses (`roundtrip_agrees`); not proved
   for all trees.
 - [ ] `parsing.shared.drivers` is open: the command line and the hosted
   reader do not yet call `FrenParse`.
 - [ ] `parsing.primitive.boundary` is open: no theorem relates continuation
   bytes to character boundaries.
+- [ ] `parsing.diagnostic.first` is open: tests check diagnostic positions
+  of chosen texts, not that each is the first point where the grammar
+  cannot continue.

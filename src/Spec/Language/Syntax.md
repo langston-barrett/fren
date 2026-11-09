@@ -483,7 +483,10 @@ text that the parser rejects or that has another tree. A subtree fits a
 place when the nonterminal that derives it without parentheses, its
 *category*, is no looser than the place's, unless it is *open*, an `if` or
 `let`, or an operator node whose last subtree is open and stands without
-parentheses, and something of the enclosing expression follows it. Declarations are outside this property.
+parentheses, and it is the left operand of a binary operator, which would
+follow it. Elsewhere a keyword or punctuator that no expression continues
+with, such as `then`, `in`, `,` or `)`, ends an open subtree. Declarations
+are outside this property.
 <!-- status: tested Spec.Language.Syntax.roundtrip_agrees -->
 
 ```fren
@@ -538,10 +541,10 @@ pub fn left_category(op: BinaryOp): Category :=
     if non_associative?(op) then right_category(op) else binary_category(op)
 
 -- Whether a subtree of category `child`, open or not, may stand without
--- parentheses at a place of category `place`, followed or not by more of
--- the enclosing expression.
-pub fn fits?(child: Category, open?, place: Category, followed?) :=
-    rank(child) >= rank(place) and not (open? and followed?)
+-- parentheses at a place of category `place`; `left_operand?` is whether
+-- the place is a binary operator's left operand.
+pub fn fits?(child: Category, open?, place: Category, left_operand?) :=
+    rank(child) >= rank(place) and not (open? and left_operand?)
 ```
 
 r[syntax.property.operands] spec::surface::operands::{right, left_associative, non_associative}
