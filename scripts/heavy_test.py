@@ -2367,12 +2367,15 @@ def test_machine_pressure():
 
 def test_memory_prediction():
     # fren-covers: testing::heavy_memory_prediction
+    if not os.access(os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
+        assert heavy.command_forecast("lake build") == (None, 0)
+        return
     with tempfile.TemporaryDirectory() as state:
         now = 1000000
         def job(ended, peak, kind="lake build"):
-            heavy.append_log({"event": "job", "job_kind": kind, "ended_at": ended,
-                              "peak_rss_kb": peak}, state, {})
-        assert heavy.predict_peak_rss("lake build", state, {}, now) == (None, 0)
+            heavy.append_log({"event": "job", "job_kind": kind, "command": kind,
+                              "ended_at": ended, "peak_rss_kb": peak}, state, {})
+        assert heavy.command_forecast("lake build", state, {}, now) == (None, 0)
         for i in reversed(range(1, 26)):
             job(now - 30 + i, 100 + i if i > 5 else 99999)
         for ended, peak, kind in ((now + 1, 999999, "lake build"),
@@ -2381,16 +2384,16 @@ def test_memory_prediction():
                                   (now, 0, "lake build"), (float("nan"), 999999, "lake build"),
                                   (10 ** 1000, 999999, "lake build")):
             job(ended, peak, kind)
-        assert heavy.predict_peak_rss("lake build", state, {}, now) == (125, 20)
+        assert heavy.command_forecast("lake build", state, {}, now) == (125, 20)
         with open(os.path.join(state, "log.jsonl"), "a") as f:
             f.write('null\n[]\n{"partial":')
-        assert heavy.predict_peak_rss("lake build", state, {}, now) == (125, 20)
+        assert heavy.command_forecast("lake build", state, {}, now) == (125, 20)
         override = os.path.join(state, "override.jsonl")
-        heavy.append_log({"job_kind": "lake build", "ended_at": now - 1, "peak_rss_kb": 777},
+        heavy.append_log({"job_kind": "lake build", "command": "lake build", "ended_at": now - 1, "peak_rss_kb": 777},
                          state, {"HEAVY_LOG": override})
         with open(override, "ab") as f:
             f.write(b"\xff\n")
-        assert heavy.predict_peak_rss("lake build", state, {"HEAVY_LOG": override}, now) == (777, 1)
+        assert heavy.command_forecast("lake build", state, {"HEAVY_LOG": override}, now) == (777, 1)
         # Freeze the prediction before execution, then keep it beside the
         # actual peak rather than recomputing with the new observation.
         record = {"started_at": now}
@@ -2406,27 +2409,59 @@ def test_memory_prediction():
 
 
 def test_forecast_kind():
-    # fren-covers: testing::heavy_memory_prediction
+    # fren-covers: testing::heavy_memory_prediction, testing::heavy_prediction_key
+    if not os.access(os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
+        return
     command = [sys.executable, "-c", "pass"]
     normal = heavy.job_kind(command)
     logical = "coordinator build"
-    assert normal != logical
     for override in (logical, None, ""):
         with tempfile.TemporaryDirectory() as state:
             now = heavy.time.time()
-            for kind, peaks in ((logical, (321, 777)), (normal, (9001,))):
-                for peak in peaks:
-                    heavy.append_log({"event": "job", "job_kind": kind,
-                                      "ended_at": now - 1, "peak_rss_kb": peak}, state, {})
+            heavy.append_log({"event": "job", "command": heavy.shlex.join(command),
+                              "job_kind": "unrelated label", "ended_at": now - 1,
+                              "peak_rss_kb": 777}, state, {})
             environ = {} if override is None else {"FREN_JOB_KIND": override}
             result = tiny_job(state, command, environ)
             assert result.returncode == 0, result.stderr
             with open(os.path.join(state, "log.jsonl")) as f:
                 record = json.loads(f.readlines()[-1])
-            observed = (record["job_kind"], record["predicted_peak_rss_kb"], record["prediction_jobs"])
-            expected = (logical, 777, 2) if override else (normal, 9001, 1)
-            assert observed == expected, (override, observed, expected)
+            assert record["job_kind"] == (override or normal)
+            assert (record["predicted_peak_rss_kb"], record["prediction_jobs"]) == (777, 1)
 
+
+def test_command_forecast_real_rows():
+    # fren-covers: testing::heavy_memory_prediction, testing::heavy_prediction_key
+    if not os.access(os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
+        return
+    rows = [
+        {"command": "--offline lake test", "job_kind": "heavy", "peak_rss_kb": 17911340,
+         "predicted_peak_rss_kb": 6121136, "exit_status": 137},
+        {"command": "/home/ubuntu/coord/out/fd-soft-overlap/phases/001-author-d29e0ab6-83f7-4138-914d-b7f457b0fac3/overlap-controls.sh",
+         "job_kind": "test", "peak_rss_kb": 13566436, "predicted_peak_rss_kb": 1649900},
+    ]
+    with tempfile.TemporaryDirectory() as state:
+        now = 1794249291
+        for row in rows:
+            heavy.append_log({**row, "ended_at": now - 1}, state, {})
+        for i in range(30):
+            heavy.append_log({"command": "lake build Other", "job_kind": "heavy", "ended_at": now,
+                              "peak_rss_kb": 100}, state, {})
+        for row in rows:
+            command = row["command"].removeprefix("--offline ")
+            assert heavy.command_forecast(command, state, {}, now) == (row["peak_rss_kb"], 1)
+        # Full commands distinguish build targets and shell wrappers, including
+        # shell bodies containing paths that the old job-kind normalizer dropped.
+        for command in ("lake build fren-dev fren_dev_test", "bash -c 'lake test /tmp/a'"):
+            heavy.append_log({"command": command, "job_kind": "heavy", "ended_at": now,
+                              "peak_rss_kb": 20000000}, state, {})
+            assert heavy.command_forecast(command, state, {}, now) == (20000000, 1)
+        assert heavy.command_forecast("bash -c 'lake build /tmp/a'", state, {}, now) == (None, 0)
+        # New records retain the full command even when display is truncated.
+        command = "bash -c '" + "x" * 300 + "'"
+        heavy.append_log({"command": command[:237] + "...", "prediction_command": command,
+                          "job_kind": "heavy", "ended_at": now, "peak_rss_kb": 444}, state, {})
+        assert heavy.command_forecast(command, state, {}, now) == (444, 1)
 
 def test_process_integration():
     # fren-covers: testing::heavy_counter_rate, testing::heavy_pressure
@@ -2532,7 +2567,7 @@ def main():
              test_cpu_ticks, test_cpu_samples, test_cpu_monitor, test_monitor_group_completion,
              test_cpu_descendants, test_cpu_reaping, test_cpu_many_waits, test_cpu_signal_fold,
              test_child_subreaper, test_process_readings,
-             test_process_sampling, test_machine_pressure, test_memory_prediction, test_forecast_kind,
+             test_process_sampling, test_machine_pressure, test_memory_prediction, test_forecast_kind, test_command_forecast_real_rows,
              test_process_integration,
              test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
              test_registry_wait_messages,

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Differential tests for the Std-only forecast kernel and active Python heavy.
-Run after building Heavy.Forecast: python3 -I scripts/heavy_forecast_test.py.
+Build Heavy.Forecast and the standalone compiler_advice first, then run this script.
 """
 
 import json
@@ -101,10 +101,17 @@ def main():
         for lines, key, now, seconds, n, fixed in cases:
             with open(path, "wb") as log:
                 for line in lines:
+                    try:
+                        row = json.loads(line)
+                        if isinstance(row, dict) and isinstance(row.get("job_kind"), str):
+                            row["command"] = row["job_kind"]
+                            line = json.dumps(row)
+                    except (ValueError, UnicodeError):
+                        pass
                     log.write((line.encode() if isinstance(line, str) else line) + b"\n")
             with mock.patch.object(heavy, "PREDICTION_SECONDS", seconds), \
                  mock.patch.object(heavy, "PREDICTION_JOBS", n):
-                result = heavy.predict_peak_rss(key, state, {}, now)
+                result = heavy.command_forecast(key, state, {}, now)
             if fixed is not None:
                 assert result == fixed, (lines, result, fixed)
             expected.append(list(result))
@@ -117,7 +124,7 @@ def main():
     assert len(actual) == len(expected), (len(actual), len(expected))
     for i, (got, want) in enumerate(zip(actual, expected)):
         assert got == want, (i, got, want, inputs[i])
-    print(f"{len(cases)} Lean/Python forecasts agree (320 recorded observations)")
+    print(f"{len(cases)} Lean adviser/kernel forecasts agree (320 recorded observations)")
 
 
 if __name__ == "__main__":

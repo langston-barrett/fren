@@ -4684,6 +4684,11 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "tools/heavy-observe/compiler_discovery_test.py"] }
     return if out.exitCode == 0 then #[] else #[s!"compiler source-error compatibility failed:\n{out.stdout}{out.stderr}"]
   | ["heavyPrediction"] => do
+    -- The standalone adviser runs the same production path as Heavy.
+    let built ← IO.Process.output { cmd := "lake", args := #["-d", "tools/heavy-observe",
+      "build", "compiler_advice", "--wfail"] }
+    if built.exitCode != 0 then
+      return #[s!"standalone forecast build failed:\n{built.stdout}{built.stderr}"]
     -- The Heavy.Forecast import builds the module loaded by this transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_forecast_test.py"] }
     return if out.exitCode == 0 then #[] else #[s!"heavy forecast differential check failed:\n{out.stdout}{out.stderr}"]

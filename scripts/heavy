@@ -52,7 +52,7 @@ busy excludes idle and iowait. Unavailable readings give null summaries.
 One-second samples also record CPU by executable name, live concurrency,
 runnable pressure against online logical CPUs, and machine context-switch
 rates. Process status switch counts complement wait4's final involuntary
-switch total. A historical per-kind memory prediction is frozen beside
+switch total. A historical per-command memory prediction is frozen beside
 actual peak RSS; it does not yet change admission's live-RSS rule.
 Logging never fails a job. `--stats`
 compares completions in the last HOURS (default 24), by admission policy
@@ -79,7 +79,6 @@ scratch state and tiny jobs.
 """
 import contextlib
 import ctypes
-import heapq
 import importlib.machinery
 import importlib.util
 import fcntl
@@ -533,30 +532,21 @@ class ProcessSampler:
                       nonvoluntary_ctxt_switches=self.switches if self.switch_samples else None)
 
 
-def predict_peak_rss(kind, state=STATE, environ=None, now=None):
-    """Max actual peak of the latest 20 matching jobs in seven days.
-    Freeze before execution; absent history is unknown, never zero."""
+def command_forecast(command, state=STATE, environ=None, now=None):
+    """Ask the Lean adviser for the bounded command forecast; unknown on failure."""
     environ = os.environ if environ is None else environ
     now = time.time() if now is None else now
-    recent = []
+    adviser = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
+                           "tools", "heavy-observe", ".lake", "build", "bin", "compiler_advice")
+    path = environ.get("HEAVY_LOG") or os.path.join(state, "log.jsonl")
     try:
-        with open(environ.get("HEAVY_LOG") or os.path.join(state, "log.jsonl"), "rb") as f:
-            for line in f:
-                try:
-                    row = json.loads(line)
-                    ended, peak = row["ended_at"], row["peak_rss_kb"]
-                    if (row.get("event", "job") == "job" and row["job_kind"] == kind
-                            and type(ended) in (int, float) and math.isfinite(ended)
-                            and now - PREDICTION_SECONDS <= ended <= now
-                            and type(peak) is int and peak > 0):
-                        heapq.heappush(recent, (ended, peak))
-                        if len(recent) > PREDICTION_JOBS:
-                            heapq.heappop(recent)
-                except (ValueError, TypeError, KeyError, OverflowError):
-                    continue
-    except (OSError, ValueError):
-        pass
-    return max((p for _, p in recent), default=None), len(recent)
+        result = subprocess.run([adviser, "--job-forecast", path, str(now), command,
+                                 str(PREDICTION_SECONDS), str(PREDICTION_JOBS)],
+                                capture_output=True, text=True, timeout=30, check=True)
+        peak, count = json.loads(result.stdout)
+        return peak, count
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError):
+        return None, 0
 
 
 def append_log(record, state=STATE, environ=None):
@@ -1729,9 +1719,11 @@ def run(f, command, shown, kind, record, began, state, environ, load_reader):
                   pid_namespace=own.get("pid_namespace"),
                   memory_accounting="slot_owner_reports_v3")
     MachineSampler().finish(record)
-    prediction, history_jobs = predict_peak_rss(kind, state, environ, record["started_at"])
+    prediction_command = record.get("prediction_command", shlex.join(command))
+    record["prediction_command"] = prediction_command
+    prediction, history_jobs = command_forecast(prediction_command, state, environ, record["started_at"])
     record.update(predicted_peak_rss_kb=prediction, prediction_jobs=history_jobs,
-                  prediction_method="max_last_20_same_kind_7d")
+                  prediction_method="max_last_20_same_command_7d")
     code = run_command(f, command, shown, record, state, environ, load_reader)
     record.update(ended_at=time.time(), run_seconds=time.monotonic() - began, exit_status=code)
     loads = record["load_samples"]
@@ -1826,6 +1818,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
               "enqueued_slots": initial[1], "wait_policy_changed": False}
     kind = environ.get("FREN_JOB_KIND") or job_kind(command)
     shown = shlex.join(command)
+    record["prediction_command"] = shown
     offline_wrapper = []
     if offline:
         try:

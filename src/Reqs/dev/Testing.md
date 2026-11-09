@@ -1487,26 +1487,30 @@ same orphan coverage as `cpu_scope` ([resource usage](https://man7.org/linux/man
 just the sampled main-thread lower bound.
 
 Each job freezes `predicted_peak_rss_kb` before execution beside its eventual
-`peak_rss_kb`. An explicit nonempty `FREN_JOB_KIND` is the kind for both
-prediction lookup and completion logging; otherwise both use the normalized
-command kind. The prediction is the maximum positive measured peak among
-the latest 20 completed jobs of the same `job_kind` in the preceding seven
-days, ordered by completion time and excluding future completions. The
-lower cutoff is inclusive; larger peaks win completion-time ties. Failed
-jobs' observed peaks count too, though a killed job's peak does not show
-how much memory it needed to finish. `prediction_jobs` records the number
-used, and `prediction_method` is `"max_last_20_same_kind_7d"`. With no usable
-history, the prediction is `null`, not zero. Malformed records are skipped;
-`HEAVY_LOG` selects the prediction's source as well as the destination.
-The current memory admission rule uses live RSS and lease reservations,
-without a per-kind estimate. This prediction is telemetry for assessing an admission model;
-it does not yet change that rule. Work amounts and build-cache states can
-vary within a kind, so historical peaks do not guarantee a future fit.
-`Heavy.Forecast` computes this bounded selection with a generic key and is
-bound to `heavy_memory_prediction` in `Impls.Heavy`. The active scheduler
-remains Python; its tested binding in `Impls.Trace` still covers log I/O.
-The `heavyPrediction` test job compares both forecasts on sanitized log
-observations and boundary cases.
+`peak_rss_kb`. `FREN_JOB_KIND` remains a reporting label; the forecast uses the
+complete shell-quoted command, retained in `prediction_command`, as its key.
+Old records with an untruncated `command` also contribute, after stripping
+Heavy's `--offline` prefix. A truncated old command is not usable evidence.
+Commands differing in their arguments, paths or shell text have separate
+history; this does not generalize across changed worktrees or wrappers.
+`heavy_prediction_key` tags command and legacy kind keys separately. The
+prediction is the maximum positive measured peak among the latest 20
+completed jobs with the same command in the preceding seven days, ordered by
+completion time and excluding future completions. The lower cutoff is inclusive;
+larger peaks win completion-time ties. Failed jobs' observed peaks count too,
+though a killed job's peak does not show how much memory it needed to finish.
+`prediction_jobs` records the number used, and `prediction_method` is
+`"max_last_20_same_command_7d"`. With no usable history, or if the prebuilt Lean
+adviser is unavailable, the prediction is `null`, not zero. Malformed records
+are skipped; `HEAVY_LOG` selects the prediction's source as well as destination.
+The Lean adviser reads the log and applies `Heavy.Forecast`'s bounded selection;
+its key and forecast functions are bound to `heavy_prediction_key` and
+`heavy_memory_prediction` in `Impls.Heavy`. Python invokes it and logs the
+result. The current admission rule still uses live RSS and lease reservations;
+the forecast is telemetry, not an admission request. Work amounts and build
+caches vary even for the same command, so historical peaks do not guarantee fit.
+The `heavyPrediction` test compares the adviser with the Lean forecast kernel
+on sanitized observations and boundary cases.
 
 ### Lean compiler process observations
 
