@@ -247,7 +247,11 @@ two lists that the production function `FrenHirToThir.coverage` computes from
 an inventory and the arms' targets; the wrapper interprets them by that
 function, and `check_coverage` states that they are `uncovered` and `repeats`.
 The production check's choice of inventory, its extraction of the arms'
-targets and its final verdict are not bound here.
+targets and its final verdict are not bound here. The wrapper instantiates the
+generic function at the specification's own identities, with decidable
+equality; that the production instance at the compiler's item identities
+agrees with it rests on their equality being lawful, which is not proved
+here.
 
 ```fren
 pub fn uncovered<E>(constructors: Snoc<ItemId>, arms: Snoc<ArmF<E>>): Snoc<ItemId> :=
@@ -490,10 +494,12 @@ pub proc match_progress(
 ```
 
 r[patterns.matching.production] spec::patterns::{production_pick, production_selection::first}
-The evaluator, the confirmation of a strict evaluation and the lowering of a
-match each pick an arm with their own loop over the written arms, taking the
-first arm whose resolved pattern is the scrutinee's constructor. That each
-agrees with `select`, and so with the others, is not yet proved: no function
+The evaluator and the confirmation of a strict evaluation each pick an arm
+with their own loop over the written arms, taking the first arm whose resolved
+pattern is the scrutinee's constructor; the lowering of a match instead
+lowers every arm into conditional branches and uses the last arm as the
+fallback. That each agrees with `select` on an admitted match, and so with the
+others, is not yet proved: no function
 of the production code computes the selection by itself for the proof to bind.
 
 ```fren
@@ -505,7 +511,7 @@ pub proc production_selection(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (h
     ensure first: production_pick(arms, constructor) = select(arms, constructor)
 }
 
-trusted production_selection: "open: the evaluator, confirmation and lowering loops each select inline, and no extracted function computes the selection that a proof could bind to select"
+trusted production_selection: "open: the evaluator and confirmation loops select inline and lowering builds branches, and no extracted function computes the selection that a proof could bind to select"
 ```
 
 ## Examples

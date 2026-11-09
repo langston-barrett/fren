@@ -1850,8 +1850,8 @@ between snoc sequences and arrays. The worked examples are evaluated with
   constructors) to the specification's `uncovered` and `repeats`.
 - [x] Prove selection, exhaustiveness, characterization and typing of the
   selected arm for all arm sequences.
-- [ ] Bind the evaluator, strict-confirmation and lowering arm loops to
-  `select`; each takes the first matching arm inline, so no function exists
+- [ ] Bind the evaluator and strict-confirmation arm loops (inline) and the
+  lowering branches (last arm as fallback) to `select`; no function exists
   for a proof to bind (the one `trusted` open property of the chapter).
 - [ ] Give `WalkingFailure.coverage` a catalogue code and specify its
   rendering; the chapter specifies the diagnostic's content only.
