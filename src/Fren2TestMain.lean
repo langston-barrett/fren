@@ -23,8 +23,10 @@ fren_test_runners textRunners
 /-- Run the public fren2_check library pipeline on every annotated source file.
 Empty directories, malformed annotations and missing verdicts fail the job. -/
 private def runVerdictCorpus : IO Unit := do
+  let started ← IO.monoMsNow
   let directory := (← FrenOirToSmt.sourceRoot) / "test/fren2-verdicts"
-  let files := (← directory.readDir).filter (fun e => e.path.extension == some "fren")
+  let files := ((← directory.readDir).filter (fun e => e.path.extension == some "fren"))
+    |>.qsort (fun a b => a.fileName < b.fileName)
   FrenOirToSmtTests.require (!files.isEmpty) "empty known-verdict corpus"
   for entry in files do
     let text ← IO.FS.readFile entry.path
@@ -37,7 +39,9 @@ private def runVerdictCorpus : IO Unit := do
     FrenOirToSmtTests.require (FrenCli2.verdictName result.report.verdict == expected &&
       (FrenCli2.exitCode result.report.verdict).toNat == code)
       s!"{entry.path}: expected {expected}/{code}, got {FrenCli2.verdictName result.report.verdict}/{FrenCli2.exitCode result.report.verdict}"
-  IO.println s!"verdict-corpus: {files.size} annotated programs through fren2_check pipeline"
+    let elapsed := (← IO.monoMsNow) - started
+    FrenOirToSmtTests.require (elapsed < 29000) s!"verdict-corpus exceeded 29 s budget after {entry.fileName}: {elapsed} ms"
+  IO.println s!"verdict-corpus: {files.size} annotated programs through fren2_check pipeline in {(← IO.monoMsNow) - started} ms"
 
 private def runJob (args : List String) : IO UInt32 := do
   if args == ["--job", "resolver"] then

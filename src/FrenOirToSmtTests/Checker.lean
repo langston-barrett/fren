@@ -211,8 +211,21 @@ def runDefinednessControls : IO Unit := do
   let some i := out.queries.findIdx? (fun q => isNonzero ⟨q, .sat, none⟩)
     | throw (IO.userError "nonzero question missing")
   require (confirmAssignment p i #[.int 0] == .counterexample) "source zero rejected"
-  require (confirmAssignment p i #[.int 1] != .counterexample) "unreachable site confirmed"
+  require (confirmAssignment p i #[.int 1] == .rejected "source site is unreachable")
+    "unreachable if site not rejected"
   require (confirmAssignment p i #[.int 0] 0 != .counterexample) "exhausted site confirmed"
+  let p ← load "mod sites\nenum E { A, B }\nexpect c(e: E) { expect bad: match e { E::A => 1 div 0 = 0, E::B => true } }"
+  let .ok out := produce p | throw (IO.userError "match site control production")
+  let some i := out.queries.findIdx? (fun q => isNonzero ⟨q, .sat, none⟩)
+    | throw (IO.userError "match nonzero question missing")
+  let some enumItem := out.oir.enumerations[0]? | throw (IO.userError "match enum missing")
+  let some (ctor, _) := enumItem.constructors[1]?
+    | throw (IO.userError "match constructor missing")
+  -- Admission requires each arm's resolved reference to have role `.pattern`
+  -- (FrenHirToThir.Typing.Selects and Coverage), so a different role cannot
+  -- reach confirmation through an admitted program.
+  require (confirmAssignment p i #[.enum enumItem.id ctor] == .rejected "source site is unreachable")
+    "unreachable match site not rejected"
   let p ← load "mod sites\nexpect c(d: Int) { assume z: d = 0 expect bad: 1 mod d = 0 }"
   let .ok out := produce p | throw (IO.userError "premise control production")
   let some i := out.queries.findIdx? (fun q => isNonzero ⟨q, .sat, none⟩)
