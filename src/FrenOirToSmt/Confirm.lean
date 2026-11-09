@@ -14,48 +14,54 @@ inductive Confirmation where
   | unconfirmed (reason : String)
   deriving Repr, BEq
 
-/-- Strict source evaluation at one concrete assignment. It follows the
-retained verification tree of `r[lir.walking.demand]` rather than runtime
-demand: both ordinary operands (including `and`/`or`), every let value even if
-unused, and every call argument followed by the callee body are evaluated; only
-the selected `if`/`match` branch is. Any undefined `div`/`mod`, other failure
-or exhaustion is an error. Success therefore means that every active static
-obligation of the body and of the callee bodies it reaches holds under this
-assignment, so the demand-driven value is the dynamic semantics there. -/
+/-- One strict traversal step, shared by the specification evaluator and the
+budgeted confirmation evaluator. The caller supplies recursive visits and calls. -/
+@[expose] def strictStep [Monad m] [MonadExceptOf String m]
+    (t : FrenModule.Typed) (b : FrenModule.TypedBody) (env : FrenEval.Environment)
+    (visit : FrenAst.Expr → m FrenEval.Value)
+    (letVisit : FrenEval.Value → FrenAst.Expr → m FrenEval.Value)
+    (call : FrenModule.TypedBody → Array FrenEval.Value → m FrenEval.Value)
+    (e : FrenAst.Expr) : m FrenEval.Value := do
+  match e with
+  | .bool .. | .integer .. | .name .. => ofExcept ((FrenEval.walk 1 t b env e).mapError reprStr)
+  | .paren _ a _ => visit a
+  | .unary _ op a => ofExcept ((FrenEval.unary op (← visit a)).mapError reprStr)
+  | .binary a _ op c =>
+    let l ← visit a
+    let r ← visit c
+    ofExcept ((FrenEval.binary op l r).mapError reprStr)
+  | .ifE _ c _ yes _ no =>
+    let .bool selected ← visit c | throw "non-Boolean condition"
+    visit (if selected then yes else no)
+  | .letE _ _ _ a _ rest =>
+    letVisit (← visit a) rest
+  | .matchE _ s _ arms _ =>
+    let .enum _ ctor ← visit s | throw "non-enum scrutinee"
+    let some (_, _, arm, _) := arms.find? (fun (pattern, _, _, _) =>
+        (t.resolved.referenceAt pattern.head.slice).any (fun ref =>
+          ref.role == .pattern && ref.target == .item ctor))
+      | throw "no arm for canonical constructor"
+    visit arm
+  | .call callee _ args _ _ =>
+    let some (.callable sig) := FrenHirToThir.occurrenceType b callee
+      | throw "callee is not a callable designator"
+    let some target := t.bodies.find? (fun x => x.owner == sig.id && x.member.isNone)
+      | throw "missing resolved function body"
+    call target (← args.mapM visit)
+
+/-- Strict source evaluation follows every retained operand and call argument,
+and only the selected conditional branch. -/
 @[expose] def strictWalk : Nat → FrenModule.Typed → FrenModule.TypedBody →
     FrenEval.Environment → FrenAst.Expr → Except String FrenEval.Value
   | 0, _, _, _, _ => .error "strict source evaluation exhausted"
-  | n + 1, t, b, env, e => do
-    let visit := strictWalk n t b env
-    match e with
-    | .bool .. | .integer .. | .name .. => (FrenEval.walk 1 t b env e).mapError reprStr
-    | .paren _ a _ => visit a
-    | .unary _ op a => (FrenEval.unary op (← visit a)).mapError reprStr
-    | .binary a _ op c =>
-      let l ← visit a
-      let r ← visit c
-      (FrenEval.binary op l r).mapError reprStr
-    | .ifE _ c _ yes _ no =>
-      let .bool selected ← visit c | throw "non-Boolean condition"
-      visit (if selected then yes else no)
-    | .letE _ _ _ a _ rest => strictWalk n t b (.ok (← visit a) :: env) rest
-    | .matchE _ s _ arms _ =>
-      let .enum _ ctor ← visit s | throw "non-enum scrutinee"
-      let some (_, _, arm, _) := arms.find? (fun (pattern, _, _, _) =>
-          (t.resolved.referenceAt pattern.head.slice).any (fun ref =>
-            ref.role == .pattern && ref.target == .item ctor))
-        | throw "no arm for canonical constructor"
-      visit arm
-    | .call callee _ args _ _ =>
-      let some (.callable sig) := FrenHirToThir.occurrenceType b callee
-        | throw "callee is not a callable designator"
-      let some target := t.bodies.find? (fun x => x.owner == sig.id && x.member.isNone)
-        | throw "missing resolved function body"
-      let values ← args.mapM visit
-      let slots ← (FrenEval.arguments t target values).mapError reprStr
-      let v ← strictWalk n t target slots target.expression
-      unless v.type == target.type && v.valid t do throw "callee result disagrees with its type"
-      return v
+  | n + 1, t, b, env, e =>
+    strictStep t b env (strictWalk n t b env)
+      (fun v rest => strictWalk n t b (.ok v :: env) rest)
+      (fun target values => do
+        let slots ← (FrenEval.arguments t target values).mapError reprStr
+        let v ← strictWalk n t target slots target.expression
+        unless v.type == target.type && v.valid t do throw "callee result disagrees with its type"
+        return v) e
 
 /-- Strict evaluation of a retained body on positional parameter values. -/
 @[expose] def strictBody (t : FrenModule.Typed) (b : FrenModule.TypedBody)
@@ -63,51 +69,37 @@ assignment, so the demand-driven value is the dynamic semantics there. -/
   let env ← (FrenEval.arguments t b values).mapError reprStr
   strictWalk depth t b env b.expression
 
-/-- Strict evaluation with a shared work budget. Unlike the depth bound, this
-counts visits across siblings and calls, so a branching call tree cannot
-consume exponential work. Exhaustion is an error, never a confirmation. -/
+private structure StrictState where
+  budget : Nat
+  cache : Array (FrenBase.ItemId × Array FrenEval.Value × Nat × FrenEval.Value) := #[]
+
+/-- The budget counts visits across the entire question. Only successful calls
+are cached, keyed by depth as well as callee and arguments, so a shallower
+call cannot borrow a result that required more recursion. -/
 private def boundedStrictWalk : Nat → FrenModule.Typed → FrenModule.TypedBody →
-    FrenEval.Environment → FrenAst.Expr → StateT Nat (Except String) FrenEval.Value
+    FrenEval.Environment → FrenAst.Expr → StateT StrictState (Except String) FrenEval.Value
   | 0, _, _, _, _ => throw "strict source evaluation exhausted"
   | n + 1, t, b, env, e => do
-    let remaining ← get
-    if remaining == 0 then throw "evaluation budget exhausted"
-    set (remaining - 1)
-    let visit := boundedStrictWalk n t b env
-    match e with
-    | .bool .. | .integer .. | .name .. => liftM ((FrenEval.walk 1 t b env e).mapError reprStr)
-    | .paren _ a _ => visit a
-    | .unary _ op a => liftM ((FrenEval.unary op (← visit a)).mapError reprStr)
-    | .binary a _ op c =>
-      let l ← visit a
-      let r ← visit c
-      liftM ((FrenEval.binary op l r).mapError reprStr)
-    | .ifE _ c _ yes _ no =>
-      let .bool selected ← visit c | throw "non-Boolean condition"
-      visit (if selected then yes else no)
-    | .letE _ _ _ a _ rest => boundedStrictWalk n t b (.ok (← visit a) :: env) rest
-    | .matchE _ s _ arms _ =>
-      let .enum _ ctor ← visit s | throw "non-enum scrutinee"
-      let some (_, _, arm, _) := arms.find? (fun (pattern, _, _, _) =>
-          (t.resolved.referenceAt pattern.head.slice).any (fun ref =>
-            ref.role == .pattern && ref.target == .item ctor))
-        | throw "no arm for canonical constructor"
-      visit arm
-    | .call callee _ args _ _ =>
-      let some (.callable sig) := FrenHirToThir.occurrenceType b callee
-        | throw "callee is not a callable designator"
-      let some target := t.bodies.find? (fun x => x.owner == sig.id && x.member.isNone)
-        | throw "missing resolved function body"
-      let values ← args.mapM visit
-      let slots ← liftM ((FrenEval.arguments t target values).mapError reprStr)
-      let v ← boundedStrictWalk n t target slots target.expression
-      unless v.type == target.type && v.valid t do throw "callee result disagrees with its type"
-      return v
+    let state ← get
+    if state.budget == 0 then throw "evaluation budget exhausted"
+    set {state with budget := state.budget - 1}
+    strictStep t b env (boundedStrictWalk n t b env)
+      (fun v rest => boundedStrictWalk n t b (.ok v :: env) rest)
+      (fun target values => do
+        let state ← get
+        if let some (_, _, _, v) := state.cache.find? (fun (id, args, depth, _) =>
+            id == target.owner && args == values && depth == n) then return v
+        let slots ← liftM ((FrenEval.arguments t target values).mapError reprStr)
+        let v ← boundedStrictWalk n t target slots target.expression
+        unless v.type == target.type && v.valid t do throw "callee result disagrees with its type"
+        modify fun state => {state with cache := state.cache.push (target.owner, values, n, v)}
+        return v) e
 
 private def boundedStrictBody (t : FrenModule.Typed) (b : FrenModule.TypedBody)
-    (values : Array FrenEval.Value) (depth budget : Nat) : Except String (FrenEval.Value × Nat) := do
+    (values : Array FrenEval.Value) (depth : Nat) (state : StrictState) :
+    Except String (FrenEval.Value × StrictState) := do
   let env ← (FrenEval.arguments t b values).mapError reprStr
-  (boundedStrictWalk depth t b env b.expression).run budget
+  (boundedStrictWalk depth t b env b.expression).run state
 
 /-- Syntactic test for a partial operation anywhere in an expression, in
 every branch, operand and let. Exhausted traversal counts as partial. -/
@@ -223,16 +215,16 @@ reachable, strict evaluation must agree, so a skipped undefined operand, unused
 let or callee step leaves the observation unconfirmed instead of becoming a
 witness or counterexample. -/
 private def sourceBoolean (p : FrenEval.Program) (b : FrenModule.TypedBody)
-    (values : Array FrenEval.Value) (depth budget : Nat) : Except String (Bool × Nat) := do
+    (values : Array FrenEval.Value) (depth : Nat) (state : StrictState) : Except String (Bool × StrictState) := do
   let e ← (FrenEval.evaluate p ⟨b.owner, b.member.map (·.label.text)⟩ values depth).mapError reprStr
   unless e.body == b do throw "source evaluator selected another body"
   let v ← e.outcome.mapError reprStr
   let .bool value := v | throw "source evaluator returned a non-Boolean"
   if !divisionFree p.typed b then
-    let (strict, remaining) ← (boundedStrictBody p.typed b values depth budget).mapError ("strict: " ++ ·)
+    let (strict, remaining) ← (boundedStrictBody p.typed b values depth state).mapError ("strict: " ++ ·)
     unless strict == v do throw "strict and demand-driven evaluation disagree"
     return (value, remaining)
-  return (value, budget)
+  return (value, state)
 
 /-- This helper consumes the actual producer's output, not editable solver
 formulas. The public assignment entry below re-runs that producer. Successful
@@ -261,16 +253,16 @@ private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index
     if value.type != param.source.type || !value.valid p.typed then
       return .rejected "assignment sort or enum membership"
   let evaluator : FrenEval.Program := ⟨p.input, p.typed, p.accepted⟩
-  let mut budget := 10000
+  let mut state : StrictState := ⟨10000, #[]⟩
   for hypothesis in q.hypotheses do
-    match sourceBoolean evaluator hypothesis.source values depth budget with
+    match sourceBoolean evaluator hypothesis.source values depth state with
     | .error e => return .unconfirmed ("source premise evaluation: " ++ e)
     | .ok (false, _) => return .rejected "source premise is false"
-    | .ok (true, remaining) => budget := remaining
+    | .ok (true, remaining) => state := remaining
   if q.kind == .assumptionsSatisfiable then return .witness
   if q.kind != .validity then return confirmDefinedness evaluator q values depth
   let some subject := q.subject | return .unconfirmed "missing source goal"
-  match sourceBoolean evaluator subject values depth budget with
+  match sourceBoolean evaluator subject values depth state with
   | .error e => return .unconfirmed ("source goal evaluation: " ++ e)
   | .ok (true, _) => return .rejected "source goal is true"
   | .ok (false, _) => return .counterexample
@@ -345,7 +337,7 @@ theorem strict_operand (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBod
     (op : FrenAst.BinaryOp) (value : FrenEval.Value) (failure : String)
     (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .error failure) :
     strictWalk (n + 1) t b env (.binary left token op right) = .error failure := by
-  simp [strictWalk, hl, hr, Bind.bind, Except.bind]
+  simp [strictWalk, strictStep, hl, hr, Bind.bind, Except.bind]
 
 /-- A zero divisor is undefined under strict evaluation; it has no value. -/
 theorem strict_div_zero (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBody)
@@ -353,8 +345,8 @@ theorem strict_div_zero (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBo
     (value : FrenEval.Value)
     (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
     (strictWalk (n + 1) t b env (.binary left token .div right)).isOk = false := by
-  cases value <;> simp [strictWalk, hl, hr, Bind.bind, Except.bind, FrenEval.binary,
-    Except.mapError, Except.isOk, Except.toBool]
+  cases value <;> simp [strictWalk, strictStep, hl, hr, Bind.bind, Except.bind, FrenEval.binary,
+    Except.mapError, ofExcept, Except.isOk, Except.toBool] <;> rfl
 
 /-- The same holds for remainder. -/
 theorem strict_mod_zero (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBody)
@@ -362,8 +354,8 @@ theorem strict_mod_zero (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBo
     (value : FrenEval.Value)
     (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
     (strictWalk (n + 1) t b env (.binary left token .mod right)).isOk = false := by
-  cases value <;> simp [strictWalk, hl, hr, Bind.bind, Except.bind, FrenEval.binary,
-    Except.mapError, Except.isOk, Except.toBool]
+  cases value <;> simp [strictWalk, strictStep, hl, hr, Bind.bind, Except.bind, FrenEval.binary,
+    Except.mapError, ofExcept, Except.isOk, Except.toBool] <;> rfl
 
 theorem model_nonzero (r : Receipt) (h : r.exitCode ≠ some 0) : modelData r = false := by
   simp [modelData, h]

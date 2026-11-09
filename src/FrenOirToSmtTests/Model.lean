@@ -133,7 +133,7 @@ def runSourceConfirmation : IO Unit := do
   -- Strict confirmation evaluates every retained operand, unused let and
   -- callee step; only an explicit if/match guard selects what it evaluates.
   for (expression, strict) in [("false and (1 div 0 = 0)", false), ("true or (1 div 0 = 0)", false),
-      ("let x := 1 div 0 in false", false), ("skip(0)", false),
+      ("let x := 1 div 0 in false", false), ("skip(0)", false), ("skip(1) and skip(0)", false),
       ("if true then false else 1 div 0 = 0", true), ("half(3) = 2", true)] do
     let partialInput ← load ("mod partial\nfn skip(x: Int): Bool := false and 1 div x = 0\n" ++
       "fn half(x: Int): Int := x div 2\nexpect c() { expect wrong: " ++ expression ++ " }")
@@ -156,10 +156,24 @@ def runSourceConfirmation : IO Unit := do
   let started ← IO.monoMsNow
   let result := confirmAssignment perf pi #[]
   let elapsed := (← IO.monoMsNow) - started
-  require (result == .unconfirmed "source goal evaluation: strict: evaluation budget exhausted")
+  require (result == .counterexample)
     s!"branching strict evaluation: {reprStr result}"
   require (elapsed < 1000) s!"branching strict evaluation took {elapsed} ms"
-  IO.println s!"strict confirmation depth 24: {elapsed} ms; evaluation budget exhausted"
+  IO.println s!"strict confirmation depth 24: {elapsed} ms; shared calls memoized"
+  -- Distinct arguments defeat memoization; each body fits by itself, but
+  -- the question shares one budget across all premises and its goal.
+  let mut wide := "mod wide\nfn g0(x: Int): Bool := false and x div 1 = 0\n"
+  for n in [1:10] do
+    wide := wide ++ s!"fn g{n}(x: Int): Bool := g{n-1}(x * 2) and g{n-1}(x * 2 + 1)\n"
+  let one ← load (wide ++ "expect c() { expect wrong: true or g9(1) }")
+  let .ok oneOut := produce one | throw (IO.userError "single budget source production")
+  let oi ← select oneOut .validity "c"
+  require (confirmAssignment one oi #[] == .rejected "source goal is true") "single body exceeded budget"
+  let shared ← load (wide ++ "expect c() { assume a: true assume b: true or g9(1000) expect wrong: true or g9(2000) }")
+  let .ok sharedOut := produce shared | throw (IO.userError "shared budget source production")
+  let si ← select sharedOut .validity "c"
+  require (confirmAssignment shared si #[] == .unconfirmed "source goal evaluation: strict: evaluation budget exhausted")
+    s!"budget was not shared across premises and goal: {reprStr (confirmAssignment shared si #[])}"
   let cyclicInput ← load "mod partial\nexpect c(d: Int) { assume a: 1 div d = 0 assume b: 1 div d != 0 expect wrong: false }"
   let .ok mutualOut := produce cyclicInput | throw (IO.userError "mutual source production")
   let mi ← select mutualOut .validity "c"
