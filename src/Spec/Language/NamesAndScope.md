@@ -14,8 +14,13 @@ literals, paths, operators, calls of a written path, `let`, `if` and
 `match` on variant patterns.
 
 r[names.walking.domain]
-Resolution is defined for one complete module of this domain. A module
-outside it is rejected as unsupported before any of its names is resolved.
+This chapter defines resolution for one complete module of this domain.
+It does not yet define it for expectations. An expectation also declares
+a name in its module's one item namespace and has parameters and a body
+whose names resolve; until the chapter states those rules, a module that
+declares an expectation is outside what its judgments decide. More than
+one module, and a module name of more than one segment, are rejected as
+unsupported.
 
 ## Judgments
 
@@ -39,10 +44,11 @@ the chapter states the function for expressions as a contract of
 uninterpreted functions. The other laws are stated where their subjects
 are defined: [nearest binding](#r-names.locals.nearest) and
 [weakening](#r-names.locals.weakening) for scopes,
-[weakening for a layer](#r-names.expression.weakening),
+[weakening for a layer](#r-names.expression.weakening) and [for a
+table](#r-names.expression.table-weakening),
 [well-scoped results](#r-names.handoff.scoped) and [bound
 items](#r-names.handoff.items) for expressions, and, for collection,
-[independence of declaration order](#r-names.collection.order) and the
+[independence of declaration order](#r-names.collection.permutation) and the
 [well-formed environment](#r-names.handoff.environment) that typing assumes.
 
 ## Scopes and levels
@@ -80,6 +86,7 @@ use spec::types::{
     UnaryOp,
     entry,
     length,
+    let_annotation?,
     lookup,
     shift,
     shift_form,
@@ -433,13 +440,16 @@ pub enum SrcF<E> {
 }
 ```
 
-r[names.expression.layer] spec::names::{resolve_arms, resolve_annotation, resolve_layer}
+r[names.expression.layer] spec::names::{resolve_arms, resolve_annotation, resolve_layer, let_handoff::{omitted, kept}}
 A source layer resolves, in R and S, to the Core layer of the same form
 with the same children. Its paths resolve in S as their positions require,
 and a `let`'s written type resolves as a type. The layer has no resolution
-when one of them has none. A `let` binder without a written type has none
-in the Core layer; the [suffix rule](Types.md#r-types.surface.suffix) of
-typing supplies `Bool` for a binder that ends in `?`.
+when one of them has none. A `let` binder without a written type has the
+Core annotation `Bool` when its name ends in `?` and none otherwise, which
+is how the [suffix rule](Types.md#r-types.surface.suffix) of typing
+elaborates it. That a binder whose name ends in `?` and that has a written
+type has the type `Bool` is that rule's condition on the resolved type,
+and typing decides it.
 
 ```text
   R; S ⊢ p ⇒ local i      R; S ⊢ p ⇒ item c   Σ(c) = constructor
@@ -453,6 +463,10 @@ typing supplies `Bool` for a binder that ends in `?`.
   R ⊢ T ⇒ τ
   ─────────────────────────────────────────────────
   R; S ⊢ let x: T := e₁ in e₂ ⇒ let τ := e₁ in e₂
+
+  x ends in `?`                                      x does not end in `?`
+  ────────────────────────────────────────────       ──────────────────────────────────────
+  R; S ⊢ let x := e₁ in e₂ ⇒ let Bool := e₁ in e₂    R; S ⊢ let x := e₁ in e₂ ⇒ let e₁ in e₂
 
   R; S ⊢ pₖ ⇒ item cₖ   Σ(cₖ) = constructor   (each k)
   ──────────────────────────────────────────────────────────────────
@@ -471,14 +485,17 @@ pub fn resolve_arms<E>(env: Env, scope: Scope, arms: Snoc<SrcArm<E>>): Option<Sn
             },
     }
 
-pub fn resolve_annotation(env: Env, written: Option<TypeName>): Option<Option<Ty>> :=
-    match written {
-        None => Some(None),
-        Some(name) => match resolve_type(env, name) {
-            Some(ty) => Some(Some(ty)),
-            None => None,
-        },
-    }
+pub fn resolve_annotation(
+    env: Env,
+    binder: String,
+    written: Option<TypeName>
+): Option<Option<Ty>> := match written {
+    None => Some(if binder.ends_with?("?") then Some(Ty::Boolean) else None),
+    Some(name) => match resolve_type(env, name) {
+        Some(ty) => Some(Some(ty)),
+        None => None,
+    },
+}
 
 pub fn resolve_layer<E>(env: Env, scope: Scope, form: SrcF<E>): Option<ExprF<E>> := match form {
     SrcF::BooleanLiteral(value?) => Some(ExprF::BooleanLiteral(value?)),
@@ -490,7 +507,7 @@ pub fn resolve_layer<E>(env: Env, scope: Scope, form: SrcF<E>): Option<ExprF<E>>
         Some(item) => Some(ExprF::Call(item, args)),
         None => None,
     },
-    SrcF::Let(_, annotation, value, body) => match resolve_annotation(env, annotation) {
+    SrcF::Let(name, annotation, value, body) => match resolve_annotation(env, name, annotation) {
         Some(core) => Some(ExprF::Let(core, value, body)),
         None => None,
     },
@@ -500,6 +517,17 @@ pub fn resolve_layer<E>(env: Env, scope: Scope, form: SrcF<E>): Option<ExprF<E>>
         Some(resolved) => Some(ExprF::Match(scrutinee, resolved)),
         None => None,
     },
+}
+
+set_option fren.evidence "random" in
+pub proc let_handoff(env: Env, name: String, written: TypeName, ty: Ty, core: Option<Ty>): (
+    holds?,
+) {
+    ensure output: holds?
+    ensure omitted: when resolve_annotation(env, name, None) = Some(core),
+        let_annotation?(None, name.ends_with?("?"), core)
+    ensure kept: when resolve_type(env, written) = Some(ty),
+        resolve_annotation(env, name, Some(written)) = Some(Some(ty))
 }
 ```
 
@@ -534,9 +562,7 @@ paths in value, callee or pattern position. Inserting a binder of a name
 that the layer does not mention at level n of S, with `0 ≤ n ≤ |S|`, shifts
 the layer's resolution at n and changes nothing else, as `shift_form` of
 [typing's weakening](Types.md#r-types.derivation.weakening) does. The law
-is proved for one layer. The law for a whole table, where the binder is
-inserted into the scope of every row and no row mentions its name, is not
-stated in Fren and is open.
+for a whole table is [stated below](#r-names.expression.table-weakening).
 
 ```fren
 pub fn path_head(path: Path): String := match path {
@@ -695,6 +721,54 @@ pub proc table_scoping(
         and lookup(forms, position) = Some(ExprF::Local(level)),
         0 <= level < length(row.scope)
 }
+```
+
+r[names.expression.table-weakening] spec::names::{weaken_rows, rows_admit?, shift_forms, shifted_forms, table_weakening::shifted}
+Weakening extends from a layer to a table. A table *admits* a binder of
+name x at level n when n is a level or the length of every row's scope and
+no row mentions x. Inserting such a binder into the scope of every row,
+with `0 ≤ n`, shifts every Core layer of the result at n and changes
+nothing else: the weakened table resolves exactly when the table does.
+
+```fren
+pub fn weaken_rows(rows: Snoc<SrcRow>, cutoff: Int, extra: String): Snoc<SrcRow> := match rows {
+    Empty => Empty,
+    Extend(earlier, row) => Extend(
+        weaken_rows(earlier, cutoff, extra),
+        SrcRow {
+            form := row.form,
+            scope := insert_name(row.scope, cutoff, extra),
+        }
+    ),
+}
+
+pub fn rows_admit?(rows: Snoc<SrcRow>, cutoff: Int, extra: String) := match rows {
+    Empty => true,
+    Extend(earlier, row) =>
+        rows_admit?(earlier, cutoff, extra)
+        and cutoff <= length(row.scope)
+        and not mentions?(row.form, extra),
+}
+
+pub fn shift_forms(forms: Snoc<Form>, cutoff: Int): Snoc<Form> := match forms {
+    Empty => Empty,
+    Extend(earlier, form) => Extend(shift_forms(earlier, cutoff), shift_form(form, cutoff)),
+}
+
+pub fn shifted_forms(forms: Option<Snoc<Form>>, cutoff: Int): Option<Snoc<Form>> := match forms {
+    Some(resolved) => Some(shift_forms(resolved, cutoff)),
+    None => None,
+}
+
+set_option fren.evidence "random" in
+pub proc table_weakening(env: Env, rows: Snoc<SrcRow>, cutoff: Int, extra: String): (holds?) {
+    ensure output: holds?
+    ensure shifted: when 0 <= cutoff and rows_admit?(rows, cutoff, extra),
+        resolve_rows(env, weaken_rows(rows, cutoff, extra))
+        = shifted_forms(resolve_rows(env, rows), cutoff)
+}
+
+trusted table_weakening: "open: weakening of a whole source table is proved in Lean only for one layer"
 ```
 
 ## Declarations and collection
@@ -934,10 +1008,9 @@ pub proc rejected(
 r[names.collection.order] spec::names::collection_order::{accepted, bindings}
 Collection does not depend on the order of declarations: exchanging the
 last two declarations changes neither whether collection yields an
-environment nor what that environment binds to any identity. That every
-permutation of the declarations is likewise immaterial follows by
-induction on the declarations after the exchanged pair; that induction is
-not stated in Fren and is open.
+environment nor what that environment binds to any identity. The
+[next rule](#r-names.collection.permutation) states the law for every
+reordering.
 
 ```fren
 set_option fren.evidence "random" in
@@ -958,6 +1031,63 @@ pub proc collection_order(
         and collect(parent, name, Extend(Extend(decls, second), first)) = Some(right),
         entry(left, item) = entry(right, item)
 }
+```
+
+r[names.collection.permutation] spec::names::{declares?, included?, same_declarations?, collection_permutation::{accepted, bindings}, naming_order::stable}
+Two sequences have the *same declarations* when each declaration of one is
+a declaration of the other. Two sequences of the same declarations,
+neither with a naming error, collect alike: both yield an environment or
+neither does, and the two environments bind every identity alike. A
+sequence without a naming error has no repeated declaration, so a sequence
+of the same declarations and the same length is a reordering of it, and it
+has no naming error either. With that, every reordering of a module's
+declarations is immaterial to collection.
+
+```fren
+pub fn declares?(decls: Snoc<SrcDecl>, decl: SrcDecl) := match decls {
+    Empty => false,
+    Extend(earlier, other) => other = decl or declares?(earlier, decl),
+}
+
+pub fn included?(first: Snoc<SrcDecl>, second: Snoc<SrcDecl>) := match first {
+    Empty => true,
+    Extend(earlier, decl) => included?(earlier, second) and declares?(second, decl),
+}
+
+pub fn same_declarations?(first: Snoc<SrcDecl>, second: Snoc<SrcDecl>) :=
+    included?(first, second) and included?(second, first)
+
+set_option fren.evidence "random" in
+pub proc collection_permutation(
+    parent: ItemId,
+    name: String,
+    first: Snoc<SrcDecl>,
+    second: Snoc<SrcDecl>,
+    left: Symb,
+    right: Symb,
+    item: ItemId,
+): (holds?) {
+    ensure output: holds?
+    ensure accepted: when same_declarations?(first, second)
+        and names_ok?(first)
+        and names_ok?(second),
+        (collect(parent, name, first) = None) iff (collect(parent, name, second) = None)
+    ensure bindings: when same_declarations?(first, second)
+        and collect(parent, name, first) = Some(left)
+        and collect(parent, name, second) = Some(right),
+        entry(left, item) = entry(right, item)
+}
+
+set_option fren.evidence "random" in
+pub proc naming_order(first: Snoc<SrcDecl>, second: Snoc<SrcDecl>): (holds?) {
+    ensure output: holds?
+    ensure stable: when same_declarations?(first, second)
+        and length(first) = length(second)
+        and names_ok?(first),
+        names_ok?(second)
+}
+
+trusted naming_order: "open: that a reordering of declarations without a naming error has none is not yet proved in Lean"
 ```
 
 r[names.handoff.environment] spec::names::collection_well_formed::well_formed

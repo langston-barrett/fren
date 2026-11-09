@@ -953,6 +953,48 @@ theorem collect_exchange (p : Fren.Seq String) (n : String) (ds : Snoc SrcDecl) 
       (collect_mem_sub p n _ _ (swap_mem ds b a) (swap_mem ds a b) right left h2 h1) item
 
 
+theorem declares_iff (ds : Snoc SrcDecl) (d : SrcDecl) : declares? ds d = true ↔ SMem d ds := by
+  induction ds with
+  | Empty => simp [declares?, SMem]
+  | Extend e c ih =>
+    simp only [declares?, decide_eq_true_eq, ih, SMem]
+    constructor
+    · rintro (h | h)
+      · exact Or.inl h.symm
+      · exact Or.inr h
+    · rintro (h | h)
+      · exact Or.inl h.symm
+      · exact Or.inr h
+
+theorem included_mem (a b : Snoc SrcDecl) (h : included? a b = true) (d : SrcDecl)
+    (hd : SMem d a) : SMem d b := by
+  induction a with
+  | Empty => exact hd.elim
+  | Extend e c ih =>
+    simp only [included?, decide_eq_true_eq] at h
+    rcases hd with rfl | hd
+    · exact (declares_iff b _).mp h.2
+    · exact ih h.1 hd
+
+/-- Two sequences of the same declarations, neither with a naming error,
+collect alike. -/
+theorem collect_same (p : Fren.Seq String) (n : String) (a b : Snoc SrcDecl)
+    (hab : included? a b = true) (hba : included? b a = true) :
+    (names_ok? a = true → names_ok? b = true →
+      (collect p n a = none ↔ collect p n b = none)) ∧
+    ∀ left right item, collect p n a = some left → collect p n b = some right →
+      entry left item = entry right item := by
+  refine ⟨fun oka okb => ⟨?_, ?_⟩, ?_⟩
+  · exact collect_none_sub p n a b (included_mem a b hab) (included_mem b a hba) (fun _ => okb)
+      (fun _ => oka)
+  · exact collect_none_sub p n b a (included_mem b a hba) (included_mem a b hab) (fun _ => oka)
+      (fun _ => okb)
+  · intro left right item h1 h2
+    exact entry_congr left right (nodup_of_ok left (collect_ok p n _ left h1))
+      (nodup_of_ok right (collect_ok p n _ right h2))
+      (collect_mem_sub p n a b (included_mem a b hab) (included_mem b a hba) left right h1 h2)
+      (collect_mem_sub p n b a (included_mem b a hba) (included_mem a b hab) right left h2 h1) item
+
 /-! ## Weakening -/
 
 /-- The shift of a target: only a local has a level. -/
@@ -1063,7 +1105,7 @@ theorem layer_weakens (env : Env) (scope : Snoc String) (form : SrcF Int) (cutof
     cases resolve_arms Int env scope arms <;> simp [shifted_form, shift_form]
   | Let name annotation value body =>
     simp only [resolve_layer]
-    cases resolve_annotation env annotation <;> simp [shifted_form, shift_form]
+    cases resolve_annotation env name annotation <;> simp [shifted_form, shift_form]
   | _ => simp [resolve_layer, shifted_form, shift_form]
 
 /-! ## Bound items -/
@@ -1308,6 +1350,39 @@ impl collection_order_proof: collection_order for (parent : Fren.Seq String) (na
     collection_order.ensure.accepted, collection_order.ensure.bindings]
   have h := Spec.Language.NamesAndScope.collect_exchange parent name decls first second
   exact ⟨trivial, h.1, fun hc => h.2 left right item hc.1 hc.2⟩
+
+open spec.types spec.names in
+impl let_handoff_proof: let_handoff for (env : Env) (name : String) (written : spec.names.TypeName)
+    (ty : Ty) (core : Option Ty) {
+  env := env, name := name, written := written, ty := ty, core := core, holds? := true
+} by
+  intro env name written ty core _
+  simp only [let_handoff.ensures, let_handoff.ensure.output, let_handoff.ensure.omitted,
+    let_handoff.ensure.kept]
+  refine ⟨trivial, ?_, ?_⟩
+  · intro h
+    simp [resolve_annotation] at h
+    subst h
+    simp [let_annotation?]
+  · intro h
+    simp [resolve_annotation, h]
+
+open spec.types spec.names in
+impl collection_permutation_proof: collection_permutation for (parent : Fren.Seq String)
+    (name : String) (first second : Snoc SrcDecl) (left right : Snoc Entry)
+    (item : Fren.Seq String) {
+  parent := parent, name := name, first := first, second := second, left := left,
+  right := right, item := item, holds? := true
+} by
+  intro parent name first second left right item _
+  simp only [collection_permutation.ensures, collection_permutation.ensure.output,
+    collection_permutation.ensure.accepted, collection_permutation.ensure.bindings,
+    same_declarations?, decide_eq_true_eq]
+  refine ⟨trivial, fun h => ?_, fun h => ?_⟩
+  · exact (Spec.Language.NamesAndScope.collect_same parent name first second h.1.1.1 h.1.1.2).1
+      (by simpa [names_ok?] using h.1.2) (by simpa [names_ok?] using h.2)
+  · exact (Spec.Language.NamesAndScope.collect_same parent name first second h.1.1.1 h.1.1.2).2
+      left right item h.1.2 h.2
 
 pub mod spec::resolution
 

@@ -1125,11 +1125,14 @@ The wrapper proves in Lean the laws of local lookup, weakening by an
 unmentioned name, the resolved table's scoping and alignment, the item
 kinds that each resolved position names, sibling scopes, the parallel
 parameter context, that collection yields a well-formed symbol
-environment and that exchanging the last two declarations changes
-nothing that collection binds. It binds the production resolver's
+environment, that exchanging the last two declarations changes
+nothing that collection binds, that two sequences of the same
+declarations without a naming error collect alike, and that an
+unannotated `let` hands typing the annotation its binder's `?` suffix
+requires. It binds the production resolver's
 nearest-name search and name equality (`FrenAstToHir.nearest`,
-`FrenAstToHir.sameName`) to their rules. None of the chapter's own claims
-is `trusted`.
+`FrenAstToHir.sameName`) to their rules. Two of the chapter's claims are `trusted` and open: `naming_order`
+and `table_weakening`.
 
 - [x] Bind the nearest-name primitive to its rule with a genuine Lean
   proof over every scope.
@@ -1137,10 +1140,17 @@ is `trusted`.
   environment (`names.handoff.environment`), which is what
   `types.symbols.resolution` assumes.
 - [x] Prove the exchange law of collection (`names.collection.order`).
-- [ ] State and prove the order law for every permutation of the
-  declarations; the chapter states it only for the last two.
-- [ ] State and prove weakening for a whole source table
-  (`names.expression.weakening` proves it for one layer).
+- [x] State the order law for every reordering of the declarations
+  (`names.collection.permutation`) and prove that sequences of the same
+  declarations without a naming error collect alike.
+- [ ] Prove `naming_order`: a reordering of declarations without a naming
+  error has none. It is `trusted` and open.
+- [ ] Prove `table_weakening` (`names.expression.table-weakening`), which
+  is `trusted` and open; `names.expression.weakening` proves the law for
+  one layer.
+- [ ] Define resolution for expectations, which the production resolver
+  collects into the item namespace and resolves; the chapter's domain
+  (`names.walking.domain`) leaves them out.
 - [ ] Bind path-head and member lookup and collection to the production
   resolver, whose functions read production scope and token structures
   that Fren does not yet state.
