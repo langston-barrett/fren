@@ -520,12 +520,14 @@ additionally evaluates its retained source goal as false and yields a concrete
 counterexample. When the body or a transitive callee mentions `div` or `mod`
 (`divisionFree` fails), each such observation needs two agreeing evaluations
 under the assignment: `FrenEval.evaluate`, which follows runtime demand, and
-`strictBody`, which follows the retained verification tree of
+a budgeted evaluator that shares each traversal step with `strictBody`, which follows the retained verification tree of
 `r[lir.walking.demand]`. Strict evaluation evaluates both ordinary operands,
 including those of `and` and `or`, every let value even if unused, and every
 call argument followed by the callee body; it evaluates only the selected
 branch of an `if` or `match`. A `div` or `mod` by zero has no value, so any
-undefined step, like exhaustion, fails strict evaluation. Agreement therefore
+undefined step, like exhaustion, fails strict evaluation. One budget is shared
+across all consumed premises and the goal; successful calls are memoized by
+callee, argument values and remaining depth. Agreement therefore
 means that every active static obligation of the consumed body and of the
 callee bodies it reaches holds at the assignment, so the demand-driven value
 is the dynamic value there. Without `div` or `mod` no primitive step is undefined,
