@@ -13,15 +13,6 @@ index; name resolution and the derived forms relate the two. The lossless
 tree, which also keeps parentheses, trivia and every token, is the subject
 of [AST and parsing](../Compiler/AstAndParsing.md).
 
-The `syntaxChapters` test of `fren_test` reads the `grammar` blocks below
-as they are written and runs them against the actual parser, as
-[AST and parsing](../Compiler/AstAndParsing.md#parsing) requires. Example
-blocks are checked too: a
-`fren2` block is a file that the parser accepts, a `fren2 rejected` block
-one that it rejects, a `fren2 groups` block lists expressions with the
-grouping that parentheses would write, and a `fren2 trees` block lists
-texts with their abstract syntax trees.
-
 ## Notation
 
 The grammar is a parsing expression grammar over tokens.
@@ -84,7 +75,8 @@ r[syntax.name.reserved] spec::surface::reserved_names
 function, global expectation or parameter is named `Bool` or `Int`. They
 are identifiers, so the grammar accepts such a declaration, and name
 resolution rejects it; [names and scope](NamesAndScope.md) enforces this
-rule.
+rule. A member's label and the name that a `let` binds are not reserved:
+either may be `Bool` or `Int`.
 
 ```fren
 pub mod spec::surface
@@ -133,8 +125,11 @@ global expectation has a name, parameters and members, and is never `pub`. A
 member is an assumption or an expectation, with a label and an expression;
 members are not separated, and each ends where its expression does. A
 parameter writes its type, unless its name ends in `?`, when it may omit the
-type, which is then `Bool`: `b?`, `b?: Bool` and `b?: Int` are all
-parameters, and typing reports the last.
+type, which is then `Bool`.
+
+> **Note:** `b?`, `b?: Bool` and `b?: Int` are all parameters of this
+> grammar. Whether a name that ends in `?` may have a type other than
+> `Bool` is a question of typing, which this chapter does not answer.
 
 ```grammar
 ModuleDeclaration      ::= "pub"? "mod" Path
@@ -196,10 +191,6 @@ Match       ::= "match" Primary "{" (Arm ("," Arm)* ","?)? "}"
 Arm         ::= QualifiedPath "=>" Iff
 ```
 
-r[syntax.expression.extent]
-The `else` branch of an `if` and the body of a `let` extend as far to the
-right as they can, because the grammar's repetitions never give a match
-back: `a + if b then c else d + e` groups as `a + (if b then c else (d + e))`.
 Only a `(` that touches a path makes a call: in `f (x)` the path `f` is
 complete, and no rule accepts the `(x)` after it.
 
@@ -284,7 +275,7 @@ after `x` cannot continue it, and a `{` must follow it.
 fn scrutinee(x: Int): Int := match x + 1 { E::A => 1 }  --~ error: expected `{`
 ```
 
-`syntax.expression.extent`: a `(` after a space makes no call.
+`syntax.notation.trivia-sensitive`: a `(` after a space makes no call.
 
 ```fren2 rejected
 fn spaced(x: Int): Int := f (x)  --~ error: expected `(` adjacent to its called name
@@ -321,33 +312,31 @@ f(x) + g(y, z) * 2 -- f(x) + (g(y, z) * 2)
 Each accepted text has one abstract syntax tree, which keeps what the text
 means and drops how it is written.
 
-r[syntax.tree.types] spec::surface::{identifier?, Identifier, Path, UnaryOp, BinaryOp, ExprF, Arm, TypeName, Parameter, Member, DeclarationF}
+r[syntax.tree.types] spec::surface::{Path, UnaryOp, BinaryOp, ExprF, Arm, TypeName, Parameter, MemberKind, Member, ModuleDeclaration, EnumDeclaration, FunctionDeclaration, ExpectationDeclaration, DeclarationF}
 An expression tree is a fixed point of `ExprF`: `ExprF<E>` is one node,
 whose subexpressions are of type `E`. A file's tree is the sequence of its
 declarations' trees, each a `DeclarationF` whose expressions are expression
-trees. The trees keep names as written paths and have no parentheses. An
-`Identifier` is a word that is not a keyword, as `identifier?` says.
+trees. The trees keep names as written paths and have no parentheses. The
+types admit more than the trees of texts: `syntax.tree.well-formed` says
+which of their values are well formed.
 
 > **Note:** `ExprF` takes its subexpressions as a parameter, rather than
 > being a recursive enumeration, because a call's arguments and a match's
 > arms are sequences of subexpressions, and today's Fren has no recursive
-> datatype whose recursion passes through a `Seq`. For the same reason of
-> today's Fren, `Identifier` constrains only the names that no sequence
-> holds: a constraint on the elements of a `Seq` quantifies over them,
-> outside the decidable core, so the other conditions of
-> `syntax.tree.well-formed` are stated, and tested, rather than typed. This is decision G1 in the
+> datatype whose recursion passes through a `Seq`. A name is a `String`,
+> not a type of identifiers, because most names are in sequences, and a
+> `Seq` whose element type has a constraint is outside Fren's decidable
+> core. A quantifier over a sequence's elements is inside it, unless it
+> passes an element that itself holds a sequence, an arm or a parameter,
+> to a function. `syntax.tree.well-formed` states every condition on names
+> with such quantifiers, and the two over arms and parameters are
+> definitions outside the decidable core. This is decision G1 in the
 > [development coverage](../../../docs/fren2-specification-coverage.md#syntax-decisions-and-design-debt).
 
 ```fren
 pub enum UnaryOp { Neg, Not }
 
 pub enum BinaryOp { Add, Sub, Mul, Div, Mod, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Iff }
-
--- Whether `word` is an identifier: a word that is not a keyword.
-pub fn identifier?(word: String) :=
-    lexical::in_class?(lexical::Class::Word, word) and not word in lexical::KEYWORDS
-
-pub type Identifier = word: String where identifier: identifier?(word)
 
 -- A path, as its identifiers in order.
 pub type Path := Seq<String>
@@ -364,7 +353,7 @@ pub enum ExprF<E> {
     Unary(UnaryOp, E),
     Binary(BinaryOp, E, E),
     If(E, E, E),
-    Let(Identifier, E, E),
+    Let(String, E, E),
     Match(E, Seq<Arm<E>>),
 }
 
@@ -378,17 +367,17 @@ pub struct Member<E> { kind: MemberKind, label: String, body: E }
 
 pub struct ModuleDeclaration { public?, path: Path }
 
-pub struct EnumDeclaration { public?, name: Identifier, variants: Seq<String> }
+pub struct EnumDeclaration { public?, name: String, variants: Seq<String> }
 
 pub struct FunctionDeclaration<E> {
     public?,
-    name: Identifier,
+    name: String,
     parameters: Seq<Parameter>,
     result: TypeName,
     body: E,
 }
 
-pub struct ExpectationDeclaration<E> { name: Identifier, parameters: Seq<Parameter>, members: Seq<Member<E>> }
+pub struct ExpectationDeclaration<E> { name: String, parameters: Seq<Parameter>, members: Seq<Member<E>> }
 
 -- One declaration, with expressions of type `E`.
 pub enum DeclarationF<E> {
@@ -399,7 +388,7 @@ pub enum DeclarationF<E> {
 }
 ```
 
-r[syntax.tree.productions]
+r[syntax.tree.productions] spec::surface::type_name
 Each production gives its tree. `true` and `false` are `Boolean` nodes, and
 a numeral an `Integer` node with its value. A `Path` is a `Name` node of its
 identifiers, and a call a `Call` node of the path and the arguments' trees,
@@ -407,15 +396,85 @@ in order. `( e )` is the tree of `e`. A prefix operator and its operand are a
 `Unary` node; a binary operator and its operands are a `Binary` node, and a
 repetition such as `a - b - c` gives the nodes `(a - b) - c`, from the left.
 `if`, `let` and `match` give `If`, `Let` and `Match` nodes of their parts. A
-type's tree is as `syntax.path.syntax` says, a parameter's is its name and
+type's tree is the `type_name` of its path, a parameter's is its name and
 its type if written, and each declaration's is the `DeclarationF` node of
 its parts, with `public?` true when it is written with `pub`.
 
-r[syntax.tree.well-formed]
-A tree is *well formed* when every identifier in it, a path's segment, a
-binder, a label, a parameter's or a declaration's name, or a variant,
-satisfies `identifier?`; every path has at least one segment and every
-arm's path at least two; and every call has at least one argument.
+```fren
+-- The tree of a type written as `path`.
+pub fn type_name(path: Path): TypeName :=
+    if path = ["Bool"] then TypeName::Boolean
+    else if path = ["Int"] then TypeName::Integer
+    else TypeName::Named(path)
+```
+
+r[syntax.tree.well-formed] spec::surface::{identifier?, path?, Elided, arm_well_formed?, node_well_formed?, type_well_formed?, parameter_well_formed?, parameters_well_formed?, declaration_well_formed?}
+A tree is *well formed* when each of its nodes, types, parameters and
+declarations is. An identifier is a word that is not a keyword, and a path
+one or more identifiers. An expression node is well formed when its path
+is a path, a call has at least one argument, a `let` binds an identifier,
+and each arm's path has at least two segments. A named type is well formed
+when its path is a path other than `Bool` and `Int` alone, which
+`type_name` never names. A parameter is well formed when its name is an
+identifier and its type is well formed, and it has a type unless its name
+ends in `?`. A declaration is well formed when its names, variants and
+labels are identifiers, its module path is a path, its parameters and
+result type are well formed, a function has at least one parameter and an
+enumeration at least one variant. None of this looks at a node's
+subexpressions, which the functions take as `Elided`.
+
+```fren
+-- Whether `word` is an identifier: a word that is not a keyword.
+pub fn identifier?(word: String) :=
+    lexical::in_class?(lexical::Class::Word, word) and not word in lexical::KEYWORDS
+
+-- Whether `path` is one or more identifiers.
+pub fn path?(path: Path) :=
+    path != [] and (forall (segment: String), when segment in path, identifier?(segment))
+
+-- A subexpression that is left out.
+pub enum Elided { Elided }
+
+pub fn arm_well_formed?(arm: Arm<Elided>) := path?(arm.variant) and arm.variant.len >= 2
+
+set_option fren.lint.undecidable "allow" in  -- an element that holds a sequence is the argument of a function
+pub fn node_well_formed?(node: ExprF<Elided>) := match node {
+    ExprF::Name(path) => path?(path),
+    ExprF::Call(path, arguments) => path?(path) and arguments != [],
+    ExprF::Let(binder, _, _) => identifier?(binder),
+    ExprF::Match(_, arms) => (forall (arm: Arm<Elided>), when arm in arms, arm_well_formed?(arm)),
+    _ => true,
+}
+
+pub fn type_well_formed?(ty: TypeName) := match ty {
+    TypeName::Named(path) => path?(path) and type_name(path) = ty,
+    _ => true,
+}
+
+pub fn parameter_well_formed?(parameter: Parameter) :=
+    identifier?(parameter.name)
+    and match parameter.annotation {
+        Option::Some(ty) => type_well_formed?(ty),
+        Option::None => parameter.name.ends_with?("?"),
+    }
+
+set_option fren.lint.undecidable "allow" in  -- an element that holds a sequence is the argument of a function
+pub fn parameters_well_formed?(parameters: Seq<Parameter>) :=
+    forall (parameter: Parameter), when parameter in parameters, parameter_well_formed?(parameter)
+
+pub fn declaration_well_formed?(declaration: DeclarationF<Elided>) := match declaration {
+    DeclarationF::Module(d) => path?(d.path),
+    DeclarationF::Enumeration(d) =>
+        identifier?(d.name) and d.variants != []
+        and (forall (variant: String), when variant in d.variants, identifier?(variant)),
+    DeclarationF::Function(d) =>
+        identifier?(d.name) and d.parameters != [] and parameters_well_formed?(d.parameters)
+        and type_well_formed?(d.result),
+    DeclarationF::Expectation(d) =>
+        identifier?(d.name) and parameters_well_formed?(d.parameters)
+        and (forall (member: Member<Elided>), when member in d.members, identifier?(member.label)),
+}
+```
 
 r[syntax.tree.operators] spec::surface::{unary_spelling, binary_spelling}
 The operators are spelled as `unary_spelling` and `binary_spelling` say. `-`
@@ -510,24 +569,48 @@ expect spellings(a: BinaryOp, b: BinaryOp, u: UnaryOp, v: UnaryOp, word: String)
 }
 ```
 
-r[syntax.property.unambiguous] spec::surface::{binary_category, unary_category, left_category, right_category, fits?, unambiguity}
-The grammar is unambiguous up to parentheses and complete for well-formed
-expression trees. Every well-formed tree has a text whose tree it is: the
-text that writes each node's tokens and puts a subtree in parentheses
-exactly where `fits?` says that it does not fit its place: a binary
-operator's operands are at `left_category` and `right_category`, a unary
-operator's operand at the operator's own category, and every other
-subexpression at `Expression`, but a `let`'s definition and an arm's body
-at `Iff` and a match's scrutinee at `Primary`. This
-parenthesization is minimal: dropping any pair of its parentheses gives a
-text that the parser rejects or that has another tree. A subtree fits a
-place when the nonterminal that derives it without parentheses, its
-*category*, is no looser than the place's, unless it is *open*, an `if` or
-`let`, or an operator node whose last subtree is open and stands without
-parentheses, and it is the left operand of a binary operator, which would
-follow it. Elsewhere a keyword or punctuator that no expression continues
-with, such as `then`, `in`, `,` or `)`, ends an open subtree. Declarations
-are outside this property.
+r[syntax.property.extent] spec::surface::extent
+The `else` branch of an `if` and the body of a `let` extend as far to the
+right as they can, because the grammar's repetitions never give a match
+back: `a + if b then c else d + e` groups as `a + (if b then c else (d + e))`,
+and every `fren2 groups` example groups as it says.
+
+```fren
+pub proc extent(): (holds?) { ensure output: holds? }
+
+tested extent: "src/FrenTest/SpecChapters/Syntax.lean"
+```
+
+r[syntax.property.print-parse] spec::surface::{Category, rank, binary_category, unary_category, non_associative?, left_category, right_category, Shape, Place, fits?, placed, place, shaped, shape, print_parse}
+Every well-formed expression tree has a *text*, and the tree of that text
+is the tree. The text writes each node's tokens in the order of its
+production: an operator as `syntax.tree.operators` spells it, a numeral in
+decimal digits without a leading zero, and a list without a trailing
+comma. One space separates each two consecutive tokens, except that a
+call's `(` touches its path, so no two tokens join into another piece:
+the text of a negated negation is `- - x`, not `--x`, which begins a
+comment. A subtree stands in parentheses exactly where `fits?` says that
+its `shape` does not fit its `place`. A binary operator's operands are at
+`left_category` and `right_category`, a unary operator's operand at the
+operator's own category, and every other subexpression at `Expression`,
+but a `let`'s definition and an arm's body at `Iff`, as the grammar's
+`let` and `Arm` take an `Iff` there, and a match's scrutinee at `Primary`.
+A subtree fits a place when the nonterminal that derives it without
+parentheses, its *category*, is no looser than the place's, unless it is
+*open*, an `if` or `let`, or an operator node whose last subtree is open
+and stands without parentheses, and it is the left operand of a binary
+operator, which would follow it. Elsewhere a keyword or punctuator that no
+expression continues with, such as `then`, `in`, `,` or `)`, ends an open
+subtree.
+
+This parenthesization is minimal: dropping any pair of the text's
+parentheses gives a text that the parser rejects or that has another tree.
+Conversely, the text of the tree of an accepted expression has that
+expression's tokens, apart from pairs of parentheses, trailing commas and
+the leading zeros of numerals. So the trees do not distinguish `f(1,)`
+from `f(1)`, `(x)` from `x`, or `007` from `7`, and distinguish every
+other two expressions that differ in a token. Declarations are outside
+this property.
 
 ```fren
 pub enum Category { Expression, Iff, Or, And, Not, Comparison, Sum, Product, Negation, Primary }
@@ -580,15 +663,52 @@ pub fn right_category(op: BinaryOp): Category := match binary_category(op) {
 pub fn left_category(op: BinaryOp): Category :=
     if non_associative?(op) then right_category(op) else binary_category(op)
 
--- Whether a subtree of category `child`, open or not, may stand without
--- parentheses at a place of category `place`; `left_operand?` is whether
--- the place is a binary operator's left operand.
-pub fn fits?(child: Category, open?, place: Category, left_operand?) :=
-    rank(child) >= rank(place) and not (open? and left_operand?)
+-- A subtree as its place sees it: its category, and whether it is open.
+pub struct Shape { category: Category, open? }
 
-pub proc unambiguity(): (holds?) { ensure output: holds? }
+-- A place for a subtree: its category, and whether it is a binary
+-- operator's left operand.
+pub struct Place { category: Category, left_operand? }
 
-tested unambiguity: "src/FrenTest/SpecChapters/Syntax.lean"
+-- Whether a subtree of shape `child` may stand at `place` without
+-- parentheses.
+pub fn fits?(child: Shape, place: Place) :=
+    rank(child.category) >= rank(place.category) and not (child.open? and place.left_operand?)
+
+pub fn placed(category: Category, left_operand?): Place := Place { category, left_operand? }
+
+-- The place of the subexpression `k` of `node`, counting from 0 in the
+-- order of `ExprF`: a call's arguments and a match's arms follow one
+-- another.
+pub fn place<E>(node: ExprF<E>, k: Int): Place := match node {
+    ExprF::Unary(op, _) => placed(unary_category(op), false),
+    ExprF::Binary(op, _, _) =>
+        if k = 0 then placed(left_category(op), true) else placed(right_category(op), false),
+    ExprF::Let(_, _, _) => placed(if k = 0 then Category::Iff else Category::Expression, false),
+    ExprF::Match(_, _) => placed(if k = 0 then Category::Primary else Category::Iff, false),
+    _ => placed(Category::Expression, false),
+}
+
+pub fn shaped(category: Category, open?): Shape := Shape { category, open? }
+
+-- The shape of `node`, given the shapes of its subexpressions.
+pub fn shape(node: ExprF<Shape>): Shape := match node {
+    ExprF::Unary(op, operand) => shaped(
+        unary_category(op),
+        operand.open? and fits?(operand, place(node, 0))
+    ),
+    ExprF::Binary(op, _, right) => shaped(
+        binary_category(op),
+        right.open? and fits?(right, place(node, 1))
+    ),
+    ExprF::If(_, _, _) => shaped(Category::Primary, true),
+    ExprF::Let(_, _, _) => shaped(Category::Expression, true),
+    _ => shaped(Category::Primary, false),
+}
+
+pub proc print_parse(): (holds?) { ensure output: holds? }
+
+tested print_parse: "src/FrenTest/SpecChapters/Syntax.lean"
 ```
 
 r[syntax.property.operands] spec::surface::operands::{right, left_associative, non_associative}
@@ -622,9 +742,7 @@ expect operands(b: BinaryOp) {
 
 ## Examples
 
-These declarations use the forms of the grammar: the `syntaxChapters` test checks that
-each rule alternative, and each optional or repeated part of a rule, is
-used somewhere in the chapter's `fren2` blocks.
+These declarations use the forms of the grammar.
 
 ```fren2
 pub mod signals

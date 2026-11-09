@@ -7,13 +7,6 @@ occurrence. Name resolution and type checking produce later intermediate
 representations (IRs); parsing alone establishes neither the meaning of a
 program nor the validity of a check.
 
-Each requirement is a Fren procedure with its evidence: an `impl` whose
-proof is Lean's, or a `tested` claim naming the test that checks it. A
-test bounds its inputs, every input up to a size and seeded random ones,
-and proves nothing beyond them; the
-[development coverage](../../../docs/fren2-specification-coverage.md#syntax-decisions-and-design-debt)
-records the bounds.
-
 ## Lexing
 
 The source grammar is specified in the language reference.
@@ -24,8 +17,8 @@ abstract syntax trees. The lexer and the parser implement them.
 
 r[parsing.lexer.agreement] spec::parsing::lexer_agreement
 The lexer divides every source text into the pieces, with the kinds, that
-the rules of [Lexical structure](../Language/LexicalStructure.md) give, a
-word being a keyword exactly when `keyword?` holds of it, and the
+`next_piece?` of [Lexical structure](../Language/LexicalStructure.md)
+gives, a word being a keyword exactly when `keyword?` holds of it, and the
 `fren2 pieces` examples of that chapter are its pieces.
 
 ```fren
@@ -74,9 +67,7 @@ The parser accepts the grammar's texts and builds their trees.
 r[parsing.grammar.acceptance] spec::parsing::grammar_acceptance
 The shared parser accepts exactly the texts that the grammar of
 [Syntax](../Language/Syntax.md) accepts, independently of name resolution,
-typing and solver verdicts. The test reads the chapter's grammar blocks as
-written, and a mutation control of wrong grammars, each of which it must
-reject, checks that the inputs tell grammars apart.
+typing and solver verdicts.
 
 ```fren
 pub proc grammar_acceptance(): (holds?) { ensure output: holds? }
@@ -108,7 +99,7 @@ tested declaration_trees: "src/FrenTest/SpecChapters/Syntax.lean"
 r[parsing.grammar.operators] spec::parsing::operators
 The parser reads each operator's spelling as `unary_spelling` and
 `binary_spelling` say, and orders the binary operators' precedences as
-the categories of `syntax.property.unambiguous` rank them.
+the categories of `syntax.property.print-parse` rank them.
 
 ```fren
 pub proc operators(): (holds?) { ensure output: holds? }
@@ -131,14 +122,18 @@ pub proc shared_entry(): (holds?) { ensure output: holds? }
 tested shared_entry: "src/FrenParseTests/Adapter.lean"
 ```
 
-r[parsing.shared.drivers]
+r[parsing.shared.drivers] spec::parsing::shared_drivers
 Every driver of Fren 2 text, the command line and the hosted reader of
 Markdown blocks, calls this parser, and given identical Fren text, entry
 category and file identity obtains the same tree or the same diagnostic,
 before host positions are translated. Extraction from a host document is
-separate from parsing: delimiters of the host are not Fren tokens. This
-requirement is open: the command line and the hosted reader do not call
-the parser yet.
+separate from parsing: delimiters of the host are not Fren tokens.
+
+```fren
+pub proc shared_drivers(): (holds?) { ensure output: holds? }
+
+trusted shared_drivers: "open: the command line and the hosted reader do not call the parser yet"
+```
 
 ## Source ownership and locations
 
@@ -146,7 +141,7 @@ The lossless tree owns each byte of its source exactly once.
 
 r[parsing.lossless.ownership] spec::parsing::ownership
 The parse result retains the immutable source and an ordered partition of
-its bytes into the pieces of `lexical.piece.longest`, as nonempty token,
+its bytes into the pieces of `lexical.piece.division`, as nonempty token,
 trivia or rejected-text slices, with no gaps or duplicated ownership,
 including leading and trailing trivia.
 
@@ -224,15 +219,10 @@ pub proc failure(): (holds?) { ensure output: holds? }
 tested failure: "src/FrenParseTests/Adapter.lean"
 ```
 
-r[parsing.determinism] spec::parsing::determinism
-For fixed text, entry category and file identity, parsing terminates with
-the same result, tree and diagnostic.
-
-```fren
-pub proc determinism(): (holds?) { ensure output: holds? }
-
-trusted determinism: "the parser is a total Lean function, which FrenParse.deterministic states"
-```
+> **Note:** The parser is a total function of the text, the entry category
+> and the file identity: for fixed arguments, parsing terminates with one
+> result, tree and diagnostic. No rule states this, since the language of
+> the implementation gives it.
 
 r[parsing.diagnostic.anchor] spec::parsing::diagnostic_anchor
 A syntax diagnostic is at a token, rejected text or the end of input, with
@@ -244,15 +234,18 @@ pub proc diagnostic_anchor(): (holds?) { ensure output: holds? }
 tested diagnostic_anchor: "src/FrenParseTests/Adapter.lean"
 ```
 
-r[parsing.diagnostic.first]
+r[parsing.diagnostic.first] spec::parsing::diagnostic_first
 A syntax diagnostic is at the first token, rejected text or end of input
 where the grammar cannot continue, and what it says was expected is what
 the grammar would accept there. A missing `}`, or an arm that ends at
 `=>`, is reported at the end of input; an extra `}` after a valid
-declaration, at that `}`; and rejected text, at its bytes. This requirement
-is open: tests check the diagnostics of chosen texts, such as the
-[Syntax](../Language/Syntax.md) chapter's rejected examples, not that each
-is the first point where the grammar cannot continue.
+declaration, at that `}`; and rejected text, at its bytes.
+
+```fren
+pub proc diagnostic_first(): (holds?) { ensure output: holds? }
+
+trusted diagnostic_first: "open: tests check the diagnostics of chosen texts, not that each is at the first point where the grammar cannot continue"
+```
 
 ## Reconstruction
 
@@ -271,7 +264,7 @@ tested reconstruction: "src/FrenParseTests/Adapter.lean"
 
 > **Note:** Emission is reconstruction, not formatting or serialization of
 > an IR. A failure also reconstructs its input, but is not a successful
-> parse. Printing an abstract syntax tree is `syntax.property.unambiguous`.
+> parse. The text of an abstract syntax tree is `syntax.property.print-parse`.
 > Resolution later replaces written names with item identities and de
 > Bruijn indices using the [binding contracts](Bindings.md); those
 > references do not replace written names in the AST.
@@ -301,7 +294,13 @@ pub proc continuation_case(byte: Nat): (continuation?) {
 }
 ```
 
-r[parsing.primitive.boundary]
+r[parsing.primitive.boundary] spec::parsing::boundary
 In valid UTF-8, an offset inside the text is a character boundary exactly
 when its byte is not a continuation byte; 0 and the byte length are
-boundaries too. This requirement is open: no theorem relates the two.
+boundaries too.
+
+```fren
+pub proc boundary(): (holds?) { ensure output: holds? }
+
+trusted boundary: "open: no theorem relates character boundaries to continuation bytes"
+```

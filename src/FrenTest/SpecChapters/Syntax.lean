@@ -28,33 +28,43 @@ def kindOf (cls : spec.lexical.Class) (lexeme : String) : LexicalKind :=
   | .Numeral => .numeral
   | .Punctuator => .punctuation
 
-/-- The pieces that the chapter's rules give a source text, read off the rules
-as written: at each position, `<-` is rejected text
-(`lexical.piece.rejected`); otherwise the piece is the longest prefix that
-`in_class?` puts in a class (`lexical.piece.longest`), less the CR of a line
-ending at the end of a comment (`lexical.piece.comment-end`); and if no
-prefix is in a class, the first character is rejected text. -/
-def specPieces (source : String) : List (LexicalKind × String) :=
+/-- Every next piece that the chapter's `next_piece?` admits at the start of
+`remaining`: each class or none, with each length up to the end of the text. -/
+def nextPieces (remaining : String) : List (Option spec.lexical.Class × Nat) :=
+  (none :: classes.map some).flatMap fun kind =>
+    (List.range remaining.length).filterMap fun i =>
+      if spec.lexical.«next_piece?» remaining kind (Int.ofNat (i + 1)) then some (kind, i + 1) else none
+
+/-- `lexical.piece.division` at one position: no text of a class at the start
+of `remaining` is longer than the piece of `n` characters there, but a comment
+up to the CR of a line ending. -/
+def noLonger (remaining : String) (n : Nat) : Bool :=
+  (List.range (remaining.length - n)).all fun k =>
+    let m := n + 1 + k
+    let longer := String.ofList (remaining.toList.take m)
+    !spec.lexical.«classed?» longer ||
+      (k == 0 && spec.lexical.«in_class?» .Comment longer &&
+        spec.lexical.«line_ending?» (String.ofList ((remaining.toList.drop n).take 2)))
+
+/-- The pieces that the chapter gives a source text (`lexical.piece.division`):
+the piece that `next_piece?` gives at position 0, then at each piece's end.
+`none` when some position has no next piece or more than one, or has a longer
+text of a class than the division allows. -/
+def specPieces (source : String) : Option (List (LexicalKind × String)) :=
   go source.toList (source.length + 1)
 where
-  go (cs : List Char) : Nat → List (LexicalKind × String)
-    | 0 => []
+  go (cs : List Char) : Nat → Option (List (LexicalKind × String))
+    | 0 => none
     | fuel + 1 =>
-      if cs.isEmpty then [] else
-      if cs.take 2 == ['<', '-'] then (.rejected, "<-") :: go (cs.drop 2) fuel else
-      -- No class has a text with an LF but the whitespace "\n" itself, so no
-      -- piece extends past the first LF.
-      let bound := match cs.idxOf? '\n' with | some i => i + 1 | none => cs.length
-      let longest := (List.range bound).reverse.findSome? fun i =>
-        let p := String.ofList (cs.take (i + 1))
-        (classes.find? (spec.lexical.«in_class?» · p)).map (i + 1, ·)
-      match longest with
-      | none => (.rejected, String.ofList (cs.take 1)) :: go (cs.drop 1) fuel
-      | some (n, cls) =>
-        let n := if cls == .Comment && cs[n - 1]? == some '\r' &&
-            spec.lexical.«line_ending?» (String.ofList (cs.drop (n - 1))) then n - 1 else n
+      if cs.isEmpty then some [] else
+      let remaining := String.ofList cs
+      match nextPieces remaining with
+      | [(kind, n)] =>
         let lexeme := String.ofList (cs.take n)
-        (kindOf cls lexeme, lexeme) :: go (cs.drop n) fuel
+        if noLonger remaining n then
+          (go (cs.drop n) fuel).map (((kind.map (kindOf · lexeme)).getD .rejected, lexeme) :: ·)
+        else none
+      | _ => none
 
 /-- The actual lexer's slices of a source text, with their kinds. -/
 def actualPieces (source : String) : List (LexicalKind × String) :=
@@ -94,23 +104,28 @@ def corpus : List String :=
    "assume not true false true? Bool Int", "forall exists proc use struct where with table",
    "é😀 x", "f(x)<=-1 -- note"]
 
+-- fren-covers: spec::lexical::division
 -- fren-covers: spec::parsing::lexer_agreement
 --@ reference: lexical.source.line-ending
 --@ reference: lexical.class.definition
 --@ reference: lexical.piece.longest
+--@ reference: lexical.piece.next
 --@ reference: lexical.piece.comment-end
 --@ reference: lexical.piece.rejected
-/-- The lexical rules (`lexical.piece.longest`, `lexical.piece.comment-end`,
-`lexical.piece.rejected`, `lexical.source.line-ending`, `lexical.class.definition`):
-the actual lexer gives exactly the chapter's pieces, with their kinds, its
-slices have UTF-8 byte offsets without gaps, and no text with rejected text
-parses. Bounded: every text of up to three characters over `alphabet` (24
-characters), every text of four over ten of them, `corpus`, and 500 seeded
-random texts of 20 to 120 characters. -/
+--@ reference: lexical.piece.division
+/-- The lexical rules (`lexical.piece.next`, `lexical.piece.division`,
+`lexical.source.line-ending`, `lexical.class.definition`): every position of a
+text has exactly one next piece by the chapter's `next_piece?`, among every
+class and length, with no longer text of a class than the division allows; the
+actual lexer gives exactly those pieces, with their kinds; its slices have
+UTF-8 byte offsets without gaps; and no text with rejected text parses.
+Bounded: every text of up to three characters over `alphabet` (24 characters),
+every text of four over ten of them, `corpus`, and 500 seeded random texts of
+20 to 120 characters. -/
 def lexer_agrees : Bool :=
   let texts := strings alphabet 3 ++ strings ['a', '?', '-', '<', '=', '!', ':', '\r', '\n', '1'] 4 ++
     corpus ++ randomTexts 500
-  texts.all fun s => actualPieces s == specPieces s &&
+  texts.all fun s => specPieces s == some (actualPieces s) &&
     FrenAst.ownsSource ⟨0⟩ s (FrenParse.tokenize ⟨0⟩ s).tape &&
     (!(actualPieces s).any (·.1 == .rejected) ||
       !(FrenParse.parseFile ⟨0⟩ s).toBool && !(FrenParse.parseExpression ⟨0⟩ s).toBool)
@@ -137,10 +152,28 @@ def encoding_agrees : Bool :=
 -- fren-covers: spec::parsing::numerals
 --@ reference: lexical.numeral.value
 /-- `lexical.numeral.value`: the parser gives each numeral its decimal value,
-leading zeros included, beyond any fixed width. -/
+leading zeros included, beyond any fixed width. Bounded: the listed numerals,
+which include 2^64, 2^128 + 1 and 10^40, and 200 seeded random numerals of 1 to
+80 digits, whose value is summed from their digits. -/
 def numerals_agree : Bool :=
-  [("0", 0), ("007", 7), ("42", 42), ("18446744073709551616", 18446744073709551616),
-   ("000000000000000000000000000001", 1)].all fun (text, value) =>
+  let listed := [("0", 0), ("007", 7), ("42", 42), ("18446744073709551616", 18446744073709551616),
+    ("340282366920938463463374607431768211457", 2 ^ 128 + 1),
+    ("10000000000000000000000000000000000000000", 10 ^ 40),
+    ("000000000000000000000000000001", 1)]
+  let random := Id.run do
+    let mut seed : Nat := 20261110
+    let mut out := []
+    for _ in [:200] do
+      seed := (seed * 6364136223846793005 + 1442695040888963407) % 2 ^ 64
+      let len := 1 + seed / 2 ^ 40 % 80
+      let mut digits : List Nat := []
+      for _ in [:len] do
+        seed := (seed * 6364136223846793005 + 1442695040888963407) % 2 ^ 64
+        digits := seed / 2 ^ 33 % 10 :: digits
+      out := (String.ofList (digits.map fun d => Char.ofNat (48 + d)),
+        digits.foldl (fun value d => value * 10 + d) 0) :: out
+    return out
+  (listed ++ random).all fun (text, value) =>
     match FrenParse.parseExpression ⟨0⟩ text with
     | .ok doc => match doc.root with
       | .expression (.integer _ v) => v == value
@@ -162,17 +195,22 @@ def pieceLine : LexicalKind × String → String
   | (.punctuation, t) => s!"punctuator {t}"
   | (.rejected, t) => s!"rejected {t}"
 
+-- fren-covers: spec::lexical::division
 -- fren-covers: spec::parsing::lexer_agreement
---@ reference: lexical.piece.longest
+--@ reference: lexical.piece.next
+--@ reference: lexical.piece.comment-end
 --@ reference: lexical.piece.rejected
-/-- Each `fren2 pieces` block's first line lexes into the pieces that its
-other lines list, by the actual lexer and by the chapter's rules alike. -/
+/-- Each `fren2 pieces` block's first line, with `\r` and `\n` read as CR and
+LF, lexes into the pieces that its other lines list, by the actual lexer and
+by the chapter's `next_piece?` alike. -/
 def pieces_agree (md : String) : Except String Unit := do
   for b in (Fren.Core.fencedBlocks md).toList do
     if b.info != "fren2 pieces" then continue
-    let some text := b.body[0]? | throw s!"LexicalStructure.md:{b.line}: an empty `fren2 pieces` block"
+    let some line := b.body[0]? | throw s!"LexicalStructure.md:{b.line}: an empty `fren2 pieces` block"
+    let text := (line.replace "\\r" "\r").replace "\\n" "\n"
     let expected := b.body.toList.drop 1
-    unless (actualPieces text).map pieceLine == expected && (specPieces text).map pieceLine == expected do
+    unless (actualPieces text).map pieceLine == expected &&
+        (specPieces text).map (·.map pieceLine) == some expected do
       throw s!"LexicalStructure.md:{b.line}: `{text}` has the pieces {(actualPieces text).map pieceLine}"
 
 /-! ## Syntax -/
@@ -537,22 +575,28 @@ def binaryOf (op : FrenAst.BinaryOp) : SBinary :=
   | .ne => .Ne | .lt => .Lt | .le => .Le | .gt => .Gt | .ge => .Ge | .and => .And | .or => .Or
   | .iff => .Iff
 
-/-- `syntax.tree.productions`: the tree of each expression production. -/
+def spellBinary (op : SBinary) : String := spec.surface.binary_spelling op
+def spellUnary (op : SUnary) : String := spec.surface.unary_spelling op
+
+/-- `syntax.tree.productions`: the tree of each expression production. An
+operator node has the operator whose spelling (`unary_spelling`,
+`binary_spelling`) was written; with any other spelling the result is the
+empty name, which is no tree of the chapter. -/
 partial def abstract : Expr → Tree
   | .name path => .name (pathOf path)
   | .bool _ b => .boolean b
   | .integer _ n => .integer n
   | .paren _ body _ => abstract body
-  | .unary _ op body => .unary (unaryOf op) (abstract body)
-  | .binary l _ op r => .binary (binaryOf op) (abstract l) (abstract r)
+  | .unary token op body =>
+    if spellUnary (unaryOf op) == token.text then .unary (unaryOf op) (abstract body) else .name []
+  | .binary l token op r =>
+    if spellBinary (binaryOf op) == token.text then .binary (binaryOf op) (abstract l) (abstract r)
+    else .name []
   | .call (.name path) _ args _ _ => .call (pathOf path) (args.toList.map abstract)
   | .call _ _ args _ _ => .call [] (args.toList.map abstract)
   | .ifE _ c _ t _ e => .ifE (abstract c) (abstract t) (abstract e)
   | .letE _ x _ v _ b => .letE x.text (abstract v) (abstract b)
   | .matchE _ s _ arms _ => .matchE (abstract s) (arms.toList.map fun a => (pathOf a.1, abstract a.2.2.1))
-
-def spellBinary (op : SBinary) : String := spec.surface.binary_spelling op
-def spellUnary (op : SUnary) : String := spec.surface.unary_spelling op
 
 def unaryName : SUnary → String | .Neg => "Neg" | .Not => "Not"
 def binaryName : SBinary → String
@@ -617,10 +661,11 @@ def layerSexp : spec.surface.ExprF String → String
 
 partial def Tree.sexp (t : Tree) : String := layerSexp (mapLayer Tree.sexp t.layer)
 
+/-- The tree of a type: the chapter's `type_name` of its written path
+(`syntax.tree.productions`). -/
 def typeTree : Ty → spec.surface.TypeName
-  | .bool _ => .Boolean
-  | .int _ => .Integer
-  | .named p => .Named (Fren.Seq.ofList (pathOf p))
+  | .bool token | .int token => spec.surface.type_name (Fren.Seq.ofList [token.text])
+  | .named p => spec.surface.type_name (Fren.Seq.ofList (pathOf p))
 
 def typeSexp : spec.surface.TypeName → String
   | .Boolean => "Boolean"
@@ -670,33 +715,47 @@ def fileSexp? (source : String) : Option String :=
   | .ok { root := .declarations ds, .. } => some ("(File" ++ String.join (ds.toList.map fun d => " " ++ declSexp (declTree d)) ++ ")")
   | _ => none
 
-/-- `syntax.tree.well-formed`: every call has an argument and every name is
-an `Identifier` of the chapter (a word, not a keyword). -/
-partial def Tree.wellFormed : Tree → Bool
-  | .boolean _ | .integer _ => true
-  | .name p => !p.isEmpty && p.all identifier
-  | .call p args => !p.isEmpty && p.all identifier && !args.isEmpty && args.all Tree.wellFormed
-  | .unary _ e => e.wellFormed
-  | .binary _ l r => l.wellFormed && r.wellFormed
-  | .ifE c t e => c.wellFormed && t.wellFormed && e.wellFormed
-  | .letE x v b => identifier x && v.wellFormed && b.wellFormed
-  | .matchE s arms => s.wellFormed && arms.all fun (p, b) => p.length >= 2 && p.all identifier && b.wellFormed
-where
-  identifier (w : String) : Bool := spec.surface.«identifier?» w
+/-- The subexpressions of a node, in the order of `ExprF`. -/
+def layerChildren : spec.surface.ExprF α → List α
+  | .Boolean _ | .Integer _ | .Name _ => []
+  | .Call _ args => args.toList
+  | .Unary _ e => [e]
+  | .Binary _ l r => [l, r]
+  | .If c t e => [c, t, e]
+  | .Let _ v b => [v, b]
+  | .Match s arms => s :: arms.toList.map (·.body)
+
+/-- `syntax.tree.well-formed`: the chapter's `node_well_formed?` holds of
+every node of the tree, with its subexpressions elided. -/
+partial def Tree.wellFormed (t : Tree) : Bool :=
+  spec.surface.«node_well_formed?» (mapLayer (fun _ => .Elided) t.layer) &&
+    (layerChildren t.layer).all Tree.wellFormed
+
+/-- `DeclarationF` maps over its expressions. -/
+def mapDecl (f : α → β) : spec.surface.DeclarationF α → spec.surface.DeclarationF β
+  | .Module d => .Module d
+  | .Enumeration d => .Enumeration d
+  | .Function d => .Function (.mk! d.public? d.name d.parameters d.result (f d.body))
+  | .Expectation d =>
+    .Expectation (.mk! d.name d.parameters
+      (Fren.Seq.ofList (d.members.toList.map fun m => .mk! m.kind m.label (f m.body))))
+
+/-- The expressions of a declaration. -/
+def declBodies : spec.surface.DeclarationF α → List α
+  | .Module _ | .Enumeration _ => []
+  | .Function d => [d.body]
+  | .Expectation d => d.members.toList.map (·.body)
+
+/-- `syntax.tree.well-formed`: the chapter's `declaration_well_formed?` holds
+of the declaration, and each of its expressions is well formed. -/
+def declWellFormed (d : spec.surface.DeclarationF Tree) : Bool :=
+  spec.surface.«declaration_well_formed?» (mapDecl (fun _ => .Elided) d) &&
+    (declBodies d).all Tree.wellFormed
 
 /-- Whether each declaration of a file is well formed (`syntax.tree.well-formed`). -/
 def fileTrees? (source : String) : Option (List Bool) :=
-  let ident (t : Token) := spec.surface.«identifier?» t.text
-  let path (p : Path) := (p.head :: p.tail.toList.map (·.2)).all ident
-  let ty : Ty → Bool := fun | .named p => path p | _ => true
-  let param (p : Parameter) := ident p.name && (p.annotation.map (ty ·.2)).getD true
   match FrenParse.parseFile ⟨0⟩ source with
-  | .ok { root := .declarations ds, .. } => some <| ds.toList.map fun
-    | .moduleDecl _ _ p => path p
-    | .enumDecl _ _ n _ vs _ _ => ident n && vs.all ident
-    | .function _ _ n ps _ r _ b => ident n && ps.values.all param && ty r && (abstract b).wellFormed
-    | .expectation _ n ps _ ms _ =>
-      ident n && ps.values.all param && ms.all fun m => ident m.label && (abstract m.body).wellFormed
+  | .ok { root := .declarations ds, .. } => some (ds.toList.map fun d => declWellFormed (declTree d))
   | _ => none
 
 def tree? (source : String) : Option Tree :=
@@ -706,49 +765,84 @@ def tree? (source : String) : Option Tree :=
 
 /-! ## Printing -/
 
+/-- A printed subtree: its tokens, each with whether it touches the token
+before it, and its `shape` by the chapter. -/
 structure Printed where
-  text : String
-  category : Category
-  isOpen : Bool
+  tokens : List (String × Bool)
+  shape : spec.surface.Shape
 
-instance : Inhabited Printed := ⟨⟨"", .Primary, false⟩⟩
+instance : Inhabited Printed := ⟨⟨[], ⟨.Primary, false⟩⟩⟩
 
-def fitsBare (child : Printed) (place : Category) (followed : Bool) : Bool :=
-  spec.surface.«fits?» child.category child.isOpen place followed
+/-- A token after a space. -/
+def word (text : String) : String × Bool := (text, false)
 
-/-- `place` gets `child`, in parentheses where `fits?` says it does not fit. -/
-def placed (child : Printed) (place : Category) (followed : Bool) : String :=
-  if spec.surface.«fits?» child.category child.isOpen place followed then child.text
-  else "(" ++ child.text ++ ")"
+def pathTokens (p : Fren.Seq String) : List (String × Bool) :=
+  (p.toList.map word).intersperse (word "::")
 
-/-- The text of `syntax.property.unambiguous`. -/
-partial def Tree.print : Tree → Printed
-  | .boolean b => ⟨toString b, .Primary, false⟩
-  | .integer n => ⟨toString n, .Primary, false⟩
-  | .name p => ⟨"::".intercalate p, .Primary, false⟩
-  | .call p args =>
-    ⟨"::".intercalate p ++ "(" ++ ", ".intercalate (args.map fun a => placed a.print .Expression false) ++ ")",
-     .Primary, false⟩
-  | .unary op e =>
-    let e := e.print
-    let bare := fitsBare e (spec.surface.unary_category op) false
-    ⟨spellUnary op ++ " " ++ placed e (spec.surface.unary_category op) false,
-     spec.surface.unary_category op, bare && e.isOpen⟩
-  | .binary op l r =>
-    let (l, r) := (l.print, r.print)
-    let bare := fitsBare r (spec.surface.right_category op) false
-    ⟨placed l (spec.surface.left_category op) true ++ " " ++ spellBinary op ++ " " ++
-      placed r (spec.surface.right_category op) false,
-     spec.surface.binary_category op, bare && r.isOpen⟩
-  | .ifE c t e =>
-    ⟨s!"if {placed c.print .Expression false} then {placed t.print .Expression false} else " ++
-      placed e.print .Expression false, .Primary, true⟩
-  | .letE x v b =>
-    ⟨s!"let {x} := {placed v.print .Iff false} in {placed b.print .Expression false}", .Expression, true⟩
-  | .matchE s arms =>
-    ⟨s!"match {placed s.print .Primary false} \{ " ++
-      ", ".intercalate (arms.map fun (p, b) => "::".intercalate p ++ " => " ++ placed b.print .Iff false) ++
-      " }", .Primary, false⟩
+/-- The tokens of a node, given its printed subtrees
+(`syntax.property.print-parse`): the node's tokens in the order of its
+production, with a subtree in parentheses exactly where the chapter's `fits?`
+says that its `shape` does not fit its `place`. With `full`, the text instead
+has what the trees do not distinguish: every subtree in parentheses, a
+trailing comma in every list and a leading zero on every numeral. -/
+def layerTokens (full : Bool) (node : spec.surface.ExprF Printed) : List (String × Bool) :=
+  let child (k : Nat) (c : Printed) : List (String × Bool) :=
+    if !full && spec.surface.«fits?» c.shape (spec.surface.place Printed node (Int.ofNat k)) then c.tokens
+    else word "(" :: c.tokens ++ [word ")"]
+  let list (items : List (List (String × Bool))) : List (String × Bool) :=
+    (items.intersperse [word ","]).flatten ++ (if full && !items.isEmpty then [word ","] else [])
+  match node with
+  | .Boolean b => [word (toString b)]
+  | .Integer n => [word ((if full then "0" else "") ++ toString n)]
+  | .Name p => pathTokens p
+  | .Call p args =>
+    pathTokens p ++ [("(", true)] ++ list (args.toList.zipIdx.map fun (a, k) => child k a) ++ [word ")"]
+  | .Unary op e => word (spellUnary op) :: child 0 e
+  | .Binary op l r => child 0 l ++ [word (spellBinary op)] ++ child 1 r
+  | .If c t e => word "if" :: child 0 c ++ [word "then"] ++ child 1 t ++ [word "else"] ++ child 2 e
+  | .Let x v b => [word "let", word x, word ":="] ++ child 0 v ++ [word "in"] ++ child 1 b
+  | .Match s arms =>
+    word "match" :: child 0 s ++ [word "{"] ++
+      list (arms.toList.zipIdx.map fun (a, k) => pathTokens a.variant ++ [word "=>"] ++ child (k + 1) a.body) ++
+      [word "}"]
+
+/-- A tree printed: each node's tokens by `layerTokens`, and its shape by the
+chapter's `shape` of its subtrees' shapes. -/
+partial def Tree.printWith (full : Bool) (t : Tree) : Printed :=
+  let node := mapLayer (Tree.printWith full) t.layer
+  ⟨layerTokens full node, spec.surface.shape (mapLayer (·.shape) node)⟩
+
+/-- The text of `syntax.property.print-parse`. -/
+def Tree.print (t : Tree) : Printed := t.printWith false
+
+/-- One space between each two consecutive tokens, but none before a token
+that touches. -/
+def Printed.text (p : Printed) : String :=
+  String.join (p.tokens.zipIdx.map fun ((t, touching), k) => (if k == 0 || touching then "" else " ") ++ t)
+
+/-- The tokens of an accepted expression that its tree keeps: all but each
+pair of parentheses that is not a call's, each trailing comma, and the leading
+zeros of numerals. A call's `(` is the one after an identifier. -/
+def keptTokens (source : String) : List String := Id.run do
+  let ts := toks source
+  let mut calls : List Bool := []
+  let mut out : Array String := #[]
+  for (t, i) in ts.toList.zipIdx do
+    if t.text == "(" then
+      let call := i > 0 && ts[i - 1]?.any (·.kind == .identifier)
+      calls := call :: calls
+      if call then out := out.push t.text
+    else if t.text == ")" then
+      match calls with
+      | call :: rest =>
+        calls := rest
+        if call then out := out.push t.text
+      | [] => out := out.push t.text
+    else if t.text == "," && (ts[i + 1]?.any fun next => next.text == ")" || next.text == "}") then
+      pure ()
+    else if t.kind == .numeral then out := out.push (toString t.text.toNat!)
+    else out := out.push t.text
+  return out.toList
 
 /-- A seeded pseudo-random well-formed tree of at most `depth` levels. -/
 partial def randomTree (seed : Nat) : Nat → Tree × Nat
@@ -934,15 +1028,20 @@ def operators_agree : Bool :=
   unaryOps.all fun op => exprSexp? (spellUnary op ++ " x") == some s!"(Unary {unaryName op} (Name x))"
 
 
--- fren-covers: spec::parsing::expression_trees, spec::surface::unambiguity
---@ reference: syntax.property.unambiguous
+-- fren-covers: spec::parsing::expression_trees, spec::surface::print_parse
+--@ reference: syntax.property.print-parse
 --@ reference: parsing.grammar.trees
-/-- `syntax.property.unambiguous`: the printed text of a well-formed tree
-parses back to the tree, and dropping any pair of its parentheses gives a text
-that is rejected or has another tree; ill-formed trees do not come back.
+/-- `syntax.property.print-parse`: the text of a well-formed tree has exactly
+the tokens written, by the actual lexer, and parses back to the tree; dropping
+any pair of its parentheses gives a text that is rejected or has another
+tree; the text with every subtree in parentheses, trailing commas and leading
+zeros has the same tree; conversely, the text of the tree of an accepted
+expression has that expression's tokens, apart from pairs of parentheses,
+trailing commas and leading zeros; and ill-formed trees do not come back.
 Bounded: 1000 seeded random trees of depth at most 5, every pair of binary
 operators and every unary operator around binary operands, and seven
-ill-formed trees. -/
+ill-formed trees; the converse on those trees' texts in full parentheses and
+on the texts near those of 300 more random trees of depth at most 4. -/
 def roundtrip_agrees : Bool := Id.run do
   let x := Tree.name ["x"]
   let y := Tree.name ["y"]
@@ -956,15 +1055,24 @@ def roundtrip_agrees : Bool := Id.run do
   let illFormed : List Tree := [.call ["f"] [], .name [], .call [] [x],
     .matchE x [(["A"], y)], .letE "true" x y, .name ["E", "not"], .binary .Add (.name ["if"]) x]
   let same (t : Tree) (text : String) := (tree? text).map (·.sexp) == some t.sexp
-  -- Dropping a matched pair of parentheses; calls' parentheses included.
-  let minimal (t : Tree) := (nearTexts t.print.text true).all fun near =>
-    near == t.print.text || !same t near
-  return trees.all (fun t => same t t.print.text && minimal t) &&
-    illFormed.all fun t => !t.wellFormed && !same t t.print.text
+  let separated (p : Printed) := (toks p.text).toList.map (·.text) == p.tokens.map (·.1)
+  let converse (text : String) := match tree? text with
+    | some t => keptTokens t.print.text == keptTokens text
+    | none => true
+  let direct := trees.all fun t =>
+    let printed := t.print
+    let text := printed.text
+    let full := (t.printWith true).text
+    t.wellFormed && separated printed && same t text &&
+      -- Dropping a matched pair of parentheses; calls' parentheses included.
+      (nearTexts text true).all (fun near => near == text || !same t near) &&
+      same t full && converse full
+  let near := (randomTrees 300 4 2027).all fun t => (nearTexts t.print.text).all converse
+  return direct && near && illFormed.all fun t => !t.wellFormed && !same t t.print.text
 
 
 /-- A declaration tree printed: its tokens, with each expression printed as
-`syntax.property.unambiguous` says, and a trailing comma when `trailing`. -/
+`syntax.property.print-parse` says, and a trailing comma when `trailing`. -/
 def declPrint (trailing : Bool) : spec.surface.DeclarationF Tree → String
   | .Module d => s!"{if d.public? then "pub " else ""}mod {pathText d.path}"
   | .Enumeration d =>
@@ -1016,11 +1124,25 @@ def randomDecl (seed : Nat) : spec.surface.DeclarationF Tree × Nat := Id.run do
 -- fren-covers: spec::parsing::declaration_trees
 --@ reference: syntax.tree.productions
 --@ reference: parsing.grammar.declaration-trees
-/-- `parsing.grammar.declaration-trees`: a generated declaration tree, printed
-and parsed, gives back that tree, field for field. The trees are generated
-independently of the parser. Bounded: 1000 seeded random files of one to three
-declarations, with and without trailing commas. -/
+/-- `parsing.grammar.declaration-trees`: a generated declaration tree is
+well formed and, printed and parsed, gives back that tree, field for field.
+The trees are generated independently of the parser. Bounded: 1000 seeded
+random files of one to three declarations, with and without trailing commas,
+and eight ill-formed declaration trees, which the chapter's
+`declaration_well_formed?` must refuse. -/
 def declarations_agree : Bool := Id.run do
+  let x := Tree.name ["x"]
+  let p : spec.surface.Parameter := ⟨"x", some .Integer⟩
+  let illFormed : List (spec.surface.DeclarationF Tree) := [
+    .Module ⟨false, Fren.Seq.ofList []⟩,
+    .Enumeration ⟨false, "E", Fren.Seq.ofList []⟩,
+    .Enumeration ⟨false, "if", Fren.Seq.ofList ["A"]⟩,
+    .Function (.mk! false "f" (Fren.Seq.ofList []) .Integer x),
+    .Function (.mk! false "f" (Fren.Seq.ofList [⟨"y", none⟩]) .Integer x),
+    .Function (.mk! false "f" (Fren.Seq.ofList [p]) (.Named (Fren.Seq.ofList ["Bool"])) x),
+    .Function (.mk! false "f" (Fren.Seq.ofList [p]) .Integer (.call ["g"] [])),
+    .Expectation (.mk! "e" (Fren.Seq.ofList []) (Fren.Seq.ofList [.mk! .Expect "then" x]))]
+  if illFormed.any declWellFormed then return false
   let mut seed := 9091
   for _ in [:1000] do
     let mut decls := []
@@ -1028,6 +1150,7 @@ def declarations_agree : Bool := Id.run do
       let (d, s) := randomDecl seed
       seed := s
       decls := decls ++ [d]
+    unless decls.all declWellFormed do return false
     let trailing := seed % 2 == 0
     let text := "\n".intercalate (decls.map (declPrint trailing))
     let expected := "(File" ++ String.join (decls.map fun d => " " ++ declSexp d) ++ ")"
@@ -1056,8 +1179,9 @@ def trees_agree (md : String) (inputs : List (String × String)) : Except String
     else if let some ds := fileTrees? text then
       unless ds.all id do throw s!"a declaration of {repr text} is not well formed"
 
---@ reference: syntax.expression.extent
-/-- `syntax.expression.extent`: each line `lhs -- rhs` of a `fren2 groups`
+-- fren-covers: spec::surface::extent
+--@ reference: syntax.property.extent
+/-- `syntax.property.extent`: each line `lhs -- rhs` of a `fren2 groups`
 block has the same tree on both sides. -/
 def groups_agree (md : String) : Except String Unit := do
   for (line, body) in blocks md "fren2 groups" do

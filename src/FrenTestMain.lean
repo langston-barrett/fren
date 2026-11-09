@@ -841,15 +841,16 @@ def guardRuleChapter (md text gap : String) : Array String :=
 /-- The chapters whose Fren follows the rule that it serves
 (`Spec/dev/Style#statements-and-their-fren`). -/
 def ruleAdjacentChapters : Array String :=
-  #["src/Spec/Language/Types.md", "src/Spec/Language/Expressions.md"]
+  #["src/Spec/Language/Types.md", "src/Spec/Language/Expressions.md",
+    "src/Spec/Language/LexicalStructure.md", "src/Spec/Language/Syntax.md",
+    "src/Spec/Compiler/AstAndParsing.md"]
 
 /-- The chapters whose properties carry Fren's own evidence
 (`Spec/dev/Style#properties-and-evidence`): the list grows as chapters are
 converted. Their wrappers trace their procedures with `trusted` as the
 required level, so that `lake build --wfail` fails when a property loses its
 evidence, and their Markdown has no hand-written status comments. -/
-def evidenceChapters : Array String := ruleAdjacentChapters ++ #["src/Spec/Compiler/Thir.md",
-  "src/Spec/Language/LexicalStructure.md", "src/Spec/Language/Syntax.md", "src/Spec/Compiler/AstAndParsing.md"]
+def evidenceChapters : Array String := ruleAdjacentChapters ++ #["src/Spec/Compiler/Thir.md"]
 
 /-- The two lines with which a converted chapter's wrapper must end, as an
 active command: a comment around them would leave other last lines. -/

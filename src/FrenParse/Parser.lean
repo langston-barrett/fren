@@ -335,12 +335,6 @@ def parseBytes (entry : Entry) (file : FrenSource.FileId) (bytes : ByteArray) :
   let source ← decode bytes
   (parse entry file source).mapError (·.diagnostic.render)
 
---@ reference: parsing.determinism
-theorem deterministic (entry : Entry) (file : FrenSource.FileId) (text : String)
-    (first second : Except Failure Document)
-    (hfirst : parse entry file text = first) (hsecond : parse entry file text = second) :
-    first = second := hfirst.symm.trans hsecond
-
 /-- Actual producer laws. Tested below with accepted, rejected and partial text;
 these definitions do not assert their universal truth. -/
 def LosslessOnSuccess : Prop := ∀ entry file source doc,

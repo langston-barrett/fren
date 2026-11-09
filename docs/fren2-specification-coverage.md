@@ -1388,26 +1388,56 @@ Decisions:
 - **G1.** Decided: deferred to Fren 2.5's nested types and element
   constraints, with no new features in today's Fren. Today's Fren has no
   recursive datatype whose recursion passes through a `Seq`, so the
-  abstract syntax is the one-layer `ExprF<E>`, and a constraint on the
-  elements of a `Seq` is outside the decidable core, so only the
-  identifiers that no sequence holds are typed as `Identifier`, and full
-  well-formedness is a tested rule.
+  abstract syntax is the one-layer `ExprF<E>`. A `Seq` whose element type
+  has a constraint is outside the decidable core, so a name is a `String`,
+  and `syntax.tree.well-formed` states the conditions on names as Fren
+  functions of one node or declaration, whose subexpressions have the
+  one-value type `Elided`. Two of them, over arms and parameters, are
+  definitions outside the decidable core. They take `Elided` rather than
+  any type `E` because today's Fren compiles a truth-valued `match` over
+  a generic enumeration to a definition that cannot run.
+- **G2.** The grammar's productions are EBNF, with no second statement in
+  Fren: `syntax.tree.productions` binds `type_name`, and a test abstracts
+  the parser's trees to `ExprF`, checking each operator's written token
+  against `unary_spelling` and `binary_spelling`.
+
+Design debt:
+
+- [ ] `BinaryOp::Mod` names the remainder, which is written `%` (S2);
+  the variant keeps its name until a change that renames it everywhere.
 
 Evidence of these chapters, and its bounds; the compiled `syntaxChapters`
-job of `fren_test` runs these checks in about 20 seconds:
+job of `fren_test` runs these checks in about 20 seconds, and `ruleReqs`
+checks that each rule of the three chapters links the Fren items after it:
 
-- [ ] The lexer agrees with the lexical classes and maximal munch on every
-  text of up to three characters over 24 characters, of four over ten, a
-  corpus and 500 seeded random texts (`lexer_agrees`); not proved for all
-  texts.
+- [ ] The lexer's pieces are those that folding `next_piece?` gives, each
+  position having exactly one next piece and no longer text of a class
+  than `lexical.piece.division` allows, on every text of up to three
+  characters over 24 characters, of four over ten, a corpus and 500 seeded
+  random texts (`lexer_agrees`); not proved for all texts.
+- [ ] The parser's numerals have their decimal values on listed numerals,
+  among them 2^64, 2^128 + 1 and 10^40, and 200 seeded random numerals of
+  up to 80 digits (`numerals_agree`); not proved for all numerals.
 - [ ] The grammar agrees with the parser on exhaustive token sequences of
   up to three, four or five pieces, seeded random sequences, printed random
   trees and files, and the texts near them (`grammar_agrees`), and a
   mutation control of 34 wrong grammars is caught (`mutants_caught`); not
   proved for all texts.
-- [ ] Printing and parsing round-trip 1000 seeded random trees and every
-  operator pair, with minimal parentheses (`roundtrip_agrees`); not proved
-  for all trees.
+- [ ] Printing by `place`, `shape` and `fits?` and then parsing gives the
+  same tree, the printed tokens are the lexer's, removing any pair of
+  parentheses changes the tree, and a text that parses to a tree has the
+  tokens of its printed text once redundant parentheses, trailing commas
+  and leading zeros are removed, on 1000 seeded random trees, every
+  operator pair and the texts near 300 trees (`roundtrip_agrees`); not
+  proved for all trees.
+- [ ] Every generated declaration is well formed by
+  `declaration_well_formed?`, and eight ill-formed declaration trees and
+  seven ill-formed expression trees are not (`declarations_agree`,
+  `roundtrip_agrees`).
+- [ ] The limits of today's Fren that the chapters work around: a
+  `forall` inside `and` or a match arm needs parentheses, a structure
+  literal cannot directly follow `=>`, and a slice or concatenation at a
+  position that is not a constant is outside the decidable core.
 - [ ] `parsing.shared.drivers` is open: the command line and the hosted
   reader do not yet call `FrenParse`.
 - [ ] `parsing.primitive.boundary` is open: no theorem relates continuation

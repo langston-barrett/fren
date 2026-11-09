@@ -3,7 +3,9 @@
 The [reference style guide](../../Reqs/dev/Style.md) supplies the audience,
 register, stable rule identifiers and checked-block conventions. The chapter
 shape below specializes its section order for the Fren2 specification.
-[Core typing](../Language/Types.md) is the template for Language chapters.
+[Core typing](../Language/Types.md) is an example of the standard for
+Language chapters, not a template: a chapter takes the shape that its
+subject needs.
 
 ## Chapter shape
 
@@ -44,7 +46,7 @@ property paragraph of its own. Material that a later chapter will own sits
 in a clearly marked section that names that chapter.
 
 The semantic-object, judgment and rule headings serve as their segment
-labels in this template; repeated bold labels are unnecessary. A chapter
+labels in such a chapter; repeated bold labels are unnecessary. A chapter
 about typing need not invent a dynamic-semantics section. Resolution,
 typing and verification/definedness are judgments within static semantics.
 Verification hypotheses are discharged by SMT. Dynamic semantics applies
@@ -60,7 +62,7 @@ defines or checks it, before the next rule. Several small definitions that
 serve one rule stay together under it; a definition that serves many rules,
 such as a sequence helper, gets a short rule of its own. No block gathers
 the code of several rules. The `ruleReqs` job checks this for the chapters
-that follow the template: each item of their Fren is linked by the nearest
+that it lists: each item of their Fren is linked by the nearest
 rule before it.
 
 ## Overview
@@ -199,7 +201,10 @@ constants.
 Maximize the decidable part of a chapter, but do not contort a rule to
 avoid undecidability. Quantification over positions of a `Seq` is outside
 Fren's decidable core; a structurally recursive function over a snoc
-sequence, or a quantifier over a sequence's elements, is inside it. Where a
+sequence, or a quantifier over a sequence's elements, is inside it. Two
+uses of elements are outside it: a `Seq` whose element type has a
+constraint, and a quantifier that passes an element that itself holds a
+sequence to a function. Where a
 rule reads better stated directly but undecidably, state it so, and give it
 a decidable abstraction that composes with the rest of the chapter,
 treating the direct statement as its refinement and stating the refinement
@@ -275,7 +280,15 @@ actual lexer and parser, through blocks that the `syntaxChapters` job of
   the same tree; a `fren2 trees` block lists `text -- tree` lines, the tree
   written with the constructor names of the abstract syntax.
 - A `fren2 pieces` block gives a text on its first line and then its
-  lexical pieces, one a line.
+  lexical pieces, one a line. In them `\r` and `\n` write a carriage
+  return and a line feed.
+
+The job also checks that each alternative of a grammar rule, and each
+optional or repeated part, is used in some `fren2` block of its chapter.
+A test bounds its inputs, every input up to a size and seeded random ones,
+and proves nothing beyond them; the
+[development coverage](../../../docs/fren2-specification-coverage.md#syntax-decisions-and-design-debt)
+records the bounds, and the chapters do not describe their tests.
 
 A rationale cites the decision or design-debt entry that it explains, in
 [development coverage](../../../docs/fren2-specification-coverage.md#syntax-decisions-and-design-debt),
