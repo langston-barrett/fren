@@ -107,7 +107,11 @@ def reapGroup (pgid : UInt32) (block : Bool) : IO (Option UInt32) := do
 @[extern "fren2_parent_pid"] opaque parentPid : IO UInt32
 /-- `PR_SET_CHILD_SUBREAPER` (Linux). -/
 @[extern "fren2_set_subreaper"] opaque setSubreaper : IO Unit
+/-- Kill and reap all children adopted by the dedicated subreaper. -/
+@[extern "fren2_reap_adopted"] opaque reapAdopted : IO Unit
 @[extern "fren2_close_fd"] opaque closeFd (fd : UInt32) : IO Unit
+/-- Test-only inheritable descriptor. -/
+@[extern "fren2_test_open_fd"] opaque testOpenFd : IO UInt32
 /-- A pidfd for one process (Linux). -/
 @[extern "fren2_pidfd_open"] opaque pidfdOpen (pid : UInt32) : IO UInt32
 /-- `pidfd_send_signal`. False (ESRCH) once the process has been reaped. -/

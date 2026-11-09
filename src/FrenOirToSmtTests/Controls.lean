@@ -15,6 +15,26 @@ private def isResource : Outcome → Bool
   | .resourceExhausted _ => true | _ => false
 
 def runControls : IO Unit := do
+  let fd ← Process.testOpenFd
+  try
+    for piped in [false, true] do
+      let command := #["/bin/sh", "-c", s!"test ! -e /proc/self/fd/{fd}"]
+      if piped then
+        let child ← Process.spawnPiped command true
+        Process.closeFd child.stdin
+        Process.closeFd child.stdout
+        Process.closeFd child.stderr
+        require ((← Process.reap child.pid) == .exited 0) "spawn leaked descriptor with pipes"
+      else
+        let pid ← Process.spawnInherit command true
+        require ((← Process.reap pid) == .exited 0) "spawn leaked descriptor without pipes"
+  finally
+    Process.closeFd fd
+  for (bytes, expected) in [
+      (#[0xE2, 0x82], "�"), (#[0xE2, 0x82, 0x41], "�A"),
+      (#[0xF0, 0x90, 0x80, 0x41], "�A"), (#[0xE0, 0x80, 0x80], "���"),
+      (#[0xC2, 0xA2, 0xFF], "¢�")] do
+    require (lossyUtf8 (ByteArray.mk bytes) == expected) s!"UTF-8 replacement: {bytes}"
   runCheckerOutcomes
   runCheckerEntryControls
   runModelReadback

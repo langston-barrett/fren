@@ -464,7 +464,9 @@ failure and cancellation. It observes exit with `waitid`/`WNOWAIT` and keeps
 the direct leader waitable through the last process-group signal, then reaps
 it. The unreleased PID anchors that numeric group against reuse, including on
 normal completion. Loss of ownership forbids a group signal. SIGINT, SIGTERM
-and SIGHUP during a query cancel it; after the cleanup the signal takes its
+and SIGHUP during a query cancel it unless inherited as ignored; an ignored
+signal remains ignored (a background process may inherit ignored SIGINT).
+After cleanup a recorded signal takes its
 usual effect on the checking process. These are process ownership guarantees
 of the transport, not guarantees under the checking process's sudden death,
 escaped descendants or uninterruptible execution.

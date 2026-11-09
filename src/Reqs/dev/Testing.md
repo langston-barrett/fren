@@ -88,7 +88,10 @@ pub mod testing
   runs the job in its own process group, outside the controller. It kills
   the group and reaps its waitable children when the job ends, the deadline
   expires, or the runner exits. It keeps the direct child waitable until it
-  signals the group. The timer starts before job startup; a blocked startup
+  signals the group, then kills and reaps adopted descendants, including solver
+  sessions outside that group. Signals inherited as ignored stay ignored: for
+  example, a background runner may ignore SIGINT and will not cancel on it.
+  The timer starts before job startup; a blocked startup
   can delay enforcement. The controller requires Linux subreaping and
   procfs, and its regression Linux pidfds; nothing needs Python. Controller
   setup or control failures return 125.

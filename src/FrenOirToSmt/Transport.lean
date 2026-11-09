@@ -65,8 +65,8 @@ private def feed (fd : UInt32) (bytes : ByteArray) (stop : IO.Ref Bool) : IO Uni
   catch _ => pure ()
   Process.closeFd fd
 
-/-- Decode, replacing each byte that starts no valid UTF-8 character with
-U+FFFD; the exact bytes are kept separately as hex. -/
+/-- Decode with one U+FFFD per maximal invalid UTF-8 subpart; the exact
+bytes are kept separately as hex. -/
 def lossyUtf8 (bytes : ByteArray) : String := Id.run do
   let mut out := ""
   let mut i := 0
@@ -82,6 +82,17 @@ def lossyUtf8 (bytes : ByteArray) : String := Id.run do
     if step == 0 then
       out := out.push '�'
       step := 1
+      let first := bytes[i]!
+      let width := if first >= 0xC2 && first <= 0xDF then 2
+        else if first >= 0xE0 && first <= 0xEF then 3
+        else if first >= 0xF0 && first <= 0xF4 then 4 else 1
+      for j in [1:width] do
+        if i + j >= bytes.size then break
+        let b := bytes[i + j]!
+        if b < 0x80 || b > 0xBF ||
+            (j == 1 && ((first == 0xE0 && b < 0xA0) || (first == 0xED && b > 0x9F) ||
+              (first == 0xF0 && b < 0x90) || (first == 0xF4 && b > 0x8F))) then break
+        step := step + 1
     i := i + step
   return out
 

@@ -158,6 +158,7 @@ private def controllerEntry : List String → Option (IO UInt32)
   | ["--fren2-controller-cleanup", mode] => some (FrenCli2Tests.Deadline.testCleanup mode)
   | args@("--fren2-deadline-fixture" :: mode :: _) => some (FrenCli2Tests.Deadline.fixture mode args)
   | ["--fren2-deadline-parent"] => some FrenCli2Tests.Deadline.testParent
+  | ["--fren2-deadline-parent-session"] => some (FrenCli2Tests.Deadline.testParent "session")
   | ["--fren2-deadline-controls"] => some FrenCli2Tests.Deadline.runControls
   | _ => none
 

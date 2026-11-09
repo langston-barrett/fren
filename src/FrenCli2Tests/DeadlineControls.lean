@@ -20,14 +20,16 @@ private def stderrLine (s : String) : IO Unit := do
   IO.eprintln s
   (← IO.getStderr).flush
 
-/-- Publish this process's identity and wait for its acknowledgement. -/
-def publish (role : String) : IO Unit := do
+/-- Publish an owned process's identity and wait for its acknowledgement. -/
+def publishPid (role : String) (pid : UInt32) : IO Unit := do
   let some dir ← IO.getEnv identitiesVar | throw (IO.userError "no identity directory")
-  let pid ← IO.Process.getPID
   let dir : System.FilePath := dir
   IO.FS.writeFile (dir / s!".{pid}.tmp") s!"{role} {pid}\n"
   IO.FS.rename (dir / s!".{pid}.tmp") (dir / s!"{pid}.id")
   while !(← (dir / s!"{pid}.ack").pathExists) do IO.sleep 5
+
+def publish (role : String) : IO Unit := do
+  publishPid role (← IO.Process.getPID)
 
 private def forever : IO Unit := do
   repeat IO.sleep 1000
@@ -69,6 +71,11 @@ def fixture (mode : String) (args : List String) : IO UInt32 := do
     if mode == "orphan" then return 0
     let _ ← Process.signalGroup 0 Process.sigstop
     pure ()
+  | "session" =>
+    let solver := (← sourceRoot) / ".lake/build/bin/fren2_fake_solver"
+    let hooks : Hooks := { onSpawn := publishPid "descendant" }
+    let _ ← transportWith hooks #[solver.toString, "sleep"] "" {wallMs := 10000}
+    return 0
   | _ => pure ()
   forever
   return 0
@@ -194,6 +201,13 @@ private def controlsIn (tmp : System.FilePath) : IO UInt32 := do
     let _ ← Process.signalProcess parent.pid Process.sigterm
     let _ ← finish parent (.signaled 15); dead leader
     IO.println "runner termination status=-15; owned child reaped"
+    let parent ← spawn #["--fren2-deadline-parent-session"]
+    let leader ← take "leader"
+    let solver ← take "descendant"
+    let _ ← Process.signalProcess parent.pid Process.sigkill
+    let _ ← finish parent (.signaled 9)
+    dead leader; dead solver
+    IO.println "runner killed: separate solver session reaped"
     require ((← Process.observeExit foreign.pid) == .running) "foreign peer was signalled"
     -- A failed handoff must still terminate and wait for its owned parent.
     let parent ← spawn #["--fren2-deadline-parent"]
@@ -296,10 +310,10 @@ def runControls : IO UInt32 := do
   try controlsIn tmp finally IO.FS.removeDirAll tmp
 
 /-- Spawns a controller as its runner, then waits to be terminated. -/
-def testParent : IO UInt32 := do
+def testParent (mode : String := "sleep") : IO UInt32 := do
   let self := (← IO.appPath).toString
   let _ ← IO.Process.spawn {cmd := self, args := #["--fren2-controller-test", "5000",
-    toString (← IO.Process.getPID), self, "--fren2-deadline-fixture", "sleep"]}
+    toString (← IO.Process.getPID), self, "--fren2-deadline-fixture", mode]}
   forever
   return 0
 

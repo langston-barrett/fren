@@ -15,13 +15,14 @@
 
 #define _GNU_SOURCE
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <pthread.h>
-#include <spawn.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -53,7 +54,17 @@ static uint32_t fren2_encode(int status) {
   return FREN2_RUNNING;
 }
 
-extern char **environ;
+static int fren2_pipe(int fds[2]) {
+  if (pipe2(fds, O_CLOEXEC) != 0) return -1;
+  for (int i = 0; i < 2; i++) if (fds[i] < 3) {
+    int moved = fcntl(fds[i], F_DUPFD_CLOEXEC, 3);
+    if (moved < 0) {
+      int e = errno; close(fds[0]); close(fds[1]); fds[0] = fds[1] = -1; errno = e; return -1;
+    }
+    close(fds[i]); fds[i] = moved;
+  }
+  return 0;
+}
 
 /* Spawn `argv` (searched on PATH like `execvp`), in a new session when
    `session`, with SIGPIPE, SIGINT, SIGTERM and SIGHUP at their defaults and
@@ -73,43 +84,63 @@ LEAN_EXPORT lean_obj_res fren2_spawn(b_lean_obj_arg args, uint8_t session, uint8
   for (size_t i = 0; i < n; i++) argv[i] = (char *)lean_string_cstr(lean_array_get_core(args, i));
   int fds[3][2] = {{-1, -1}, {-1, -1}, {-1, -1}};
   int error = 0;
-  posix_spawn_file_actions_t actions;
-  posix_spawnattr_t attr;
-  posix_spawn_file_actions_init(&actions);
-  posix_spawnattr_init(&attr);
   if (pipes) {
     for (int i = 0; i < 3 && error == 0; i++)
-      if (pipe2(fds[i], O_CLOEXEC) != 0) error = errno;
+      if (fren2_pipe(fds[i]) != 0) error = errno;
     /* Only the parent's ends: each end of a pipe is its own description. */
     for (int i = 0; i < 3 && error == 0; i++) {
       int end = fds[i][i == 0 ? 1 : 0];
       int fl = fcntl(end, F_GETFL);
       if (fl < 0 || fcntl(end, F_SETFL, fl | O_NONBLOCK) != 0) error = errno;
     }
-    /* The child's end of each: stdin reads, stdout and stderr write. */
-    for (int i = 0; i < 3 && error == 0; i++)
-      error = posix_spawn_file_actions_adddup2(&actions, fds[i][i == 0 ? 0 : 1], i);
   }
-  sigset_t defaults, none;
-  sigemptyset(&defaults);
-  sigaddset(&defaults, SIGPIPE);
-  sigaddset(&defaults, SIGINT);
-  sigaddset(&defaults, SIGTERM);
-  sigaddset(&defaults, SIGHUP);
-  sigemptyset(&none);
-  short flags = POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK;
-#ifdef POSIX_SPAWN_SETSID
-  if (session) flags |= POSIX_SPAWN_SETSID;
-#else
-  if (session && error == 0) error = ENOSYS;
-#endif
-  if (error == 0) error = posix_spawnattr_setflags(&attr, flags);
-  if (error == 0) error = posix_spawnattr_setsigdefault(&attr, &defaults);
-  if (error == 0) error = posix_spawnattr_setsigmask(&attr, &none);
+  int report[2] = {-1, -1};
+  if (!error && fren2_pipe(report) != 0) error = errno;
+  long maxfd = sysconf(_SC_OPEN_MAX);
+  if (maxfd < 0) maxfd = 1048576;
   pid_t pid = -1;
-  if (error == 0) error = posix_spawnp(&pid, argv[0], &actions, &attr, argv, environ);
-  posix_spawn_file_actions_destroy(&actions);
-  posix_spawnattr_destroy(&attr);
+  if (!error && (pid = fork()) < 0) error = errno;
+  if (!error && pid == 0) {
+    close(report[0]);
+    if (pipes) for (int i = 0; i < 3; i++)
+      if (dup2(fds[i][i == 0 ? 0 : 1], i) < 0) goto child_error;
+    if (session && setsid() < 0) goto child_error;
+    struct sigaction action;
+    memset(&action, 0, sizeof action);
+    action.sa_handler = SIG_DFL;
+    sigemptyset(&action.sa_mask);
+    int signals[] = {SIGPIPE, SIGINT, SIGTERM, SIGHUP};
+    for (size_t i = 0; i < sizeof signals / sizeof signals[0]; i++)
+      if (sigaction(signals[i], &action, NULL) != 0) goto child_error;
+    sigset_t none;
+    sigemptyset(&none);
+    if (sigprocmask(SIG_SETMASK, &none, NULL) != 0) goto child_error;
+    if (report[1] != 3) {
+      if (dup3(report[1], 3, O_CLOEXEC) < 0) goto child_error;
+      report[1] = 3;
+    }
+#if defined(__linux__) && defined(SYS_close_range)
+    if (syscall(SYS_close_range, 4u, ~0u, 0u) != 0)
+#endif
+      for (long fd = 4; fd < maxfd; fd++) close((int)fd);
+    execvp(argv[0], argv);
+  child_error:;
+    int saved = errno;
+    ssize_t ignored = write(report[1], &saved, sizeof saved);
+    (void)ignored;
+    _exit(127);
+  }
+  if (report[1] >= 0) close(report[1]);
+  if (pid > 0) {
+    int child_error = 0;
+    ssize_t got;
+    do { got = read(report[0], &child_error, sizeof child_error); } while (got < 0 && errno == EINTR);
+    if (got != 0) {
+      error = got == sizeof child_error ? child_error : (got < 0 ? errno : EIO);
+      while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {}
+    }
+  }
+  if (report[0] >= 0) close(report[0]);
   free(argv);
   for (int i = 0; i < 3; i++) {
     int child_end = fds[i][i == 0 ? 0 : 1], parent_end = fds[i][i == 0 ? 1 : 0];
@@ -118,7 +149,7 @@ LEAN_EXPORT lean_obj_res fren2_spawn(b_lean_obj_arg args, uint8_t session, uint8
   }
   if (error != 0) {
     errno = error;
-    return fren2_errno("posix_spawn");
+    return fren2_errno("spawn");
   }
   lean_object *result = lean_mk_empty_array();
   result = lean_array_push(result, lean_box_uint32((uint32_t)pid));
@@ -271,10 +302,62 @@ LEAN_EXPORT lean_obj_res fren2_set_subreaper(lean_obj_arg world) {
 #endif
 }
 
+/* The deadline controller has no unrelated children. After killing the job
+   group, repeatedly kill and reap its adopted children, including solvers
+   in their own sessions. Each PID is checked as our waitable child before
+   signaling and remains pinned until waitpid. Repeating catches descendants
+   adopted as their parents die. */
+LEAN_EXPORT lean_obj_res fren2_reap_adopted(lean_obj_arg world) {
+  (void)world;
+#ifdef __linux__
+  for (;;) {
+    DIR *tasks = opendir("/proc/self/task");
+    if (!tasks) return fren2_errno("opendir tasks");
+    struct dirent *entry;
+    int error = 0;
+    while ((entry = readdir(tasks))) {
+      char *end;
+      long tid = strtol(entry->d_name, &end, 10);
+      if (*entry->d_name == '\0' || *end || tid <= 0) continue;
+      char path[128];
+      snprintf(path, sizeof path, "/proc/self/task/%ld/children", tid);
+      FILE *f = fopen(path, "r");
+      if (!f) { if (errno != ENOENT) error = errno; continue; }
+      long child;
+      while (fscanf(f, "%ld", &child) == 1) {
+        siginfo_t info = {0};
+        if (waitid(P_PID, (id_t)child, &info, WEXITED | WNOHANG | WNOWAIT) == 0) {
+          if (kill((pid_t)child, SIGKILL) != 0 && errno != ESRCH) error = errno;
+        } else if (errno != ECHILD) error = errno;
+      }
+      fclose(f);
+    }
+    closedir(tasks);
+    if (error) { errno = error; return fren2_errno("kill adopted children"); }
+    int status;
+    pid_t pid;
+    do { pid = waitpid(-1, &status, 0); } while (pid < 0 && errno == EINTR);
+    if (pid < 0 && errno == ECHILD) return lean_io_result_mk_ok(lean_box(0));
+    if (pid < 0) return fren2_errno("reap adopted children");
+  }
+#else
+  errno = ENOSYS;
+  return fren2_errno("reap adopted children");
+#endif
+}
+
 LEAN_EXPORT lean_obj_res fren2_close_fd(uint32_t fd, lean_obj_arg world) {
   (void)world;
   if (close((int)fd) == 0) return lean_io_result_mk_ok(lean_box(0));
   return fren2_errno("close");
+}
+
+/* Test-only: an explicitly inheritable descriptor. */
+LEAN_EXPORT lean_obj_res fren2_test_open_fd(lean_obj_arg world) {
+  (void)world;
+  int fd = open("/dev/null", O_RDONLY);
+  if (fd < 0) return fren2_errno("open /dev/null");
+  return fren2_ok_u32((uint32_t)fd);
 }
 
 /* A pidfd names one process for good: after it is reaped, signals through

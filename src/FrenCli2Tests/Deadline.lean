@@ -93,6 +93,9 @@ def control (command : Array String) (ms : Nat) (parent : UInt32)
     if let .error e ← reapAll.toBaseIO then
       reason := s!"control failure while reaping: {e}"
       result := 125
+    if let .error e ← Process.reapAdopted.toBaseIO then
+      reason := s!"control failure while reaping adopted descendants: {e}"
+      result := 125
   let sig ← (Process.watchedSignal).toBaseIO
   let sig := match sig with | .ok s => s | .error _ => 0
   if sig != 0 && !reason.startsWith "control failure" then

@@ -141,11 +141,9 @@ def runCommandControls : IO Unit := do
       require (p.code == 5 && text result "verdict" == "inputFailure") s!"argument failure {args}: {p.stdout}"
       evidence.modify (·.push (Json.mkObj [("label", "argument-failure"), ("command", toJson args),
         ("exit_code", toJson p.code.toNat), ("output", result)]))
-      count := count + 1
     let help ← runCommand exe.toString #["--help"]
     require (help.code == 0 && help.stdout.startsWith "Usage: fren2_check") "help"
     evidence.modify (·.push (Json.mkObj [("label", "help"), ("stdout", toJson help.stdout)]))
-    count := count + 2
     -- An owned tree: this binary, with the fake solver at its fixed cvc5 path.
     let isolated := tmp / "owned tree"
     let binary := isolated / ".lake/build/bin/fren2_check"
