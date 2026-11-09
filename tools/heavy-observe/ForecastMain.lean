@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import CompilerRecords
+import Heavy.Forecast
 
 open Lean Heavy.CompilerForecast
 
@@ -71,8 +72,79 @@ def run (request : Json) : IO (Json × Context × String × Option Int) := do
 
 end CompilerAdvice
 
+
+namespace JobForecast
+
+-- Tie the executable's protocol to the source that selected the key and
+-- decoded the history. A stale binary must never quietly return an estimate.
+def adapterSource : String := include_str "ForecastMain.lean"
+def kernelSource : String := include_str "../../src/Heavy/Forecast.lean"
+def toolchainSource : String := include_str "lean-toolchain"
+def lakefileSource : String := include_str "lakefile.lean"
+
+def verifySources (root : String) : IO Unit := do
+  let root := System.FilePath.mk root
+  unless (← IO.FS.readFile (root / "tools/heavy-observe/ForecastMain.lean")) == adapterSource &&
+      (← IO.FS.readFile (root / "src/Heavy/Forecast.lean")) == kernelSource &&
+      (← IO.FS.readFile (root / "tools/heavy-observe/lean-toolchain")) == toolchainSource &&
+      (← IO.FS.readFile (root / "tools/heavy-observe/lakefile.lean")) == lakefileSource do
+    throw (IO.userError "job forecast executable is stale")
+
+-- Eighteen decimal places retain ordinary JSON floating-point timestamps
+-- while keeping selection in integral units.
+def ticks (j : Json) : Option Int := do
+  let n ← j.getNum?.toOption
+  if n.exponent > 18 then none else some (n.mantissa * (10 ^ (18 - n.exponent) : Nat))
+
+def loggedCommand (j : Json) : Option String := do
+  if let .ok c := j.getObjValAs? String "prediction_command" then
+    return c
+  let c ← (j.getObjValAs? String "command").toOption
+  if c.endsWith "..." then none
+  else if c.startsWith "--offline " then some (String.ofList (c.toList.drop 10))
+  else some c
+
+def observation (j : Json) : Heavy.Forecast.Observation (Bool × String) :=
+  let event := match j.getObjVal? "event" with
+    | .error _ => some "job"
+    | .ok x => x.getStr?.toOption
+  let kind := (j.getObjValAs? String "job_kind").toOption
+  let key := kind.map (Heavy.Forecast.predictionKey (loggedCommand j))
+  { event, key, ended := (j.getObjVal? "ended_at").toOption.bind ticks
+    peak := (j.getObjValAs? Int "peak_rss_kb").toOption }
+
+def run (path nowText command secondsText countText : String) : IO Unit := do
+  let now ← IO.ofExcept (Json.parse nowText)
+  let some now := ticks now | throw (IO.userError "invalid time")
+  let seconds ← IO.ofExcept (Json.parse secondsText >>= Json.getInt?)
+  let count ← IO.ofExcept (Json.parse countText >>= Json.getNat?)
+  if count > 1024 then throw (IO.userError "sample count too large")
+  let key := Heavy.Forecast.predictionKey (some command) ""
+  let cutoff := now - seconds * 1000000000000000000
+  let mut ps : Heavy.Forecast.Peaks := []
+  try
+    let f ← IO.FS.Handle.mk path IO.FS.Mode.read
+    repeat
+      let line ← f.getLine
+      if line.isEmpty then break
+      if let .ok j := Json.parse line then
+        let o := observation j
+        if Heavy.Forecast.eligible o key cutoff now then
+          if let (some t, some p) := (o.ended, o.peak) then
+            ps := Heavy.Forecast.insert t p count ps
+  catch _ => pure ()
+  IO.println (toJson (Heavy.Forecast.maximum ps, ps.length)).compress
+
+end JobForecast
+
 def main (args : List String) : IO UInt32 := do
   match args with
+  | ["--job-forecast", path, now, command, seconds, count, root] =>
+    try
+      JobForecast.verifySources root
+      JobForecast.run path now command seconds count
+      return 0
+    catch e => (← IO.getStderr).putStrLn s!"job forecast: {e}"; return 1
   | ["--manifest", "--padding-kib", paddingText, path] =>
     try
       let some padding := paddingText.toNat? | throw (IO.userError "invalid padding")

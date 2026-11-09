@@ -13,11 +13,14 @@ import io
 import json
 import math
 import os
+import platform
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 from types import SimpleNamespace
 from unittest import mock
 
@@ -317,7 +320,7 @@ def test_load_admission():
     assert admit(0, 0, 100, 8, lambda: None)  # Missing OS load fails open.
 
 
-def tiny_job(state, command, overrides=None, timeout=30):
+def tiny_job(state, command, overrides=None, timeout=30, script=None, offline=False):
     # Invoke main in a fresh process, with no real load or shared state.
     code = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
             "sys.exit(h['main'](sys.argv[3:], state=sys.argv[2], load_reader=lambda: 0.5))")
@@ -326,7 +329,8 @@ def tiny_job(state, command, overrides=None, timeout=30):
     environ.pop("FREN_JOB_KIND", None)
     environ.update(overrides or {})
     return subprocess.run([sys.executable, "-I", "-B", "-c", code,
-                           os.path.join(HERE, "heavy"), state] + command,
+                           script or os.path.join(HERE, "heavy"), state] +
+                          (["--offline"] if offline else []) + command,
                           env=environ, capture_output=True, text=True, timeout=timeout)
 
 
@@ -353,7 +357,7 @@ def test_job_log():
         assert row["enqueued_at"] <= row["started_at"] <= row["ended_at"]
         assert row["wait_seconds"] >= 0 and row["run_seconds"] > 0
         assert row["peak_rss_kb"] > 0  # Even a job shorter than a sampling tick.
-        assert row["load_samples"] == [0.5]
+        assert len(row["load_samples"]) >= 2 and all(x == 0.5 for x in row["load_samples"])
         assert row["load_mean"] == row["load_max"] == 0.5
         assert row["cpu_user_seconds"] >= 0 and row["cpu_system_seconds"] >= 0
         assert row["cpu_seconds"] == row["cpu_user_seconds"] + row["cpu_system_seconds"]
@@ -383,7 +387,7 @@ def test_job_log():
             rows = [json.loads(line) for line in f]
         assert [r["exit_status"] for r in rows] == [7, 127, 143, 137]
         assert rows[-1]["peak_rss_kb"] > 0
-        assert rows[1]["cpu_seconds"] == rows[1]["cpu_parallelism"] == 0  # No child ran.
+        # The failed command has no child usage, but its monitored adviser does.
         for row in rows:
             assert row["cpu_seconds"] >= 0 and row["cpu_parallelism"] >= 0
             if row["cpu_busy_samples"]:
@@ -1201,6 +1205,7 @@ def test_policy_flip_while_waiting():
              mock.patch.object(heavy.time, "monotonic", side_effect=lambda: clock[0]), \
              mock.patch.object(heavy.time, "sleep", side_effect=release), \
              mock.patch.object(heavy, "heavy_rss_kb", return_value=0), \
+             mock.patch.object(heavy, "monitored_forecast", return_value=(None, 0, 0)), \
              mock.patch.object(heavy, "run_command", side_effect=finish), \
              contextlib.redirect_stderr(io.StringIO()):
             assert heavy.main([sys.executable, "-c", "pass"], state, environ, lambda: 100) == 0
@@ -2367,12 +2372,15 @@ def test_machine_pressure():
 
 def test_memory_prediction():
     # fren-covers: testing::heavy_memory_prediction
+    if shutil.which("lake") is None and not os.access(
+            os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
+        return
     with tempfile.TemporaryDirectory() as state:
         now = 1000000
         def job(ended, peak, kind="lake build"):
-            heavy.append_log({"event": "job", "job_kind": kind, "ended_at": ended,
-                              "peak_rss_kb": peak}, state, {})
-        assert heavy.predict_peak_rss("lake build", state, {}, now) == (None, 0)
+            heavy.append_log({"event": "job", "job_kind": kind, "command": kind,
+                              "ended_at": ended, "peak_rss_kb": peak}, state, {})
+        assert heavy.command_forecast("lake build", state, {}, now) == (None, 0)
         for i in reversed(range(1, 26)):
             job(now - 30 + i, 100 + i if i > 5 else 99999)
         for ended, peak, kind in ((now + 1, 999999, "lake build"),
@@ -2381,16 +2389,16 @@ def test_memory_prediction():
                                   (now, 0, "lake build"), (float("nan"), 999999, "lake build"),
                                   (10 ** 1000, 999999, "lake build")):
             job(ended, peak, kind)
-        assert heavy.predict_peak_rss("lake build", state, {}, now) == (125, 20)
+        assert heavy.command_forecast("lake build", state, {}, now) == (125, 20)
         with open(os.path.join(state, "log.jsonl"), "a") as f:
             f.write('null\n[]\n{"partial":')
-        assert heavy.predict_peak_rss("lake build", state, {}, now) == (125, 20)
+        assert heavy.command_forecast("lake build", state, {}, now) == (125, 20)
         override = os.path.join(state, "override.jsonl")
-        heavy.append_log({"job_kind": "lake build", "ended_at": now - 1, "peak_rss_kb": 777},
+        heavy.append_log({"job_kind": "lake build", "command": "lake build", "ended_at": now - 1, "peak_rss_kb": 777},
                          state, {"HEAVY_LOG": override})
         with open(override, "ab") as f:
             f.write(b"\xff\n")
-        assert heavy.predict_peak_rss("lake build", state, {"HEAVY_LOG": override}, now) == (777, 1)
+        assert heavy.command_forecast("lake build", state, {"HEAVY_LOG": override}, now) == (777, 1)
         # Freeze the prediction before execution, then keep it beside the
         # actual peak rather than recomputing with the new observation.
         record = {"started_at": now}
@@ -2398,6 +2406,7 @@ def test_memory_prediction():
             record["peak_rss_kb"] = 999
             return 0
         with tempfile.TemporaryFile(mode="w+") as slot, \
+             mock.patch.object(heavy, "monitored_forecast", return_value=(777, 1, 0)), \
              mock.patch.object(heavy, "run_command", side_effect=execute):
             assert heavy.run(slot, ["lake", "build"], "lake build", "lake build", record,
                              heavy.time.monotonic(), state, {"HEAVY_LOG": override}, lambda: 0) == 0
@@ -2406,27 +2415,240 @@ def test_memory_prediction():
 
 
 def test_forecast_kind():
-    # fren-covers: testing::heavy_memory_prediction
+    # fren-covers: testing::heavy_memory_prediction, testing::heavy_prediction_key
+    if shutil.which("lake") is None and not os.access(
+            os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
+        return
     command = [sys.executable, "-c", "pass"]
     normal = heavy.job_kind(command)
     logical = "coordinator build"
-    assert normal != logical
     for override in (logical, None, ""):
         with tempfile.TemporaryDirectory() as state:
             now = heavy.time.time()
-            for kind, peaks in ((logical, (321, 777)), (normal, (9001,))):
-                for peak in peaks:
-                    heavy.append_log({"event": "job", "job_kind": kind,
-                                      "ended_at": now - 1, "peak_rss_kb": peak}, state, {})
+            heavy.append_log({"event": "job", "command": heavy.shlex.join(command),
+                              "job_kind": "unrelated label", "ended_at": now - 1,
+                              "peak_rss_kb": 777}, state, {})
             environ = {} if override is None else {"FREN_JOB_KIND": override}
             result = tiny_job(state, command, environ)
             assert result.returncode == 0, result.stderr
             with open(os.path.join(state, "log.jsonl")) as f:
                 record = json.loads(f.readlines()[-1])
-            observed = (record["job_kind"], record["predicted_peak_rss_kb"], record["prediction_jobs"])
-            expected = (logical, 777, 2) if override else (normal, 9001, 1)
-            assert observed == expected, (override, observed, expected)
+            assert record["job_kind"] == (override or normal)
+            assert (record["predicted_peak_rss_kb"], record["prediction_jobs"]) == (777, 1)
 
+
+def test_command_forecast_real_rows():
+    # fren-covers: testing::heavy_memory_prediction, testing::heavy_prediction_key
+    if shutil.which("lake") is None and not os.access(
+            os.path.join(HERE, "../tools/heavy-observe/.lake/build/bin/compiler_advice"), os.X_OK):
+        return
+    rows = [
+        {"command": "--offline lake test", "job_kind": "heavy", "peak_rss_kb": 17911340,
+         "predicted_peak_rss_kb": 6121136, "exit_status": 137},
+        {"command": "/home/ubuntu/coord/out/fd-soft-overlap/phases/001-author-d29e0ab6-83f7-4138-914d-b7f457b0fac3/overlap-controls.sh",
+         "job_kind": "test", "peak_rss_kb": 13566436, "predicted_peak_rss_kb": 1649900},
+    ]
+    with tempfile.TemporaryDirectory() as state:
+        now = 1794249291
+        for row in rows:
+            heavy.append_log({**row, "ended_at": now - 1}, state, {})
+        for i in range(30):
+            heavy.append_log({"command": "lake build Other", "job_kind": "heavy", "ended_at": now,
+                              "peak_rss_kb": 100}, state, {})
+        for row in rows:
+            command = row["command"].removeprefix("--offline ")
+            assert heavy.command_forecast(command, state, {}, now) == (row["peak_rss_kb"], 1)
+        # Full commands distinguish build targets and shell wrappers, including
+        # shell bodies containing paths that the old job-kind normalizer dropped.
+        for command in ("lake build fren-dev fren_dev_test", "bash -c 'lake test /tmp/a'"):
+            heavy.append_log({"command": command, "job_kind": "heavy", "ended_at": now,
+                              "peak_rss_kb": 20000000}, state, {})
+            assert heavy.command_forecast(command, state, {}, now) == (20000000, 1)
+        assert heavy.command_forecast("bash -c 'lake build /tmp/a'", state, {}, now) == (None, 0)
+        # New records retain the full command even when display is truncated.
+        command = "bash -c '" + "x" * 300 + "'"
+        heavy.append_log({"command": command[:237] + "...", "prediction_command": command,
+                          "job_kind": "heavy", "ended_at": now, "peak_rss_kb": 444}, state, {})
+        assert heavy.command_forecast(command, state, {}, now) == (444, 1)
+
+
+def test_forecast_fresh_and_stale_adviser():
+    # fren-covers: testing::heavy_memory_prediction, testing::heavy_prediction_key
+    if platform.system() != "Linux" or shutil.which("lake") is None:
+        return  # Network namespace control and the Lean toolchain are Linux-only here.
+    with tempfile.TemporaryDirectory(prefix="heavy-forecast-checkout-") as root:
+        scripts = os.path.join(root, "scripts")
+        sources = os.path.join(root, "src")
+        package = os.path.join(root, "tools", "heavy-observe")
+        os.makedirs(scripts)
+        os.makedirs(sources)
+        os.makedirs(os.path.dirname(package))
+        script = os.path.join(scripts, "heavy")
+        shutil.copy2(os.path.join(HERE, "heavy"), script)
+        shutil.copytree(os.path.join(HERE, "../src/Heavy"), os.path.join(sources, "Heavy"))
+        shutil.copytree(os.path.join(HERE, "../tools/heavy-observe"), package,
+                        ignore=shutil.ignore_patterns(".lake", "test-work", "__pycache__"))
+        state = os.path.join(root, "state")
+        os.makedirs(state)
+        command = [sys.executable, "-c", "pass"]
+        peak = 17911340
+        heavy.append_log({"command": heavy.shlex.join(command), "job_kind": "heavy",
+                          "ended_at": heavy.time.time() - 1, "peak_rss_kb": peak}, state, {})
+        adviser = os.path.join(package, ".lake", "build", "bin", "compiler_advice")
+        assert not os.path.exists(adviser)
+        fakebin = os.path.join(root, "bin")
+        os.mkdir(fakebin)
+        netlog = os.path.join(root, "lake-net")
+        lake = os.path.join(fakebin, "lake")
+        with open(lake, "w") as wrapper:
+            wrapper.write('#!/bin/sh\nreadlink /proc/self/ns/net >> "$HEAVY_TEST_NET_LOG"\nexec ' +
+                          heavy.shlex.quote(shutil.which("lake")) + ' "$@"\n')
+        os.chmod(lake, 0o755)
+        env = {"PATH": fakebin + os.pathsep + os.environ.get("PATH", ""),
+               "HEAVY_TEST_NET_LOG": netlog, "HEAVY_MEM_GB": "4"}
+        parent_net = os.readlink("/proc/self/ns/net")
+
+        def verify():
+            result = tiny_job(state, command, overrides=env, timeout=180, script=script, offline=True)
+            assert result.returncode == 0, result.stderr
+            with open(os.path.join(state, "log.jsonl")) as log:
+                row = json.loads(log.readlines()[-1])
+            assert row["predicted_peak_rss_kb"] >= peak, row
+
+        verify()  # Fresh checkout builds the adviser before its first job.
+        # Simulate an old executable with surviving Lake traces: the old
+        # interface rejects the new protocol and must be rebuilt, not trusted.
+        with open(adviser, "w") as old:
+            old.write("#!/bin/sh\nexit 2\n")
+        verify()
+        # A protocol-compatible binary whose kernel source changed must also
+        # be rejected and rebuilt, even if its executable and traces exist.
+        with open(os.path.join(sources, "Heavy", "Forecast.lean"), "a") as kernel:
+            kernel.write("\n-- changed checkout for the stale-adviser control\n")
+        verify()
+        with open(netlog) as nets:
+            observed = nets.read().splitlines()
+        assert len(observed) >= 3 and all(net != parent_net for net in observed), observed
+
+
+def test_forecast_helper_memory_cap():
+    # fren-covers: testing::heavy_memory_prediction, testing::heavy_lease
+    if platform.system() != "Linux" or shutil.which("lake") is None:
+        return
+    with tempfile.TemporaryDirectory(prefix="heavy-forecast-cap-") as root:
+        scripts = os.path.join(root, "scripts")
+        sources = os.path.join(root, "src")
+        package = os.path.join(root, "tools", "heavy-observe")
+        os.makedirs(scripts); os.makedirs(sources); os.makedirs(os.path.dirname(package))
+        script = os.path.join(scripts, "heavy")
+        shutil.copy2(os.path.join(HERE, "heavy"), script)
+        shutil.copytree(os.path.join(HERE, "../src/Heavy"), os.path.join(sources, "Heavy"))
+        shutil.copytree(os.path.join(HERE, "../tools/heavy-observe"), package,
+                        ignore=shutil.ignore_patterns(".lake", "test-work", "__pycache__"))
+        fakebin = os.path.join(root, "bin"); os.mkdir(fakebin)
+        lake = os.path.join(fakebin, "lake")
+        with open(lake, "w") as fake:
+            fake.write("#!/usr/bin/python3\n"
+                       "import json,os,time\n"
+                       "child=os.fork()\n"
+                       "if child == 0: time.sleep(60); os._exit(0)\n"
+                       "with open(os.environ['HEAVY_TEST_PIDS'], 'w') as f: "
+                       "json.dump([os.getpid(),child,os.readlink('/proc/self/ns/net')], f)\n"
+                       "time.sleep(3)\n"
+                       "data=bytearray(160*1024*1024)\n"
+                       "time.sleep(60)\n")
+        os.chmod(lake, 0o755)
+        parent_net = os.readlink("/proc/self/ns/net")
+        for mode in ("fresh", "stale", "signal"):
+            state = os.path.join(root, "state-" + mode); os.mkdir(state)
+            pids = os.path.join(root, "pids-" + mode)
+            launched = os.path.join(root, "launched-" + mode)
+            if mode != "fresh":
+                adviser = os.path.join(package, ".lake/build/bin/compiler_advice")
+                os.makedirs(os.path.dirname(adviser), exist_ok=True)
+                with open(adviser, "w") as old:
+                    old.write("#!/bin/sh\nexit 2\n")
+                os.chmod(adviser, 0o755)
+            env = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="0.10", HEAVY_MAX_LOAD="off",
+                       PATH=fakebin + os.pathsep + os.environ.get("PATH", ""), HEAVY_TEST_PIDS=pids)
+            env.pop("HEAVY_LOG", None); env.pop("FREN_JOB_KIND", None)
+            bootstrap = ("import runpy,sys; h=runpy.run_path(sys.argv[1]); "
+                         "sys.exit(h['main'](sys.argv[3:], state=sys.argv[2], load_reader=lambda: 0.5))")
+            command = [sys.executable, "-c", "open(" + repr(launched) + ", 'w').write('started')"]
+            proc = subprocess.Popen([sys.executable, "-I", "-B", "-c", bootstrap, script, state,
+                                     "--offline", *command], env=env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True)
+            samples = []
+            signalled = False
+            try:
+                deadline = time.monotonic() + 45
+                while proc.poll() is None and time.monotonic() < deadline:
+                    try:
+                        with open(os.path.join(state, ".slot0.json")) as report:
+                            samples.append(json.load(report)["rss_kb"])
+                    except (OSError, ValueError, KeyError):
+                        pass
+                    if mode == "signal" and not signalled and os.path.exists(pids) and samples and max(samples) > 10000:
+                        proc.send_signal(signal.SIGTERM)
+                        signalled = True
+                    time.sleep(0.05)
+                stdout, stderr = proc.communicate(timeout=5)
+                expected = 143 if mode == "signal" else 137
+                assert proc.returncode == expected, (mode, proc.returncode, stdout, stderr)
+                assert mode != "signal" or signalled
+                assert samples and max(samples) > 10000, samples
+                assert not os.path.exists(launched), "requested command started after helper was killed"
+                with open(pids) as f:
+                    parent, child, net = json.load(f)
+                assert net != parent_net, (net, parent_net)
+                for pid in (parent, child):
+                    assert raises(lambda: os.kill(pid, 0), ProcessLookupError), pid
+                with open(os.path.join(state, "log.jsonl")) as f:
+                    row = json.loads(f.readlines()[-1])
+                assert row["exit_status"] == expected
+                if mode != "signal":
+                    assert row["peak_rss_kb"] > int(0.10 * GB)
+            finally:
+                if proc.poll() is None:
+                    proc.terminate()
+                    proc.wait(timeout=10)
+
+
+
+def test_forecast_helper_orphan_cleanup():
+    # fren-covers: testing::heavy_memory_prediction, testing::heavy_group_gone
+    if platform.system() != "Linux":
+        return
+    with tempfile.TemporaryDirectory(prefix="heavy-forecast-orphan-") as state, \
+         tempfile.TemporaryFile(mode="w+") as slot:
+        child_path = os.path.join(state, "child")
+        source = ("import os,time; pid=os.fork(); "
+                  "exec(\"if pid == 0:\\n time.sleep(60)\\n os._exit(0)\"); "
+                  "open(" + repr(child_path) + ", 'w').write(str(pid))")
+        record = {"started_at": time.time(), "peak_rss_kb": 0, "load_samples": [],
+                  "cpu_busy_samples": [], "cpu_user_seconds": 0, "cpu_system_seconds": 0,
+                  "_forecast_helper": True}
+        code = heavy.run_command(slot, [sys.executable, "-c", source], "forecast adviser",
+                                 record, state, {"HEAVY_MEM_GB": "4"}, lambda: 0)
+        assert code == 125
+        with open(child_path) as f:
+            child = int(f.read())
+        assert raises(lambda: os.kill(child, 0), ProcessLookupError), child
+    with tempfile.TemporaryDirectory(prefix="heavy-forecast-timeout-") as state, \
+         tempfile.TemporaryFile(mode="w+") as slot:
+        child_path = os.path.join(state, "child")
+        source = ("import os,time; pid=os.fork(); "
+                  "exec(\"if pid == 0:\\n time.sleep(60)\\n os._exit(0)\"); "
+                  "open(" + repr(child_path) + ", 'w').write(str(pid)); time.sleep(60)")
+        record = {"started_at": time.time(), "peak_rss_kb": 0, "load_samples": [],
+                  "cpu_busy_samples": [], "cpu_user_seconds": 0, "cpu_system_seconds": 0,
+                  "_forecast_helper": True, "_forecast_timeout": 2}
+        code = heavy.run_command(slot, [sys.executable, "-c", source], "forecast adviser",
+                                 record, state, {"HEAVY_MEM_GB": "4"}, lambda: 0)
+        assert code == 124
+        with open(child_path) as f:
+            child = int(f.read())
+        assert raises(lambda: os.kill(child, 0), ProcessLookupError), child
 
 def test_process_integration():
     # fren-covers: testing::heavy_counter_rate, testing::heavy_pressure
@@ -2532,7 +2754,7 @@ def main():
              test_cpu_ticks, test_cpu_samples, test_cpu_monitor, test_monitor_group_completion,
              test_cpu_descendants, test_cpu_reaping, test_cpu_many_waits, test_cpu_signal_fold,
              test_child_subreaper, test_process_readings,
-             test_process_sampling, test_machine_pressure, test_memory_prediction, test_forecast_kind,
+             test_process_sampling, test_machine_pressure, test_memory_prediction, test_forecast_kind, test_command_forecast_real_rows, test_forecast_fresh_and_stale_adviser, test_forecast_helper_memory_cap, test_forecast_helper_orphan_cleanup,
              test_process_integration,
              test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
              test_registry_wait_messages,

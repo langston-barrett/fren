@@ -12,6 +12,16 @@ namespace Fren.Impls.Heavy
 
 open Heavy.Forecast
 
+impl prediction_key: testing::heavy_prediction_key
+    for (command : Option String) (kind : String) {
+  command := command,
+  kind := kind,
+  uses_command? := (predictionKey command kind).1,
+  key := (predictionKey command kind).2,
+} by
+  intro command kind _
+  cases command <;> simp [fren_spec, predictionKey]
+
 def observation (o : Observation String) : testing.MemoryObservation :=
   ⟨o.event, o.key, o.ended, o.peak⟩
 

@@ -6,6 +6,23 @@ fields with exact integral timestamps; this is not a scheduler entry point. -/
 
 open Lean Heavy.Forecast
 
+-- Real completion rows: broad labels must not hide a command's last peak.
+#guard predictionKey (some "lake test") "heavy" ==
+  predictionKey (some "lake test") "another-label"
+#guard predictionKey (some "lake test") "heavy" !=
+  predictionKey (some "lake build fren-dev") "heavy"
+#guard predictionKey none "lake test" != predictionKey (some "lake test") "heavy"
+#guard predictionKey (some "bash -c 'lake test'") "heavy" !=
+  predictionKey (some "bash -c 'lake build fren-dev'") "heavy"
+#guard predict
+  [{key := some (predictionKey (some "lake test") "heavy"), ended := some 1,
+    peak := some 17911340}]
+  (predictionKey (some "lake test") "heavy") 0 2 20 == (some 17911340, 1)
+#guard predict
+  [{key := some (predictionKey (some "/home/ubuntu/coord/out/fd-soft-overlap/phases/001-author-d29e0ab6-83f7-4138-914d-b7f457b0fac3/overlap-controls.sh") "test"), ended := some 1,
+    peak := some 13566436}]
+  (predictionKey (some "/home/ubuntu/coord/out/fd-soft-overlap/phases/001-author-d29e0ab6-83f7-4138-914d-b7f457b0fac3/overlap-controls.sh") "test") 0 2 20 == (some 13566436, 1)
+
 -- Future module/input keys need no changes to the kernel.
 #guard predict
   [{ key := some ("Module", "fingerprint"), ended := some 10, peak := some 7 },
