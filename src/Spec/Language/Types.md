@@ -111,8 +111,6 @@ language type representation: the nominal identity is carried by `Ty` above.
 The integer identity atoms in these bindings instantiate the production
 primitive's generic identity parameter; they are never hashes or rendered names.
 
-**Dynamic semantics**
-
 r[types.primitive.compatibility] spec::types::compatible::{meaning, builtin, nominal, distinct, disjoint}
 Compatibility compares tags and, only for nominal types, identity atoms.
 
