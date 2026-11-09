@@ -26,8 +26,9 @@ spelling: a keyword, a punctuator or a contextual word. `Identifier` and
 `Numeral` are tokens of those lexical classes. `A | B` is either, `A B` is
 `A` then `B`, `A?` is `A` or nothing, `A*` is zero or more and `A+` one or
 more of `A`, and parentheses group. An alternative followed by `if` and
-a condition, `A if C`, is an alternative only where `C` holds; `C` may
-name a level `m` of the rule or the precedence `p` of an operator. A
+a condition, `A if C`, is an alternative only where `C` holds; `C` may,
+for example, name a level `m` of the rule, the precedence `p` of an
+operator, or the identifiers of a path. A
 `--` comment in a grammar is not part of it. Trivia may come between any
 two tokens, except where a rule says otherwise.
 
@@ -256,7 +257,9 @@ Each operator has a spelling, is prefix or binary, and has a precedence.
 A larger precedence binds more tightly. `-` is both the prefix operator
 `Negate` and the binary `Subtract`, and the position decides which. The
 parser reads each spelling as `operator_reading` states: as its binary
-operator, at its precedence, or as its prefix operator.
+operator, at its precedence, or as its prefix operator. A prefix
+operator's precedence is the level at which the parser reads its operand
+(`syntax.operator.grouping`).
 
 | Precedence | Operators | Position | Associativity |
 |---|---|---|---|
@@ -285,7 +288,11 @@ The comparisons and `iff` are non-associative. A binary continuation whose
 operator is a comparison may not follow one whose operator is a
 comparison, and likewise for `iff`. Such a sequence, such as `a < b <= c`
 or `a iff b iff c`, is a syntax error, not a nested comparison; write
-`(a < b) <= c`, or `(a iff b) iff c`, to mean the nesting.
+`(a < b) <= c`, or `(a iff b) iff c`, to mean the nesting. The rule
+applies within the expression that the continuation would extend
+(`syntax.expression.extent`): a comparison that would chain there is an
+error, and does not continue an enclosing expression instead. For example,
+`a and b < c < d` is a syntax error, not `(a and b < c) < d`.
 
 ```fren
 pub enum Operator {
@@ -434,10 +441,11 @@ operator and no `let`; a scrutinee is therefore a `Primary`: a literal, a name, 
 parenthesized expression, an `if` or a `match`.
 
 ```fren
-pub enum Place { Full, Definition, ArmBody, Scrutinee }
+pub enum Place { Full, Member, Definition, ArmBody, Scrutinee }
 
 pub fn place_level(place: Place): Int := match place {
     Place::Full => 0,
+    Place::Member => 0,
     Place::Definition => 1,
     Place::ArmBody => 1,
     Place::Scrutinee => 9,
@@ -445,6 +453,8 @@ pub fn place_level(place: Place): Int := match place {
 
 pub fn let_admitted?(level: Int) := level = 0
 ```
+
+**Examples**
 
 ```fren2 rejected
 fn nested(x: Int): Int := let y := let z := x in z in y
@@ -477,6 +487,8 @@ no trailing comma. Its `(` touches the name's last identifier. Only a name
 is called: `f(x)(y)`, `(f)(x)` and `1(x)` are syntax errors, as is
 `f (x)`, whose `(` does not touch `f`. A call is syntax whatever the name
 resolves to: `unknown(x)` and `x(y)` are calls.
+
+**Examples**
 
 ```fren2 rejected
 fn spaced(x: Int): Int := f (x)
@@ -532,6 +544,8 @@ expression still lacks a part, such as the `else` of an `if` or the `in`
 of a `let`, it is a syntax error. The right operand
 of a `mod` may start on the next line.
 
+**Examples**
+
 ```fren2
 fn half(x: Int): Int := x mod 2    -- a remainder
 fn whole(x: Int): Int := x
@@ -539,8 +553,6 @@ mod second                         -- a module declaration
 ```
 
 ## Examples
-
-**Examples**
 
 These declarations use each form of the grammar.
 

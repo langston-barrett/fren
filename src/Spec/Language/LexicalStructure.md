@@ -51,7 +51,8 @@ Lexing divides a source text into pieces, each of one class.
 r[lexical.element.syntax]
 status: definition
 The lexical elements have these forms. A quoted string stands for its
-characters, `..` for a range of characters, and the other notation is
+characters, `..` for a range of characters, `U+` and four hexadecimal
+digits for the character of that code point, and the other notation is
 that of the [grammar](Syntax.md#notation).
 
 ```text
@@ -151,7 +152,7 @@ pub fn element_ends?(kind: Class, lexeme: String, remaining: String) := match ki
 ```
 
 r[lexical.trivia]
-status: definition
+status: tested Spec.Language.Syntax.productions_agree
 Whitespace and comments are trivia. Trivia may come before the first
 token, after the last, and between any two tokens, and the grammar does
 not read it. The grammar depends on trivia only where the

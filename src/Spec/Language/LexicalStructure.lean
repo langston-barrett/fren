@@ -80,7 +80,10 @@ def lexer_agrees : Bool :=
   let texts := strings alphabet 3 ++ strings ['a', '?', '-', '<', '=', '!', ':', '\r', '\n', '1'] 4 ++ corpus
   texts.all (fun s => actualPieces s == specPieces s &&
     -- Positions are UTF-8 byte offsets of the source text, with no gaps.
-    FrenAst.ownsSource ⟨0⟩ s (FrenParse.tokenize ⟨0⟩ s).tape) &&
+    FrenAst.ownsSource ⟨0⟩ s (FrenParse.tokenize ⟨0⟩ s).tape &&
+    -- No text with rejected text parses, in either entry.
+    (!(actualPieces s).any (·.1 == .rejected) ||
+      !(FrenParse.parseFile ⟨0⟩ s).toBool && !(FrenParse.parseExpression ⟨0⟩ s).toBool)) &&
   -- The chapter's worked example.
   actualPieces "f(x)<=-1 -- note" ==
     [(.identifier, "f"), (.punctuation, "("), (.identifier, "x"), (.punctuation, ")"),

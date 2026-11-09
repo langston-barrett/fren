@@ -162,6 +162,8 @@ def groupings_agree : Bool :=
   expr? "base + 5 * 2" == some "(+ base (* 5 2))" && expr? "base - 5 - 2" == some "(- (- base 5) 2)" &&
   expr? "-x * 2" == some "(* (- x) 2)" && expr? "not x = y and true" == some "(and (not (= x y)) true)" &&
   expr? "a or b and c iff d" == some "(iff (or a (and b c)) d)" && expr? "- - x" == some "(- (- x))" &&
+  expr? "a and b < c < d" == none && expr? "not a < b < c" == none &&
+  expr? "a iff b iff c and d" == none &&
   expr? "a + not b" == none && expr? "-not b" == none && expr? "not a and b" == some "(and (not a) b)"
 
 #guard groupings_agree
@@ -170,6 +172,7 @@ def groupings_agree : Bool :=
 def placed (place : Place) (e : String) : String :=
   match place with
   | .Full => s!"fn f(w: Int): Int := {e}"
+  | .Member => s!"expect g(w: Int) \{ expect m: {e} }"
   | .Definition => s!"fn f(w: Int): Int := let v := {e} in v"
   | .ArmBody => s!"fn f(w: Int): Int := match w \{ E::A => {e} }"
   | .Scrutinee => s!"fn f(w: Int): Int := match {e} \{ E::A => 1 }"
@@ -180,7 +183,7 @@ def placed (place : Place) (e : String) : String :=
 `place_level`, `let_admitted?` and `admitted?` say, and always accepts a
 `Primary`. -/
 def places_agree : Bool :=
-  [Place.Full, .Definition, .ArmBody, .Scrutinee].all fun place =>
+  [Place.Full, .Member, .Definition, .ArmBody, .Scrutinee].all fun place =>
     let level := spec.grammar.place_level place
     accepts (placed place "let u := w in u") == spec.grammar.«let_admitted?» level &&
     operators.all (fun op =>
