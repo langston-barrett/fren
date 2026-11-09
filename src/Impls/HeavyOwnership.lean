@@ -568,10 +568,13 @@ theorem direct_file_eq (args : List String) :
     simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments, ← value_flag_eq]
   | case3 arg value tail hv ih =>
     simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments, ← value_flag_eq]
-  | case4 arg rest hv hq =>
+  | case4 arg rest hv hd =>
+    cases rest <;> simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments,
+      ← value_flag_eq, Str.lit]
+  | case5 arg rest hv hd hq =>
     cases rest <;> simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments,
       ← value_flag_eq, ← query_flag_eq, Str.lit] <;> (intros; simp_all)
-  | case5 arg rest hv hq ih =>
+  | case6 arg rest hv hd hq ih =>
     cases rest <;> simp_all [Heavy.ModuleMemory.directFile, testing.direct_lean_file?, arguments,
       Heavy.Process.valueFlag, Heavy.Process.queryFlag, testing.process_value_flag?,
       testing.process_query_flag?, Str.lit]

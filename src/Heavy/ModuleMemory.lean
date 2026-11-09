@@ -8,12 +8,14 @@ def defaultBytes : Nat := 1073741824
 
 /-- Ordinary direct compilation excludes query, stdin and program execution.
 Consume known option operands first, so an output named --run cannot bypass it.
+After a genuine -- terminator, every remaining argument is a literal operand.
 Unknown syntax remains eligible for the observer's fail-closed source check. -/
 def directFile : List String → Bool
   | [] => true
   | arg :: rest =>
     if Heavy.Process.valueFlag arg then
       match rest with | [] => true | _ :: tail => directFile tail
+    else if arg == "--" then true
     else if arg == "--run" || arg == "-r" || arg == "--stdin" || Heavy.Process.queryFlag arg then false
     else directFile rest
 

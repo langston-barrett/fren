@@ -1623,6 +1623,10 @@ source-candidate scan: a suffixless or differently suffixed alias to a selected
 source cannot bypass selection. The pure scan below consumes those canonical
 paths without filtering their original spellings; actual resolution and complete
 argv traversal remain IO obligations covered by real compiler alias controls.
+A genuine `--` terminates mode/query flag interpretation after known option
+operands have been consumed. A selected alias named like a mode or query flag
+after that boundary must enter the selected route; unsupported metadata then
+fails before compiler exec. An option operand named `--` is not that boundary.
 
 Before the first selected compiler executes, the wrapper requires an owned,
 finite aggregate cgroup-v2 scope. It does not create sibling scopes. In a dedicated
@@ -1993,6 +1997,7 @@ pub fn direct_lean_file?(args: ProcessArguments) := match args {
             ProcessArguments::Nil => true,
             ProcessArguments::Cons(_, tail) => direct_lean_file?(tail),
         }
+        else if arg = "--" then true
         else if arg is "--run" | "-r" | "--stdin" or process_query_flag?(arg) then false
         else direct_lean_file?(rest),
 }

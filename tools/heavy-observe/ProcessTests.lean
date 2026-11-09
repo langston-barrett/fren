@@ -22,6 +22,16 @@ def main (args : List String) : IO Unit := do
       (["--setup", "--stdin", selected], true), (["-o"], true)] do
     unless Heavy.ModuleMemory.directFile args == expected do
       throw (IO.userError "raw direct compilation selection")
+  let modes := ["--run", "-r", "--stdin", "--version", "-v", "--short-version", "-V",
+    "--githash", "-g", "--help", "-h", "--features", "--print-prefix", "--print-libdir"]
+  for flag in modes do
+    unless !Heavy.ModuleMemory.directFile [flag, selected] &&
+        Heavy.ModuleMemory.directFile ["--", flag] do
+      throw (IO.userError "literal mode filename after terminator")
+    for valueFlag in ["-o", "-i", "-c", "-b", "--setup", "-R", "--root"] do
+      unless !Heavy.ModuleMemory.directFile [valueFlag, "--", flag, selected] &&
+          Heavy.ModuleMemory.directFile [valueFlag, flag, "--", flag] do
+        throw (IO.userError "option operands precede terminator recognition")
   let second := "/source/FrenSource/Span.lean"
   for (candidates, expected) in [([], ""), (["/other/source-alias"], ""),
       (["/other/source-alias", selected], selected), ([selected, "/other/a.txt"], selected),
