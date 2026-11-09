@@ -46,10 +46,14 @@ No mechanical status checker is delivered by this unit.
   uninterpreted one, so the Expressions chapter's `binary_meaning?` states
   the result's sort for `*` and `div` and the remainder's range for `mod`,
   and its prose gives their equations.
-- **Chapter order.** The own-spec check reads `src/Spec` part by part, in
-  the order of each part's `index.md` (`specReadingOrder` in
+- **Chapter order.** The own-spec check reads `src/Spec` in the book's
+  reading order, that of `SUMMARY.md` (`specReadingOrder` in
   `FrenTestMain`), so a chapter's Fren may use what the chapters before it
   declare, and each chapter owns its definitions.
+- **Vacuity of the coverage expectation.** `coverage_separate` states its
+  claims as disjunctions: the solver proves them, but cannot exhibit a typed
+  match with an opaque earlier arm sequence, which a guarded claim's vacuity
+  check needs.
 - **Operator enums.** `UnaryOp` and `BinaryOp` use the Syntax chapter's names
   and constructors and move to `spec::syntax` when that chapter lands.
 - **Undecidable parts.** The chapter has no lint opt-out; this is a
@@ -68,19 +72,19 @@ compiler is specified later.
 | Rule or obligation | Evidence and limit |
 | --- | --- |
 | `types.context.bound`, `types.context.weakening` | Fren expectations over arbitrary contexts; `lookup_bound` uses Fren's induction |
-| `types.layer.operators`, `types.layer.determinism`, `types.expression.items` | Fren expectations: determinism once over every layer, generically in the form |
+| `types.layer.operators`, `types.layer.determinism` | Fren expectations: determinism once over every layer, generically in the form |
 | `types.layer.decidability` | Fren expectation: `rule?` holds at τ exactly when `infer_layer` returns τ, for every layer |
+| `types.judgment.coverage-separate` | Fren expectation: repeating or dropping a typed match's newest arm keeps it typed |
 | `types.layer.call-arity` | `Spec.Language.Types.argument_types_length` |
-| `types.layer.regularity`, `types.derivation.regularity` | `Spec.Language.Types.layer_regular` and `table_regular` |
-| `types.layer.weakening`, `types.derivation.weakening`, `types.derivation.weakening-lookup` | `Spec.Language.Types.layer_weakening`, `table_weakening` and `lookup_shift` |
-| `types.derivation.scoped`, `types.derivation.unique` | `Spec.Language.Types.table_scoped` and `table_unique` |
-| `types.judgment.coverage-separate` | `Spec.Language.Types.coverage_separate`, by `decide` on the two tables it names |
+| `types.layer.regularity`, `types.derivation.regularity`, `types.judgment.regularity` | `Spec.Language.Types.layer_regular`, `table_regular` and `judgment_regular` |
+| `types.layer.weakening`, `types.derivation.weakening`, `types.derivation.weakening-lookup`, `types.judgment.weakening` | `Spec.Language.Types.layer_weakening`, `table_weakening`, `lookup_shift` and `judgment_weakening` |
+| `types.derivation.scoped`, `types.derivation.unique` | `Spec.Language.Types.table_scoped` and `table_unique`; `table_unique` proves the stronger fact that the two tables are equal |
 | `types.examples.derivations` | `Spec.Language.Types.worked_examples` by `decide`; the wrapper checks further cases, at least one for each rule; finite evidence only |
-| `types.examples.rejected` | Fren expectation over every child typing that the premises leave free |
-| `types.judgment.adequacy` | Open: agreement of the table definition with the inductive reading of the rules; a Lean tree type with `ofLayer`/`layer`, as in the Syntax wrapper, would state it |
+| `types.examples.rejected` | Fren expectation over every child typing that the premises leave free, layer by layer |
+| `types.judgment.adequacy` | Open: agreement of the table definition with the inductive reading of the rules |
 | `types.derivation.unique-expression` | Open: lift `table_unique` across tables whose roots unfold alike |
-| `types.judgment.weakening` | Open: prune the rows a root does not use, so that `contexts_reach?` holds, then apply `table_weakening` |
-| `types.symbols.resolution`, `types.program.source` | Open: depend on the resolution chapter and the derived-forms chapter |
+| `types.judgment.decidability` | Open: correctness of building a table bottom-up with `infer_layer` |
+| `types.symbols.resolution` | Open: depends on the resolution chapter |
 | `types.safety` | Open: needs the dynamic semantics of the Expressions chapter as a Fren definition |
 | `thir.core.levels`, `thir.core.unary`, `thir.core.binary` | `Spec.Compiler.Thir.lookup_nearest`, `core_unary` and `core_binary` |
 | `thir.primitive.compatibility`, `thir.primitive.unary`, `thir.primitive.binary` | Universal `impl` proofs of the primitive contracts in the THIR wrapper |
@@ -96,8 +100,21 @@ Plausible, closed examples and layer step cases do not establish
 correspondence. The informative source examples' diagnostics, such as
 `l + 1` at line 5 column 28, byte span `[71, 72)`, are today's checker's.
 
-- [ ] Prove `types.judgment.adequacy`, `types.derivation.unique-expression`
-  and `types.judgment.weakening` (pruning unused rows).
+- [ ] Represent an expression as a term table (forms and a root) and define
+  the judgment as `derivation?` plus `alike?` between the term table and
+  the typing table, so that `types.derivation.unique-expression` and
+  `types.judgment.decidability` become Fren statements.
+- [ ] Prove `types.judgment.adequacy` in Lean against a nested inductive
+  Lean expression type with `ofLayer`/`layer`, as in the Syntax wrapper; it
+  would turn every table result into an expression result.
+- [ ] Prove `types.derivation.unique-expression` and
+  `types.judgment.decidability`.
+- [ ] Write each `lean`-status claim as a Fren predicate in the Markdown and
+  prove exactly that predicate in the wrapper.
+- [ ] Replace the per-form maps over `ExprF` (`annotate`, `weaken_layer`,
+  `children`, `layers_paired?` and their sequence helpers) with one generic
+  traversal using Fren's second-class higher-order functions, and derive
+  `infer_layer` from the rules instead of restating them.
 - [ ] State the dynamic semantics as a Fren definition and prove `types.safety`.
 - [ ] Restate the judgment over recursive expression trees once Fren
   supports nested recursive types.
@@ -119,11 +136,10 @@ correspondence. The informative source examples' diagnostics, such as
 - [ ] Resolve mutually partial assumption dependencies before claiming a
   supported verification result for that class.
 
-The type wrapper checks the public concrete example constants by expanding
-their finite index domains and simplifying the generated Fren definitions.
-The finite-bound lemmas apply to arbitrary integer upper bounds, including
-empty/negative ranges. These are exact closed cases, not sampled traversal
-soundness. The expression wrapper also checks the examples it imports.
+The type wrapper checks the public concrete example constants by evaluating
+the generated Fren definitions with `decide`. These are exact closed cases,
+not sampled traversal soundness. The expression wrapper checks the examples
+of the definitions it owns.
 Historical requests below to wait for recursive Fren datatypes before
 restating typing are superseded by the one-layer definition; its inductive
 closure and implementation correspondence still need universal proofs.

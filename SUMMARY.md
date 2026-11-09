@@ -110,7 +110,7 @@
   - [Lexical structure](src/Spec/Language/LexicalStructure.md)
   - [Syntax](src/Spec/Language/Syntax.md)
   - [Names and scope](src/Spec/Language/NamesAndScope.md)
-  - [Types and expression typing](src/Spec/Language/Types.md)
+  - [Core typing](src/Spec/Language/Types.md)
   - [Expressions](src/Spec/Language/Expressions.md)
   - [Patterns](src/Spec/Language/Patterns.md)
   - [Functions and recursion](src/Spec/Language/FunctionsAndRecursion.md)

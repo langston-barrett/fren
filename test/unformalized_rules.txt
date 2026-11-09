@@ -340,15 +340,6 @@ bindings.free-indices.definition -- mathematical definition here; actual collect
 bindings.free-indices.children -- mathematical child rule here; actual collector and recursive formalization pending
 bindings.alpha.definition -- structural definition here; production metadata-independent equality API pending
 
-# src/Spec/Language/Expressions.md
-expressions.value.type -- partly formalized: shared value typing and constructor validity; whole-expression interpretation closure is mathematical
-expressions.meaning.context -- recursive interpretation and substitution law; actual traversal correspondence remains unproved
-expressions.meaning.operators -- partly formalized: checked addition/subtraction and signed constant-divisor examples; general arithmetic and Boolean/nominal interpretation laws are mathematical
-expressions.mentions.closure -- recursive closure over complete written children and binding depths; direct item mentions are checked separately
-expressions.domain.traversal -- whole-source obligation traversal; no ordinary operand or unused definition may be erased
-expressions.domain.guards -- recursive conditional context and scoped obligation correspondence
-expressions.domain.evidence -- proof provenance and unknown/resource policy; no goal may justify itself
-
 # src/Spec/Compiler/Lir.md
 lir.terms.sorts -- actual recursive Lean Sorted judgment; checker equivalence and recursive Fren binding remain unproved
 lir.meaning.values -- actual recursive Lean Meaning judgment; universal typed interpretation correspondence remains unproved

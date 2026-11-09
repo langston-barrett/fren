@@ -1,7 +1,7 @@
 # Expressions
 
 An expression denotes a value in an interpretation of its declarations and
-an assignment to its free locals. [Types and expression typing](Types.md)
+an assignment to its free locals. [Core typing](Types.md)
 defines the shared `Ty`, `Symbols`, `Context` and expression forms.
 This chapter specifies how their meanings and source obligations compose.
 The domain is Booleans, integers, payload-free nominal enums, locals, named
@@ -9,11 +9,10 @@ calls, unary and binary operators, lets, conditionals and constructor matches.
 
 ## Values, interpretation and mentioned names
 
-**Dynamic semantics**
-
 r[expressions.value.type] spec::expressions::{Value, value_type, value_valid?}
 Every expression denotes a value of its type. A nominal value names an
 actual constructor of its canonical enum owner.
+<!-- status: definition -->
 
 ```fren
 pub mod spec
@@ -45,17 +44,19 @@ positional arguments into its function body's parameter context, without
 inheriting the caller's locals. A let interprets its value in the incoming
 context and its body with that value appended as the newest level. An if denotes its selected
 branch; a match denotes the body for its constructor, in the incoming context.
+<!-- status: definition -->
 
 r[expressions.meaning.operators] spec::expressions::{unary_meaning?, integer_meaning?, boolean_meaning?, binary_meaning?}
 Within their domains, arithmetic operators have their mathematical meanings.
 Division and remainder are Euclidean: the remainder is nonnegative and
-strictly less than the absolute divisor, and `n = (n div d) * d + n mod d`.
+strictly less than the absolute divisor, and `n = (n div d) * d + n % d`.
 Comparisons use integer order; Boolean operators use their truth tables;
 equality compares values of one type, including canonical nominal identity.
 Unary minus negates an integer and `not` complements a Boolean. `binary_meaning?` and
-`unary_meaning?` state every operator's result; for `*`, `div` and `mod` they
+`unary_meaning?` state every operator's result; for `*`, `div` and `%` they
 state the result's sort and the remainder's range, and the equations above
 give the values.
+<!-- status: definition -->
 
 ```fren
 pub fn unary_meaning?(op: UnaryOp, operand: Value, result: Value) := match op, operand {
@@ -106,6 +107,7 @@ r[expressions.mentions.direct] spec::expressions::{arm_mentions?, direct_item?}
 An occurrence directly mentions its constructor, callee or match-pattern
 items. A local mentions its resolved context slot, rather than an item with
 the same written spelling.
+<!-- status: definition -->
 
 ```fren
 pub fn arm_mentions?<E>(arms: Snoc<ArmF<E>>, item: ItemId) := match arms {
@@ -129,19 +131,19 @@ are unchanged. A let's value has no additional binder. Match patterns add none.
 Names in an unselected branch or unused definition still count. This
 structural closure uses the same children and binding depths as typing;
 it is independent of a particular evaluation trace.
+<!-- status: definition -->
 
 ## Definedness and source verification
 
 A domain condition states when a partial operation has its specified meaning.
-Expressions outside that domain still denote a fixed value of their type;
-that value is unspecified by the operation's equation. A source obligation
-requires proof of the domain at the operation's written occurrence.
-
-**Legality rules**
+This chapter assigns no value to an operation outside its domain. A source
+obligation requires proof of the domain at the operation's written
+occurrence.
 
 r[expressions.domain.integer] spec::expressions::integer_domain?
 Division and remainder require a nonzero divisor. Typing alone does not
 establish this condition.
+<!-- status: definition -->
 
 ```fren
 pub fn integer_domain?(op: BinaryOp, right: Int) :=
@@ -154,6 +156,7 @@ operands, including both sides of `and` and `or`, retain their obligations
 in the incoming context. Unused let values and uncalled named definitions
 retain their obligations too. An interpreter's short-circuit trace cannot
 decide which obligations exist.
+<!-- status: definition -->
 
 r[expressions.domain.guards]
 An if's condition is checked in the incoming context; its branches add the
@@ -162,12 +165,14 @@ scrutinee in the incoming context and each arm under its constructor guard.
 These explicit scopes determine conditional obligations. Thus the division
 in `if d != 0 then n div d else 0` has hypothesis `d != 0`, whereas the
 division in `false and (1 div 0 = 0)` retains its unconditional obligation.
+<!-- status: definition -->
 
 r[expressions.domain.evidence]
 An unknown result or resource limit is neither proof nor undefinedness.
 No unproved goal can justify itself. A local hypothesis cannot become an
 unconditional global fact. Verification of a domain and evaluation of a
 value are distinct judgments.
+<!-- status: definition -->
 
 The [OIR rules](../Compiler/Oir.md#static-traversal-guards-and-bindings)
 retain lexical binders, substitutions, branch guards, owners and source
@@ -188,7 +193,7 @@ for `x`. These are the same contexts required by `rule?`.
 different types even if both enums declare `Red`. A comparison between
 their constructors fails typing, before its truth or definedness is checked.
 The checked derivations and arithmetic examples follow their shared
-definitions in the [typing chapter](Types.md#worked-derivations).
+definitions in the [typing chapter](Types.md#examples).
 
 On well-defined pure expressions an implementation may evaluate arguments
 left to right and short-circuit Boolean operations. Verification-aware debug

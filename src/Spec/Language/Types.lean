@@ -96,7 +96,7 @@ theorem table_scoped (symbols : Snoc Entry) (rows : Snoc Row) (position level : 
       simp [rows_valid?, rule?, local_rule?, fren_spec] at valid
       exact lookup_bound lcontext level lty valid.2
     · simp [rows_valid?, fren_spec] at valid
-      exact ih valid.1 found
+      exact ih valid.1.1 found
 
 /-- Typing is deterministic: valid tables of the same shape are equal. -/
 theorem table_unique (symbols : Snoc Entry) (left right : Snoc Row)
@@ -114,7 +114,7 @@ theorem table_unique (symbols : Snoc Entry) (left right : Snoc Row)
       simp only [same_shape?, decide_eq_true_eq] at shape
       obtain ⟨⟨hform, hcontext⟩, hrest⟩ := shape
       simp only [rows_valid?, decide_eq_true_eq] at hl hr
-      have heq := ih rearlier hl.1 hr.1 hrest
+      have heq := ih rearlier hl.1.1 hr.1.1 hrest
       subst heq
       rcases l with ⟨lf, lc, lt⟩
       rcases r with ⟨rf, rc, rt⟩
@@ -444,18 +444,21 @@ theorem annotate_children_ok (symbols : Snoc Entry) (rows : Snoc Row)
           exact (ext _ _).2 ⟨child _ _ h3, (ext _ _).2 ⟨child _ _ h2, (ext _ _).2 ⟨child _ _ h1, empty⟩⟩⟩
   | _ => simp [annotate, fren_spec] at h; subst h; rfl
 
-/-- Over a well-formed environment, every row of a valid table whose contexts
-are well formed has a well-formed type. -/
+theorem context_ok_extend (symbols : Snoc Entry) (context : Snoc Ty) (t : Ty) :
+    context_ok? symbols (.Extend context t) = true ↔
+      type_ok? symbols t = true ∧ context_ok? symbols context = true := by
+  cases t <;> simp [context_ok?, type_ok?, fren_spec]
+
+/-- Over a well-formed environment, every row of a valid table has a
+well-formed type. -/
 theorem table_regular (symbols : Snoc Entry) (rows : Snoc Row)
-    (hs : symbols_ok? symbols = true) (hv : rows_valid? symbols rows = true)
-    (hc : contexts_ok? symbols rows = true) :
+    (hs : symbols_ok? symbols = true) (hv : rows_valid? symbols rows = true) :
     ∀ p r, lookup _ rows p = some r → type_ok? symbols r.ty = true := by
   induction rows with
   | Empty => intro p r h; simp [lookup] at h
   | Extend earlier last ih =>
     simp only [rows_valid?, decide_eq_true_eq] at hv
-    simp only [contexts_ok?, decide_eq_true_eq] at hc
-    have ok := ih hv.1 hc.2
+    have ok := ih hv.1.1
     intro p r h
     simp only [lookup] at h
     split at h
@@ -465,9 +468,22 @@ theorem table_regular (symbols : Snoc Entry) (rows : Snoc Row)
       | none => simp [ha] at hl
       | some form =>
         simp only [ha] at hl
-        exact layer_regular symbols last.context form last.ty hs hc.1
+        exact layer_regular symbols last.context form last.ty hs hv.1.2
           (annotate_children_ok symbols earlier ok last.form form ha) hl
     · exact ok p r h
+
+/-- If `derivation?(Σ, rows, Γ, τ)`, then τ is well formed. -/
+theorem judgment_regular (symbols : Snoc Entry) (rows : Snoc Row) (context : Snoc Ty) (ty : Ty)
+    (h : derivation? symbols rows context ty = true) : type_ok? symbols ty = true := by
+  cases rows with
+  | Empty => simp [derivation?, fren_spec] at h
+  | Extend earlier root =>
+    simp only [derivation?, decide_eq_true_eq] at h
+    have hs : symbols_ok? symbols = true := by simp only [symbols_ok?, decide_eq_true_eq]; exact h.1.1.1.1
+    have hroot := h.2
+    simp [fren_spec] at hroot
+    have := table_regular symbols _ hs h.1.1.2 (length _ earlier) root (by simp [lookup])
+    rw [← hroot.2]; exact this
 
 /-! ## Weakening -/
 
@@ -631,9 +647,30 @@ theorem annotate_weaken (rows : Snoc Row) (cutoff : Int) (extra : Ty) (form : Ex
     cases typing_at rows a <;> cases annotate_arms rows arms <;> first | rfl | simp [weaken_layer, fren_spec]
   | _ => simp [annotate, weaken_layer, fren_spec]
 
-/-- Weakening a valid table whose row contexts reach the cutoff keeps it valid. -/
+theorem context_ok_insert (symbols : Snoc Entry) (context : Snoc Ty) (cutoff : Int) (extra : Ty)
+    (hx : type_ok? symbols extra = true) (hc : context_ok? symbols context = true)
+    (h0 : 0 ≤ cutoff) (hn : cutoff ≤ length _ context) :
+    context_ok? symbols (insert_type context cutoff extra) = true := by
+  induction context with
+  | Empty =>
+    simp [length] at hn
+    have : cutoff = 0 := by omega
+    subst this
+    simp only [insert_type]
+    exact (context_ok_extend _ _ _).2 ⟨hx, hc⟩
+  | Extend earlier t ih =>
+    have hc' := (context_ok_extend _ _ _).1 hc
+    by_cases e : cutoff = ↑(length _ earlier) + 1
+    · simp only [insert_type, if_pos e]
+      exact (context_ok_extend _ _ _).2 ⟨hx, hc⟩
+    · simp only [length] at hn
+      rw [insert_extend earlier cutoff extra t (by push_cast at hn; omega)]
+      exact (context_ok_extend _ _ _).2 ⟨hc'.1, ih hc'.2 (by push_cast at hn; omega)⟩
+
+/-- Weakening a valid table whose row contexts reach the cutoff, by a
+well-formed type, keeps it valid. -/
 theorem table_weakening (symbols : Snoc Entry) (rows : Snoc Row) (cutoff : Int) (extra : Ty)
-    (h0 : 0 ≤ cutoff) (hv : rows_valid? symbols rows = true)
+    (hx : type_ok? symbols extra = true) (h0 : 0 ≤ cutoff) (hv : rows_valid? symbols rows = true)
     (hr : contexts_reach? rows cutoff = true) :
     rows_valid? symbols (weaken rows cutoff extra) = true := by
   induction rows with
@@ -642,7 +679,7 @@ theorem table_weakening (symbols : Snoc Entry) (rows : Snoc Row) (cutoff : Int) 
     simp only [rows_valid?, decide_eq_true_eq] at hv
     simp only [contexts_reach?, decide_eq_true_eq] at hr
     simp only [weaken, rows_valid?, decide_eq_true_eq]
-    refine ⟨ih hv.1 hr.2, ?_⟩
+    refine ⟨⟨ih hv.1.1 hr.2, context_ok_insert symbols last.context cutoff extra hx hv.1.2 h0 hr.1.2⟩, ?_⟩
     have hl := hv.2
     have ha := annotate_weaken earlier cutoff extra last.form
     cases hf : annotate earlier last.form with
@@ -651,6 +688,77 @@ theorem table_weakening (symbols : Snoc Entry) (rows : Snoc Row) (cutoff : Int) 
       simp only [hf] at hl ha
       simp only [ha, Option.map]
       exact layer_weakening symbols last.context form last.ty cutoff extra h0 hr.1.2 hl
+
+theorem insert_at_end (context : Snoc Ty) (extra : Ty) :
+    insert_type context (length _ context) extra = .Extend context extra := by
+  cases context with
+  | Empty => simp [insert_type, length]
+  | Extend earlier t => simp [insert_type, length]
+
+theorem extends_length (context base : Snoc Ty) (h : extends? context base = true) :
+    length _ base ≤ length _ context := by
+  induction context with
+  | Empty =>
+    simp [extends?, fren_spec] at h
+    subst h; simp [length]
+  | Extend earlier t ih =>
+    simp [extends?, fren_spec] at h
+    rcases h with h | h
+    · subst h; simp
+    · have := ih h; simp [length]; omega
+
+theorem extends_insert (context base : Snoc Ty) (extra : Ty) (h : extends? context base = true) :
+    extends? (insert_type context (length _ base) extra) (.Extend base extra) = true := by
+  induction context with
+  | Empty =>
+    simp [extends?, fren_spec] at h
+    subst h
+    rw [insert_at_end]; simp [extends?, fren_spec]
+  | Extend earlier t ih =>
+    by_cases e : Snoc.Extend earlier t = base
+    · subst e; rw [insert_at_end]; simp [extends?, fren_spec]
+    · simp [extends?, fren_spec, e] at h
+      have hl := extends_length earlier base h
+      rw [insert_extend earlier _ extra t (by exact_mod_cast hl)]
+      have := ih h
+      simp [extends?, fren_spec, this]
+
+theorem rows_extend_reach (rows : Snoc Row) (base : Snoc Ty) (h : rows_extend? rows base = true) :
+    contexts_reach? rows (length _ base) = true := by
+  induction rows with
+  | Empty => rfl
+  | Extend earlier row ih =>
+    simp only [rows_extend?, decide_eq_true_eq] at h
+    simp only [contexts_reach?, decide_eq_true_eq]
+    have := extends_length row.context base h.1
+    exact ⟨⟨by omega, by exact_mod_cast this⟩, ih h.2⟩
+
+theorem rows_extend_weaken (rows : Snoc Row) (base : Snoc Ty) (extra : Ty)
+    (h : rows_extend? rows base = true) :
+    rows_extend? (weaken rows (length _ base) extra) (.Extend base extra) = true := by
+  induction rows with
+  | Empty => rfl
+  | Extend earlier row ih =>
+    simp only [rows_extend?, decide_eq_true_eq] at h
+    simp only [weaken, rows_extend?, decide_eq_true_eq]
+    exact ⟨extends_insert row.context base extra h.1, ih h.2⟩
+
+/-- Weakening: if `derivation?(Σ, rows, Γ, τ)` and σ is well formed, then
+`derivation?(Σ, weaken(rows, |Γ|, σ), (Γ, σ), τ)`. -/
+theorem judgment_weakening (symbols : Snoc Entry) (rows : Snoc Row) (context : Snoc Ty) (ty extra : Ty)
+    (hx : type_ok? symbols extra = true) (h : derivation? symbols rows context ty = true) :
+    derivation? symbols (weaken rows (length _ context) extra) (.Extend context extra) ty = true := by
+  cases rows with
+  | Empty => simp [derivation?, fren_spec] at h
+  | Extend earlier root =>
+    simp only [derivation?, decide_eq_true_eq] at h ⊢
+    have hroot := h.2
+    simp [fren_spec] at hroot
+    have hv := table_weakening symbols (.Extend earlier root) (length _ context) extra hx
+      (by omega) h.1.1.2 (rows_extend_reach _ _ h.1.2)
+    have he := rows_extend_weaken (.Extend earlier root) context extra h.1.2
+    refine ⟨⟨⟨⟨h.1.1.1.1, (context_ok_extend _ _ _).2 ⟨hx, h.1.1.1.2⟩⟩, hv⟩, he⟩, ?_⟩
+    simp [weaken, fren_spec, hroot.1, hroot.2, insert_at_end]
 
 /-! ## Examples -/
 

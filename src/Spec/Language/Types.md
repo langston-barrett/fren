@@ -31,15 +31,16 @@ The chapter's judgments, and the Fren definitions that state them:
 | `Σ ⊢ Γ ok` | every type of Γ is well formed | `context_ok?` |
 | `⊢ Σ ok` | Σ is a well-formed symbol environment | `symbols_ok?` |
 | `Σ; Γ ⊢ e : τ` | e has type τ in Γ | `derivation?`, with a table whose root unfolds to e |
-| `Σ; Γ ⊢ l ⇒ τ` | one layer l, its children already typed, has type τ | `rule?` |
+| `Σ; Γ ⊢ l ▷ τ` | one layer l, its children already typed, has type τ | `rule?` |
 | `Σ ⊢ d ok` | a declaration is well typed | `declaration_ok?` |
 | `⊢ (Σ, ds) ok` | a program is well typed | `program_ok?` |
 
 The typing rules are summarized below, in the notation of
 [The Definition of Standard ML](https://smlfamily.github.io/sml97-defn.pdf).
 `unary(⊖, σ) = τ` and `binary(⊕, σ, υ) = τ` are the operator tables of
-`unary_type?` and `binary_type?`. The figure is informative; the numbered
-rules that follow are normative.
+`unary_type?` and `binary_type?`. The figure gives every rule of the
+chapter; it is informative, and the numbered rules that follow are
+normative.
 
 ```text
                                       Γ(i) = τ                   Σ(c) = constructor of a
@@ -66,17 +67,35 @@ rules that follow are normative.
   ────────────────────────────────────────────────────────────────────────────
   Σ; Γ ⊢ match s { c₀ ⇒ b₀ | … | cₘ ⇒ bₘ } : τ
 
-  Σ(a) = enumeration                  ⊢ Σ ok   Σ ⊢ Γ ok   (a table types e)
-  ─────────────────────               ──────────────────────────────────
-  Σ ⊢ Nominal(a) ok                   Σ; Γ ⊢ e : τ
+                                      Σ(a) = enumeration     Σ ⊢ Γ ok   Σ ⊢ τ ok
+  Σ ⊢ Boolean ok   Σ ⊢ Integer ok     ──────────────────     ───────────────────     Σ ⊢ · ok
+                                      Σ ⊢ Nominal(a) ok      Σ ⊢ Γ, τ ok
+
+  each item bound once   every signature well formed   owners and constructors agree
+  ─────────────────────────────────────────────────────────────────────────────────
+  ⊢ Σ ok
+
+  ⊢ Σ ok   Σ ⊢ Γ ok   a valid table, its contexts extending Γ, has a root Γ, τ that unfolds to e
+  ─────────────────────────────────────────────────────────────────────────────────────────
+  Σ; Γ ⊢ e : τ
+
+  Σ(f) = function with parameters Δ and result τ   Σ; Δ ⊢ b : τ       Σ; Δ ⊢ b : Boolean
+  ─────────────────────────────────────────────────────────────       ──────────────────────────
+  Σ ⊢ function f with body b ok                                       Σ ⊢ condition Δ. b ok
+
+  ⊢ Σ ok   Σ ⊢ d ok (each declaration d)   each function of Σ has exactly one body
+  ────────────────────────────────────────────────────────────────────────────────
+  ⊢ (Σ, ds) ok
 ```
+
+The one-layer judgment `Σ; Γ ⊢ l ▷ τ` checks one of the expression rules
+above for l's form, with its children's typings given instead of derived.
 
 ## Semantic objects
 
 r[types.object.identity] spec::types::{ItemId, Ty}
 An *item identity* is the canonical sequence of enclosing module and item
-names supplied by resolution. Constructor identities include their enumeration
-name. Value types are Boolean, mathematical integer, and nominal enumeration
+names supplied by resolution. Value types are Boolean, mathematical integer, and nominal enumeration
 types. Types are compared by equality, including every component of a
 nominal identity.
 <!-- status: definition -->
@@ -270,7 +289,7 @@ pub struct Typing { context: Context, ty: Ty }
 ```
 
 r[types.judgment.layer] spec::types::rule?
-The one-layer judgment `Σ; Γ ⊢ l ⇒ τ` takes Σ, Γ, a layer `ExprF<Typing>`
+The one-layer judgment `Σ; Γ ⊢ l ▷ τ` takes Σ, Γ, a layer `ExprF<Typing>`
 whose child positions hold the children's typings, and τ. It checks exactly
 the matching rule below.
 <!-- status: definition -->
@@ -496,9 +515,10 @@ pub fn rule?(symbols: Symbols, context: Context, form: ExprF<Typing>, ty: Ty) :=
 r[types.derivation.table] spec::types::{Row, typing_at, annotate, rows_valid?}
 A *derivation table* is a snoc sequence of rows. A row has a layer whose
 children are the levels of earlier rows, a context and a type. A table is
-valid when every row satisfies `rule?` with each child replaced by that
-earlier row's context and type; a child level that names no earlier row
-fails. Every row is checked, including rows that no other row uses.
+valid in Σ when every row's context is well formed and every row satisfies
+`rule?` with each child replaced by that earlier row's context and type; a
+child level that names no earlier row fails. Every row is checked,
+including rows that no other row uses.
 <!-- status: definition -->
 
 ```fren
@@ -566,7 +586,9 @@ pub fn annotate(rows: Snoc<Row>, form: Form): Option<ExprF<Typing>> := match for
 pub fn rows_valid?(symbols: Symbols, rows: Snoc<Row>) := match rows {
     Empty => true,
     Extend(earlier, row) =>
-        rows_valid?(symbols, earlier) and match annotate(earlier, row.form) {
+        rows_valid?(symbols, earlier)
+        and context_ok?(symbols, row.context)
+        and match annotate(earlier, row.form) {
             Some(form) => rule?(symbols, row.context, form, row.ty),
             None => false,
         },
@@ -582,17 +604,31 @@ expression is a row, including an unused let value, both branches of a
 conditional and every arm body; several occurrences may share a row.
 <!-- status: definition -->
 
-r[types.judgment.typing] spec::types::derivation?
-`Σ; Γ ⊢ e : τ` holds when Σ and Γ are well formed and some valid table's
-newest row, its *root*, has context Γ and type τ and unfolds to e.
-`derivation?` checks that a table is valid with such a root.
+r[types.judgment.typing] spec::types::{extends?, rows_extend?, derivation?}
+`Σ; Γ ⊢ e : τ` holds when Σ and Γ are well formed and some valid table,
+every row of which has a context that extends Γ, has a newest row, its
+*root*, with context Γ and type τ that unfolds to e. A context *extends* Γ
+when it is Γ or Γ followed by further entries. `derivation?` checks that a
+table is valid in this way with such a root.
 <!-- status: definition -->
 
 ```fren
+pub fn extends?(context: Context, base: Context) :=
+    context = base or match context {
+        Empty => false,
+        Extend(earlier, _) => extends?(earlier, base),
+    }
+
+pub fn rows_extend?(rows: Snoc<Row>, base: Context) := match rows {
+    Empty => true,
+    Extend(earlier, row) => extends?(row.context, base) and rows_extend?(earlier, base),
+}
+
 pub fn derivation?(symbols: Symbols, rows: Snoc<Row>, context: Context, ty: Ty) :=
     symbols_ok?(symbols)
     and context_ok?(symbols, context)
     and rows_valid?(symbols, rows)
+    and rows_extend?(rows, context)
     and match rows {
         Empty => false,
         Extend(_, root) => root.context = context and root.ty = ty,
@@ -600,16 +636,42 @@ pub fn derivation?(symbols: Symbols, rows: Snoc<Row>, context: Context, ty: Ty) 
 ```
 
 r[types.judgment.separate]
-Match coverage and the absence of recursive function cycles are further
-static conditions, not premises of typing. Operation domains, including
-nonzero divisors, belong to verification. No dynamic behavior is assigned
-here to an unverified `x div 0` or to an evaluation order.
+Match coverage, the absence of recursive call cycles and operation domains,
+including nonzero divisors, are not premises of typing. No dynamic behavior
+is assigned here to an unverified division by zero or to an evaluation
+order.
 <!-- status: definition -->
 
-r[types.judgment.coverage-separate]
-A table for a match that omits a constructor of its scrutinee's enumeration,
-and one for a match that repeats a constructor, are valid.
-<!-- status: lean Spec.Language.Types.coverage_separate -->
+r[types.judgment.coverage-separate] spec::types::coverage_separate::{repeated, omitted}
+Typing does not depend on coverage: a typed match stays typed when its
+newest arm is repeated, or dropped while another arm remains.
+<!-- status: smt -->
+
+```fren
+expect coverage_separate(
+    symbols: Symbols,
+    context: Context,
+    scrutinee: Typing,
+    earlier: Snoc<ArmF<Typing>>,
+    last: ArmF<Typing>,
+    ty: Ty,
+) {
+    let typed? := rule?(
+        symbols,
+        context,
+        ExprF::Match(scrutinee, Extend(earlier, last)),
+        ty
+    )
+    expect repeated: not typed?
+        or rule?(
+            symbols,
+            context,
+            ExprF::Match(scrutinee, Extend(Extend(earlier, last), last)),
+            ty
+        )
+    expect omitted: not typed? or earlier = Empty or rule?(symbols, context, ExprF::Match(scrutinee, earlier), ty)
+}
+```
 
 ## Declarations and programs
 
@@ -637,7 +699,14 @@ r[types.program.source]
 A source program is well typed exactly when its translation into a Core
 program is. The derived-forms chapter, not yet written, is to define that
 translation.
-<!-- status: open -->
+<!-- status: definition -->
+
+r[types.program.nonrecursive]
+A Core program has no recursive call cycles: no function's body calls
+itself, directly or through other functions. This is a static condition
+separate from typing; the [THIR chapter](../Compiler/Thir.md) states its
+check.
+<!-- status: definition -->
 
 ```fren
 pub enum Declaration { Function(ItemId, Snoc<Row>), Condition(Context, Snoc<Row>) }
@@ -692,14 +761,8 @@ For fixed Σ, Γ and child typings, a layer has at most one type.
 
 r[types.layer.decidability] spec::types::{unary_result, binary_result, provided, infer_layer, layer_inference::exact}
 The one-layer judgment is decidable: `infer_layer` computes a layer's type,
-if it has one, and `Σ; Γ ⊢ l ⇒ τ` holds exactly when `infer_layer(Σ, Γ, l)`
+if it has one, and `Σ; Γ ⊢ l ▷ τ` holds exactly when `infer_layer(Σ, Γ, l)`
 is τ.
-<!-- status: smt -->
-
-r[types.expression.items] spec::types::item_inversion::{constructor, call}
-Only constructor items are values and only function items are callable: a
-typed constructor's entry is a constructor, and a typed call's entry is a
-function.
 <!-- status: smt -->
 
 ```fren
@@ -712,8 +775,11 @@ expect layer_unique(symbols: Symbols, context: Context, form: ExprF<Typing>, a: 
     expect unique: when rule?(symbols, context, form, a) and rule?(symbols, context, form, b), a = b
 }
 
-pub fn unary_result(op: UnaryOp, operand: Ty): Option<Ty> :=
-    if unary_type?(op, operand, operand) then Some(operand) else None
+pub fn unary_result(op: UnaryOp, operand: Ty): Option<Ty> := match op, operand {
+    UnaryOp::Neg, Ty::Integer => Some(Ty::Integer),
+    UnaryOp::Not, Ty::Boolean => Some(Ty::Boolean),
+    _, _ => None,
+}
 
 pub fn binary_result(op: BinaryOp, left: Ty, right: Ty): Option<Ty> :=
     if binary_type?(op, left, right, Ty::Integer) then Some(Ty::Integer)
@@ -773,19 +839,6 @@ pub fn infer_layer(symbols: Symbols, context: Context, form: ExprF<Typing>): Opt
 expect layer_inference(symbols: Symbols, context: Context, form: ExprF<Typing>, ty: Ty) {
     expect exact: rule?(symbols, context, form, ty) iff infer_layer(symbols, context, form) = Some(ty)
 }
-
-expect item_inversion(
-    symbols: Symbols,
-    context: Context,
-    item: ItemId,
-    args: Snoc<Typing>,
-    ty: Ty,
-) {
-    expect constructor: when rule?(symbols, context, ExprF::Constructor(item), ty),
-        entry(symbols, item) is Some(ItemKind::Constructor(_))
-    expect call: when rule?(symbols, context, ExprF::Call(item, args), ty),
-        entry(symbols, item) is Some(ItemKind::Function(_))
-}
 ```
 
 r[types.layer.call-arity]
@@ -794,7 +847,7 @@ If `argument_types?(args, Δ)`, then `|args| = |Δ|`.
 
 r[types.layer.regularity] spec::types::{typings_ok?, arm_typings, children, children_ok?}
 Typing produces well-formed types: if ⊢ Σ ok, `Σ ⊢ Γ ok`, every child
-typing's type is well formed and `Σ; Γ ⊢ l ⇒ τ`, then `Σ ⊢ τ ok`.
+typing's type is well formed and `Σ; Γ ⊢ l ▷ τ`, then `Σ ⊢ τ ok`.
 <!-- status: lean Spec.Language.Types.layer_regular -->
 
 ```fren
@@ -822,17 +875,14 @@ pub fn children(form: ExprF<Typing>): Snoc<Typing> := match form {
 pub fn children_ok?(symbols: Symbols, form: ExprF<Typing>) := typings_ok?(symbols, children(form))
 ```
 
-r[types.derivation.regularity] spec::types::contexts_ok?
-In a valid table over a well-formed Σ whose row contexts are well formed,
-every row's type is well formed.
+r[types.derivation.regularity]
+In a valid table over a well-formed Σ, every row's type is well formed.
 <!-- status: lean Spec.Language.Types.table_regular -->
 
-```fren
-pub fn contexts_ok?(symbols: Symbols, rows: Snoc<Row>) := match rows {
-    Empty => true,
-    Extend(earlier, row) => context_ok?(symbols, row.context) and contexts_ok?(symbols, earlier),
-}
-```
+r[types.judgment.regularity]
+If `derivation?(Σ, rows, Γ, τ)`, then `Σ ⊢ τ ok`: if `Σ; Γ ⊢ e : τ`, then τ
+is well formed.
+<!-- status: lean Spec.Language.Types.judgment_regular -->
 
 r[types.derivation.scoped]
 Every local of a valid table is in scope: if a row `#i` has context Γ, then
@@ -925,9 +975,9 @@ pub fn weaken_layer(form: ExprF<Typing>, cutoff: Int, extra: Ty): ExprF<Typing> 
 ```
 
 r[types.derivation.weakening] spec::types::{shift_form, weaken, contexts_reach?}
-A valid table stays valid when a type is inserted at level n of every row's
-context and every local level of at least n is shifted by one, provided
-`0 ≤ n` and every row's context has at least n entries.
+A valid table stays valid when a well-formed type is inserted at level n of
+every row's context and every local level of at least n is shifted by one,
+provided `0 ≤ n` and every row's context has at least n entries.
 <!-- status: lean Spec.Language.Types.table_weakening -->
 
 ```fren
@@ -1054,11 +1104,18 @@ the two tables' sharing of rows and extra rows.
 <!-- status: open -->
 
 r[types.judgment.weakening]
-Typing is preserved by extending its context: if `Σ; Γ ⊢ e : τ` and
-`Σ ⊢ σ ok`, then `Σ; Γ, σ ⊢ e' : τ`, where e' is e with every local level of
-at least `|Γ|`, those bound within e, shifted by one. A table for e' is the
-table for e without the rows its root does not use, weakened by
-`weaken(rows, |Γ|, σ)`.
+Typing is preserved by extending its context: if `derivation?(Σ, rows, Γ, τ)`
+and `Σ ⊢ σ ok`, then `derivation?(Σ, weaken(rows, |Γ|, σ), (Γ, σ), τ)`. By
+the definition of unfolding, the weakened root unfolds to e', the expression
+e that the root unfolded to with every local level of at least `|Γ|`, those
+bound within e, shifted by one; so if `Σ; Γ ⊢ e : τ` then `Σ; Γ, σ ⊢ e' : τ`.
+<!-- status: lean Spec.Language.Types.judgment_weakening -->
+
+r[types.judgment.decidability]
+Typing is decidable: an algorithm, given Σ, Γ and e, finds the τ with
+`Σ; Γ ⊢ e : τ` or reports that there is none. Building a table bottom-up
+with `infer_layer`, in the contexts that `rule?` prescribes for the
+children, is such an algorithm.
 <!-- status: open -->
 
 ## Surface elaboration
@@ -1097,12 +1154,13 @@ pub fn let_annotation?(written: Option<Ty>, question?, core: Option<Ty>) := matc
 
 ## Examples
 
-r[types.examples.derivations] spec::types::{EXAMPLE_SYMBOLS, SYMBOLS, bind, row}
+r[types.examples.derivations] spec::types::{EXAMPLE_SYMBOLS, SYMBOLS, bind, row, BOOLEAN_INTEGER, OLDEST_LEVEL_EXAMPLE, LET_EXAMPLE, MATCH_EXAMPLE, CALL_EXAMPLE, PROGRAM_EXAMPLE}
 Each accepted example below gives a Core judgment and a table that types
 it, shown as rows numbered by level; its root, the last row, unfolds to the
-judgment's expression. The Fren check confirms that the table is valid with
-that root's context and type. Further tables, accepted and rejected, at
-least one for each rule, are checked in the chapter's wrapper.
+judgment's expression. The wrapper's theorem `worked_examples` evaluates
+each example's Fren constant and so confirms that the table is valid with
+that root's context and type. The wrapper also checks further tables,
+accepted and rejected, at least one for each rule.
 <!-- status: lean Spec.Language.Types.worked_examples -->
 
 The examples use an enumeration `M::Light` with constructors `Red` and
@@ -1176,7 +1234,13 @@ pub fn row(form: Form, context: Context, ty: Ty): Row := Row { form, context, ty
 | 1 | `M::f(row 0)` | `·` | Integer |
 
 A program whose one function, `M::f`, has the body `#0 + 1` in its parameter
-context `·, Integer`, is well typed.
+context `·, Integer`, is well typed, with this table for the body:
+
+| Row | Layer | Context | Type |
+| --- | --- | --- | --- |
+| 0 | `#0` | `·, Integer` | Integer |
+| 1 | `1` | `·, Integer` | Integer |
+| 2 | `row 0 + row 1` | `·, Integer` | Integer |
 
 ```fren
 pub const BOOLEAN_INTEGER: Context := two(Ty::Boolean, Ty::Integer)
