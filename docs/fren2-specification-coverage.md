@@ -68,12 +68,12 @@ constructors; they move to `spec::syntax` when that chapter lands.
 | `types.context.bound`, `types.context.weakening` | Fren expectations over arbitrary contexts; `lookup_bound` uses Fren's induction |
 | `types.context.indices` | `Spec.Language.Types.lookup_nearest` proves level lookup equals production nearest-first lookup at index `\|Γ\| - 1 - i` |
 | `types.symbols.lookup` | Fren expectation: a new binding determines its item and leaves others unchanged |
-| `types.operator.unary-unique`, `types.operator.binary-unique` | Fren expectations for result uniqueness at fixed operand types |
-| `types.layer.unique-*` (ten forms) | One Fren expectation per form, for arbitrary symbol environments, contexts and child judgments |
-| `types.layer.context-*` (six forms) | One Fren expectation per form for exact child contexts, including let extension and binder-free match arms |
+| `types.layer.operators`, `types.operator.unary-unique`, `types.operator.binary-unique` | Fren expectations for result uniqueness at fixed operand types |
+| `types.layer.determinism`, `types.layer.unique-*` (ten forms) | One Fren expectation per form, for arbitrary symbol environments, contexts and child judgments |
+| `types.layer.context`, `types.layer.context-*` (six forms) | One Fren expectation per form for exact child contexts, including let extension and binder-free match arms |
 | `types.layer.children-each` | Fren expectation, by induction over the child sequence |
 | `types.layer.arms-each`, `types.layer.call-arity` | `Spec.Language.Types.arms_each` and `argument_types_length`, by induction in Lean |
-| `types.value.examples` | Fren expectation for the arithmetic meaning examples |
+| `types.value.examples` | Fren expectation for the stated arithmetic examples only; the general operator meanings are not checked here |
 | `types.operator.unary`, `types.operator.binary` | `Spec.Language.Types.core_unary` and `core_binary` prove agreement with the actual generic primitives for every operator and arbitrary canonical identities |
 | `types.primitive.compatibility`, `types.primitive.unary`, `types.primitive.binary` | Existing universal `impl` proofs of the primitive contracts |
 | Context lookup | `local_type_unique` and `local_type_scoped` prove actual production binding laws |

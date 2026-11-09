@@ -414,6 +414,11 @@ contexts and child judgments. Its evidence is a Fren expectation checked by
 the solver, or, where it needs induction over a snoc sequence, a theorem in
 the chapter's wrapper.
 
+r[types.layer.operators] spec::types::{unique_unary_operator, unique_binary_operator}
+Each unary or binary operator has at most one result type for fixed operand
+types. The two rules below state it for each kind of operator.
+<!-- status: smt -->
+
 r[types.operator.unary-unique] spec::types::unique_unary_operator
 A unary operator has at most one result type for a fixed operand type.
 <!-- status: smt -->
@@ -432,8 +437,11 @@ expect unique_binary_operator(op: BinaryOp, left: Ty, right: Ty, a: Ty, b: Ty) {
 }
 ```
 
-For fixed Σ, Γ and child judgments, a layer of each form has at most one
-type: if it satisfies its rule at τ and at υ, then τ = υ.
+r[types.layer.determinism] spec::types::{unique_boolean, unique_integer, unique_local, unique_constructor, unique_unary, unique_binary, unique_call, unique_let, unique_conditional, unique_match}
+For fixed Σ, Γ and child judgments, a layer has at most one type: if it
+satisfies its rule at τ and at υ, then τ = υ. The rules below state it for
+each form of `ExprF`.
+<!-- status: smt -->
 
 r[types.layer.unique-boolean] spec::types::unique_boolean
 A Boolean literal layer has at most one type.
@@ -558,8 +566,11 @@ expect unique_match(
 }
 ```
 
+r[types.layer.context] spec::types::{context_unary, context_binary, context_call, context_let, context_conditional, context_match}
 Each child's context is fixed by its position: every ordinary child uses Γ,
-and only a let body extends it.
+the body of a let uses exactly `Γ, σ` for its value's type σ, and match arms
+introduce no binder. The rules below state it for each form with children.
+<!-- status: smt -->
 
 r[types.layer.context-unary] spec::types::context_unary
 A unary operand uses Γ.
@@ -798,9 +809,11 @@ This condition does not restrict their typing rule.
 <!-- status: definition -->
 
 r[types.value.examples] spec::types::meaning_examples
-Addition and subtraction have their integer meanings within their domain,
-division and remainder are Euclidean, and a zero divisor is outside the
-domain of both.
+Checked examples of arithmetic meaning: `n + 1` is addition for every n,
+`7 - 2` is not `-5`, `-9 div -2 = 5` and `-9 mod -2 = 1` are Euclidean, and
+a zero divisor is outside the domain of division and remainder. These are
+examples, not the general meaning, which the
+[expressions chapter](Expressions.md) states.
 <!-- status: smt -->
 
 ```fren
