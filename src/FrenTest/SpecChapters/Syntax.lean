@@ -847,7 +847,8 @@ def keptTokens (source : String) : List String := Id.run do
     else out := out.push t.text
   return out.toList
 
-/-- A seeded pseudo-random well-formed tree of at most `depth` levels. -/
+/-- A seeded pseudo-random well-formed tree whose leaves are at most `depth`
+nodes below its root, so of at most `depth + 1` levels. -/
 partial def randomTree (seed : Nat) : Nat → Tree × Nat
   | 0 => let s := lcg seed
     (match s / 2 ^ 33 % 4 with
@@ -1043,10 +1044,10 @@ tree; the text with every subtree in parentheses, trailing commas and leading
 zeros has the same tree; conversely, the text of the tree of an accepted
 expression has that expression's tokens, apart from pairs of parentheses,
 trailing commas and leading zeros; and ill-formed trees do not come back.
-Bounded: 1000 seeded random trees of depth at most 5, every pair of binary
+Bounded: 1000 seeded random trees of at most six levels, every pair of binary
 operators and every unary operator around binary operands, and seven
 ill-formed trees; the converse on those trees' texts in full parentheses and
-on the texts near those of 300 more random trees of depth at most 4. -/
+on the texts near those of 300 more random trees of at most five levels. -/
 def roundtrip_agrees : Bool := Id.run do
   let x := Tree.name ["x"]
   let y := Tree.name ["y"]
@@ -1132,9 +1133,11 @@ def randomDecl (seed : Nat) : spec.surface.DeclarationF Tree × Nat := Id.run do
 /-- `parsing.grammar.declaration-trees`: a generated declaration tree is
 well formed and, printed and parsed, gives back that tree, field for field.
 The trees are generated independently of the parser. Bounded: 1000 seeded
-random files of one to three declarations, with and without trailing commas,
-and eight ill-formed declaration trees, which the chapter's
-`declaration_well_formed?` must refuse. -/
+random files of one to three declarations, with and without trailing commas;
+seven ill-formed declaration trees, which the chapter's
+`declaration_well_formed?` must refuse; and one whose only fault is its body,
+a call without arguments, which `declaration_well_formed?` accepts and
+`node_well_formed?` must refuse. -/
 def declarations_agree : Bool := Id.run do
   let x := Tree.name ["x"]
   let p : spec.surface.Parameter := ⟨"x", some .Integer⟩
@@ -1145,9 +1148,14 @@ def declarations_agree : Bool := Id.run do
     .Function (.mk! false "f" (Fren.Seq.ofList []) .Integer x),
     .Function (.mk! false "f" (Fren.Seq.ofList [⟨"y", none⟩]) .Integer x),
     .Function (.mk! false "f" (Fren.Seq.ofList [p]) (.Named (Fren.Seq.ofList ["Bool"])) x),
-    .Function (.mk! false "f" (Fren.Seq.ofList [p]) .Integer (.call ["g"] [])),
     .Expectation (.mk! "e" (Fren.Seq.ofList []) (Fren.Seq.ofList [.mk! .Expect "then" x]))]
-  if illFormed.any declWellFormed then return false
+  if illFormed.any fun d => spec.surface.«declaration_well_formed?» (mapDecl (fun _ => .Elided) d) then
+    return false
+  let illBody : spec.surface.DeclarationF Tree :=
+    .Function (.mk! false "f" (Fren.Seq.ofList [p]) .Integer (.call ["g"] []))
+  unless spec.surface.«declaration_well_formed?» (mapDecl (fun _ => .Elided) illBody) &&
+      !declWellFormed illBody do
+    return false
   let mut seed := 9091
   for _ in [:1000] do
     let mut decls := []

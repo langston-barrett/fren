@@ -21,8 +21,8 @@ function per typing rule with a small figure, derivation tables and what a
 table's root unfolds to, the judgment over tables, declarations and
 programs, the metatheory, a marked surface-elaboration section and
 examples. It contains no Lean code. The [style guide](../src/Spec/dev/Style.md)
-specifies the chapter template. This is the pilot; the rest of the reference
-has not yet adopted it.
+specifies the standard, of which this chapter is an example and not a
+template. Most of the reference has not yet adopted it.
 
 Evidence is Fren's own. A property the solver proves is an `expect`. A
 property proved in Lean is a procedure bound by an `impl` in the wrapper,
@@ -35,11 +35,12 @@ trusted: `spec::types::expression_uniqueness`
 ```
 
 The one `trusted` procedure is the open `types.derivation.unique-expression`,
-whose claim's reason starts `open:`. Types.md, Expressions.md and the THIR
+whose claim's reason starts `open:`. Types.md, Expressions.md,
+LexicalStructure.md, Syntax.md, AstAndParsing.md and the THIR
 chapter are the converted chapters: their wrappers trace with `trusted` as the required
 level, so a property that loses its evidence fails `lake build --wfail`,
-and the `ruleReqs` job checks that they do. It also checks, for Types.md
-and Expressions.md, that every Fren item is linked by the nearest rule
+and the `ruleReqs` job checks that they do. It also checks, for all of
+them but the THIR chapter, that every Fren item is linked by the nearest rule
 before it and every linking rule is followed by its Fren. The THIR
 chapter's correspondence theorems over production Lean types are named in
 its prose: Fren cannot state them as procedures. The other Spec chapters
@@ -78,8 +79,8 @@ are not yet converted.
   claims as disjunctions: the solver proves them, but cannot exhibit a typed
   match with an opaque earlier arm sequence, which a guarded claim's vacuity
   check needs.
-- **Operator enums.** `UnaryOp` and `BinaryOp` use the Syntax chapter's names
-  and constructors and move to `spec::syntax` when that chapter lands.
+- **Operator enums.** `UnaryOp` and `BinaryOp` are the Syntax chapter's, in
+  `spec::surface`, which the Types and Expressions chapters import.
 - **Undecidable parts.** The chapter has no `undecidable` opt-out; this is
   a consequence of the representation, not a rule.
 - **Evidence for Lean-proved laws.** A law that Lean proves has, as a
@@ -1433,11 +1434,13 @@ checks that each rule of the three chapters links the Fren items after it:
   parentheses changes the tree, and a text that parses to a tree has the
   tokens of its printed text once redundant parentheses, trailing commas
   and leading zeros are removed, on 1000 seeded random trees, every
-  operator pair and the texts near 300 trees (`roundtrip_agrees`); not
+  operator pair and the texts near 300 trees, of at most six and five
+  levels (`roundtrip_agrees`); not
   proved for all trees.
-- [ ] Every generated declaration is well formed by
-  `declaration_well_formed?`, and eight ill-formed declaration trees and
-  seven ill-formed expression trees are not (`declarations_agree`,
+- [ ] Every generated declaration is well formed;
+  `declaration_well_formed?` refuses seven ill-formed declaration trees,
+  and `node_well_formed?` seven ill-formed expression trees and the
+  ill-formed body of an eighth declaration (`declarations_agree`,
   `roundtrip_agrees`).
 - [ ] The limits of today's Fren that the chapters work around: a
   `forall` inside `and` or a match arm needs parentheses, a structure
