@@ -175,7 +175,7 @@ def runCheckerEntryControls : IO Unit := do
 /-- Source-site confirmation is checked separately from raw solver answers.
 The end-to-end corpus job also checks the public command's exit classes. -/
 def runDefinednessControls : IO Unit := do
-  for op in ["div", "mod"] do
+  for op in ["div", "%"] do
     for (label, text, expected) in [
         ("unrelated", s!"fn half(n: Int): Int := n {op} 2\nexpect c(a: Int) \{ expect good: a = a }", Verdict.verified),
         ("zero", s!"expect c(d: Int) \{ assume zero: d = 0 expect bad: 1 {op} d = 0 }", .refuted),
@@ -225,7 +225,7 @@ def runDefinednessControls : IO Unit := do
   -- reach confirmation through an admitted program.
   require (confirmAssignment p i #[.enum enumItem.id ctor] == .rejected "source site is unreachable")
     "unreachable match site not rejected"
-  let p ← load "mod sites\nexpect c(d: Int) { assume z: d = 0 expect bad: 1 mod d = 0 }"
+  let p ← load "mod sites\nexpect c(d: Int) { assume z: d = 0 expect bad: 1 % d = 0 }"
   let .ok out := produce p | throw (IO.userError "premise control production")
   let some i := out.queries.findIdx? (fun q => isNonzero ⟨q, .sat, none⟩)
     | throw (IO.userError "mod question missing")

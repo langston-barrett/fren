@@ -1,3 +1,3 @@
 -- verdict: refuted exit: 1
 mod corpus
-expect c(d: Int) { assume three: d = 3 expect bad: let x := d - 3 in let y := x + 0 in 5 mod y = 0 }
+expect c(d: Int) { assume three: d = 3 expect bad: let x := d - 3 in let y := x + 0 in 5 % y = 0 }
