@@ -183,8 +183,8 @@ well formed, every constructor's owner is an enumeration that lists it, and
 every enumeration lists distinct constructors, each bound as a constructor
 of that enumeration. In the figure, `Σ' ⊢ Σ ok` checks the bindings of
 Σ against the whole environment Σ', as `bindings_ok?(Σ', Σ)` does,
-x ∉ Σ says that Σ binds no x, and an enumeration may list no constructors
-(n + 1 = 0).
+x ∉ Σ says that Σ binds no x, and the list c₀, …, cₙ of an enumeration's
+constructors may be empty.
 
 ```text
                 Σ' ⊢ Σ ok   x ∉ Σ   Σ' ⊢ Δ ok   Σ' ⊢ τ ok
