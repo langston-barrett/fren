@@ -19,8 +19,15 @@ private def allowed : List (String × List String) :=
    ("FrenLir", base ++ ["FrenMir"]), ("FrenOir", base ++ ["FrenLir"]),
    ("FrenParse", base ++ ["FrenAst"]),
    ("FrenAstToHir", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenParse"]),
-   ("FrenHirToThir", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenAstToHir"]),
-   ("FrenThirDesugar", base ++ ["FrenModule", "FrenExpr", "FrenHirToThir"]),
+   -- The design's rule: its IRs only, never another pass. The legacy Resolved
+   -- typing reads the syntax tree that Resolved retains, hence FrenAst.
+   ("FrenHirToThir", base ++ ["FrenAst", "FrenModule", "FrenExpr"]),
+   -- The walking skeleton's whole-pipeline adapter: re-admission re-runs the
+   -- resolver and the source entry runs the parser. It is the one place that
+   -- composes passes, so that FrenHirToThir itself imports none.
+   ("FrenWalking", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenParse", "FrenAstToHir",
+     "FrenHirToThir"]),
+   ("FrenThirDesugar", base ++ ["FrenModule", "FrenExpr", "FrenWalking"]),
    -- This walking producer consumes the actual checked desugaring witness.
    ("FrenThirToMir", base ++ ["FrenModule", "FrenExpr", "FrenMir", "FrenThirDesugar"]),
    ("FrenMirToMono", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
@@ -33,12 +40,31 @@ private def allowed : List (String × List String) :=
    ("FrenOirToSmt", base ++ ["FrenOir", "FrenLir", "FrenModule", "FrenLirToOir", "FrenEval"]),
    -- The walking adapter proves admission with the actual checked producer.
    -- This dependency does not prescribe the future generic evaluator boundary.
-   ("FrenEval", base ++ ["FrenModule", "FrenExpr", "FrenMir", "FrenHirToThir"]),
+   ("FrenEval", base ++ ["FrenModule", "FrenExpr", "FrenMir", "FrenWalking"]),
    ("FrenLirEval", base ++ ["FrenLir"]),
    ("FrenGen", base ++ ["FrenProp"] ++ ir),
    ("FrenCli2", []), ("FrenHosted2", [])]
 
 private def roots : List String := allowed.map Prod.fst
+
+private def passes : List String :=
+  ["FrenParse", "FrenAstToHir", "FrenHirToThir", "FrenWalking", "FrenThirDesugar", "FrenThirToMir",
+   "FrenMirToMono", "FrenMonoToFo", "FrenFoToFlat", "FrenMirToLean", "FrenFlatToLir",
+   "FrenLirToOir", "FrenOirToSmt"]
+
+/-- Every library reachable through the allowed table, the root excluded. -/
+private def reach (root : String) : List String := Id.run do
+  let mut seen : List String := []
+  let mut todo := (allowed.lookup root).getD []
+  for _ in [:allowed.length * allowed.length + 1] do
+    match todo with
+    | [] => return seen
+    | next :: rest =>
+      todo := rest
+      unless seen.contains next do
+        seen := next :: seen
+        todo := todo ++ (allowed.lookup next).getD []
+  return seen
 private def tests : List String := roots.map (· ++ "Tests")
 
 -- Extend the existing inventory with its test support and default-build shim.
@@ -64,6 +90,9 @@ private def permits (owner imported : String) : Bool := Id.run do
   if owner == "FrenThirToMirTests" && ["Plausible", "FrenEval"].contains imported then return true
   if owner == "FrenTest.Fren2Typing" then return imported == "FrenHirToThirTests"
   if owner == "FrenTest.Fren2Resolver" then return imported == "FrenAstToHirTests"
+  -- Legacy-adapter tests, and agreement of the separated pass with the
+  -- existing checker on printed programs, need the walking pipeline.
+  if owner == "FrenHirToThirTests" && imported == "FrenWalking" then return true
   if ["FrenProp", "FrenAstToHirTests", "FrenHirToThirTests", "FrenEvalTests", "FrenThirDesugarTests"].contains owner && imported == "Plausible" then return true
   if owner == "FrenTextTests" then return false
   if owner == "FrenTextTestsTests" then return imported == "FrenTextTests"
@@ -97,7 +126,21 @@ private def permits (owner imported : String) : Bool := Id.run do
 #guard !permits "FrenThirToMir" "FrenEval"
 #guard !permits "FrenMir" "FrenThirDesugar"
 #guard !permits "FrenMir" "FrenEval"
-#guard permits "FrenEval" "FrenHirToThir"
+#guard permits "FrenEval" "FrenWalking"
+#guard !permits "FrenEval" "FrenHirToThir"
+-- HIR→THIR imports its IRs and no pass, directly or through what it may import.
+#guard !permits "FrenHirToThir" "FrenAstToHir"
+#guard !permits "FrenHirToThir" "FrenParse"
+#guard !permits "FrenHirToThir" "FrenWalking"
+#guard permits "FrenHirToThir" "FrenModule"
+#guard (reach "FrenHirToThir").all (!passes.contains ·)
+#guard (reach "FrenWalking").contains "FrenAstToHir"
+-- The tests reach the parser and resolver only through the walking adapter
+-- (legacy tests and the agreement test), never by a direct import.
+#guard !permits "FrenHirToThirTests" "FrenParse"
+#guard !permits "FrenHirToThirTests" "FrenAstToHir"
+#guard permits "FrenHirToThirTests" "FrenWalking"
+#guard (reach "FrenWalking").contains "FrenParse"
 #guard permits "FrenEvalTests" "Plausible"
 #guard !permits "FrenEval" "Plausible"
 #guard !permits "FrenEval" "FrenCore"

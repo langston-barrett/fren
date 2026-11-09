@@ -58,6 +58,18 @@ AST alongside resolved occurrence information instead of duplicating token
 storage. Every consumer must be able to obtain the resolved target at each
 semantic name occurrence without running lookup again.
 
+The resolver's source-indexed result is also read into the shared expression
+representation, a module of HIR expressions with one recursive datatype for
+every phase from HIR to `flat`. There a local is its index, an item is its
+canonical identity, and every surface form, parentheses included, is still a
+node. Each node keeps an origin for messages: the span of its first token,
+and for a binder its written name. The separated type checker,
+`FrenHirToThir.Pass.typeModule`, takes this module as its whole input: it
+does not read source text or run the parser or the resolver again. The
+walking pipeline's checker, which later passes still consume, keeps its
+admission boundary, which re-runs the resolver; that boundary lives in the
+`FrenWalking` library, outside the type-checking pass.
+
 **Proof obligations**
 
 r[hir.references.total]

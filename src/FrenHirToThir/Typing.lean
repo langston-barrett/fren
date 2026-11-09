@@ -42,12 +42,4 @@ inductive HasValue (r : Resolved) (sigs : Array Signature) : TypeContext → Exp
       (∀ arm ∈ arms.toList, HasValue r sigs ctx arm.2.2.1 ty) →
       HasValue r sigs ctx (.matchE m scrutinee o arms c) ty
 
-/-- This is the remaining universal traversal soundness obligation. Native
-cases/Plausible test actual successful and failing traversals; they do not
-turn this proposition into a theorem. Admission, erasure, primitive decisions,
-local lookup and determinism have separate genuine proofs. -/
-def TypingSound : Prop := ∀ input out, check input = .ok out →
-  ∀ body ∈ out.bodies.toList,
-    HasValue input out.signatures body.context body.expression body.type
-
 end FrenHirToThir

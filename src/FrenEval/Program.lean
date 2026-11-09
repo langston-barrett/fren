@@ -1,6 +1,6 @@
 module
 
-public import FrenHirToThir.Walking
+public import FrenWalking
 public import FrenEval.Value
 
 public section

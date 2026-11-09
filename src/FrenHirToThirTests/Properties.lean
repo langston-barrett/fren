@@ -1,111 +1,129 @@
 module
 
-public import FrenHirToThirTests.Support
-import Plausible
+public import FrenHirToThirTests.Printer
+public import Plausible
+
+/-! Property tests of the separated HIR→THIR pass on generated input of its
+own IR, under Plausible. A case is a THIR module that is well typed by
+construction, or one with a single injected fault; the HIR input is its
+erasure. No property has a premise, so nothing is discarded; the census
+reports what the samples covered. -/
 
 public section
 namespace FrenHirToThirTests
-open FrenAst FrenModule FrenHirToThir FrenExpr Plausible
+open FrenExpr FrenModule.Core FrenHirToThir.Pass FrenGen.Thir Plausible
 open scoped Plausible.Decorations
 
-/-- Small recursive source trees, not a second IR/typechecker. Every branch
-has a known Int result; targeted perturbations require rejected traversals. -/
-private def tree : Nat → Nat → String
-  | 0, n => if n % 2 == 0 then "x" else toString (n % 23)
-  | depth + 1, n =>
-    let a := tree depth (n / 3)
-    let b := tree depth (n / 3 + 7)
-    match n % 5 with
-    | 0 => s!"({a} + {b})"
-    | 1 => s!"(if true then {a} else {b})"
-    | 2 => s!"(let x := {a} in {b})"
-    | 3 => s!"(match E::A \{ E::A => {a}, E::B => {b} })"
-    | _ => s!"(let b? := false in if b? then {a} else {b})"
+instance : Repr Case where
+  reprPrec c _ := Fren.Sexp.pretty (c.thir.toSexp true) ++
+    s!"\nexpected: {repr c.expected}\nsource:\n{Printer.module c.hir}"
 
-structure Counts where
-  admission : Nat := 0
-  rejectedAdmission : Nat := 0
-  signatures : Nat := 0
-  rejectedSignature : Nat := 0
-  lookupHit : Nat := 0
-  lookupMiss : Nat := 0
-  success : Nat := 0
-  failure : Nat := 0
-  deriving Repr
+/-- Plausible's own generator as the generator's source of choices. -/
+def gen (fault : Option Fault) : Gen Case := Gen.sized fun size => do
+  let pick (n : Nat) : Gen Nat := do
+    let k ← Gen.choose Nat 0 (n - 1) (by omega)
+    pure k.val
+  return (← genCaseRetry pick size fault 8).1
 
-private def sample (n file : Nat) : Option Counts := do
-  let good := tree (n % 3 + 1) n
-  let prelude := "mod m\nenum E { A, B }\nfn f(x: Int): Int := "
-  let sources := [(prelude ++ good, true, true), (prelude ++ "x", true, true),
-    (prelude ++ s!"if true then {good} else false", true, false),
-    (prelude ++ "match E::A {}", true, false),
-    ("mod m\nfn f(b?: Int): Int := b?", false, false)]
-  let mut counts : Counts := {}
-  for (source, signatureOK, success) in sources do
-    let .ok doc := FrenParse.parseFile ⟨file⟩ source | none
-    let .ok r := FrenAstToHir.resolve doc | none
-    let .ok a := admit r | none
-    if a.val != r then none else pure ()
-    counts := {counts with admission := counts.admission + 1}
-    match signatures r with
-    | .ok _ =>
-      if !signatureOK then none else pure ()
-      counts := {counts with signatures := counts.signatures + 1}
-    | .error _ =>
-      if signatureOK then none else pure ()
-      counts := {counts with rejectedSignature := counts.rejectedSignature + 1}
-    match check r with
-    | .ok t =>
-      if !success || !localsRetained t || t.resolved != r || t.bodies.size != 1 ||
-          (t.bodies[0]?).map (·.type) != some .int then none else pure ()
-      counts := {counts with success := counts.success + 1}
-      for b in t.bodies do
-        for o in nameOccurrences b do
-          if let .name p := o.expression then
-            if let some ref := r.referenceAt p.head.slice then
-              if let .local i := ref.target then
-                let some ty := localType o.context i | none
-                if o.type != .value ty then none else pure ()
-                counts := {counts with lookupHit := counts.lookupHit + 1}
-                if (localType o.context o.context.length).isSome then none else pure ()
-                counts := {counts with lookupMiss := counts.lookupMiss + 1}
-    | .error d =>
-      if success || d.headline.isEmpty then none else pure ()
-      counts := {counts with failure := counts.failure + 1}
-    -- An actual partial public table must fail admission, including a table
-    -- from an ill-typed body. No supplied Boolean exempts this control.
-    if (check {r with references := #[]}).isOk then none else pure ()
-    counts := {counts with rejectedAdmission := counts.rejectedAdmission + 1}
-  return counts
+structure WellTyped where
+  case : Case
 
-private def audit (n file : Nat) : Bool :=
-  match sample n file with
-  | none => false
-  | some c => c.admission == 5 && c.rejectedAdmission == 5 && c.signatures == 4 &&
-    c.rejectedSignature == 1 && c.success == 2 && c.failure == 3 && c.lookupHit > 0 && c.lookupMiss > 0
+structure Faulty where
+  case : Case
 
-private def checkProperty (p : Prop)
+instance : Repr WellTyped := ⟨fun c n => reprPrec c.case n⟩
+instance : Repr Faulty := ⟨fun c n => reprPrec c.case n⟩
+instance : Shrinkable WellTyped := {}
+instance : Shrinkable Faulty := {}
+instance : Arbitrary WellTyped := ⟨(⟨·⟩) <$> gen none⟩
+instance : Arbitrary Faulty where
+  arbitrary := do
+    let k ← Gen.choose Nat 0 (Fault.all.length - 1) (by decide)
+    (⟨·⟩) <$> gen (Fault.all[k.val]?)
+
+/-- The reason the pass must give for an injected fault. -/
+def _root_.FrenGen.Thir.Outcome.reason : Outcome → Reason
+  | .mismatch e f => .mismatch e f
+  | .notValue id => .notValue id
+  | .notCallable id => .notCallable (.item id)
+  | .arity e f => .arity e f
+  | .dangling i => .danglingLocal i
+  | .matchNotEnum f => .matchNotEnum f
+  | .emptyMatch => .emptyMatch
+
+def exact (a b : Thir) : Bool := a.toSexp true == b.toSexp true
+def exactHir (a b : Hir) : Bool := a.toSexp true == b.toSexp true
+
+/-- Typing recovers exactly the generated typing (every node's type and every
+decision, origins included), and erasing the result gives back the input. -/
+def recovers (c : Case) : Bool :=
+  match typeModule c.hir with
+  | .ok out => exact out c.thir && exactHir out.eraseTypes c.hir
+  | .error _ => false
+
+/-- A faulty case is rejected at the injected node with the injected reason;
+a case whose fault found no site is well typed and recovered. -/
+def rejects (c : Case) : Bool :=
+  match c.expected with
+  | some e => match typeModule c.hir with
+    | .error got => got == ⟨e.item, e.origin, e.outcome.reason⟩
+    | .ok _ => false
+  | none => recovers c
+
+/-- Origins are message data only: moving every origin up by `k` (with `k`
+unnamed entries in front of each table) and renaming every origin moves the
+outcome's origins by `k` and changes nothing else. -/
+def shiftExpr (k : Nat) : Expr p → Expr p :=
+  Expr.fold fun o a n => ⟨o + k, a, match n with
+    | .letE b v e => .letE {b with origin := b.origin + k} v e
+    | .matchE s arms => .matchE s (arms.map fun (pat, e) => ({pat with origin := pat.origin + k}, e))
+    | n => n⟩
+
+def shiftParam (k : Nat) (q : Param) : Param := {q with origin := q.origin + k}
+
+def shiftTable (k : Nat) (os : Array Origin) : Array Origin :=
+  Array.replicate k ({} : Origin) ++ os.map fun o => {o with name := some "renamed"}
+
+def shiftItem (k : Nat) : Item (Expr p) → Item (Expr p)
+  | .enum e os => .enum {e with origin := e.origin + k} (shiftTable k os)
+  | .function f os =>
+    let f' : Function (Expr p) := ⟨f.id, f.origin + k, f.params.map (shiftParam k), f.result,
+      shiftExpr k f.body⟩
+    .function f' (shiftTable k os)
+  | .check c os =>
+    let members := c.members.map fun mem =>
+      ({mem with origin := mem.origin + k, body := shiftExpr k mem.body} : Member (Expr p))
+    .check ⟨c.id, c.origin + k, c.params.map (shiftParam k), members⟩ (shiftTable k os)
+
+def shiftModule (k : Nat) (m : Module (Expr p)) : Module (Expr p) := ⟨m.id, m.items.map (shiftItem k)⟩
+
+def originBlind (k : Nat) (c : Case) : Bool :=
+  match typeModule c.hir, typeModule (shiftModule k c.hir) with
+  | .ok a, .ok b => exact (shiftModule k a) b
+  | .error a, .error b => b == {a with origin := a.origin + k}
+  | _, _ => false
+
+/-- Generated input is well scoped exactly when no dangling local was injected. -/
+def scopedUnlessDangling (c : Case) : Bool :=
+  c.hir.scoped == (c.expected.map (·.fault) != some .dangling)
+
+private def property (label : String) (p : Prop)
     (decorated : Decorations.DecorationsOf p := by mk_decorations) [Testable decorated] : IO Unit := do
-  let report ← Testable.checkIO decorated {numInst := 100, maxSize := 40, randomSeed := some 20261109}
-  IO.println s!"actual walking typing Plausible: {report}"
+  let report ← Testable.checkIO decorated {numInst := 500, maxSize := 12, randomSeed := some 20261109}
+  IO.println s!"{label}: {report}"
   match report with
   | .success _ => pure ()
-  | _ => throw (IO.userError "walking checker Plausible failure")
+  | _ => throw (IO.userError s!"HIR→THIR property failed: {label}")
 
-/-- Sampled laws about the actual recursive checker. Zero discarded premises;
-each generated sample must include success, typing failure and admission failure. -/
-def runProperties : IO Unit := do
-  checkProperty <| ∀ (n file : Nat), audit n file = true
-  let mut totals : Counts := {}
-  for n in [:24] do
-    let some c := sample n 93 | throw (IO.userError s!"typed census failed at {n}")
-    totals := ⟨totals.admission + c.admission, totals.rejectedAdmission + c.rejectedAdmission,
-      totals.signatures + c.signatures, totals.rejectedSignature + c.rejectedSignature,
-      totals.lookupHit + c.lookupHit, totals.lookupMiss + c.lookupMiss,
-      totals.success + c.success, totals.failure + c.failure⟩
-  require (totals.admission == 120 && totals.rejectedAdmission == 120 && totals.signatures == 96 &&
-    totals.rejectedSignature == 24 && totals.success == 48 && totals.failure == 72 &&
-    totals.lookupHit > 0 && totals.lookupMiss > 0) "actual typing census vacuous"
-  IO.println s!"actual generated traversal census (explicit stage probes, not internal call instrumentation): {repr totals}; discarded=0; finite samples, no universal soundness claim"
+/-- Properties over Plausible-generated modules of the pass's own input IR. -/
+def runGenerated : IO Unit := do
+  property "well-typed THIR erased to HIR: typing recovers it exactly; erasure law" <|
+    ∀ c : WellTyped, recovers c.case = true
+  property "one injected fault: rejected at that node with that reason" <|
+    ∀ c : Faulty, rejects c.case = true
+  property "origins and display names do not affect typing" <|
+    ∀ (c : Faulty) (k : Nat), originBlind k c.case = true
+  property "generator check (not the pass): input is well scoped unless a dangling local was injected" <|
+    ∀ c : Faulty, scopedUnlessDangling c.case = true
 
 end FrenHirToThirTests
