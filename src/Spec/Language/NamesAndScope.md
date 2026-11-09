@@ -16,8 +16,6 @@ listed in [AST and parsing](../Compiler/AstAndParsing.md#source-forms).
 The end-to-end programs use non-recursive functions. Resolving a
 reference alone does not establish non-recursion.
 
-**Proof obligations**
-
 r[names.walking.domain]
 Resolution of this source domain accepts one complete file in the source domain
 and reports unsupported module structure before treating it as resolved.
@@ -62,8 +60,6 @@ Bruijn index into that exact context, as in the
 [binding contracts](../Compiler/Bindings.md#contexts-and-scope). An index
 is not an item identity or a globally stable number for a binder.
 
-**Proof obligations**
-
 r[names.locals.parameters]
 All parameters are in scope in their function body or every member body of
 their global expectation, with the last written parameter at index zero.
@@ -101,8 +97,6 @@ context is `[y, x]`: its uses are indices 1 and 0. The body's context is
 A *qualified path* has segments separated by `::`. Looking up the head
 selects a declaration; each following segment selects a member of that
 declaration. Qualification does not search for an unrelated matching suffix.
-
-**Proof obligations**
 
 r[names.paths.head]
 An expression path resolves its head among nearest locals, module items,
@@ -145,8 +139,6 @@ constrained from its raw inputs; no caller-supplied "resolved" or "valid"
 Boolean is assumed. They define equality and nearest-slot decisions used by the local-context
 rules; the arbitrary-context closure is specified by the Lean obligation
 listed in the development coverage document.
-
-**Dynamic semantics**
 
 r[names.primitive.nearest] spec::names::nearest_two::{meaning, newest, older, absent, shadowed}
 In a two-slot nearest-first context, lookup returns the first equal name,
