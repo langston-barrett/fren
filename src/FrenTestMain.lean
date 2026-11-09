@@ -1152,7 +1152,10 @@ def specReadingOrder : IO (Array FilePath) := do
   for d in dirs do
     let index ← if ← (d / "index.md").pathExists then IO.FS.readFile (d / "index.md") else pure ""
     let inDir := files.filter (·.parent.getD "" == d)
-    let key (f : FilePath) : Nat := (indexRank index (f.fileName.getD "")).getD inDir.size
+    -- Every linked chapter, whatever its link's position, precedes every unlinked one.
+    let key (f : FilePath) : Nat := match indexRank index (f.fileName.getD "") with
+      | some r => r
+      | none => Nat.pow 2 32
     out := out ++ inDir.qsort fun a b => key a < key b || (key a == key b && a.toString < b.toString)
   return out
 
