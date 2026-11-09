@@ -66,17 +66,74 @@ def BodyTyping (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
   ∀ body ∈ out.bodies.toList,
     FrenHirToThir.HasValue input out.signatures body.context body.expression body.type
 
-/-- Every written value or callee occurrence has the exact context and meaning. -/
+/-- Callable meaning propagates through retained callee parentheses. -/
+inductive HasCallable (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+    FrenModule.TypeContext → FrenAst.Expr → FrenModule.Signature → Prop where
+  | name : FrenHirToThir.Selects input ctx path .expression (.item sig.id) →
+      FrenHirToThir.signatureAt sigs sig.id = some sig →
+      HasCallable input sigs ctx (.name path) sig
+  | paren : HasCallable input sigs ctx e sig →
+      HasCallable input sigs ctx (.paren o e c) sig
+
+def OccurrenceMeaning (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature)
+    (occurrence : FrenModule.TypedOccurrence) : Prop :=
+  match occurrence.type with
+  | .value ty => FrenHirToThir.HasValue input sigs occurrence.context occurrence.expression ty
+  | .callable sig => HasCallable input sigs occurrence.context occurrence.expression sig
+
+/-- Ordered immediate children. Pattern paths and binder tokens are not expressions. -/
+inductive WrittenChildren (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+    FrenModule.TypeContext → FrenAst.Expr →
+      List (FrenModule.TypeContext × FrenAst.Expr) → Prop where
+  | bool : WrittenChildren r sigs ctx (.bool t b) []
+  | integer : WrittenChildren r sigs ctx (.integer t n) []
+  | name : WrittenChildren r sigs ctx (.name p) []
+  | paren : WrittenChildren r sigs ctx (.paren o e c) [(ctx, e)]
+  | unary : WrittenChildren r sigs ctx (.unary t op e) [(ctx, e)]
+  | binary : WrittenChildren r sigs ctx (.binary a t op b) [(ctx, a), (ctx, b)]
+  | call : WrittenChildren r sigs ctx (.call f o args commas c)
+      ((ctx, f) :: args.toList.map (ctx, ·))
+  | ifE : WrittenChildren r sigs ctx (.ifE i b t yes e no)
+      [(ctx, b), (ctx, yes), (ctx, no)]
+  | letE : FrenHirToThir.HasValue r sigs ctx value vt →
+      WrittenChildren r sigs ctx (.letE l name assign value i body)
+        [(ctx, value), ((name, vt) :: ctx, body)]
+  | matchE : WrittenChildren r sigs ctx (.matchE m scrutinee o arms c)
+      ((ctx, scrutinee) :: arms.toList.map (fun arm => (ctx, arm.2.2.1)))
+
+mutual
+  /-- One entry per structural visit, after all ordered child entries. No key deduplication. -/
+  inductive OccurrenceOrder (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+      FrenModule.TypeContext → FrenAst.Expr → List FrenModule.TypedOccurrence → Prop where
+    | node : WrittenChildren r sigs ctx expr children →
+        OccurrenceForest r sigs children nodes →
+        OccurrenceOrder r sigs ctx expr (nodes ++ [⟨expr, ctx, ty⟩])
+
+  /-- Child subtrees concatenate in written order, retaining their multiplicities. -/
+  inductive OccurrenceForest (r : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
+      List (FrenModule.TypeContext × FrenAst.Expr) → List FrenModule.TypedOccurrence → Prop where
+    | nil : OccurrenceForest r sigs [] []
+    | cons : OccurrenceOrder r sigs ctx expr first →
+        OccurrenceForest r sigs rest remaining →
+        OccurrenceForest r sigs ((ctx, expr) :: rest) (first ++ remaining)
+end
+
+/-- Exact per-body source inventory, including multiplicity and postorder. -/
+def OccurrenceInventory (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
+  ∀ body ∈ out.bodies.toList,
+    OccurrenceOrder input out.signatures body.context body.expression body.occurrences.toList
+
+/-- Both source-to-output coverage and soundness of every output entry. -/
 def OccurrenceTyping (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
-  ∀ body ∈ out.bodies.toList, ∀ ctx expr,
+  (∀ body ∈ out.bodies.toList, ∀ ctx expr,
     AtContext input out.signatures body.context body.expression ctx expr →
     ∃ occurrence ∈ body.occurrences.toList,
       occurrence.expression = expr ∧ occurrence.context = ctx ∧
-      match occurrence.type with
-      | .value ty => FrenHirToThir.HasValue input out.signatures ctx expr ty
-      | .callable sig => ∃ path,
-          expr = .name path ∧ FrenHirToThir.Selects input ctx path .expression (.item sig.id) ∧
-          FrenHirToThir.signatureAt out.signatures sig.id = some sig
+      OccurrenceMeaning input out.signatures occurrence) ∧
+  (∀ body ∈ out.bodies.toList, ∀ occurrence ∈ body.occurrences.toList,
+    AtContext input out.signatures body.context body.expression
+      occurrence.context occurrence.expression ∧
+    OccurrenceMeaning input out.signatures occurrence)
 
 /-- Source declarations determine body owner, result type and parameter context. -/
 inductive DeclaresBody (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
@@ -110,7 +167,8 @@ def BodyInventory (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop 
 def TypePassContract : Prop := ∀ input out, Produces input out →
   FrenHirToThir.Admitted input ∧ out.resolved = input ∧
     FrenHirToThir.signatures input = .ok out.signatures ∧
-    BodyInventory input out ∧ BodyTyping input out ∧ OccurrenceTyping input out
+    BodyInventory input out ∧ BodyTyping input out ∧
+    OccurrenceInventory input out ∧ OccurrenceTyping input out
 
 /-- Coverage quantifies over actual AST descendants, not just a supplied table. -/
 def MatchCoverage (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
@@ -177,6 +235,207 @@ theorem static_factorization (input : FrenModule.Resolved) (out : FrenModule.Typ
 
 theorem body_contract_iff : (∀ input out, Produces input out → BodyTyping input out) ↔
     FrenHirToThir.TypingSound := Iff.rfl
+
+/-- The root is last, independently of how its descendants are typed. -/
+theorem order_root_last (h : OccurrenceOrder r sigs ctx expr nodes) :
+    ∃ children ty, nodes = children ++ [⟨expr, ctx, ty⟩] := by
+  cases h
+  exact ⟨_, _, rfl⟩
+
+theorem order_integer_iff :
+    OccurrenceOrder r sigs ctx (.integer token n) nodes ↔
+      ∃ ty, nodes = [⟨.integer token n, ctx, ty⟩] := by
+  constructor
+  · intro h
+    cases h with
+    | node children forest =>
+      cases children
+      cases forest
+      exact ⟨_, rfl⟩
+  · rintro ⟨ty, rfl⟩
+    exact .node .integer .nil
+
+/-- A structural law for all literal operands, tokens, contexts and inputs. -/
+theorem order_integer_add_iff :
+    OccurrenceOrder r sigs ctx (.binary (.integer a x) op .add (.integer b y)) nodes ↔
+      ∃ lt rt ty, nodes = [⟨.integer a x, ctx, lt⟩, ⟨.integer b y, ctx, rt⟩,
+        ⟨.binary (.integer a x) op .add (.integer b y), ctx, ty⟩] := by
+  constructor
+  · intro h
+    cases h with
+    | node children forest =>
+      cases children
+      cases forest with
+      | cons left rest =>
+        cases rest with
+        | cons right rest =>
+          cases rest
+          obtain ⟨lt, hl⟩ := order_integer_iff.mp left
+          obtain ⟨rt, hr⟩ := order_integer_iff.mp right
+          subst hl; subst hr
+          exact ⟨lt, rt, _, rfl⟩
+  · rintro ⟨lt, rt, ty, rfl⟩
+    exact .node .binary (.cons (.node .integer .nil)
+      (.cons (.node .integer .nil) .nil))
+
+theorem meaning_integer_iff :
+    OccurrenceMeaning r sigs ⟨.integer token n, ctx, ty⟩ ↔ ty = .value .int := by
+  cases ty with
+  | value value =>
+    constructor
+    · intro h
+      cases h
+      rfl
+    · intro h
+      cases h
+      exact FrenHirToThir.HasValue.integer
+  | callable sig =>
+    constructor
+    · intro h
+      cases h
+    · intro h
+      cases h
+
+theorem meaning_integer_add_iff :
+    OccurrenceMeaning r sigs
+      ⟨.binary (.integer a x) op .add (.integer b y), ctx, ty⟩ ↔ ty = .value .int := by
+  cases ty with
+  | value value =>
+    constructor
+    · intro h
+      cases h with
+      | binary left right result =>
+        cases left
+        cases right
+        cases result
+        rfl
+    · intro h
+      cases h
+      exact FrenHirToThir.HasValue.binary .integer .integer rfl
+  | callable sig =>
+    constructor
+    · intro h
+      cases h
+    · intro h
+      cases h
+
+/-- This exact primitive table law follows from the structural and semantic relations. -/
+theorem integer_add_table_iff :
+    (OccurrenceOrder r sigs ctx (.binary (.integer a x) op .add (.integer b y)) nodes ∧
+      ∀ occurrence ∈ nodes, OccurrenceMeaning r sigs occurrence) ↔
+    nodes = [⟨.integer a x, ctx, .value .int⟩, ⟨.integer b y, ctx, .value .int⟩,
+      ⟨.binary (.integer a x) op .add (.integer b y), ctx, .value .int⟩] := by
+  constructor
+  · rintro ⟨order, sound⟩
+    obtain ⟨lt, rt, ty, rfl⟩ := order_integer_add_iff.mp order
+    have hl := meaning_integer_iff.mp (sound ⟨.integer a x, ctx, lt⟩ (by simp))
+    have hr := meaning_integer_iff.mp (sound ⟨.integer b y, ctx, rt⟩ (by simp))
+    have ht := meaning_integer_add_iff.mp (sound ⟨.binary (.integer a x) op .add (.integer b y), ctx, ty⟩ (by simp))
+    subst lt; subst rt; subst ty
+    rfl
+  · intro h
+    subst nodes
+    constructor
+    · exact order_integer_add_iff.mpr ⟨_, _, _, rfl⟩
+    · intro occurrence member
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+      rcases member with rfl | rfl | rfl
+      · exact meaning_integer_iff.mpr rfl
+      · exact meaning_integer_iff.mpr rfl
+      · exact meaning_integer_add_iff.mpr rfl
+
+/-- Actual inference admits the exact table for every integer addition leaf pair. -/
+theorem infer_integer_add (fuel : Nat) (r : FrenModule.Resolved)
+    (sigs : Array FrenModule.Signature) (ctx : FrenModule.TypeContext)
+    (a op b : FrenAst.Token) (x y : Nat) :
+    FrenHirToThir.infer (fuel + 2) r sigs ctx
+      (.binary (.integer a x) op .add (.integer b y)) false =
+      .ok ⟨.value .int, #[⟨.integer a x, ctx, .value .int⟩,
+        ⟨.integer b y, ctx, .value .int⟩,
+        ⟨.binary (.integer a x) op .add (.integer b y), ctx, .value .int⟩]⟩ := by
+  rfl
+
+/-- A genuine producer result satisfies both relations in this primitive case. -/
+theorem inferred_integer_add_contract
+    (h : FrenHirToThir.infer (fuel + 2) r sigs ctx
+      (.binary (.integer a x) op .add (.integer b y)) false = .ok result) :
+    OccurrenceOrder r sigs ctx (.binary (.integer a x) op .add (.integer b y))
+      result.occurrences.toList ∧
+    ∀ occurrence ∈ result.occurrences.toList, OccurrenceMeaning r sigs occurrence := by
+  rw [infer_integer_add] at h
+  cases Except.ok.inj h
+  exact integer_add_table_iff.mpr rfl
+
+/-- A decidable projection of the contract, used on raw production outputs below. -/
+private def occurrenceView (o : FrenModule.TypedOccurrence) :=
+  (o.expression.tokens, o.context, match o.type with
+    | .value ty => some ty
+    | .callable _ => none)
+
+private def integerAddView (body : FrenModule.TypedBody) : Bool :=
+  match body.expression with
+  | .binary (.integer a x) _op .add (.integer b y) =>
+    decide (body.occurrences.toList.map occurrenceView =
+      ([⟨.integer a x, body.context, .value .int⟩,
+        ⟨.integer b y, body.context, .value .int⟩,
+        ⟨body.expression, body.context, .value .int⟩] : List FrenModule.TypedOccurrence).map
+          occurrenceView)
+  | _ => false
+
+/-- Rejection by this projection refutes the full occurrence contract for this body. -/
+private theorem integer_add_view_required
+    (shape : body.expression = .binary (.integer a x) op .add (.integer b y))
+    (order : OccurrenceOrder r sigs body.context body.expression body.occurrences.toList)
+    (sound : ∀ occurrence ∈ body.occurrences.toList, OccurrenceMeaning r sigs occurrence) :
+    integerAddView body = true := by
+  have exactTable := integer_add_table_iff.mp ⟨shape ▸ order, sound⟩
+  simp [integerAddView, shape, exactTable]
+
+/-- The whole output contract entails the tested projection for every such body. -/
+private theorem output_integer_add_view_required
+    (inventory : OccurrenceInventory input out) (typing : OccurrenceTyping input out)
+    (member : body ∈ out.bodies.toList)
+    (shape : body.expression = .binary (.integer a x) op .add (.integer b y)) :
+    integerAddView body = true := by
+  exact integer_add_view_required shape (inventory body member)
+    (fun occurrence present => (typing.2 body member occurrence present).2)
+
+/-- The production lookup uses the full token sequence, scoped to this body. -/
+theorem lookup_tokens (body : FrenModule.TypedBody) (a b : FrenAst.Expr)
+    (h : a.tokens = b.tokens) :
+    FrenHirToThir.occurrenceType body a = FrenHirToThir.occurrenceType body b := by
+  simp only [FrenHirToThir.occurrenceType, h]
+
+-- The checks use actual parse/resolve/type output, then edit its raw occurrence array.
+-- The proved projection above is necessary; these finite checks do not prove TypePassContract.
+#eval show IO Unit from do
+  let source := "pub mod inventory\n\npub fn f(unused: Int): Int := 1 + 2\n\npub fn g(unused: Int): Int := 1 + 2\n"
+  let out ← match FrenHirToThir.checkSource ⟨83⟩ source with
+    | .ok out => pure out
+    | .error d => throw (IO.userError s!"occurrence control source rejected: {repr d}")
+  unless out.bodies.size == 2 do throw (IO.userError "occurrence control bodies missing")
+  for body in out.bodies do
+    unless integerAddView body do throw (IO.userError "valid occurrence inventory rejected")
+    let some first := body.occurrences[0]? | throw (IO.userError "missing first occurrence")
+    let some second := body.occurrences[1]? | throw (IO.userError "missing second occurrence")
+    let wrongType := { first with «type» := .value .bool }
+    let wrongContext := { first with context := [(out.resolved.scope.name, .bool)] }
+    let mutations := #[
+      ("surplus wrong type", body.occurrences.push wrongType),
+      ("surplus wrong context", body.occurrences.push wrongContext),
+      ("duplicate", body.occurrences.push first),
+      ("deleted", body.occurrences.pop),
+      ("wrong type", body.occurrences.set! 0 wrongType),
+      ("wrong context", body.occurrences.set! 0 wrongContext),
+      ("child order", (body.occurrences.set! 0 second).set! 1 first)]
+    for (label, occurrences) in mutations do
+      if integerAddView { body with occurrences } then
+        throw (IO.userError s!"occurrence mutation admitted: {label}")
+  let some firstBody := out.bodies[0]? | throw (IO.userError "missing first body")
+  let some secondBody := out.bodies[1]? | throw (IO.userError "missing second body")
+  if integerAddView { firstBody with occurrences := secondBody.occurrences } then
+    throw (IO.userError "another owner's source sites admitted")
+  IO.println "occurrence controls: 2 production tables accepted; 14 raw mutations and cross-owner substitution rejected"
 
 -- Focused accepted-resolver input and source anchor, not a typing verdict.
 private def enumArithmetic :=
