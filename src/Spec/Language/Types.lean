@@ -1,6 +1,7 @@
 import Fren.Impl
 import Fren.Literate
 import Fren.Trace
+import Spec.Language.Syntax
 
 open Fren.Lang
 

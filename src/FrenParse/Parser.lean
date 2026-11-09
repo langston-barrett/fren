@@ -12,16 +12,6 @@ private structure Cursor where
 
 private def peek (c : Cursor) : Option Token := c.lexed.tokens[c.index]?
 private def hasText (c : Cursor) (text : String) : Bool := (peek c).any (·.text == text)
-/-- Only LF and CRLF end a line in the walking grammar. The decision uses
-actual intervening trivia after the left operand's last token, including
-comments and a closing parenthesis on a later line. -/
-private def newlineBefore (c : Cursor) : Bool :=
-  match peek c, c.lexed.tokens[c.index - 1]? with
-  | some current, some previous =>
-    (c.lexed.tape.extract (previous.slice + 1) current.slice).any
-      (fun piece => piece.text.toList.contains '\n')
-  | _, _ => false
-
 /-- Applications and declaration parameter lists use the source byte boundary,
 not a rendered name or character count. Any trivia breaks adjacency. -/
 private def adjacentBefore (c : Cursor) : Bool :=
@@ -75,7 +65,7 @@ private def parameters (entry : ParameterEntry) (c : Cursor) : Except Diagnostic
   for _ in [:c.lexed.tokens.size + 1] do
     if hasText c ")" then
       match entry with
-      | .functionGroup => fail c "a function parameter"
+      | .functionGroup => if values.isEmpty then fail c "a function parameter" else pure ()
       | .expectationGroup => pure ()
       let (closeToken, rest) ← take c ")"
       return (⟨openToken, values, commas, closeToken⟩, rest)
@@ -106,7 +96,7 @@ def binaryOperator (text : String) : Option (BinaryOp × Nat) :=
   | "<" => some (.lt, 5) | "<=" => some (.le, 5)
   | ">" => some (.gt, 5) | ">=" => some (.ge, 5)
   | "+" => some (.add, 6) | "-" => some (.sub, 6)
-  | "*" => some (.mul, 7) | "div" => some (.div, 7) | "mod" => some (.mod, 7)
+  | "*" => some (.mul, 7) | "div" => some (.div, 7) | "%" => some (.mod, 7)
   | _ => none
 
 private def comparison : BinaryOp → Bool
@@ -196,12 +186,11 @@ private def tails : Nat → Nat → Expr → Cursor → Except Diagnostic (Expr 
       let (closeToken, c) ← take c ")"
       tails fuel minPrec (.call left openToken args commas closeToken) c
     else
-      if hasText c "mod" && newlineBefore c then return (left, c)
       match (peek c).bind (fun t => binaryOperator t.text) with
       | some (op, prec) =>
         if prec < minPrec then return (left, c)
         if unsupportedChain left op then
-          fail c "parentheses around nested comparisons or `iff` (chains are outside the walking subset)"
+          fail c "parentheses around a comparison or `iff` that would chain"
         let some token := peek c | fail c "an operator"
         let (right, c) ← expression fuel (prec + 1) (advance c)
         tails fuel minPrec (.binary left token op right) c
@@ -213,6 +202,8 @@ private def arguments : Nat → Cursor → Except Diagnostic (Array Expr × Arra
     let (value, c) ← expression fuel 0 c
     if !hasText c "," then return (#[value], #[], c)
     let (comma, c) ← take c ","
+    -- A trailing comma ends the list.
+    if hasText c ")" then return (#[value], #[comma], c)
     let (values, commas, c) ← arguments fuel c
     return (#[value] ++ values, #[comma] ++ commas, c)
 
@@ -343,12 +334,6 @@ def parseBytes (entry : Entry) (file : FrenSource.FileId) (bytes : ByteArray) :
     Except String Document := do
   let source ← decode bytes
   (parse entry file source).mapError (·.diagnostic.render)
-
---@ reference: parsing.determinism
-theorem deterministic (entry : Entry) (file : FrenSource.FileId) (text : String)
-    (first second : Except Failure Document)
-    (hfirst : parse entry file text = first) (hsecond : parse entry file text = second) :
-    first = second := hfirst.symm.trans hsecond
 
 /-- Actual producer laws. Tested below with accepted, rejected and partial text;
 these definitions do not assert their universal truth. -/

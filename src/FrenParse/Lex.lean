@@ -35,14 +35,16 @@ structure Lexed where
   eof : FrenSource.Span
   deriving Repr, BEq
 
-/-- Reserved spellings remain reserved even when their constructs are outside
-this grammar. Contextual words (`assume`, `not`) and built-in names/literals
-(`Bool`, `Int`, `true`, `false`) are interpreted at their grammar positions. -/
-private def keywords : List String :=
+/-- The reserved spellings (`Spec/Language/LexicalStructure#words-identifiers-and-keywords`),
+reserved even when their constructs are outside this grammar. `true`, `false`
+and `not` are keywords, so they are never names. The contextual word `assume`
+and the built-in type names `Bool` and `Int` are identifiers, interpreted at
+their grammar positions. -/
+@[expose] def keywords : List String :=
   ["mod", "use", "pub", "ordered", "enum", "struct", "type", "fn", "const", "proc", "trait",
    "expect", "impl", "interp", "tested", "trusted", "iff", "and", "or", "union", "inter",
    "minus", "subset", "join", "div", "is", "in", "if", "then", "else", "match", "forall",
-   "exists", "with", "let", "where", "table"]
+   "exists", "with", "let", "where", "table", "true", "false", "not"]
 
 private def identStart (c : Char) : Bool := c.isAlpha && c.toNat < 128 || c == '_'
 private def identRest (c : Char) : Bool := identStart c || c.isDigit
@@ -88,7 +90,7 @@ def tokenize (file : FrenSource.FileId) (source : String) : Lexed := Id.run do
       else if ["<=", ">=", "!=", ":=", "=>", "::"].contains pair then
         kind := .punctuation
         stop := i + 2
-      else if ['(', ')', '{', '}', ',', ':', '+', '-', '*', '=', '<', '>'].contains c then
+      else if ['(', ')', '{', '}', ',', ':', '+', '-', '*', '%', '=', '<', '>'].contains c then
         kind := .punctuation
     let text := String.ofList (chars.extract i stop).toList
     if kind == .identifier && keywords.contains text then kind := .keyword

@@ -3,5 +3,5 @@
 mod example
 expect safe(n: Int) {
   assume neg: n = (-7)
-  expect d: (n mod (-2)) = 1
+  expect d: (n % (-2)) = 1
 }

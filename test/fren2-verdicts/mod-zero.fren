@@ -1,3 +1,3 @@
 -- verdict: refuted exit: 1
 mod corpus
-expect c(d: Int) { assume zero: d = 0 expect bad: 1 mod d = 0 }
+expect c(d: Int) { assume zero: d = 0 expect bad: 1 % d = 0 }

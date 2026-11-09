@@ -83,15 +83,20 @@ def runCases : IO Unit := do
     ("enum Light { Red, Red }", "F0213", "variant `Red`"),
     ("expect e(x: Int) { expect x: true }", "F0213", "label `x`"),
     ("expect e() { assume q: true expect q: true }", "F0213", "label `q`"),
-    ("enum Bool { A }", "F0212", "built-in") ] do
+    ("enum Bool { A }", "F0212", "built-in"), ("enum Int { A }", "F0212", "`Int`"),
+    ("enum Light { Red, Int }", "F0212", "`Int`"), ("fn Bool(x: Int): Int := x", "F0212", "`Bool`"),
+    ("fn f(Int: Bool): Bool := true", "F0212", "`Int`"), ("expect Int() {}", "F0212", "`Int`"),
+    ("expect e(Bool: Int) {}", "F0212", "`Bool`") ] do
     discard <| failure (moduleText ++ text) code name
+  -- `Bool` and `Int` are reserved type names (`syntax.name.reserved`), for modules too.
+  discard <| failure "mod Bool\nfn f(x: Int): Int := x" "F0212" "`Bool`"
 
   -- Every item-kind pair shares the one module namespace.
   let sameNamed := ["enum repeated { A }", "fn repeated(x: Int): Int := x", "expect repeated() {}"]
   for first in sameNamed do
     for second in sameNamed do
       discard <| failure (moduleText ++ first ++ "\n" ++ second) "F0206" "`repeated`"
-  for op in ["+", "-", "*", "div", "mod", "=", "!=", "<", "<=", ">", ">=", "and", "or", "iff"] do
+  for op in ["+", "-", "*", "div", "%", "=", "!=", "<", "<=", ">", ">=", "and", "or", "iff"] do
     let result ← resolved (moduleText ++ s!"fn f(x: Int, y: Int): Bool := x {op} y")
     require (targets result == #[.local 1, .local 0]) s!"binary traversal {op}"
 
@@ -130,7 +135,7 @@ def runCases : IO Unit := do
     "expect wrong() { expect false_claim: false }",
     enumLight ++ "fn f(x: Int): Int := Light", "fn f(x: Int): Int := walking",
     "expect e() {}\nfn f(x: Int): Int := e(x)",
-    "fn f(b?: Int): Bool := not b?", "fn f(x: Int): Int := -x * 2 div 3 mod 2"] do
+    "fn f(b?: Int): Bool := not b?", "fn f(x: Int): Int := -x * 2 div 3 % 2"] do
     let doc ← parsed (moduleText ++ text)
     let result ← resolved (moduleText ++ text)
     require (audit doc result) "later-stage source rejected or corrupted"

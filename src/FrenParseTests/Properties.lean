@@ -8,23 +8,6 @@ namespace FrenParseTests
 open FrenAst FrenParse Plausible
 open scoped Plausible.Decorations
 
-/-- Both outcomes are checked. No accepted-parse implication can discard a
-malformed sample, and failure retains and audits the full lexical tape. -/
-def audit (entry : Entry) (file : FrenSource.FileId) (text : String) : Bool :=
-  match parse entry file text with
-  | .ok doc => coherent doc && doc.emit == text && sameResult (parse entry file doc.emit) (.ok doc) &&
-      doc.file == file && doc.entry == entry && doc.source == text &&
-      (match entry, doc.root with
-       | .expression, .expression _ => true
-       | .file, .declarations _ | .context, .declarations _ => true
-       | _, _ => false)
-  | .error failed =>
-    let d := failed.diagnostic
-    ownsSource file text failed.lexed.tape && failed.emit == text &&
-      d.span.file == file && d.span.start ≤ d.span.stop && d.span.stop ≤ text.utf8ByteSize &&
-      boundary text d.span.start && boundary text d.span.stop && !d.expected.isEmpty &&
-      (d.span == failed.lexed.eof || failed.lexed.tokens.any (·.span == d.span))
-
 def accepted (result : Except Failure Document) : Bool :=
   match result with | .ok _ => true | .error _ => false
 
@@ -61,11 +44,7 @@ private def check (label : String) (p : Prop)
   audit (if expr then .expression else .context) ⟨file⟩ text = true
 
 #eval check "file and context share ordered declaration trees and diagnostics" <|
-  ∀ (text : String) (file : Nat),
-  (match parseFile ⟨file⟩ text, parseContext ⟨file⟩ text with
-  | .ok a, .ok b => a.root == b.root && a.tape == b.tape && a.emit == b.emit
-  | .error a, .error b => a == b
-  | _, _ => false) = true
+  ∀ (text : String) (file : Nat), entriesAgree text file = true
 
 -- Independent expectations for producer classifications, not a copy of a
 -- producer-supplied verdict. Both properties also have universal Lean proofs.

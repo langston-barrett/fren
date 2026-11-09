@@ -20,8 +20,8 @@ def source : String := "mod smt_walk\n\
   expect empty() {}\n\
   expect contradictory() { assume never: false expect vacuous: false }\n\
   expect arithmetic() { expect negativeDividend: (-9) div 2 = -5\n\
-    expect negativeDivisor: (-9) div (-2) = 5 expect negativeRemainder: (-9) mod (-2) = 1\n\
-    expect positiveDividend: 9 div (-2) = -4 expect positiveRemainder: 9 mod (-2) = 1\n\
+    expect negativeDivisor: (-9) div (-2) = 5 expect negativeRemainder: (-9) % (-2) = 1\n\
+    expect positiveDividend: 9 div (-2) = -4 expect positiveRemainder: 9 % (-2) = 1\n\
     expect operators: (1 < 2) and (1 <= 1) and (2 > 1) and (2 >= 2) and (1 != 2)\n\
     expect booleans: (true iff false) = false expect sum: 1 + 2 * 3 - 4 = 3 }\n\
   expect safe(n: Int, d: Int) { assume nonzero: d != 0 expect reflexive: n div d = n div d }\n\

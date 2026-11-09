@@ -37,9 +37,12 @@ private def rejectedAt (entry : Entry) (source : String) (start stop : Nat) : Bo
       let expression := "1" ++ gap ++ "mod second"
       unless rejectedAt .expression expression (1 + gap.utf8ByteSize) (4 + gap.utf8ByteSize) do
         throw <| IO.userError "expression entry swallowed declaration"
-  for source in ["x mod 2", "x mod\n2", "(x\n) mod 2", "x\rmod 2"] do
-    unless shape source == some (if source.startsWith "(" then "(mod (paren x) 2)" else "(mod x 2)") do
+  -- `%` is the remainder on any line; `mod` is only the module keyword.
+  for source in ["x % 2", "x %\n2", "(x\n) % 2", "x\r% 2", "x\n% 2", "x -- c\r\n  % 2"] do
+    unless shape source == some (if source.startsWith "(" then "(% (paren x) 2)" else "(% x 2)") do
       throw <| IO.userError s!"valid remainder {repr source}"
+  for source in ["x mod 2", "x\nmod 2"] do
+    unless shape source == none do throw <| IO.userError s!"`mod` read as remainder: {repr source}"
   let comparisons := ["=", "!=", "<", "<=", ">", ">="]
   for first in comparisons do
     for second in comparisons do
@@ -91,7 +94,7 @@ open FrenAst FrenParse
 -- A low-precedence prefix is not an implicit parenthesis. Each accepted
 -- parenthesized counterpart remains syntax even when it is ill-typed.
 #eval show IO Unit from do
-  for operator in ["+", "-", "*", "div", "mod", "=", "!=", "<", "<=", ">", ">="] do
+  for operator in ["+", "-", "*", "div", "%", "=", "!=", "<", "<=", ">", ">="] do
     let start := ("a " ++ operator ++ " ").utf8ByteSize
     let source := "a " ++ operator ++ " not b = c"
     unless rejectedAt .expression source start (start + 3) do
@@ -99,7 +102,7 @@ open FrenAst FrenParse
     let .ok doc := parseExpression ⟨1⟩ ("a " ++ operator ++ " (not b = c)")
       | throw <| IO.userError "parenthesized not operand"
     unless coherent doc do throw <| IO.userError "parenthesized not tree"
-  for operator in ["+", "-", "*", "div", "mod", "=", "!=", "<", "<=", ">", ">=", "and", "or", "iff"] do
+  for operator in ["+", "-", "*", "div", "%", "=", "!=", "<", "<=", ">", ">=", "and", "or", "iff"] do
     let start := ("a " ++ operator ++ " ").utf8ByteSize
     let source := "a " ++ operator ++ " let x := true in x"
     for entry in [Entry.expression, Entry.file, Entry.context] do
@@ -121,10 +124,26 @@ open FrenAst FrenParse
     unless rejectedAt .expression word 0 word.utf8ByteSize do
       throw <| IO.userError s!"unsupported reserved word became a name: {word}"
   for source in ["fn f(assume: Int): Int := assume", "fn assume(x: Int): Int := 1",
-      "enum E { Int, Bool, not, assume, true, false }"] do
+      "enum E { Int, Bool, assume }"] do
     let .ok doc := parseFile ⟨1⟩ source | throw <| IO.userError "contextual name grammar"
     unless coherent doc && doc.emit == source do throw <| IO.userError "contextual name tree"
-  IO.println "prefix operand restrictions, explicit parentheses, atoms, and reserved/contextual names passed"
+  -- `true`, `false` and `not` are keywords: no declaration, binder, label,
+  -- path segment or match pattern names one. Each rejection is anchored at
+  -- the keyword itself.
+  for word in ["true", "false", "not"] do
+    for (entry, before, after) in [(Entry.file, "fn f(", ": Int): Int := 1"),
+        (.file, "fn ", "(x: Int): Int := 1"),
+        (.file, "enum E { A, ", " }"), (.file, "mod ", ""), (.file, "mod a::", ""),
+        (.file, "expect ", "() {}"), (.file, "expect e() { expect ", ": x }"),
+        (.file, "expect e(", ": Int) {}"), (.file, "fn f(x: Int): ", " := 1"),
+        (.expression, "let ", " := 1 in 1"), (.expression, "E::", ""),
+        (.expression, "match x { E::", " => 1 }"), (.expression, "match x { ", "::A => 1 }")] do
+      let source := before ++ word ++ after
+      unless rejectedAt entry source before.utf8ByteSize (before.utf8ByteSize + word.utf8ByteSize) do
+        throw <| IO.userError s!"keyword became a name: {source}"
+    -- With `?` the word is an identifier, as `if?` is.
+    let .ok _ := parseFile ⟨1⟩ s!"fn f({word}?): Bool := {word}?" | throw <| IO.userError "question word"
+  IO.println "prefix operand restrictions, explicit parentheses, atoms, reserved words and keywords as names passed"
 
 end FrenParseTests
 
@@ -224,21 +243,27 @@ namespace FrenParseTests
 open FrenAst FrenParse
 
 #eval show IO Unit from do
-  for source in ["f()", "f( -- é😀\n)", "f(x,)", "f(x, y,)", "f(x, -- comment\r\n)"] do
+  for source in ["f()", "f( -- é😀\n)", "f(,)", "f(x,,)", "f(x y)"] do
     forbiddenExpression source
+  for source in ["f(x,)", "f(x, y,)", "f(x, -- comment\r\n)"] do
+    requiredExpression source
   for entry in [Entry.file, Entry.context] do
     for source in ["fn f(): Int := 1", "fn f( -- comment\n): Int := 1",
-        "fn f(x: Int,): Int := x", "fn f(x: Int, -- comment\r\n): Int := x",
-        "enum E {}", "enum E { -- é😀\n}"] do
+        "fn f(,): Int := 1", "fn f(x: Int,,): Int := x",
+        "enum E {}", "enum E { -- é😀\n}", "enum E { , }", "expect e(,) {}",
+        "fn f(l: E): Int := match l { , }"] do
       let .error failure := parse entry ⟨1⟩ source | throw <| IO.userError s!"required list element: {source}"
       unless failure.emit == source do throw <| IO.userError "list failure ownership"
     for source in ["expect e() {}", "expect e(x: Int,) { expect c: true }",
         "expect e(x: Int, -- é😀\n) {}", "enum E { A, }", "enum E { A, B, }",
         "fn f(l: E): Int := match l {}", "fn f(l: E): Int := match l { E::A => 1, }",
-        "fn f(x: Int): Int := unknown(x)", "fn f(x: Int, y: Int): Int := x(y)"] do
+        "fn f(x: Int): Int := unknown(x)", "fn f(x: Int, y: Int): Int := x(y)",
+        "fn f(x: Int,): Int := x", "fn f(a: Int, b: Int,): Int := a",
+        "fn f(x: Int, -- comment\r\n): Int := x", "fn f(x: Int): Int := f(1, 2,)",
+        "fn f(l: E): Int := match l { E::A => 1, E::B => 2, }"] do
       let .ok doc := parse entry ⟨1⟩ source | throw <| IO.userError s!"valid distinct list policy: {source}"
       unless coherent doc && doc.emit == source do throw <| IO.userError "valid list ownership"
   for source in ["f(x)", "f(x, y)", "f(g(x), h(y))"] do requiredExpression source
-  IO.println "list policies: nonempty/no-trailing functions and applications; nonempty/trailing enums; empty/trailing expectations and matches passed"
+  IO.println "list policies: a trailing comma after any item; nonempty functions, applications and enums; empty expectations and matches passed"
 
 end FrenParseTests

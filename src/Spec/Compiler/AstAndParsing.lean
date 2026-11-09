@@ -1,6 +1,8 @@
 import Fren.Impl
 import Fren.Literate
-import FrenCli.Lex
+import Fren.Trace
+import FrenParse
+import Spec.Language.Syntax
 
 open Fren.Lang
 
@@ -10,22 +12,38 @@ open Fren.Lang
 
 namespace Spec.Compiler.AstAndParsing
 
-/-- Owned rejection fixture for the current checker's real lexer. ASCII makes
-its character offsets byte offsets too; this is not a Fren2 parser model. -/
-private def slashSource : String := "pub fn quotient(x: Int): Int := x / 2\n"
+--@ reference: parsing.lexer.keywords
+-- The lexer classifies a word as a keyword exactly when it is in this table.
+impl reserved: reserved for (word : String) {
+  word := word, keyword? := FrenParse.keywords.contains word
+} by
+  intro word _
+  simp [fren_spec, FrenParse.keywords]
 
-#guard match FrenCli.lex slashSource.toList.toArray with
-  | .error e => e.msg.code? == some "F0105" &&
-      e.msg.headline == "`/` is not an operator in Fren" &&
-      e.span.start == 34 && e.span.stop == 35 &&
-      e.msg.fixes[0]?.map (·.replacement) == some "div"
-  | .ok _ => false
+--@ reference: parsing.primitive.space
+impl space_case: space_case for (byte : Nat) {
+  byte := byte, space? := FrenParse.spaceByte byte
+} by
+  intro byte _
+  simp [fren_spec, FrenParse.spaceByte_iff]; omega
 
-/-- Obligation for the eventual shared parser and source emitter, specialized
-to a fixed entry category and file identity. This defines a proposition only;
-no parser, emitter or proof of this proposition is supplied here. -/
-def LosslessOnSuccess {Ast ParseError : Type}
-    (parse : String → Except ParseError Ast) (emit : Ast → String) : Prop :=
-  ∀ source tree, parse source = .ok tree → emit tree = source
+--@ reference: parsing.primitive.continuation
+impl continuation_case: continuation_case for (byte : Nat) {
+  byte := byte, continuation? := FrenParse.continuationByte byte
+} by
+  intro byte _
+  simp [fren_spec, FrenParse.continuationByte_iff]; omega
+
+--@ reference: parsing.primitive.space
+/-- The lexer's whitespace bytes are the ASCII encodings of the lexical
+chapter's `WHITESPACE` characters. -/
+def space_bytes_agree : Bool :=
+  (List.range 256).all fun b =>
+    FrenParse.spaceByte b == (b < 128 && decide (String.singleton (Char.ofNat b) ∈ spec.lexical.WHITESPACE))
+
+#guard space_bytes_agree
 
 end Spec.Compiler.AstAndParsing
+
+set_option fren.requireEvidence "trusted" in
+#fren_trace

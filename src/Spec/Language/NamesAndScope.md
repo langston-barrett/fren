@@ -12,7 +12,7 @@ The source file starts with one `mod M` or `pub mod M`, where `M` is one
 name. Its remaining declarations are payload-free enumerations,
 expression-bodied functions, and global expectations with typed parameters.
 Types are `Bool`, `Int` and named enumerations. Expressions are the forms
-listed in [AST and parsing](../Compiler/AstAndParsing.md#source-forms).
+listed in [Syntax](Syntax.md).
 The end-to-end programs use non-recursive functions. Resolving a
 reference alone does not establish non-recursion.
 

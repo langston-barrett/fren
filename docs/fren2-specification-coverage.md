@@ -21,8 +21,8 @@ function per typing rule with a small figure, derivation tables and what a
 table's root unfolds to, the judgment over tables, declarations and
 programs, the metatheory, a marked surface-elaboration section and
 examples. It contains no Lean code. The [style guide](../src/Spec/dev/Style.md)
-specifies the chapter template. This is the pilot; the rest of the reference
-has not yet adopted it.
+specifies the standard, of which this chapter is an example and not a
+template. Most of the reference has not yet adopted it.
 
 Evidence is Fren's own. A property the solver proves is an `expect`. A
 property proved in Lean is a procedure bound by an `impl` in the wrapper,
@@ -35,11 +35,12 @@ trusted: `spec::types::expression_uniqueness`
 ```
 
 The one `trusted` procedure is the open `types.derivation.unique-expression`,
-whose claim's reason starts `open:`. Types.md, Expressions.md and the THIR
+whose claim's reason starts `open:`. Types.md, Expressions.md,
+LexicalStructure.md, Syntax.md, AstAndParsing.md and the THIR
 chapter are the converted chapters: their wrappers trace with `trusted` as the required
 level, so a property that loses its evidence fails `lake build --wfail`,
-and the `ruleReqs` job checks that they do. It also checks, for Types.md
-and Expressions.md, that every Fren item is linked by the nearest rule
+and the `ruleReqs` job checks that they do. It also checks, for all of
+them but the THIR chapter, that every Fren item is linked by the nearest rule
 before it and every linking rule is followed by its Fren. The THIR
 chapter's correspondence theorems over production Lean types are named in
 its prose: Fren cannot state them as procedures. The other Spec chapters
@@ -78,8 +79,8 @@ are not yet converted.
   claims as disjunctions: the solver proves them, but cannot exhibit a typed
   match with an opaque earlier arm sequence, which a guarded claim's vacuity
   check needs.
-- **Operator enums.** `UnaryOp` and `BinaryOp` use the Syntax chapter's names
-  and constructors and move to `spec::syntax` when that chapter lands.
+- **Operator enums.** `UnaryOp` and `BinaryOp` are the Syntax chapter's, in
+  `spec::surface`, which the Types and Expressions chapters import.
 - **Undecidable parts.** The chapter has no `undecidable` opt-out; this is
   a consequence of the representation, not a rule.
 - **Evidence for Lean-proved laws.** A law that Lean proves has, as a
@@ -1365,3 +1366,90 @@ conflict and cross-owner/program/source records are rejected. These are finite
 checks and cheap actual-code verdict laws, not proofs of `CheckerContract`,
 source/encoding preservation, solver trust or the existing universal model and
 evaluator contracts. Process bindings are retained IO evidence, not signatures.
+
+## Syntax decisions and design debt
+
+These entries are the decisions and the design debt that the chapters
+[Lexical structure](../src/Spec/Language/LexicalStructure.md) and
+[Syntax](../src/Spec/Language/Syntax.md) cite.
+
+Decisions:
+
+- **L1.** `<-` is rejected text, reserved for a possible future operator;
+  `x<-1` is an error rather than `x < -1`.
+- **L2.** The keywords of today's Fren that the Fren 2 grammar does not use
+  are reserved, and `true`, `false` and `not` are keywords.
+- **S1.** Every comma-separated list allows a trailing comma; only an
+  expectation's parameters and a match's arms may be empty.
+- **S2.** The remainder is written `%`, and `mod` is only the module keyword.
+
+- **D2.** `Bool` and `Int` are reserved type names: no module,
+  enumeration, variant, function, expectation or parameter is named by one.
+  Name resolution enforces it (F0212).
+- **G1.** Decided: deferred to Fren 2.5's nested types and element
+  constraints, with no new features in today's Fren. Today's Fren has no
+  recursive datatype whose recursion passes through a `Seq`, so the
+  abstract syntax is the one-layer `ExprF<E>`. A `Seq` whose element type
+  has a constraint is outside the decidable core, so a name is a `String`,
+  and `syntax.tree.well-formed` states the conditions on names as Fren
+  functions of one node or declaration, whose subexpressions have the
+  one-value type `Elided`. Two of them, over arms and parameters, are
+  definitions outside the decidable core. They take `Elided` rather than
+  any type `E` because today's Fren compiles a truth-valued `match` over
+  a generic enumeration to a definition that cannot run.
+- **G2.** The grammar's productions are EBNF, with no second statement in
+  Fren: `syntax.tree.productions` binds `type_name`, and a test abstracts
+  the parser's trees to `ExprF`, checking each operator's written token
+  against `unary_spelling` and `binary_spelling`.
+
+Design debt:
+
+- [ ] `BinaryOp::Mod` names the remainder, which is written `%` (S2);
+  the variant keeps its name until a change that renames it everywhere.
+
+Evidence of these chapters, and its bounds; the compiled `syntaxChapters`
+job of `fren_test` runs these checks in about 20 seconds, and `ruleReqs`
+checks that each rule of the three chapters links the Fren items after it:
+
+- [ ] The lexer's pieces are those that folding `next_piece?` gives, the
+  start of the text and each position where a piece ends having exactly
+  one next piece and no longer text of a class than
+  `lexical.piece.division` allows, on every text of up to three characters
+  over 24 characters, of up to four over ten, a corpus and 500 seeded
+  random texts (`lexer_agrees`); positions inside a piece are checked
+  only for the exhaustive texts, which include their own suffixes, and
+  nothing is proved for all texts.
+- [ ] The tree of each accepted text is well formed on the first 80000
+  inputs of the grammar comparison (`trees_agree`).
+- [ ] The parser's numerals have their decimal values on listed numerals,
+  among them 2^64, 2^128 + 1 and 10^40, and 200 seeded random numerals of
+  up to 80 digits (`numerals_agree`); not proved for all numerals.
+- [ ] The grammar agrees with the parser on exhaustive token sequences of
+  up to three, four or five pieces, seeded random sequences, printed random
+  trees and files, and the texts near them (`grammar_agrees`), and a
+  mutation control of 34 wrong grammars is caught (`mutants_caught`); not
+  proved for all texts.
+- [ ] Printing by `place`, `shape` and `fits?` and then parsing gives the
+  same tree, the printed tokens are the lexer's, removing any pair of
+  parentheses changes the tree, and a text that parses to a tree has the
+  tokens of its printed text once redundant parentheses, trailing commas
+  and leading zeros are removed, on 1000 seeded random trees, every
+  operator pair and the texts near 300 trees, of at most six and five
+  levels (`roundtrip_agrees`); not
+  proved for all trees.
+- [ ] Every generated declaration is well formed;
+  `declaration_well_formed?` refuses seven ill-formed declaration trees,
+  and `node_well_formed?` seven ill-formed expression trees and the
+  ill-formed body of an eighth declaration (`declarations_agree`,
+  `roundtrip_agrees`).
+- [ ] The limits of today's Fren that the chapters work around: a
+  `forall` inside `and` or a match arm needs parentheses, a structure
+  literal cannot directly follow `=>`, and a slice or concatenation at a
+  position that is not a constant is outside the decidable core.
+- [ ] `parsing.shared.drivers` is open: the command line and the hosted
+  reader do not yet call `FrenParse`.
+- [ ] `parsing.primitive.boundary` is open: no theorem relates continuation
+  bytes to character boundaries.
+- [ ] `parsing.diagnostic.first` is open: tests check diagnostic positions
+  of chosen texts, not that each is the first point where the grammar
+  cannot continue.

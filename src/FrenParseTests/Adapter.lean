@@ -55,6 +55,8 @@ def sameResult [BEq ε] [BEq α] (left right : Except ε α) : Bool :=
   | .error a, .error b => a == b
   | _, _ => false
 
+-- fren-covers: spec::parsing::tree_structure
+--@ reference: parsing.tree.structure
 /-- Audit actual terminal occurrences against independently scanned tokens. -/
 def coherent (doc : Document) : Bool :=
   let lexed := tokenize doc.file doc.source
@@ -62,6 +64,40 @@ def coherent (doc : Document) : Bool :=
     doc.tape.all (·.kind != .rejected) &&
     doc.root.tokens.toArray == lexed.tokens &&
     doc.tape.all (fun piece => boundary doc.source piece.span.start && boundary doc.source piece.span.stop)
+
+-- fren-covers: spec::parsing::ownership, spec::parsing::bounds, spec::parsing::boundaries, spec::parsing::complete_input, spec::parsing::failure, spec::parsing::diagnostic_anchor, spec::parsing::reconstruction
+--@ reference: parsing.lossless.ownership
+--@ reference: parsing.source.bounds
+--@ reference: parsing.source.utf8
+--@ reference: parsing.complete
+--@ reference: parsing.failure
+--@ reference: parsing.diagnostic.anchor
+--@ reference: parsing.roundtrip
+/-- Both outcomes are checked. No accepted-parse implication can discard a
+malformed sample, and failure retains and audits the full lexical tape. -/
+def audit (entry : Entry) (file : FrenSource.FileId) (text : String) : Bool :=
+  match parse entry file text with
+  | .ok doc => coherent doc && doc.emit == text && sameResult (parse entry file doc.emit) (.ok doc) &&
+      doc.file == file && doc.entry == entry && doc.source == text &&
+      (match entry, doc.root with
+       | .expression, .expression _ => true
+       | .file, .declarations _ | .context, .declarations _ => true
+       | _, _ => false)
+  | .error failed =>
+    let d := failed.diagnostic
+    ownsSource file text failed.lexed.tape && failed.emit == text &&
+      d.span.file == file && d.span.start ≤ d.span.stop && d.span.stop ≤ text.utf8ByteSize &&
+      boundary text d.span.start && boundary text d.span.stop && !d.expected.isEmpty &&
+      (d.span == failed.lexed.eof || failed.lexed.tokens.any (·.span == d.span))
+
+-- fren-covers: spec::parsing::shared_entry
+--@ reference: parsing.shared.entry
+/-- The file and context entries give the same tree or the same diagnostic. -/
+def entriesAgree (text : String) (file : Nat) : Bool :=
+  match parseFile ⟨file⟩ text, parseContext ⟨file⟩ text with
+  | .ok a, .ok b => a.root == b.root && a.tape == b.tape && a.emit == b.emit
+  | .error a, .error b => a == b
+  | _, _ => false
 
 @[fren_text_tests "test/FrenParse"]
 def parserRunner : Fren.TextTests.Runner := contextRunner ⟨17⟩ fun context input => do

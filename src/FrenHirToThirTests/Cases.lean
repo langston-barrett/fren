@@ -90,7 +90,7 @@ def runCases : IO Unit := do
   require (unknownDiag.code == some "F0201" && unknownDiag.headline == "cannot find `y` in this scope") "unknown y must remain resolver error"
 
   let prelude := "mod m\nenum Light { Red, Green }\nenum Signal { Red, Green }\n"
-  for body in ["if true then 1 else 2", "let x := 2 in x", "(1)", "-1 * 2 div 0 mod 0",
+  for body in ["if true then 1 else 2", "let x := 2 in x", "(1)", "-1 * 2 div 0 % 0",
     "match Light::Red { Light::Red => 1 }", "match Light::Red { Light::Red => 1, Light::Red => 2 }"] do
     let t ← typed (prelude ++ "fn f(x: Int): Int := " ++ body)
     require ((t.bodies[0]?).map (·.type) == some .int) "valid expression root type"
