@@ -227,7 +227,17 @@ def runDefinednessControls : IO Unit := do
     "mod sites\nexpect c(d: Int) { expect bad: if 1 div 0 = 0 then d = d else d = d }"
   require (guardFailure.verdict == .refuted && guardFailure.checks.any (·.status == .blocked))
     "refuted guard definedness discharged a dependent question"
-  IO.println "definedness-controls: div/mod source sites, bindings, guards, hypotheses and physical evidence controls"
+  -- Each level calls the one below twice; totality must visit each body once,
+  -- or this 2^40 walk exceeds the job deadline.
+  let levels := (List.range 39).map fun i =>
+    s!"fn f{i + 1}(x: Int): Int := if x >= 0 then f{i}(x) else f{i}(x)"
+  let p ← load ("mod sites\nfn f0(x: Int): Int := x\n" ++ "\n".intercalate levels ++
+    "\nexpect c(a: Int) { assume p: f39(a) >= 0 expect good: a >= 0 }")
+  let .ok out := produce p | throw (IO.userError "shared callee production")
+  let some i := out.queries.findIdx? (·.question.kind == .assumptionsSatisfiable)
+    | throw (IO.userError "shared callee witness question missing")
+  require (confirmAssignment p i #[.int 0] == .witness) "shared callee witness not confirmed"
+  IO.println "definedness-controls: div/mod source sites, bindings, guards, hypotheses, shared callees and physical evidence controls"
 
 #print axioms FrenOirToSmt.stale_receipt
 #print axioms FrenOirToSmt.empty_no_checks

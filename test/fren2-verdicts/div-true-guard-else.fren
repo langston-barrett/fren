@@ -1,0 +1,3 @@
+-- verdict: verified exit: 0
+mod corpus
+expect c() { expect good: if true then true else 1 div 0 = 0 }

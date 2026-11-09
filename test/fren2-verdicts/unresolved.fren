@@ -1,3 +1,5 @@
 -- verdict: inconclusive exit: 3
+-- Known gap: `a` is reachable with d = 0, so the precise verdict is refuted.
+-- The producer marks mutually partial assumptions unresolved; this pins that.
 mod corpus
 expect c(d: Int) { assume a: 1 div d = 0 assume b: 1 div d != 0 expect bad: false }

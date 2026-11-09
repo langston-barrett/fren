@@ -34,14 +34,24 @@ consumed bodies and their transitive callees. -/
     | .call f _ args _ _ => go f && args.all go
 
 /-- Totality is scoped to the source expressions actually used by confirmation,
-including their transitive callees, rather than every body in the file. -/
-private def totalBody : Nat → FrenModule.Typed → FrenModule.TypedBody → Bool
-  | 0, _, _ => false
-  | n + 1, t, b => confirmationFragment 10000 b.expression && b.occurrences.all (fun o =>
-      match o.type with
-      | .callable sig => (t.bodies.find? (fun target =>
-          target.owner == sig.id && target.member.isNone)).any (totalBody n t)
-      | _ => true)
+including their transitive callees, rather than every body in the file. Each
+reachable body is checked once, so shared callees cost linear, not exponential,
+work. A missing callee body or a leftover worklist is not total. -/
+private def totalBody (t : FrenModule.Typed) (root : FrenModule.TypedBody) : Bool := Id.run do
+  let mut work := #[root]
+  let mut seen : Array FrenBase.ItemId := #[]
+  for _ in [:t.bodies.size + 1] do
+    let some b := work.back? | return true
+    work := work.pop
+    unless confirmationFragment 10000 b.expression do return false
+    for o in b.occurrences do
+      if let .callable sig := o.type then
+        unless seen.contains sig.id do
+          seen := seen.push sig.id
+          let some target := t.bodies.find? (fun target =>
+              target.owner == sig.id && target.member.isNone) | return false
+          work := work.push target
+  return work.isEmpty
 
 private def containsSite : Nat → FrenAst.Expr → FrenAst.Expr → Bool
   | 0, _, _ => false
@@ -132,8 +142,8 @@ private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index
   if q.readiness != .ready then return .unconfirmed "unresolved question readiness"
   -- Only expressions consumed below need the conservative total fragment.
   -- Definedness confirmation evaluates a source prefix instead of its body.
-  if !q.hypotheses.all (fun h => totalBody 10000 p.typed h.source) ||
-      (q.kind == .validity && !q.subject.any (totalBody 10000 p.typed)) then
+  if !q.hypotheses.all (fun h => totalBody p.typed h.source) ||
+      (q.kind == .validity && !q.subject.any (totalBody p.typed)) then
     return .unconfirmed "source static obligations outside total confirmation fragment"
   for edge in q.dependencies do
     match edge with
