@@ -353,3 +353,7 @@ expressions.domain.evidence -- proof provenance and unknown/resource policy; no 
 lir.terms.sorts -- actual recursive Lean Sorted judgment; checker equivalence and recursive Fren binding remain unproved
 lir.meaning.values -- actual recursive Lean Meaning judgment; universal typed interpretation correspondence remains unproved
 lir.meaning.symbols -- actual source-definition Models relation and constructive sufficient model proof; universal model existence remains unproved
+
+# src/Spec/Compiler/Oir.md
+oir.terms.sorts -- actual DomainFor/ParametersFor and LIR Sorted judgments; universal checker correspondence remains unproved
+oir.meaning.search -- actual frame/search interpretation relations and literal laws; universal SearchContract remains unproved
