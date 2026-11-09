@@ -148,12 +148,33 @@ typed argument assignment, independently safe assumptions, and request demand
 roots under those assumptions. It is a sufficient verification domain; the
 unresolved mutually partial-assumption dependency class is not silently admitted.
 
-`SemanticDomain` states the shared source static judgments and functionality
-of `ValueOf`; no universal proof is claimed. `ConfirmedCounterexample` requires
-actual admission/production, construction correspondence, this semantic domain,
-request membership, static safety, typed arguments, true assumptions and a
-false goal. `counterexample_refutes` proves that these premises refute validity.
-A solver SAT answer by itself does not establish source confirmation.
+`SemanticDomain` states the shared source static judgments and
+`SourceFunctionality` of actual retained body roots in their own lexical
+contexts; no universal proof is claimed. It does not demand uniqueness for
+arbitrary caller-created expressions, which may have duplicate matching arms.
+The shared match-coverage judgment, separately from typing, constrains source
+roots and descendants. Functionality compares derivations in the same environment;
+confirmation additionally requires typed arguments.
+`ConfirmedCounterexample` requires actual admission/production, construction
+correspondence, this semantic domain, request membership, static safety, typed
+arguments, true assumptions and a false goal. `produced_goal_root` proves the
+goal is an actual MIR root; `counterexample_refutes` uses `RootInventory` to
+establish source membership before invoking functionality. A solver SAT answer
+by itself does not establish source confirmation.
+
+The R1 regression proves a sufficient executable condition for
+`SourceFunctionality`: every retained root is a singleton match with a false
+Boolean arm. The real producer admits an enum program with one function and
+one false expectation satisfying that condition. A separate construction proves
+such matches have a defined value from the actual resolved local/constructor
+premises, avoiding vacuous uniqueness. Fabricated two-arm matches retain both
+raw value derivations, but a proof excludes them from roots satisfying the
+condition. A written duplicate-arm source must fail specifically with the
+expected repeated-constructor coverage diagnostic. These checks repair the
+review's impossible unrestricted premise; they do not prove all of
+`SemanticDomain` or universal recursive functionality. The previous controls
+checked record retention and theorem consequences under an assumed semantic
+premise, so they did not detect that the premise itself excluded valid enums.
 
 The wrapper checks a real source with three complete function roots and four
 ordered requests, then rejects twelve raw request changes, deletion of an

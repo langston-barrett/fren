@@ -380,13 +380,20 @@ def QuestionMeaning (s : Typed) (defines : Signature → TypedBody → Prop) (r 
       AllTrue s defines r.assumptions args →
       ValueOf s defines goal.context goal.expression args.toList.reverse (.bool true)
 
+/-- Functionality concerns retained body roots, whose descendants are covered by
+shared static judgments. It says nothing about caller-fabricated expressions.
+The same environment is used on both sides; uniqueness needs no type premise. -/
+def SourceFunctionality (p : Program) : Prop :=
+  ∀ body ∈ p.typed.bodies.toList, ∀ env a b,
+    ValueOf p.typed (SourceDefinition p.typed) body.context body.expression env a →
+    ValueOf p.typed (SourceDefinition p.typed) body.context body.expression env b → a = b
+
 /-- Static source facts and uniqueness of defined values are explicit premises. -/
 def SemanticDomain (p : Program) : Prop :=
   Thir.BodyInventory p.input p.typed ∧ Thir.BodyTyping p.input p.typed ∧
     Thir.OccurrenceInventory p.input p.typed ∧ Thir.OccurrenceTyping p.input p.typed ∧
     Thir.MatchCoverage p.input p.typed ∧ Thir.Nonrecursive p.input p.typed ∧
-    ∀ ctx expr env a b, ValueOf p.typed (SourceDefinition p.typed) ctx expr env a →
-      ValueOf p.typed (SourceDefinition p.typed) ctx expr env b → a = b
+    SourceFunctionality p
 
 def ConfirmedCounterexample (p : Program) (t : Theory) (r : CheckRequest)
     (args : Array FrenEval.Value) : Prop :=
@@ -422,13 +429,23 @@ retaining an interpreter result alone cannot establish either inventory.
 contract of production; `PassContract` requires it for every successful
 producer result.
 
-`SemanticDomain` names the shared static judgments and functionality of
-defined values required for a source interpretation. `ConfirmedCounterexample`
-requires actual producer evidence, `Constructs`, this semantic domain,
-request membership, static verification, typed arguments, true assumptions
-and the selected goal's defined false value. `counterexample_refutes` proves
-that such a witness refutes validity. A solver's bare SAT answer supplies
-none of those missing premises, and is not a confirmed source model.
+`SemanticDomain` names the shared static judgments and `SourceFunctionality`:
+uniqueness of defined values at actual retained body roots in their exact
+lexical contexts. Match coverage constrains those roots and their descendants;
+typing alone does not establish unique matching arms. This premise does not
+quantify over caller-fabricated expressions. Uniqueness compares two derivations
+in the same environment, including malformed assignments; confirmation separately
+requires typed arguments. No additional environment premise is needed for
+this uniqueness claim.
+
+`ConfirmedCounterexample` requires actual producer evidence, `Constructs`,
+this semantic domain, request membership, static verification, typed arguments,
+true assumptions and the selected goal's defined false value.
+`produced_goal_root` derives the goal's MIR-root membership from its actual
+request. `counterexample_refutes` transports that membership through
+`RootInventory` before applying source functionality to refute validity.
+A solver's bare SAT answer supplies none of those missing premises, and is
+not a confirmed source model.
 
 The actual producer laws establish source retention, admission, uniqueness,
 error exclusion, exact source-entry success, request ordering and request

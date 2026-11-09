@@ -211,13 +211,20 @@ def QuestionMeaning (s : Typed) (defines : Signature → TypedBody → Prop) (r 
       AllTrue s defines r.assumptions args →
       ValueOf s defines goal.context goal.expression args.toList.reverse (.bool true)
 
+/-- Functionality concerns retained body roots, whose descendants are covered by
+shared static judgments. It says nothing about caller-fabricated expressions.
+The same environment is used on both sides; uniqueness needs no type premise. -/
+def SourceFunctionality (p : Program) : Prop :=
+  ∀ body ∈ p.typed.bodies.toList, ∀ env a b,
+    ValueOf p.typed (SourceDefinition p.typed) body.context body.expression env a →
+    ValueOf p.typed (SourceDefinition p.typed) body.context body.expression env b → a = b
+
 /-- Static source facts and uniqueness of defined values are explicit premises. -/
 def SemanticDomain (p : Program) : Prop :=
   Thir.BodyInventory p.input p.typed ∧ Thir.BodyTyping p.input p.typed ∧
     Thir.OccurrenceInventory p.input p.typed ∧ Thir.OccurrenceTyping p.input p.typed ∧
     Thir.MatchCoverage p.input p.typed ∧ Thir.Nonrecursive p.input p.typed ∧
-    ∀ ctx expr env a b, ValueOf p.typed (SourceDefinition p.typed) ctx expr env a →
-      ValueOf p.typed (SourceDefinition p.typed) ctx expr env b → a = b
+    SourceFunctionality p
 
 def ConfirmedCounterexample (p : Program) (t : Theory) (r : CheckRequest)
     (args : Array FrenEval.Value) : Prop :=
@@ -364,15 +371,33 @@ theorem static_scopes (h : StaticAt s defines rootCtx root rootEnv ctx e env gua
   | elseBranch _ _ ih => exact .child ih .elseBranch
   | armBody _ member _ _ ih => exact .child ih (.armBody member)
 
-/-- A confirmed source witness refutes validity; bare satisfiability lacks these premises. -/
+/-- An actual validity goal is a retained MIR root, not caller-invented syntax. -/
+theorem produced_goal_root (p : Program) (t : Theory) (h : Produces p t)
+    (r : CheckRequest) (hr : r ∈ t.requests.toList) (hq : r.question = .validity goal) :
+    TheoryRoot t goal := by
+  obtain ⟨b, hb, member⟩ := FrenThirToMir.request_from_block p t h r (by simpa using hr)
+  simp only [Block.requests, Array.mem_append, Array.mem_singleton, Array.mem_map] at member
+  rcases member with same | ⟨g, hg, same⟩
+  · subst r
+    cases hq
+  · subst r
+    cases Question.validity.inj hq
+    exact Or.inr ⟨b, by simpa using hb, by
+      have hm := (FrenMir.goals_exact b goal).mp hg
+      simpa using hm.1⟩
+
+/-- Confirmation establishes source-root membership before using functionality. -/
 theorem counterexample_refutes (h : ConfirmedCounterexample p t r args) :
     ¬ QuestionMeaning p.typed (SourceDefinition p.typed) r := by
-  rcases h with ⟨_, _, domain, _, _, assignment, assumptions, goal, question, falseValue⟩
+  rcases h with ⟨produced, constructed, domain, present, _, assignment, assumptions,
+    goal, question, falseValue⟩
+  have root := produced_goal_root p t produced r present question
+  have sourceRoot := (constructed.2.2.1 goal).mpr root
   intro valid
   unfold QuestionMeaning at valid
   rw [question] at valid
   have trueValue := valid args assignment assumptions
-  have unique := domain.2.2.2.2.2.2 _ _ _ _ _ trueValue falseValue
+  have unique := domain.2.2.2.2.2.2 goal sourceRoot _ _ _ trueValue falseValue
   cases unique
 
 /-- Every observation of a specified request follows its exact relational fields. -/
@@ -398,6 +423,118 @@ example (s : Typed) (defines : Signature → TypedBody → Prop) (ctx : TypeCont
     (env : List FrenEval.Value) (left right rest : Expr) (l name assign inside op : Token) :
     StaticAt s defines ctx (.letE l name assign (.binary left op .mod right) inside rest) env
       ctx (.binary left op .mod right) env [] := .ordinary .root .letValue
+
+-- These regressions prove a sufficient, executable non-vacuity condition for
+-- the repaired functionality clause, then check it on actual admitted roots.
+private def falseMatch : Expr → Bool
+  | .matchE _ _ _ arms _ => match arms.toList with
+    | [(_, _, .bool _ false, _)] => true
+    | _ => false
+  | _ => false
+
+private theorem singleton_false_value
+    (h : ValueOf s defines ctx
+      (.matchE m scrutinee o #[(pattern, arrow, .bool token false, comma)] c) env v) :
+    v = .bool false := by
+  cases h with
+  | matchE _ member _ value =>
+    simp at member
+    cases member
+    cases value
+    rfl
+
+private theorem false_match_value (h : ValueOf s defines ctx expr env v)
+    (shape : falseMatch expr = true) : v = .bool false := by
+  unfold falseMatch at shape
+  split at shape
+  · rename_i m scrutinee o arms c
+    split at shape
+    · rename_i pattern arrow token comma armsEq
+      have same : arms = #[(pattern, arrow, .bool token false, comma)] := by
+        apply Array.toList_inj.mp
+        exact armsEq
+      rw [same] at h
+      exact singleton_false_value h
+    · contradiction
+  · contradiction
+
+private theorem source_functionality_of_false_matches (p : Program)
+    (checked : p.typed.bodies.all (fun body => falseMatch body.expression) = true) :
+    SourceFunctionality p := by
+  intro body present env a b ha hb
+  have shape : falseMatch body.expression = true :=
+    (Array.all_eq_true'.mp checked) body (by simpa using present)
+  exact (false_match_value ha shape).trans (false_match_value hb shape).symm
+
+/-- The positive match class also has a value when its actual references select
+local zero and the selected constructor, so uniqueness is not merely vacuous. -/
+private theorem singleton_false_reachable
+    (hs : FrenHirToThir.Selects s.resolved ctx scrutinee .expression (.local 0))
+    (hp : FrenHirToThir.Selects s.resolved ctx pattern .pattern (.item ctor)) :
+    ValueOf s defines ctx
+      (.matchE m (.name scrutinee) o #[(pattern, arrow, .bool token false, comma)] c)
+      [.enum owner ctor] (.bool false) :=
+  .matchE (arm := (pattern, arrow, .bool token false, comma)) (.local hs rfl) (by simp) hp .bool
+
+/-- Raw duplicate-arm syntax is ambiguous, but does not belong to the checked roots. -/
+private theorem raw_duplicate_values
+    (hs : ValueOf s defines ctx scrutinee env (.enum owner ctor))
+    (hp : FrenHirToThir.Selects s.resolved ctx pattern .pattern (.item ctor)) :
+    let yes := (pattern, arrow, Expr.bool token true, comma)
+    let no := (pattern, arrow, Expr.bool token false, comma)
+    let expr := Expr.matchE m scrutinee o #[yes, no] c
+    falseMatch expr = false ∧ ValueOf s defines ctx expr env (.bool true) ∧
+      ValueOf s defines ctx expr env (.bool false) ∧
+      ∀ body : TypedBody, falseMatch body.expression = true → body.expression ≠ expr := by
+  refine ⟨rfl, .matchE (arm := (pattern, arrow, .bool token true, comma)) hs (by simp) hp .bool,
+    .matchE (arm := (pattern, arrow, .bool token false, comma)) hs (by simp) hp .bool, ?_⟩
+  intro body shape same
+  rw [same] at shape
+  cases shape
+
+#eval show IO Unit from do
+  let source := "mod covered\nenum E { A }\n" ++
+    "fn f(e: E): Bool := match e { E::A => false }\n" ++
+    "expect c(e: E) { expect g: match e { E::A => false } }\n"
+  let .ok p := FrenThirDesugar.fromSource ⟨191⟩ source
+    | throw (IO.userError "covered enum-match source rejected")
+  let .ok t := FrenThirToMir.produce p | throw (IO.userError "covered enum MIR rejected")
+  unless p.typed.bodies.size == 2 && p.typed.bodies.all (fun b => falseMatch b.expression) do
+    throw (IO.userError "source functionality sufficient condition failed")
+  let some body := p.typed.bodies[0]? | throw (IO.userError "enum function missing")
+  let .matchE m scrutinee o arms c := body.expression | throw (IO.userError "match missing")
+  let some arm := arms[0]? | throw (IO.userError "arm missing")
+  let no := (arm.1, arm.2.1, Expr.bool arm.2.1 false, arm.2.2.2)
+  let yes := (arm.1, arm.2.1, Expr.bool arm.2.1 true, arm.2.2.2)
+  let duplicate := Expr.matchE m scrutinee o #[yes, no] c
+  unless !falseMatch duplicate && !(p.typed.bodies.any (fun b => b.expression == duplicate)) do
+    throw (IO.userError "fabricated duplicate admitted to the regression domain")
+  let .name path := scrutinee | throw (IO.userError "expected local scrutinee")
+  let some sr := p.typed.resolved.referenceAt path.head.slice
+    | throw (IO.userError "scrutinee reference missing")
+  let some pr := p.typed.resolved.referenceAt arm.1.head.slice
+    | throw (IO.userError "pattern reference missing")
+  unless sr.role == .expression && sr.target == .local 0 &&
+      sr.context == body.context.map Prod.fst && pr.role == .pattern &&
+      pr.context == body.context.map Prod.fst do
+    throw (IO.userError "resolved match premises differ")
+  let .item ctor := pr.target | throw (IO.userError "constructor target missing")
+  let some (.enum owner) := FrenHirToThir.constructorType p.typed.resolved ctor
+    | throw (IO.userError "constructor type missing")
+  let value := FrenEval.Value.enum owner ctor
+  unless value.valid p.typed do throw (IO.userError "enum assignment invalid")
+  let .ok evaluation := FrenEval.evaluate (Desugaring.Evaluator p)
+      ⟨p.input.scope.id.named "c", some "g"⟩ #[value] 20
+    | throw (IO.userError "enum goal evaluation failed")
+  unless (match evaluation.outcome with | .ok (.bool false) => true | _ => false) && t.requests.size == 2 do
+    throw (IO.userError "enum goal is not a defined false validity request")
+  let duplicateSource := source.replace "E::A => false" "E::A => false, E::A => true"
+  let .error (.validation (.coverage _ actualOwner missing repeated)) :=
+      FrenThirDesugar.fromSource ⟨191⟩ duplicateSource
+    | throw (IO.userError "duplicate arms did not reach coverage validation")
+  unless actualOwner == owner && missing.isEmpty && repeated == #[ctor] do
+    throw (IO.userError "wrong duplicate-arm coverage diagnostic")
+  IO.println "MIR functionality regression: 2 admitted covered enum-match roots satisfy the proved functionality condition; defined false goal retained; fabricated and written duplicate-arm controls rejected"
 
 -- This finite control uses real admission and production, then edits their raw output.
 -- Printed records are only a decidable necessary observation, not an injective encoding theorem.
@@ -467,5 +604,9 @@ example (s : Typed) (defines : Signature → TypedBody → Prop) (ctx : TypeCont
 #print axioms check_correspondence
 #print axioms counterexample_refutes
 #print axioms interpreter_preservation
+#print axioms produced_goal_root
+#print axioms source_functionality_of_false_matches
+#print axioms raw_duplicate_values
+#print axioms singleton_false_reachable
 
 end Spec.Compiler.Mir
