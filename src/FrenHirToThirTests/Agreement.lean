@@ -109,7 +109,8 @@ def census : IO Census := do
   return out
 
 /-- Lowering reads the reference table and checks it against the tree: a
-table with an entry missing, or with an entry of the wrong role, is refused. -/
+table with an entry missing, an entry of the wrong role, or entries recorded
+in the wrong lexical context is refused. -/
 def lowerControls : IO Unit := do
   let r ← resolved "mod m\nenum E { A }\nfn f(x: Int, b?): E := let y := x in match E::A { E::A => E::A }"
   let .ok hir := FrenAstToHir.Lower.lower r | throw (IO.userError "lowering refused resolver output")
