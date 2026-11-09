@@ -50,8 +50,9 @@ refinement relation to that representation rather than leaving it implicit.
 
 Choose representations whose well-formedness holds by construction instead
 of stating a validity predicate. An environment is a finite map, written as
-a snoc sequence of bindings whose lookup returns the newest binding, so each
-key has at most one entry and each entry has one kind.
+a snoc sequence of bindings whose lookup returns the newest binding. A key
+may be bound more than once, but lookup gives it at most one entry, of one
+kind.
 
 ## One-layer relations
 
