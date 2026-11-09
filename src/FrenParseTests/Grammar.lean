@@ -37,9 +37,12 @@ private def rejectedAt (entry : Entry) (source : String) (start stop : Nat) : Bo
       let expression := "1" ++ gap ++ "mod second"
       unless rejectedAt .expression expression (1 + gap.utf8ByteSize) (4 + gap.utf8ByteSize) do
         throw <| IO.userError "expression entry swallowed declaration"
-  for source in ["x mod 2", "x mod\n2", "(x\n) mod 2", "x\rmod 2"] do
-    unless shape source == some (if source.startsWith "(" then "(mod (paren x) 2)" else "(mod x 2)") do
+  -- `%` is the remainder on any line; `mod` is only the module keyword.
+  for source in ["x % 2", "x %\n2", "(x\n) % 2", "x\r% 2", "x\n% 2", "x -- c\r\n  % 2"] do
+    unless shape source == some (if source.startsWith "(" then "(% (paren x) 2)" else "(% x 2)") do
       throw <| IO.userError s!"valid remainder {repr source}"
+  for source in ["x mod 2", "x\nmod 2"] do
+    unless shape source == none do throw <| IO.userError s!"`mod` read as remainder: {repr source}"
   let comparisons := ["=", "!=", "<", "<=", ">", ">="]
   for first in comparisons do
     for second in comparisons do
@@ -91,7 +94,7 @@ open FrenAst FrenParse
 -- A low-precedence prefix is not an implicit parenthesis. Each accepted
 -- parenthesized counterpart remains syntax even when it is ill-typed.
 #eval show IO Unit from do
-  for operator in ["+", "-", "*", "div", "mod", "=", "!=", "<", "<=", ">", ">="] do
+  for operator in ["+", "-", "*", "div", "%", "=", "!=", "<", "<=", ">", ">="] do
     let start := ("a " ++ operator ++ " ").utf8ByteSize
     let source := "a " ++ operator ++ " not b = c"
     unless rejectedAt .expression source start (start + 3) do
@@ -99,7 +102,7 @@ open FrenAst FrenParse
     let .ok doc := parseExpression ⟨1⟩ ("a " ++ operator ++ " (not b = c)")
       | throw <| IO.userError "parenthesized not operand"
     unless coherent doc do throw <| IO.userError "parenthesized not tree"
-  for operator in ["+", "-", "*", "div", "mod", "=", "!=", "<", "<=", ">", ">=", "and", "or", "iff"] do
+  for operator in ["+", "-", "*", "div", "%", "=", "!=", "<", "<=", ">", ">=", "and", "or", "iff"] do
     let start := ("a " ++ operator ++ " ").utf8ByteSize
     let source := "a " ++ operator ++ " let x := true in x"
     for entry in [Entry.expression, Entry.file, Entry.context] do

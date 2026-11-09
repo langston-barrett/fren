@@ -129,7 +129,6 @@ structure Tok where
   text : String
   kind : LexicalKind
   touching : Bool
-  afterLineEnding : Bool
 
 def toks (source : String) : Array Tok :=
   let lexed := FrenParse.tokenize ⟨0⟩ source
@@ -138,8 +137,7 @@ def toks (source : String) : Array Tok :=
       | some previous => lexed.tape.extract (previous.slice + 1) t.slice
       | none => #[]
     { text := t.text, kind := t.kind,
-      touching := i > 0 && before.isEmpty,
-      afterLineEnding := before.any fun piece => piece.text.contains '\n' }
+      touching := i > 0 && before.isEmpty }
 
 /-- Whether a token is the terminal `spelling` of the grammar. -/
 def terminal (spelling : String) (t : Tok) : Bool :=
@@ -148,11 +146,10 @@ def terminal (spelling : String) (t : Tok) : Bool :=
   | "QuestionIdentifier" => t.kind == .identifier && t.text.endsWith "?"
   | "Numeral" => t.kind == .numeral
   | "TouchingOpen" => t.text == "(" && t.touching
-  | "SameLineMod" => t.text == "mod" && !t.afterLineEnding
   | _ => false
 
 def classTerminals : List String :=
-  ["Identifier", "QuestionIdentifier", "Numeral", "TouchingOpen", "SameLineMod"]
+  ["Identifier", "QuestionIdentifier", "Numeral", "TouchingOpen"]
 
 /-- Match `g` at token `i`: the position after the match and the rule
 alternatives `(rule, index)` that it used, or `none` if it does not match. -/
@@ -222,13 +219,13 @@ def randomSequences (pieces : List String) (count seed : Nat) : List String := I
 `(` and `mod`, written touching or after a line ending. -/
 def expressionPieces : List String :=
   ["x", "1", "true", "not", "-", "+", "*", "<", "=", "and", "iff", "(", ")", "f(", ",", "if",
-   "then", "else", "let", ":=", "in", "match", "{", "}", "E::A", "=>", "mod", "\nmod"]
+   "then", "else", "let", ":=", "in", "match", "{", "}", "E::A", "=>", "%", "\n%", "mod", "\nmod"]
 
 def smallExpressionPieces : List String :=
-  ["x", "not", "-", "+", "<", "iff", "(", ")", "f(", ",", "if", "then", "else", "\nmod"]
+  ["x", "not", "-", "+", "<", "iff", "(", ")", "f(", ",", "if", "then", "else", "\n%", "mod"]
 
 def declarationPieces : List String :=
-  ["pub", "fn f(x: Int): Int :=", "fn f(", "x", "b?", ":", "Int", ")", "mod m", "\nmod", "mod",
+  ["pub", "fn f(x: Int): Int :=", "fn f(", "x", "b?", ":", "Int", ")", "mod m", "\nmod", "mod", "%",
    "enum E {", "A", ",", "}", "expect e(", "{", "expect c:", "assume", "a:", ":="]
 
 /-- The grammar of the chapter, from its `grammar` blocks. -/
@@ -239,10 +236,10 @@ def grammarOf (md : String) : List (String × G) :=
 `syntax.declaration.lists`, `syntax.expression.syntax`, `syntax.expression.extent`
 and `syntax.notation.trivia-sensitive`: the chapter's grammar, run as written,
 accepts exactly what the parser accepts. Bounded: as an `ExpressionEntry`,
-every sequence of up to three of `expressionPieces` (28 pieces), every
-sequence of up to five of `smallExpressionPieces` (14), and 3000 seeded random
+every sequence of up to three of `expressionPieces` (30 pieces), every
+sequence of up to five of `smallExpressionPieces` (15), and 3000 seeded random
 sequences of 5 to 14 of `expressionPieces`; as a `File`, every sequence of up
-to four of `declarationPieces` (21) and 3000 random ones of 5 to 14; every
+to four of `declarationPieces` (22) and 3000 random ones of 5 to 14; every
 `fren2` and `fren2 rejected` block; and `near`, texts near valid ones. -/
 def grammarAgrees (md : String) (near : List String) : Option String := Id.run do
   let rules := grammarOf md
@@ -530,18 +527,11 @@ partial def G.terminals : G → List String
   | .seq gs | .alt gs => gs.flatMap G.terminals
   | .opt g | .star g | .plus g | .neg g => g.terminals
 
-/-- The nonterminals that a grammar names. -/
-partial def G.nonterminals : G → List String
-  | .term _ => []
-  | .nt n => [n]
-  | .seq gs | .alt gs => gs.flatMap G.nonterminals
-  | .opt g | .star g | .plus g | .neg g => g.nonterminals
-
 /-- `syntax.expression.terminals`: the grammar's punctuator terminals are
 exactly `PUNCTUATORS`, its keyword terminals exactly `GRAMMAR_KEYWORDS`, and
 its other terminals exactly `CONTEXTUAL`; and each binary operator's spelling
 is a terminal of the grammar rule named by its category (`CompareOp` for a
-comparison, `SameLineMod` for `mod`). -/
+comparison). -/
 def terminalsAgree (md : String) : Bool :=
   let rules := grammarOf md
   let ts := (rules.flatMap fun (_, g) => g.terminals).eraseDups
@@ -555,7 +545,7 @@ def terminalsAgree (md : String) : Bool :=
       | .Iff => "Iff" | .Or => "Or" | .And => "And" | .Comparison => "CompareOp"
       | .Sum => "Sum" | .Product => "Product" | _ => ""
     match rules.lookup ruleName with
-    | some g => g.terminals.contains (spellBinary op) || (op == .Mod && g.nonterminals.contains "SameLineMod")
+    | some g => g.terminals.contains (spellBinary op)
     | none => false
 
 /-! ## The chapter's examples -/

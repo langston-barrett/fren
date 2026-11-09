@@ -79,6 +79,7 @@ pub const PUNCTUATORS: Set<String> := {
     "+",
     "-",
     "*",
+    "%",
     "=",
     "<",
     ">",
@@ -173,7 +174,7 @@ status: definition
 Trivia may come before the first token, after the last, and between any
 two tokens. The grammar does not read trivia, except where the
 [Syntax](Syntax.md#notation) chapter says so: a `(` that must touch the
-token before it, and a `mod` after a line ending.
+token before it.
 
 ## Words, identifiers and keywords
 

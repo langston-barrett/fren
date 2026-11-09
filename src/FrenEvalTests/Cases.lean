@@ -46,17 +46,17 @@ private def walkingExample : IO Unit := do
 private def demandCases : IO Unit := do
   let p ← load "mod skeleton\nenum Light { Red, Amber, Green }\n\
     fn q(x: Int, y: Int): Int := x div y\n\
-    fn r(x: Int, y: Int): Int := x mod y\n\
+    fn r(x: Int, y: Int): Int := x % y\n\
     fn lazy(b?: Bool): Int := if b? then 7 else 9 div 0\n\
     fn arm(l: Light): Int := match l { Light::Red => 5, Light::Amber => 1 div 0, Light::Green => 6 }\n\
     fn conjunction(b?: Bool): Bool := b? and (1 div 0 = 0)\n\
-    fn disjunction(b?: Bool): Bool := b? or (1 mod 0 = 0)\n\
+    fn disjunction(b?: Bool): Bool := b? or (1 % 0 = 0)\n\
     fn first(x: Int, y: Int): Int := x\n\
     fn argument(dummy: Int): Int := first(3, 1 div 0)\n\
-    fn order(dummy: Int): Int := first(1 div 0, 2 mod 0)\n\
-    fn binaryOrder(dummy: Int): Int := (1 div 0) + (2 mod 0)\n\
+    fn order(dummy: Int): Int := first(1 div 0, 2 % 0)\n\
+    fn binaryOrder(dummy: Int): Int := (1 div 0) + (2 % 0)\n\
     fn unusedLet(dummy: Int): Int := let x := 1 div 0 in 3\n\
-    expect partial() { assume a: 1 div 0 = 0 expect e: 1 mod 0 = 0 }"
+    expect partial() { assume a: 1 div 0 = 0 expect e: 1 % 0 = 0 }"
   for (a, b, q, r) in [(-7, 3, -3, 2), (7, -3, -2, 1), (-7, -3, 3, 2), (7, 3, 2, 1)] do
     require (hasValue (result p "q" #[.int a, .int b]) (.int q) &&
       hasValue (result p "r" #[.int a, .int b]) (.int r)) "Euclidean signed division"
@@ -96,7 +96,7 @@ private def nestedDemandCases : IO Unit := do
     fn shadowFailure(dummy: Int): Int := let x := 1 div 0 in let y := x in let x := 8 in y\n\
     fn repeated(x: Int): Int := let y := x + 1 in y + y\n\
     fn letAnd(b?: Bool): Bool := let x := 1 div 0 = 0 in b? and x\n\
-    fn letOr(b?: Bool): Bool := let x := 1 mod 0 = 0 in b? or x\n\
+    fn letOr(b?: Bool): Bool := let x := 1 % 0 = 0 in b? or x\n\
     fn eq(b?: Bool): Bool := b? = (1 div 0 = 0)\n\
     fn ne(b?: Bool): Bool := b? != (1 div 0 = 0)\n\
     fn strictIff(b?: Bool): Bool := b? iff (1 div 0 = 0)\n\
@@ -106,7 +106,7 @@ private def nestedDemandCases : IO Unit := do
     fn caller(d: Int): Int := let x := 99 in inner(d)\n\
     expect checks(b?: Bool) {\n\
       assume lazy_and: b? and (1 div 0 = 0)\n\
-      expect lazy_or: b? or (1 mod 0 = 0)\n\
+      expect lazy_or: b? or (1 % 0 = 0)\n\
       assume lazy_let: let x := 1 div 0 in true\n\
       expect guarded_let: let x := 1 div 0 in if b? then x = 0 else true\n\
     }"

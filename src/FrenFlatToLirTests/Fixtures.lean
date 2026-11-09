@@ -26,7 +26,7 @@ def demandSource : String := "mod lir_walk\n\
   fn constantBranch(dummy: Int): Int := if false then 1 div 0 else 0\n\
   fn bothGood(b?: Bool): Bool := b? and (2 = 2)\n\
   fn divide(n: Int, d: Int): Int := if d != 0 then n div d else 0\n\
-  fn remainder(n: Int, d: Int): Int := if d != 0 then n mod d else 0\n\
+  fn remainder(n: Int, d: Int): Int := if d != 0 then n % d else 0\n\
   fn lazyAnd(b?: Bool): Bool := b? and (1 div 0 = 0)\n\
   fn lazyOr(b?: Bool): Bool := b? or (1 div 0 = 0)\n\
   fn strictIff(b?: Bool): Bool := b? iff (1 div 0 = 0)\n\

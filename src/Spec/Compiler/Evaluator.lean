@@ -48,7 +48,7 @@ private def source := "mod demand\n\
   fn unused(dummy: Int): Int := let x := 1 div 0 in 0\n\
   fn used(dummy: Int): Int := let x := 1 div 0 in x\n\
   fn conjunction(b?: Bool): Bool := b? and (1 div 0 = 0)\n\
-  fn disjunction(b?: Bool): Bool := b? or (1 mod 0 = 0)"
+  fn disjunction(b?: Bool): Bool := b? or (1 % 0 = 0)"
 
 #guard match FrenEval.fromSource ⟨703⟩ source with
   | .error _ => false

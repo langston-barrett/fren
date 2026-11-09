@@ -68,8 +68,8 @@ pub fn f(x: Int): Int := let x := base + 5 in if b? then x else base
 -- result: context=0; fn f (let x (+ base 5) (if b? x base))
 
 -- case: div_mod
-pub fn f(x: Int): Int := x div 2 * 2 + x mod 2
--- result: context=0; fn f (+ (* (div x 2) 2) (mod x 2))
+pub fn f(x: Int): Int := x div 2 * 2 + x % 2
+-- result: context=0; fn f (+ (* (div x 2) 2) (% x 2))
 
 -- case: match
 pub fn f(x: Int): Int := match l { Light::Red => 1, Light::Green => 2, }
@@ -221,7 +221,7 @@ pub fn f(x: Int): Int := x / 2
 
 -- case: percent
 pub fn f(x: Int): Int := x % 2
--- result: syntax 27:28: expected a module, enum, function or expectation declaration
+-- result: context=0; fn f (% x 2)
 
 -- case: bang
 pub fn f(x: Int): Int := x ! 2
@@ -297,9 +297,10 @@ mod second
 fn g(x: Int): Int := 2
 -- result: context=0; fn f 1; mod second; fn g 2
 
--- case: same_line_remainder
-fn f(x: Int): Int := 1 mod 2
--- result: context=0; fn f (mod 1 2)
+-- case: remainder_across_lines
+fn f(x: Int): Int := 1
+    % 2
+-- result: context=0; fn f (% 1 2)
 
 -- case: unsupported_arrow
 fn f(x: Int): Bool := x<-1

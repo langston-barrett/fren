@@ -41,10 +41,10 @@ otherwise.
 
 r[syntax.notation.trivia-sensitive]
 status: tested Spec.Language.Syntax.grammar_agrees
-Two terminals depend on the trivia before them. `TouchingOpen` is a `(`
+One terminal depends on the trivia before it. `TouchingOpen` is a `(`
 with no trivia between it and the token before it: no space, tab, line
-ending or comment. `SameLineMod` is the keyword `mod` with no line ending
-in the trivia between it and the token before it.
+ending or comment. Line endings are trivia like any other: an expression
+may continue on the next line, as in `let r := a` and then `% b`.
 
 ## Programs
 
@@ -158,7 +158,7 @@ Not         ::= "not" Not | Comparison
 Comparison  ::= Sum (CompareOp Sum)? !CompareOp
 CompareOp   ::= "=" | "!=" | "<" | "<=" | ">" | ">="
 Sum         ::= Product (("+" | "-") Product)*
-Product     ::= Negation (("*" | "div" | SameLineMod) Negation)*
+Product     ::= Negation (("*" | "div" | "%") Negation)*
 Negation    ::= "-" Negation | Primary
 Primary     ::= "true" | "false" | Numeral | Call | Path | "(" Expression ")" | If | Match
 Call        ::= Path TouchingOpen Expression ("," Expression)* ","? ")"
@@ -210,18 +210,16 @@ pub const GRAMMAR_KEYWORDS: Set<String> := {
 pub const CONTEXTUAL: Set<String> := {"assume"}
 ```
 
-> **Rationale:** `mod` is both a declaration and the remainder operator,
-> which `SameLineMod` tells apart: a `mod` at the start of a line starts a
-> module, so a body followed by `mod m` on the next line is not a
-> remainder. A binary operator whose meaning depends on line endings is
-> design debt, recorded for the owner; a spelling of its own for the
-> remainder, such as `rem` or `%`, would remove it.
+> **Rationale:** The remainder is written `%`, and `mod` is only the
+> keyword of a module declaration, so that no operator's meaning depends
+> on where a line ends.
 
 **Examples**
 
 ```fren2
-fn half(x: Int): Int := x mod 2  -- a remainder
-fn whole(x: Int): Int := x
+fn half(x: Int): Int := x % 2  -- a remainder
+fn spread(a: Int, b: Int): Int := let r := a
+    % b in r
 mod second
 ```
 
@@ -250,8 +248,7 @@ fn spaced(x: Int): Int := f (x)  --~ error: expected `(` adjacent to its called 
 ```
 
 ```fren2 rejected
-fn unfinished(c?, x: Int): Int := if c? then x
-mod m  --~ error: expected `else`
+fn unfinished(c?, x: Int): Int := if c? then x  --~ error: expected `else`
 ```
 
 These lines group as their comments show, with the parentheses written
@@ -265,7 +262,7 @@ not x = y and true -- (not (x = y)) and true
 a or b and c iff d -- (a or (b and c)) iff d
 - - x -- -(-x)
 a + if b then c else d + e -- a + (if b then c else (d + e))
-x mod 2 * 3 -- (x mod 2) * 3
+x % 2 * 3 -- (x % 2) * 3
 f(x) + g(y, z) * 2 -- f(x) + (g(y, z) * 2)
 ```
 
@@ -359,7 +356,7 @@ pub fn binary_spelling(op: BinaryOp): String := match op {
     BinaryOp::Sub => "-",
     BinaryOp::Mul => "*",
     BinaryOp::Div => "div",
-    BinaryOp::Mod => "mod",
+    BinaryOp::Mod => "%",
     BinaryOp::Eq => "=",
     BinaryOp::Ne => "!=",
     BinaryOp::Lt => "<",
@@ -495,7 +492,7 @@ expect printing(u: UnaryOp, b: BinaryOp) {
 > | Nonterminal | Operators | Grouping |
 > |---|---|---|
 > | `Negation` | prefix `-` | |
-> | `Product` | `*` `div` `mod` | left |
+> | `Product` | `*` `div` `%` | left |
 > | `Sum` | `+` `-` | left |
 > | `Comparison` | `=` `!=` `<` `<=` `>` `>=` | none |
 > | `Not` | prefix `not` | |
@@ -535,7 +532,7 @@ expect waits(l: Light, base: Int,) {
 
 pub fn choose(b?, base: Int): Int := let delay := base + 5 in if b? then delay else base
 
-expect division(x: Int) { expect euclidean: x = (x div 2) * 2 + x mod 2 }
+expect division(x: Int) { expect euclidean: x = (x div 2) * 2 + x % 2 }
 
 expect operators() {
     expect all: not (true iff false) or -1 < 2 and 3 != 4 and 5 > 4 and 6 >= 6 and 7 - 1 = 6

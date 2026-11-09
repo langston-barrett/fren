@@ -29,7 +29,7 @@ private def sample (n : Nat) (x y : Int) : Option Counts := do
     s!"fn f(x: Int, y: Int): Int := let x := x + {offset} in if true then sub(x, y) else 1 div 0\n" ++
     "fn select(l: Light, x: Int): Int := match l { Light::Red => x, Light::Amber => 1 div 0, Light::Green => x + 1 }\n" ++
     "fn conjunction(x: Int, b?: Bool): Bool := b? and (x div 0 = 0)\n" ++
-    "fn disjunction(x: Int, b?: Bool): Bool := b? or (x mod 0 = 0)\n" ++
+    "fn disjunction(x: Int, b?: Bool): Bool := b? or (x % 0 = 0)\n" ++
     s!"fn unusedLet(x: Int): Int := let y := x div 0 in x + {offset}\n" ++
     "fn usedLet(x: Int): Int := let y := x div 0 in y\n" ++
     "fn guarded(d: Int): Int := let y := 1 div d in if d != 0 then y else 0\n" ++

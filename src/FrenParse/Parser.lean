@@ -12,16 +12,6 @@ private structure Cursor where
 
 private def peek (c : Cursor) : Option Token := c.lexed.tokens[c.index]?
 private def hasText (c : Cursor) (text : String) : Bool := (peek c).any (·.text == text)
-/-- Only LF and CRLF end a line in the walking grammar. The decision uses
-actual intervening trivia after the left operand's last token, including
-comments and a closing parenthesis on a later line. -/
-private def newlineBefore (c : Cursor) : Bool :=
-  match peek c, c.lexed.tokens[c.index - 1]? with
-  | some current, some previous =>
-    (c.lexed.tape.extract (previous.slice + 1) current.slice).any
-      (fun piece => piece.text.toList.contains '\n')
-  | _, _ => false
-
 /-- Applications and declaration parameter lists use the source byte boundary,
 not a rendered name or character count. Any trivia breaks adjacency. -/
 private def adjacentBefore (c : Cursor) : Bool :=
@@ -106,7 +96,7 @@ def binaryOperator (text : String) : Option (BinaryOp × Nat) :=
   | "<" => some (.lt, 5) | "<=" => some (.le, 5)
   | ">" => some (.gt, 5) | ">=" => some (.ge, 5)
   | "+" => some (.add, 6) | "-" => some (.sub, 6)
-  | "*" => some (.mul, 7) | "div" => some (.div, 7) | "mod" => some (.mod, 7)
+  | "*" => some (.mul, 7) | "div" => some (.div, 7) | "%" => some (.mod, 7)
   | _ => none
 
 private def comparison : BinaryOp → Bool
@@ -196,7 +186,6 @@ private def tails : Nat → Nat → Expr → Cursor → Except Diagnostic (Expr 
       let (closeToken, c) ← take c ")"
       tails fuel minPrec (.call left openToken args commas closeToken) c
     else
-      if hasText c "mod" && newlineBefore c then return (left, c)
       match (peek c).bind (fun t => binaryOperator t.text) with
       | some (op, prec) =>
         if prec < minPrec then return (left, c)

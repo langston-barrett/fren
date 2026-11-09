@@ -71,7 +71,7 @@ def demandSource : String := "mod skeleton\n\
   fn unused(x: Int): Int := let y := 1 div 0 in x\n\
   fn guard(d: Int): Int := let y := 1 div d in if d != 0 then y else 0\n\
   fn lazyAnd(b?: Bool): Bool := b? and (1 div 0 = 0)\n\
-  fn lazyOr(b?: Bool): Bool := b? or (1 mod 0 = 0)\n\
+  fn lazyOr(b?: Bool): Bool := b? or (1 % 0 = 0)\n\
   fn strictIff(b?: Bool): Bool := b? iff (1 div 0 = 0)\n\
   fn strictEq(b?: Bool): Bool := b? = (1 div 0 = 0)\n\
   fn first(x: Int, y: Int): Int := x\n\

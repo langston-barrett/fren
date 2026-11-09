@@ -90,7 +90,7 @@ def tokenize (file : FrenSource.FileId) (source : String) : Lexed := Id.run do
       else if ["<=", ">=", "!=", ":=", "=>", "::"].contains pair then
         kind := .punctuation
         stop := i + 2
-      else if ['(', ')', '{', '}', ',', ':', '+', '-', '*', '=', '<', '>'].contains c then
+      else if ['(', ')', '{', '}', ',', ':', '+', '-', '*', '%', '=', '<', '>'].contains c then
         kind := .punctuation
     let text := String.ofList (chars.extract i stop).toList
     if kind == .identifier && keywords.contains text then kind := .keyword

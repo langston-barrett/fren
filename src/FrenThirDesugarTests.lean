@@ -28,7 +28,7 @@ private def source : String := "pub mod skeleton\n\n\
   fn usedLet(dummy: Int): Int := let x := 1 div 0 in x\n\
   fn guarded(d: Int): Int := let x := 1 div d in if d != 0 then x else 0\n\
   fn conjunction(b?: Bool): Bool := b? and (1 div 0 = 0)\n\
-  fn disjunction(b?: Bool): Bool := b? or (1 mod 0 = 0)\n\
+  fn disjunction(b?: Bool): Bool := b? or (1 % 0 = 0)\n\
   fn nested(dummy: Int): Int := let x := 1 div 0 in let y := x + 1 in 4\n\
   fn nestedUsed(dummy: Int): Int := let x := 1 div 0 in let y := x + 1 in y\n\
   fn shadow(dummy: Int): Int := let x := 1 div 0 in let x := 8 in x\n\

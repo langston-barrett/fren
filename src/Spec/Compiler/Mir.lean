@@ -541,7 +541,7 @@ private theorem raw_duplicate_values
 #eval show IO Unit from do
   let source := "mod contracts\n" ++
     "fn unused(x: Int): Int := let y := 1 div 0 in x\n" ++
-    "fn ordinary(b?: Bool): Bool := b? or (1 mod 0 = 0)\n" ++
+    "fn ordinary(b?: Bool): Bool := b? or (1 % 0 = 0)\n" ++
     "fn guarded(d: Int): Int := if d != 0 then 1 div d else 0\n" ++
     "expect owned(x: Int, b?: Bool) { expect first: b? assume early: x >= 0 " ++
     "expect second: x <= 10 assume later: x <= 5 }\nexpect empty() {}\n"
