@@ -144,6 +144,22 @@ def runSourceConfirmation : IO Unit := do
       require (reason.startsWith "source goal evaluation: strict: ") s!"{expression}: {reason}"
     | .counterexample, true => pure ()
     | other, _ => throw (IO.userError s!"strict confirmation of {expression}: {reprStr other}")
+  -- Demand evaluation stops on the first false; strict evaluation must visit
+  -- both calls. A depth bound alone permits exponentially many visits.
+  let mut chain := "mod perf\nfn g0(x: Int): Bool := false and x div 1 = 0\n"
+  for n in [1:25] do
+    chain := chain ++ s!"fn g{n}(x: Int): Bool := g{n-1}(x) and g{n-1}(x)\n"
+  chain := chain ++ "expect c() { expect wrong: g24(1) }"
+  let perf ← load chain
+  let .ok perfOut := produce perf | throw (IO.userError "performance source production")
+  let pi ← select perfOut .validity "c"
+  let started ← IO.monoMsNow
+  let result := confirmAssignment perf pi #[]
+  let elapsed := (← IO.monoMsNow) - started
+  require (result == .unconfirmed "source goal evaluation: strict: evaluation budget exhausted")
+    s!"branching strict evaluation: {reprStr result}"
+  require (elapsed < 1000) s!"branching strict evaluation took {elapsed} ms"
+  IO.println s!"strict confirmation depth 24: {elapsed} ms; evaluation budget exhausted"
   let cyclicInput ← load "mod partial\nexpect c(d: Int) { assume a: 1 div d = 0 assume b: 1 div d != 0 expect wrong: false }"
   let .ok mutualOut := produce cyclicInput | throw (IO.userError "mutual source production")
   let mi ← select mutualOut .validity "c"

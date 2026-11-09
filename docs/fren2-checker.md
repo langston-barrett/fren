@@ -99,7 +99,9 @@ directly or through called functions. They are evaluated strictly under the
 model's assignment: both Boolean operands, unused let values and callee bodies
 are evaluated, and only an `if` or `match` selects a branch. Any `div` or `mod`
 by zero there leaves the row unconfirmed, and the demand-driven interpreter's
-value must agree with the strict one. Unsupported sites, undefined
+value must agree with the strict one. Strict evaluation shares a 10,000-step
+budget across consumed premises and the goal for each confirmation; exhausting
+it leaves the row unconfirmed with an evaluation budget reason. Unsupported sites, undefined
 or exhausted prefix evaluation, dependency cycles and absent nonvacuity
 witnesses remain explicit incomplete outcomes. This command adds no soundness
 claim to the production checker.
