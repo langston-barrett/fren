@@ -74,7 +74,7 @@ compiler is specified later.
 | `types.layer.regularity`, `types.derivation.regularity` | `Spec.Language.Types.layer_regular` and `table_regular` |
 | `types.layer.weakening`, `types.derivation.weakening`, `types.derivation.weakening-lookup` | `Spec.Language.Types.layer_weakening`, `table_weakening` and `lookup_shift` |
 | `types.derivation.scoped`, `types.derivation.unique` | `Spec.Language.Types.table_scoped` and `table_unique` |
-| `types.judgment.coverage-separate` | `Spec.Language.Types.coverage_separate`, by `decide` on two tables |
+| `types.judgment.coverage-separate` | `Spec.Language.Types.coverage_separate`, by `decide` on the two tables it names |
 | `types.examples.derivations` | `Spec.Language.Types.worked_examples` by `decide`; the wrapper checks further cases, at least one for each rule; finite evidence only |
 | `types.examples.rejected` | Fren expectation over every child typing that the premises leave free |
 | `types.judgment.adequacy` | Open: agreement of the table definition with the inductive reading of the rules; a Lean tree type with `ofLayer`/`layer`, as in the Syntax wrapper, would state it |

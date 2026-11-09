@@ -674,80 +674,80 @@ abbrev bool (b : Bool) : Row := row (.BooleanLiteral b) .Empty .Boolean
 abbrev red : Row := row (.Constructor LIGHT_RED) .Empty (.Nominal LIGHT)
 abbrev arm (c : Fren.Seq String) (body : Int) : ArmF Int := ⟨c, body⟩
 
--- ⊢ 7 : Integer, and not at Boolean.
+-- A table for ⊢ 7 : Integer is valid; one typing 7 at Boolean is rejected.
 example : typed (t1 (int 7)) .Integer = true := by decide
 example : typed (t1 (row (.IntegerLiteral 7) .Empty .Boolean)) .Boolean = false := by decide
--- ⊢ true : Boolean.
+-- A table for ⊢ true : Boolean is valid.
 example : typed (t1 (bool true)) .Boolean = true := by decide
--- This table is rejected: · ⊢ #0, which has no entry.
+-- This table, for · ⊢ #0, is rejected: level 0 has no entry.
 example : typed (t1 (row (.Local 0) .Empty .Integer)) .Integer = false := by decide
--- ·, Boolean, Integer ⊢ #1 : Integer.
+-- A table for ·, Boolean, Integer ⊢ #1 : Integer is valid.
 example : derivation? SYMBOLS (t1 (row (.Local 1) BOOLEAN_INTEGER .Integer))
     BOOLEAN_INTEGER .Integer = true := by decide
--- ⊢ -1 : Integer, and rejected: -true.
+-- A table for ⊢ -1 : Integer is valid; one for -true at Integer is rejected.
 example : typed (t2 (int 1) (row (.Unary .Neg 0) .Empty .Integer)) .Integer = true := by decide
 example : typed (t2 (bool true) (row (.Unary .Neg 0) .Empty .Integer)) .Integer = false := by decide
--- ⊢ not true : Boolean.
+-- A table for ⊢ not true : Boolean is valid.
 example : typed (t2 (bool true) (row (.Unary .Not 0) .Empty .Boolean)) .Boolean = true := by decide
--- This table is rejected: a child row that does not exist.
+-- This table is rejected: its child row does not exist.
 example : typed (t1 (row (.Unary .Neg 0) .Empty .Integer)) .Integer = false := by decide
--- ⊢ 1 + 2 : Integer; a table for false + 2 is rejected.
+-- A table for ⊢ 1 + 2 : Integer is valid; one for false + 2 is rejected.
 example : typed (t3 (int 1) (int 2) (row (.Binary .Add 0 1) .Empty .Integer)) .Integer = true := by
   decide
 example : typed (t3 (bool false) (int 2) (row (.Binary .Add 0 1) .Empty .Integer)) .Integer =
     false := by decide
--- ⊢ 1 < 2 : Boolean.
+-- A table for ⊢ 1 < 2 : Boolean is valid.
 example : typed (t3 (int 1) (int 2) (row (.Binary .Lt 0 1) .Empty .Boolean)) .Boolean = true := by
   decide
--- This table is rejected: the right operand of `and` is checked even when the left is false.
+-- This table for false and #0 is rejected: its right operand is checked although the left is false.
 example : typed (t3 (bool false) (row (.Local 0) .Empty .Boolean)
     (row (.Binary .And 0 1) .Empty .Boolean)) .Boolean = false := by decide
--- ⊢ M::Light::Red = M::Light::Red : Boolean; a table comparing across enumerations is rejected.
+-- A table for ⊢ M::Light::Red = M::Light::Red : Boolean is valid; one comparing across enumerations is rejected.
 example : typed (t3 red red (row (.Binary .Eq 0 1) .Empty .Boolean)) .Boolean = true := by decide
 example : typed (t3 red (row (.Constructor SIGNAL_RED) .Empty (.Nominal SIGNAL))
     (row (.Binary .Eq 0 1) .Empty .Boolean)) .Boolean = false := by decide
--- ⊢ let 1 in #0 : Integer, without an annotation; a table with annotation Boolean is rejected.
+-- A table for ⊢ let 1 in #0 : Integer is valid; the same table with annotation Boolean is rejected.
 example : typed (t3 (int 1) (row (.Local 0) (.Extend .Empty .Integer) .Integer)
     (row (.Let none 0 1) .Empty .Integer)) .Integer = true := by decide
 example : typed (t3 (int 1) (row (.Local 0) (.Extend .Empty .Integer) .Integer)
     (row (.Let (some .Boolean) 0 1) .Empty .Integer)) .Integer = false := by decide
--- ·, Boolean ⊢ let 1 in #1 : Integer: the binder has level |Γ| = 1.
+-- A table for ·, Boolean ⊢ let 1 in #1 : Integer is valid: its binder has level 1.
 example : derivation? SYMBOLS
     (t3 (row (.IntegerLiteral 1) (.Extend .Empty .Boolean) .Integer)
       (row (.Local 1) BOOLEAN_INTEGER .Integer)
       (row (.Let none 0 1) (.Extend .Empty .Boolean) .Integer))
     (.Extend .Empty .Boolean) .Integer = true := by decide
--- ⊢ if true then 1 else 2 : Integer; a table for if 0 then 1 else 2 is rejected.
+-- A table for ⊢ if true then 1 else 2 : Integer is valid; one for if 0 then 1 else 2 is rejected.
 example : typed (t4 (bool true) (int 1) (int 2) (row (.If 0 1 2) .Empty .Integer))
     .Integer = true := by decide
 example : typed (t4 (int 0) (int 1) (int 2) (row (.If 0 1 2) .Empty .Integer))
     .Integer = false := by decide
--- This table is rejected: a match with no arms.
+-- This table, a match with no arms, is rejected.
 example : typed (t2 red (row (.Match 0 .Empty) .Empty .Integer)) .Integer = false := by decide
--- This table is rejected: one arm body of the wrong type.
+-- This table, with one arm body of the wrong type, is rejected.
 example : typed (t4 red (int 1) (bool true)
     (row (.Match 0 (.Extend (.Extend .Empty (arm LIGHT_RED 1)) (arm LIGHT_GREEN 2))) .Empty .Integer))
     .Integer = false := by decide
--- This table is rejected: an argument of the wrong type, M::f(true).
+-- This table, for M::f(true), is rejected.
 example : typed (t2 (bool true) (row (.Call F (.Extend .Empty 0)) .Empty .Integer)) .Integer =
     false := by decide
--- This table is rejected: a constructor is not callable, and a function is not a value.
+-- These tables, calling a constructor and using a function as a value, are rejected.
 example : typed (t2 (int 1) (row (.Call LIGHT_RED (.Extend .Empty 0)) .Empty .Integer)) .Integer =
     false := by decide
 example : typed (t1 (row (.Constructor F) .Empty .Integer)) .Integer = false := by decide
--- This table is rejected: a constructor typed at another type than its owner.
+-- This table, typing a constructor at Integer, is rejected.
 example : typed (t1 (row (.Constructor LIGHT_RED) .Empty .Integer)) .Integer = false := by decide
--- A duplicate binding makes an environment ill formed.
+-- This environment, which binds M::f twice, is ill formed.
 example : symbols_ok? (.Extend SYMBOLS (bind F (.Constructor LIGHT))) = false := by decide
--- A constructor's owner must list it.
+-- This environment, whose constructor's owner is unbound, is ill formed.
 example : symbols_ok? (.Extend .Empty (bind LIGHT_RED (.Constructor LIGHT))) = false := by decide
--- The `?` suffix rule.
+-- Instances of the `?` suffix rule.
 example : parameter_type? none true .Boolean = true := by decide
 example : parameter_type? none false .Boolean = false := by decide
 example : parameter_type? (some .Integer) true .Integer = false := by decide
 example : let_annotation? none true (some .Boolean) = true := by decide
 
--- A program needs exactly one body for each function: none and two are rejected.
+-- These programs give M::f no body, two bodies and one body; only the last is well typed.
 example : program_ok? SYMBOLS .Empty = false := by decide
 example : program_ok? SYMBOLS (.Extend (.Extend .Empty
     (.Function F (t1 (row (.Local 0) (.Extend .Empty .Integer) .Integer))))
@@ -761,7 +761,7 @@ example : derivation? (.Extend .Empty (bind LIGHT_RED (.Constructor LIGHT))) (t1
 example : derivation? SYMBOLS (t1 (row (.Local 0) (t1 (.Nominal LIGHT_RED)) (.Nominal LIGHT_RED)))
     (t1 (.Nominal LIGHT_RED)) (.Nominal LIGHT_RED) = false := by decide
 
-/-- Typing accepts a match that omits a constructor or repeats one. -/
+/-- These two tables, a match that omits a constructor and one that repeats one, are valid. -/
 theorem coverage_separate :
     typed (t3 red (int 1) (row (.Match 0 (.Extend .Empty (arm LIGHT_RED 1))) .Empty .Integer))
       .Integer = true ∧

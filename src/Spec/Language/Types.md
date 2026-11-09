@@ -607,7 +607,8 @@ here to an unverified `x div 0` or to an evaluation order.
 <!-- status: definition -->
 
 r[types.judgment.coverage-separate]
-Typing accepts a match that omits a constructor or repeats one.
+A table for a match that omits a constructor of its scrutinee's enumeration,
+and one for a match that repeats a constructor, are valid.
 <!-- status: lean Spec.Language.Types.coverage_separate -->
 
 ## Declarations and programs
