@@ -1410,11 +1410,16 @@ Evidence of these chapters, and its bounds; the compiled `syntaxChapters`
 job of `fren_test` runs these checks in about 20 seconds, and `ruleReqs`
 checks that each rule of the three chapters links the Fren items after it:
 
-- [ ] The lexer's pieces are those that folding `next_piece?` gives, each
-  position having exactly one next piece and no longer text of a class
-  than `lexical.piece.division` allows, on every text of up to three
-  characters over 24 characters, of four over ten, a corpus and 500 seeded
-  random texts (`lexer_agrees`); not proved for all texts.
+- [ ] The lexer's pieces are those that folding `next_piece?` gives, the
+  start of the text and each position where a piece ends having exactly
+  one next piece and no longer text of a class than
+  `lexical.piece.division` allows, on every text of up to three characters
+  over 24 characters, of up to four over ten, a corpus and 500 seeded
+  random texts (`lexer_agrees`); positions inside a piece are checked
+  only for the exhaustive texts, which include their own suffixes, and
+  nothing is proved for all texts.
+- [ ] The tree of each accepted text is well formed on the first 80000
+  inputs of the grammar comparison (`trees_agree`).
 - [ ] The parser's numerals have their decimal values on listed numerals,
   among them 2^64, 2^128 + 1 and 10^40, and 200 seeded random numerals of
   up to 80 digits (`numerals_agree`); not proved for all numerals.

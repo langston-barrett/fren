@@ -114,14 +114,17 @@ def corpus : List String :=
 --@ reference: lexical.piece.rejected
 --@ reference: lexical.piece.division
 /-- The lexical rules (`lexical.piece.next`, `lexical.piece.division`,
-`lexical.source.line-ending`, `lexical.class.definition`): every position of a
-text has exactly one next piece by the chapter's `next_piece?`, among every
-class and length, with no longer text of a class than the division allows; the
-actual lexer gives exactly those pieces, with their kinds; its slices have
-UTF-8 byte offsets without gaps; and no text with rejected text parses.
+`lexical.source.line-ending`, `lexical.class.definition`): the start of a
+text, and each position where one of its pieces ends, has exactly one next
+piece by the chapter's `next_piece?`, among every class and length, with no
+longer text of a class than the division allows; the actual lexer gives exactly
+those pieces, with their kinds; its slices have UTF-8 byte offsets without
+gaps; and no text with rejected text parses. Positions inside a piece are
+checked only as the starts of other texts: the exhaustive texts include each
+of their own suffixes, the corpus and the random texts do not.
 Bounded: every text of up to three characters over `alphabet` (24 characters),
-every text of four over ten of them, `corpus`, and 500 seeded random texts of
-20 to 120 characters. -/
+every text of up to four over ten of them, `corpus`, and 500 seeded random
+texts of 20 to 120 characters. -/
 def lexer_agrees : Bool :=
   let texts := strings alphabet 3 ++ strings ['a', '?', '-', '<', '=', '!', ':', '\r', '\n', '1'] 4 ++
     corpus ++ randomTexts 500
@@ -1164,7 +1167,8 @@ def declarations_agree : Bool := Id.run do
 --@ reference: syntax.tree.well-formed
 /-- `syntax.tree.productions` and `syntax.tree.well-formed`: each line of the
 chapter's `fren2 trees` blocks has the tree it states, and the tree of every
-expression that the parser accepts among `grammarInputs` is well formed. -/
+expression and file that the parser accepts among `inputs` is well formed.
+`check` passes the first 80000 of `grammarInputs`. -/
 def trees_agree (md : String) (inputs : List (String × String)) : Except String Unit := do
   for (line, body) in blocks md "fren2 trees" do
     for l in body.splitOn "\n" do
