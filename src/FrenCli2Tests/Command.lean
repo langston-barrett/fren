@@ -64,10 +64,12 @@ def runCommandControls : IO Unit := do
         (expected : Nat := 0) (verdict := "verified") (binary := exe) (path := source)
         (env : Array (String × Option String) := #[]) : IO Json := do
       if let some bytes := input then IO.FS.writeBinFile path bytes
+      let started ← IO.monoMsNow
       let p ← runCommand binary.toString (options.push path.toString) (cwd := tmp) (env := env)
+      let elapsed := (← IO.monoMsNow) - started
       let output ← IO.ofExcept (Json.parse p.stdout)
       let shown := s!"{label}: exit {p.code}; {p.stdout}{p.stderr}"
-      evidence.modify (·.push (Json.mkObj [("label", toJson label), ("exit_code", toJson p.code.toNat),
+      evidence.modify (·.push (Json.mkObj [("label", toJson label), ("exit_code", toJson p.code.toNat), ("ms", toJson elapsed),
         ("command", toJson ((options.push path.toString).toList.cons binary.toString)), ("output", output)]))
       require (p.code.toNat == expected) shown
       require (int? output "exit_code" == some expected && text output "verdict" == verdict) shown
@@ -115,6 +117,7 @@ def runCommandControls : IO Unit := do
     IO.FS.writeFile (tmp / "-source.fren") good
     let dash ← runCommand exe.toString #["--", "-source.fren"] (cwd := tmp)
     require (dash.code == 0 && text (← IO.ofExcept (Json.parse dash.stdout)) "verdict" == "verified") "dash path"
+    evidence.modify (·.push (Json.mkObj [("label", "dash-path"), ("stdout", toJson dash.stdout)]))
     -- This path would create a marker if ever interpolated into a shell.
     let _ ← run "shell-path" good.toUTF8 (path := tmp / "$(touch unexpected-shell-write).fren")
     for (label, opts, status) in [("real-unknown", #["--solver-resources", "1"], "unknown"),
@@ -136,9 +139,12 @@ def runCommandControls : IO Unit := do
       let p ← runCommand exe.toString args (cwd := tmp)
       let result ← IO.ofExcept (Json.parse p.stdout)
       require (p.code == 5 && text result "verdict" == "inputFailure") s!"argument failure {args}: {p.stdout}"
+      evidence.modify (·.push (Json.mkObj [("label", "argument-failure"), ("command", toJson args),
+        ("exit_code", toJson p.code.toNat), ("output", result)]))
       count := count + 1
     let help ← runCommand exe.toString #["--help"]
     require (help.code == 0 && help.stdout.startsWith "Usage: fren2_check") "help"
+    evidence.modify (·.push (Json.mkObj [("label", "help"), ("stdout", toJson help.stdout)]))
     count := count + 2
     -- An owned tree: this binary, with the fake solver at its fixed cvc5 path.
     let isolated := tmp / "owned tree"
@@ -166,21 +172,28 @@ def runCommandControls : IO Unit := do
     let ready := solver.withExtension "pid"
     let command ← FrenOirToSmt.Process.spawnInherit #[binary.toString, "--wall-ms", "10000", source.toString]
       (session := false)
-    let limit := (← IO.monoMsNow) + 5000
-    while !(← ready.pathExists) && (← IO.monoMsNow) < limit do IO.sleep 5
-    unless ← ready.pathExists do
-      let _ ← FrenOirToSmt.Process.signalProcess command FrenOirToSmt.Process.sigkill
-      let _ ← FrenOirToSmt.Process.reap command
-      throw (IO.userError "cancelled command: the owned solver never started")
-    let solverPid := (← IO.FS.readFile ready).toNat?.getD 0
-    -- The solver is still asleep, so the pidfd names it.
-    let solverFd ← FrenOirToSmt.Process.pidfdOpen solverPid.toUInt32
-    let _ ← FrenOirToSmt.Process.signalProcess command FrenOirToSmt.Process.sigterm
-    let status ← FrenOirToSmt.Process.reap command
-    let info ← IO.FS.readFile s!"/proc/self/fdinfo/{solverFd}"
-    FrenOirToSmt.Process.closeFd solverFd
-    require (status == .signaled 15 && (info.splitOn "\n").contains "Pid:\t-1")
-      s!"cancelled command: {reprStr status}; solver {info}"
+    let cancelled : IO Unit := do
+      let limit := (← IO.monoMsNow) + 5000
+      while !(← ready.pathExists) && (← IO.monoMsNow) < limit do IO.sleep 5
+      let some solverPid := (← IO.FS.readFile ready).toNat?
+        | throw (IO.userError "cancelled command: the owned solver never started")
+      -- The solver is still asleep, so the pidfd names it.
+      let solverFd ← FrenOirToSmt.Process.pidfdOpen solverPid.toUInt32
+      try
+        let _ ← FrenOirToSmt.Process.signalProcess command FrenOirToSmt.Process.sigterm
+        let status ← FrenOirToSmt.Process.reap command
+        let info ← IO.FS.readFile s!"/proc/self/fdinfo/{solverFd}"
+        require (status == .signaled 15 && (info.splitOn "\n").contains "Pid:\t-1")
+          s!"cancelled command: {reprStr status}; solver {info}"
+      finally
+        FrenOirToSmt.Process.closeFd solverFd
+    try cancelled
+    catch e =>
+      -- Never leave the command behind: kill and reap it if it is still ours.
+      if (← (FrenOirToSmt.Process.observeExit command).toBaseIO) matches .ok _ then
+        let _ ← FrenOirToSmt.Process.signalProcess command FrenOirToSmt.Process.sigkill
+        let _ ← FrenOirToSmt.Process.reap command
+      throw e
     count := count + 1
     IO.FS.removeFile solver
     let missing ← run "missing-solver" good.toUTF8 (expected := 3) (verdict := "inconclusive") (binary := binary)

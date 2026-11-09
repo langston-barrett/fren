@@ -55,9 +55,14 @@ private def allFinished (tasks : Array (Task α)) : BaseIO Bool :=
   tasks.allM IO.hasFinished
 
 /-- Write the script, then close the solver's stdin. A closed reader (EPIPE;
-SIGPIPE is ignored) ends the input, as an early exit does. -/
-private def feed (fd : UInt32) (bytes : ByteArray) : IO Unit := do
-  try Process.writeFd fd bytes catch _ => pure ()
+SIGPIPE is ignored) ends the input, as an early exit does. Stops, closing it,
+once `stop` is set. -/
+private def feed (fd : UInt32) (bytes : ByteArray) (stop : IO.Ref Bool) : IO Unit := do
+  try
+    let mut sent := 0
+    while sent < bytes.size && !(← stop.get) do
+      sent := sent + (← Process.writeFd fd bytes sent.toUSize 10).toNat
+  catch _ => pure ()
   Process.closeFd fd
 
 /-- Decode, replacing each byte that starts no valid UTF-8 character with
@@ -111,12 +116,16 @@ def transportWith (hooks : Hooks) (command : Array String) (script : String) (li
   let overflow ← IO.mkRef false
   let outBuf ← IO.mkRef ByteArray.empty
   let errBuf ← IO.mkRef ByteArray.empty
+  -- Every pipe is non-blocking and polled, so `stop` ends its thread even
+  -- while a process outside the solver's group holds the other end.
+  let stop ← IO.mkRef false
   -- Each stream has its own reader; both draw on one combined byte budget.
-  -- Each closes its descriptor; none is closed under a blocked reader.
+  -- Each closes its own descriptor once it ends.
   let reader (fd : UInt32) (buf : IO.Ref ByteArray) : IO Unit := do
     try
       repeat
-        let chunk ← Process.readFd fd 4096
+        if ← stop.get then break
+        let some chunk ← Process.readFd fd 4096 10 | continue
         if chunk.isEmpty then break
         let take ← budget.modifyGet fun avail => (min avail chunk.size, avail - min avail chunk.size)
         buf.modify (· ++ chunk.extract 0 take)
@@ -136,7 +145,7 @@ def transportWith (hooks : Hooks) (command : Array String) (script : String) (li
   | .error e => reason := "transport error: " ++ e.toString
   | .ok child =>
     pid? := some child.pid
-    readers := #[← IO.asTask (prio := .dedicated) (feed child.stdin script.toUTF8),
+    readers := #[← IO.asTask (prio := .dedicated) (feed child.stdin script.toUTF8 stop),
       ← IO.asTask (prio := .dedicated) (reader child.stdout outBuf),
       ← IO.asTask (prio := .dedicated) (reader child.stderr errBuf)]
     let loop : IO String := do
@@ -154,6 +163,8 @@ def transportWith (hooks : Hooks) (command : Array String) (script : String) (li
     match ← loop.toBaseIO with
     | .ok r => reason := r
     | .error e => reason := "transport error: " ++ e.toString
+    -- A reader may reach the limit and finish between the loop's checks.
+    if reason.isEmpty && (← overflow.get) then reason := outputReason
   if let some pid := pid? then
     match ← (hooks.observe pid).toBaseIO with
     | .error _ =>
@@ -168,10 +179,15 @@ def transportWith (hooks : Hooks) (command : Array String) (script : String) (li
       match ← cleanup.toBaseIO with
       | .ok code => exitCode := code
       | .error e => reason := "transport error during cleanup: " ++ e.toString
-    -- The group is gone, so its pipes are closed unless a member escaped it.
+    -- The group is gone, so its pipes reach their end unless a process
+    -- that left the group holds them. Then stop: no thread or descriptor
+    -- outlives this transport.
     let graceEnd := (← IO.monoMsNow) + 200
     while !(← allFinished readers) && (← IO.monoMsNow) < graceEnd do
       IO.sleep 5
+  stop.set true
+  for task in readers do
+    let _ ← IO.wait task
   if (← Process.watchedSignal) != 0 && !lost then
     reason := cancelReason
   let out ← outBuf.get

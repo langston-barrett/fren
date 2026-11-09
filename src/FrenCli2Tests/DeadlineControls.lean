@@ -124,10 +124,9 @@ private def finish (p : Piped) (expected : Process.Status) (ms : Nat := 4000) : 
 
 private def has (s part : String) : Bool := (s.splitOn part).length > 1
 
-def runControls : IO UInt32 := do
+private def controlsIn (tmp : System.FilePath) : IO UInt32 := do
   let self ← IO.appPath
   let me ← IO.Process.getPID
-  let tmp ← IO.FS.createTempDir
   let ids := tmp / "identities"
   IO.FS.createDirAll ids
   let env := #[(identitiesVar, some ids.toString), ("FREN2_TEST_MARKER", some "inherited")]
@@ -289,9 +288,12 @@ def runControls : IO UInt32 := do
   require (p.code == 2 && has p.stderr "unknown or ambiguous") s!"--lib missing: {p.code} {p.stderr}"
   let p ← runCommand self.toString #["--fren2-internal-job", "--job", "resolver"]
   require (p.code == 125) s!"direct internal dispatch: {p.code}"
-  IO.FS.removeDirAll tmp
   IO.println s!"deadline controls passed; stopped-group timeout {stoppedMs} ms, orphan and foreign controls passed"
   return 0
+
+def runControls : IO UInt32 := do
+  let tmp ← IO.FS.createTempDir
+  try controlsIn tmp finally IO.FS.removeDirAll tmp
 
 /-- Spawns a controller as its runner, then waits to be terminated. -/
 def testParent : IO UInt32 := do

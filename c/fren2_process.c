@@ -16,6 +16,7 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <pthread.h>
 #include <spawn.h>
 #include <stdlib.h>
@@ -79,6 +80,12 @@ LEAN_EXPORT lean_obj_res fren2_spawn(b_lean_obj_arg args, uint8_t session, uint8
   if (pipes) {
     for (int i = 0; i < 3 && error == 0; i++)
       if (pipe2(fds[i], O_CLOEXEC) != 0) error = errno;
+    /* Only the parent's ends: each end of a pipe is its own description. */
+    for (int i = 0; i < 3 && error == 0; i++) {
+      int end = fds[i][i == 0 ? 1 : 0];
+      int fl = fcntl(end, F_GETFL);
+      if (fl < 0 || fcntl(end, F_SETFL, fl | O_NONBLOCK) != 0) error = errno;
+    }
     /* The child's end of each: stdin reads, stdout and stderr write. */
     for (int i = 0; i < 3 && error == 0; i++)
       error = posix_spawn_file_actions_adddup2(&actions, fds[i][i == 0 ? 0 : 1], i);
@@ -120,15 +127,31 @@ LEAN_EXPORT lean_obj_res fren2_spawn(b_lean_obj_arg args, uint8_t session, uint8
   return lean_io_result_mk_ok(result);
 }
 
-/* One read(2) of at most `max` bytes: what is available, or empty at EOF. */
-LEAN_EXPORT lean_obj_res fren2_fd_read(uint32_t fd, size_t max, lean_obj_arg world) {
+/* The parent's pipe ends are non-blocking, and each read or write first
+   polls for at most `timeout_ms`, so that no thread stays blocked on a pipe
+   that a process outside the solver's group holds open: its owner can stop
+   and close it. */
+
+/* At most `max` bytes: `none` (boxed 0) if none arrived within the timeout,
+   `some bytes`, empty at end of file. */
+LEAN_EXPORT lean_obj_res fren2_fd_read(uint32_t fd, size_t max, uint32_t timeout_ms, lean_obj_arg world) {
   (void)world;
+  struct pollfd ready = {(int)fd, POLLIN, 0};
+  int n = poll(&ready, 1, (int)timeout_ms);
+  if (n < 0 && errno != EINTR) return fren2_errno("poll");
+  if (n <= 0) return lean_io_result_mk_ok(lean_box(0));
   lean_object *buffer = lean_alloc_sarray(1, 0, max);
   for (;;) {
     ssize_t got = read((int)fd, lean_sarray_cptr(buffer), max);
     if (got >= 0) {
       lean_sarray_set_size(buffer, (size_t)got);
-      return lean_io_result_mk_ok(buffer);
+      lean_object *some = lean_alloc_ctor(1, 1, 0);
+      lean_ctor_set(some, 0, buffer);
+      return lean_io_result_mk_ok(some);
+    }
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      lean_dec(buffer);
+      return lean_io_result_mk_ok(lean_box(0));
     }
     if (errno != EINTR) {
       lean_dec(buffer);
@@ -137,17 +160,23 @@ LEAN_EXPORT lean_obj_res fren2_fd_read(uint32_t fd, size_t max, lean_obj_arg wor
   }
 }
 
-/* Write all of `bytes`; EPIPE (SIGPIPE is ignored) is an error. */
-LEAN_EXPORT lean_obj_res fren2_fd_write(uint32_t fd, b_lean_obj_arg bytes, lean_obj_arg world) {
+/* Write what fits of `bytes` from `offset` within the timeout: the number
+   of bytes written, possibly 0. EPIPE (SIGPIPE is ignored) is an error. */
+LEAN_EXPORT lean_obj_res fren2_fd_write(uint32_t fd, b_lean_obj_arg bytes, size_t offset,
+                                        uint32_t timeout_ms, lean_obj_arg world) {
   (void)world;
-  size_t size = lean_sarray_size(bytes), done = 0;
-  const uint8_t *data = lean_sarray_cptr(bytes);
-  while (done < size) {
-    ssize_t put = write((int)fd, data + done, size - done);
-    if (put >= 0) done += (size_t)put;
-    else if (errno != EINTR) return fren2_errno("write");
+  size_t size = lean_sarray_size(bytes);
+  if (offset >= size) return lean_io_result_mk_ok(lean_box_usize(0));
+  struct pollfd ready = {(int)fd, POLLOUT, 0};
+  int n = poll(&ready, 1, (int)timeout_ms);
+  if (n < 0 && errno != EINTR) return fren2_errno("poll");
+  if (n <= 0) return lean_io_result_mk_ok(lean_box_usize(0));
+  for (;;) {
+    ssize_t put = write((int)fd, lean_sarray_cptr(bytes) + offset, size - offset);
+    if (put >= 0) return lean_io_result_mk_ok(lean_box_usize((size_t)put));
+    if (errno == EAGAIN || errno == EWOULDBLOCK) return lean_io_result_mk_ok(lean_box_usize(0));
+    if (errno != EINTR) return fren2_errno("write");
   }
-  return lean_io_result_mk_ok(lean_box(0));
 }
 
 /* Observe without reaping: the unreaped leader keeps its PID, and so the
@@ -190,6 +219,17 @@ LEAN_EXPORT lean_obj_res fren2_raise(uint32_t sig, lean_obj_arg world) {
   (void)world;
   if (raise((int)sig) == 0) return lean_io_result_mk_ok(lean_box(0));
   return fren2_errno("raise");
+}
+
+/* Test-only: set `sig` to SIG_IGN (true) or SIG_DFL (false). */
+LEAN_EXPORT lean_obj_res fren2_set_ignored(uint32_t sig, uint8_t ignore, lean_obj_arg world) {
+  (void)world;
+  struct sigaction action;
+  memset(&action, 0, sizeof action);
+  action.sa_handler = ignore ? SIG_IGN : SIG_DFL;
+  sigemptyset(&action.sa_mask);
+  if (sigaction((int)sig, &action, NULL) == 0) return lean_io_result_mk_ok(lean_box(0));
+  return fren2_errno("sigaction");
 }
 
 /* Reap one child, blocking: its status. */
@@ -272,6 +312,11 @@ LEAN_EXPORT lean_obj_res fren2_pidfd_signal(uint32_t fd, uint32_t sig, lean_obj_
    so the process ends (or not) as it would have without the watch. */
 static const int fren2_cancel_signals[3] = {SIGINT, SIGTERM, SIGHUP};
 static struct sigaction fren2_previous[3];
+static int fren2_installed[3];
+/* SIGCHLD must be at its default, without SA_NOCLDWAIT, while a watch is
+   open: an ignored SIGCHLD would reap the owned leader behind our back and
+   release the PID that anchors its process group. */
+static struct sigaction fren2_previous_chld;
 static volatile sig_atomic_t fren2_first_signal = 0;
 static unsigned fren2_watchers = 0;
 static pthread_mutex_t fren2_watch_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -282,23 +327,40 @@ static void fren2_record_signal(int sig) {
                               __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
 }
 
+static void fren2_restore(void) {
+  for (int i = 0; i < 3; i++)
+    if (fren2_installed[i]) sigaction(fren2_cancel_signals[i], &fren2_previous[i], NULL);
+  sigaction(SIGCHLD, &fren2_previous_chld, NULL);
+}
+
+/* A signal that this process inherited as ignored stays ignored (`nohup`). */
 LEAN_EXPORT lean_obj_res fren2_watch_begin(lean_obj_arg world) {
   (void)world;
   pthread_mutex_lock(&fren2_watch_lock);
   if (fren2_watchers == 0) {
-    struct sigaction action;
+    struct sigaction action, chld;
     memset(&action, 0, sizeof action);
     action.sa_handler = fren2_record_signal;
     sigemptyset(&action.sa_mask);
     action.sa_flags = SA_RESTART;
-    for (int i = 0; i < 3; i++) {
-      if (sigaction(fren2_cancel_signals[i], &action, &fren2_previous[i]) != 0) {
-        int saved = errno;
-        for (int j = 0; j < i; j++) sigaction(fren2_cancel_signals[j], &fren2_previous[j], NULL);
-        pthread_mutex_unlock(&fren2_watch_lock);
-        errno = saved;
-        return fren2_errno("sigaction");
+    memset(fren2_installed, 0, sizeof fren2_installed);
+    memset(&chld, 0, sizeof chld);
+    chld.sa_handler = SIG_DFL;
+    sigemptyset(&chld.sa_mask);
+    int failed = sigaction(SIGCHLD, &chld, &fren2_previous_chld) != 0;
+    for (int i = 0; i < 3 && !failed; i++) {
+      if (sigaction(fren2_cancel_signals[i], NULL, &fren2_previous[i]) != 0) failed = 1;
+      else if (fren2_previous[i].sa_handler != SIG_IGN) {
+        if (sigaction(fren2_cancel_signals[i], &action, NULL) != 0) failed = 1;
+        else fren2_installed[i] = 1;
       }
+    }
+    if (failed) {
+      int saved = errno;
+      fren2_restore();
+      pthread_mutex_unlock(&fren2_watch_lock);
+      errno = saved;
+      return fren2_errno("sigaction");
     }
   }
   fren2_watchers++;
@@ -320,7 +382,7 @@ LEAN_EXPORT lean_obj_res fren2_watch_end(uint8_t reraise, lean_obj_arg world) {
   pthread_mutex_lock(&fren2_watch_lock);
   int sig = __atomic_load_n((int *)&fren2_first_signal, __ATOMIC_SEQ_CST);
   if (fren2_watchers > 0 && --fren2_watchers == 0) {
-    for (int i = 0; i < 3; i++) sigaction(fren2_cancel_signals[i], &fren2_previous[i], NULL);
+    fren2_restore();
     /* A signal that arrives between the restore and this clear was taken
        by the previous disposition already; this record is older. */
     sig = __atomic_exchange_n((int *)&fren2_first_signal, 0, __ATOMIC_SEQ_CST);

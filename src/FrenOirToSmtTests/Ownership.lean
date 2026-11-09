@@ -103,6 +103,16 @@ private def lostAnchor : IO Unit := do
     release (← children.get)
     let _ ← Process.watchEnd false
 
+/-- An inherited ignored SIGCHLD would reap the leader behind the transport's
+back; the watch restores its default for the query, then the ignore. -/
+private def ignoredChild : IO Unit := do
+  Process.setIgnored Process.sigchld true
+  try
+    let r ← transport (← fakeSolver "unsat") "" {wallMs := 1000}
+    require (r.outcome == .unsat && r.exitCode == some 0) s!"ignored SIGCHLD: {reprStr r}"
+  finally
+    Process.setIgnored Process.sigchld false
+
 def runOwnership : IO Unit := do
   let solver := (← sourceRoot) / ".lake/packages/cvc5/cvc5-Linux-x86_64-static/bin/cvc5"
   let real ← check "real-cvc5-normal-unsat" #[solver.toString, "--lang=smt2"]
@@ -123,6 +133,7 @@ def runOwnership : IO Unit := do
   let _ ← check "exited-leader-with-pipe-holding-descendant" (← fakeSolver "orphan")
     (expectedKind := "resource") (wallMs := 500)
   lostAnchor
-  IO.println "owned cleanup: six kernel waitability checks at group signals; normal exit, nonzero, closed streams, repeated running/cleanup cancellation and surviving descendant; lost anchor forbids signal and solver answer"
+  ignoredChild
+  IO.println "owned cleanup: six kernel waitability checks at group signals; normal exit, nonzero, closed streams, repeated running/cleanup cancellation and surviving descendant; lost anchor forbids signal and solver answer; inherited ignored SIGCHLD"
 
 end FrenOirToSmtTests

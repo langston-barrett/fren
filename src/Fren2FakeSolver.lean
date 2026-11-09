@@ -7,7 +7,7 @@ open FrenOirToSmt
 /-! Owned transport-path controls; never used as solver evidence. The first
 argument names the mode. Installed at a tree's fixed cvc5 path, where it is
 called with cvc5's arguments, it reads the mode from the file beside it with
-the extension `.mode`; an unknown mode there exits 9. -/
+the extension `.mode`; an unknown mode there drains stdin and exits 9. -/
 
 private def out (s : String) : IO Unit := do
   let h ← IO.getStdout
@@ -79,7 +79,10 @@ public def main (args : List String) : IO UInt32 := do
     let path ← match rest with
       | [path] => pure (System.FilePath.mk path)
       | _ => pure ((← IO.appPath).withExtension "pid")
-    IO.FS.writeFile path (toString (← IO.Process.getPID))
+    -- Written whole, then renamed, so that no reader sees a partial PID.
+    let staging := path.withExtension "partial"
+    IO.FS.writeFile staging (toString (← IO.Process.getPID))
+    IO.FS.rename staging path
     IO.sleep 60000
   | "sleep" | "hold-input" | "timeout" => IO.sleep 60000
   | _ => if fixture then return 9 else forever
@@ -89,5 +92,4 @@ where
     let path := (← IO.appPath).withExtension "mode"
     let mode ← try IO.FS.readFile path catch _ => pure ""
     let mode := mode.trimAscii.toString
-    drain
     return (if modes.contains mode then mode else "invalid", [], true)

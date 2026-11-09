@@ -40,6 +40,7 @@ def sigterm : UInt32 := 15
 def sighup : UInt32 := 1
 def sigcont : UInt32 := 18
 def sigstop : UInt32 := 19
+def sigchld : UInt32 := 17
 
 @[extern "fren2_spawn"] private opaque spawnRaw (argv : @& Array String) (session pipes : Bool) :
   IO (Array UInt32)
@@ -65,10 +66,14 @@ def spawnInherit (argv : Array String) (session : Bool) : IO UInt32 := do
   let #[pid] ← spawnRaw argv session false | throw (IO.userError "spawn: unexpected result")
   return pid
 
-/-- One `read`: the bytes available, at most `max`; empty at end of file. -/
-@[extern "fren2_fd_read"] opaque readFd (fd : UInt32) (max : USize) : IO ByteArray
-/-- Write all of `bytes`. A closed reader (EPIPE) is an error. -/
-@[extern "fren2_fd_write"] opaque writeFd (fd : UInt32) (bytes : @& ByteArray) : IO Unit
+/-- Poll at most `timeoutMs`, then one non-blocking `read` of at most `max`
+bytes: `none` if nothing arrived, `some` bytes, empty at end of file. -/
+@[extern "fren2_fd_read"] opaque readFd (fd : UInt32) (max : USize) (timeoutMs : UInt32) :
+  IO (Option ByteArray)
+/-- Poll at most `timeoutMs`, then write what fits of `bytes` from `offset`:
+the count written, possibly 0. A closed reader (EPIPE) is an error. -/
+@[extern "fren2_fd_write"] opaque writeFd (fd : UInt32) (bytes : @& ByteArray) (offset : USize)
+  (timeoutMs : UInt32) : IO USize
 
 @[extern "fren2_observe_exit"] private opaque observeExitRaw (pid : UInt32) : IO UInt32
 /-- `waitid(WEXITED | WNOHANG | WNOWAIT)`: the child's exit, leaving it
@@ -84,6 +89,9 @@ def observeExit (pid : UInt32) : IO Status := return .decode (← observeExitRaw
 this returns. A `signalProcess` of this process's own PID may be handled
 later, by another thread. -/
 @[extern "fren2_raise"] opaque raiseSignal (sig : UInt32) : IO Unit
+
+/-- Test-only: ignore `sig` (true) or restore its default (false). -/
+@[extern "fren2_set_ignored"] opaque setIgnored (sig : UInt32) (ignore : Bool) : IO Unit
 
 @[extern "fren2_reap"] private opaque reapRaw (pid : UInt32) : IO UInt32
 /-- Blocking `waitpid` of one child: its final status. -/
@@ -106,7 +114,9 @@ def reapGroup (pgid : UInt32) (block : Bool) : IO (Option UInt32) := do
 @[extern "fren2_pidfd_signal"] opaque pidfdSignal (fd sig : UInt32) : IO Bool
 
 /-- Open a watch for SIGINT, SIGTERM and SIGHUP: while any watch is open, the
-first such signal is recorded instead of taking its usual effect. -/
+first such signal is recorded instead of taking its usual effect (one that
+was ignored stays ignored), and SIGCHLD is at its default, so that no owned
+child is reaped behind its owner's back. -/
 @[extern "fren2_watch_begin"] opaque watchBegin : IO Unit
 /-- The first signal recorded since the watches opened, or 0. -/
 @[extern "fren2_watched_signal"] opaque watchedSignal : IO UInt32
