@@ -2,6 +2,7 @@ module
 
 public import FrenOirToSmtTests.Cases
 public import FrenOirToSmtTests.Model
+public import FrenOirToSmtTests.Checker
 
 public section
 namespace FrenOirToSmtTests
@@ -13,6 +14,8 @@ private def isResource : Outcome → Bool
   | .resourceExhausted _ => true | _ => false
 
 def runControls : IO Unit := do
+  runCheckerOutcomes
+  runCheckerEntryControls
   runModelReadback
   runSourceConfirmation
   let started ← IO.monoMsNow

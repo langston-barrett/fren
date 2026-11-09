@@ -2,4 +2,4 @@ module
 
 public import FrenOirToSmt.Producer
 
-public import FrenOirToSmt.Confirm
+public import FrenOirToSmt.Checker

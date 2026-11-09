@@ -33,7 +33,7 @@ def solverCommand (limits : Limits) : IO (Array String) := do
   return #[(root / ".lake/packages/cvc5/cvc5-Linux-x86_64-static/bin/cvc5").toString,
     "--lang=smt2", s!"--tlimit-per={limits.solverMs}", s!"--rlimit-per={limits.solverResources}"]
 
-private def decode (raw : String) : Except String Receipt := do
+private def decode (raw request binding : String) (limits : Limits) : Except String Receipt := do
   let j ← Json.parse raw
   let command ← j.getObjValAs? (Array String) "command"
   let exitCode ← j.getObjValAs? (Option Int) "exit_code"
@@ -44,20 +44,20 @@ private def decode (raw : String) : Except String Receipt := do
   let elapsed ← j.getObjValAs? Nat "elapsed_ms"
   let kind ← j.getObjValAs? String "kind"
   let reason ← j.getObjValAs? String "reason"
-  return ⟨command, exitCode, stdout, stderr, stdoutHex, stderrHex, elapsed, reason, classify exitCode stdout stderr kind reason⟩
+  return ⟨command, exitCode, stdout, stderr, stdoutHex, stderrHex, elapsed, reason, classify exitCode stdout stderr kind reason, request, binding, kind, limits⟩
 
 /-- Low-level transport is exposed for owned failure controls. The source
 producer/solver entry never accepts its output as an admission witness. -/
-def transport (command : Array String) (script : String) (limits : Limits := {}) : IO Receipt := do
+def transport (command : Array String) (script : String) (limits : Limits := {}) (binding : String := "") : IO Receipt := do
   let started ← IO.monoMsNow
   let failure (message : String) : IO Receipt := do
-    return ⟨command, none, "", "", "", "", (← IO.monoMsNow) - started, message, .error message⟩
+    return ⟨command, none, "", "", "", "", (← IO.monoMsNow) - started, message, .error message, script, binding, "error", limits⟩
   if limits.wallMs == 0 || limits.wallMs > 10000 || limits.solverMs == 0 ||
       limits.solverResources == 0 || limits.outputBytes == 0 || limits.outputBytes > 1048576 ||
       limits.inputBytes == 0 || limits.inputBytes > 1048576 then
     return ← failure "invalid bounded solver limits"
   if script.utf8ByteSize > limits.inputBytes then
-    return ⟨command, none, "", "", "", "", 0, "script input limit", .resourceExhausted "script input limit"⟩
+    return ⟨command, none, "", "", "", "", 0, "script input limit", .resourceExhausted "script input limit", script, binding, "resource", limits⟩
   try
     let root ← sourceRoot
     let request := Json.mkObj [("command", toJson command), ("script", toJson script),
@@ -66,7 +66,7 @@ def transport (command : Array String) (script : String) (limits : Limits := {})
     let out ← IO.Process.output {cmd := "python3", args := #[(root / "src/FrenOirToSmt/transport.py").toString]}
       (some request.compress)
     if out.exitCode != 0 then return ← failure s!"transport helper exit {out.exitCode}: {out.stderr}"
-    match decode out.stdout with
+    match decode out.stdout script binding limits with
     | .ok receipt => return receipt
     | .error e => return ← failure ("transport helper protocol: " ++ e)
   catch e => failure ("transport setup: " ++ e.toString)

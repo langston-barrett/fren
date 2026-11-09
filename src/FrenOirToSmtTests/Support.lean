@@ -41,7 +41,8 @@ def answer (rs : Array Result) (owner member : String) (expected : Outcome) : IO
     require (r.outcome == expected) s!"{owner}/{member}: {reprStr r.outcome}; {reprStr r.receipt}"
 
 def receiptJson (r : Receipt) : Lean.Json := Lean.Json.mkObj [
-  ("command", Lean.toJson r.command), ("exit_code", Lean.toJson r.exitCode),
+  ("limits", Lean.toJson (reprStr r.limits)), ("request", Lean.toJson r.request), ("binding", Lean.toJson r.binding),
+  ("kind", Lean.toJson r.kind), ("command", Lean.toJson r.command), ("exit_code", Lean.toJson r.exitCode),
   ("stdout", Lean.toJson r.stdout), ("stderr", Lean.toJson r.stderr),
   ("stdout_hex", Lean.toJson r.stdoutHex), ("stderr_hex", Lean.toJson r.stderrHex),
   ("elapsed_ms", Lean.toJson r.elapsedMs), ("reason", Lean.toJson r.reason),

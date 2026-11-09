@@ -369,3 +369,8 @@ smt.response.limits -- actual bounded transport and receipt boundary; process ow
 smt.model.protocol -- actual two-request bounded transport, original source/question retention and raw physical receipts; process/solver identity remain IO trust boundaries
 smt.model.values -- actual strict decoder with direct Plausible and real models; universal ReadbackContract remains unproved
 smt.model.confirmation -- actual source interpreter boundary and independent SourceCandidate contract; universal ConfirmationContract/evaluator adequacy remain unproved
+
+smt.checker.entry -- actual source-to-report pipeline and normal controls; IO/process identity remains trusted
+smt.checker.inventory -- actual regenerated complete inventory and receipt gates with direct Plausible; universal CheckerContract remains unproved
+smt.checker.discharge -- actual dependency fixed point and nonvacuity gates; universal source/encoding preservation remains unproved
+smt.checker.verdict -- actual empty/all-positive laws and finite outcomes; universal soundness remains unproved

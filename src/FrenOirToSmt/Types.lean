@@ -25,10 +25,18 @@ structure Query where
   script : Except Failure String
   deriving Repr
 
+@[expose] def sameExcept [BEq α] [BEq β] : Except α β → Except α β → Bool
+  | .ok a, .ok b => a == b
+  | .error a, .error b => a == b
+  | _, _ => false
+
+instance : BEq Query where
+  beq a b := a.question == b.question && sameExcept a.script b.script
+
 structure Program where
   oir : FrenOir.Program
   queries : Array Query
-  deriving Repr
+  deriving Repr, BEq
 
 structure Limits where
   wallMs : Nat := 2000
@@ -36,7 +44,7 @@ structure Limits where
   solverResources : Nat := 1000000
   outputBytes : Nat := 65536
   inputBytes : Nat := 1048576
-  deriving Repr
+  deriving Repr, BEq
 
 /-- A transport receipt is raw process evidence, not a source confirmation. -/
 structure Receipt where
@@ -49,7 +57,11 @@ structure Receipt where
   elapsedMs : Nat
   reason : String
   outcome : Outcome
-  deriving Repr
+  request : String := ""
+  binding : String := ""
+  kind : String := ""
+  limits : Limits := {}
+  deriving Repr, BEq
 
 structure Result where
   query : Query

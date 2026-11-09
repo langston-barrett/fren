@@ -164,8 +164,8 @@ These are finite/constrained witnesses, not universal metatheory.
 assignments. `AnswerSound` states what trusted Sat/Unsat would need to establish;
 actual `classify` is only protocol recognition. The typed readback unit adds
 `solveModels`, strict finite parameter decoding and actual source interpreter
-observations for the conservative total fragment; it adds no aggregate verdict,
-cache, selectors or incremental solver API. The previous OIR checklist's separate SMT
+observations for the conservative total fragment. The checker adds conservative
+whole-program reports; it adds no cache, selectors or incremental solver API. The previous OIR checklist's separate SMT
 chapter correction is supplied here; its remaining source-confirmation and
 upstream universal proof obligations are preserved in full.
 
@@ -193,8 +193,10 @@ upstream universal proof obligations are preserved in full.
 - [ ] Prove `ReadbackContract`, `ConfirmationContract`, static totality of
   `confirmationFragment` and evaluator adequacy. Extend concrete confirmation
   to partial/definedness-site forms and justify mutually partial assumptions.
-- [ ] Deliver the separate aggregate multi-question verified verdict, consuming
-  independently discharged static obligations and the universal proof bridges.
+- [x] Deliver a conservative actual-source checker report with complete ordered
+  inventory, receipt provenance, dependency discharge and confirmed nonvacuity.
+- [ ] Prove `CheckerContract` and the universal source-soundness bridges; actual
+  positive reports are conditional on the stated solver/encoding trust boundary.
 - [ ] Restate the recursive grammar/interpretation contracts in Fren when it
   can quantify over the real recursive production objects. Current primitive
   Fren arithmetic and polarity contracts do not replace those relations.
@@ -232,7 +234,8 @@ dependencies while allowing repeated edges from the assumption update.
 retained bodies/questions; they do not take supplied decisions or proofs.
 Structurally total assumptions need no hypotheses; a partial assumption keeps
 its other owning assumptions. Mutually partial groups and dependent requests
-remain explicitly unresolved. No aggregate verification result is introduced.
+remain explicitly unresolved. OIR extraction itself returns no aggregate verdict;
+the downstream source checker preserves those unresolved states.
 
 `Active`, `SearchHolds`, `Violation`, `ConditionValid`, `QuestionTrue`,
 `EquationsHold` and `RequestMeaning` use the same `Lir.Meaning`, slot pairs,
@@ -293,8 +296,8 @@ Plausible jobs remain bounded evidence with explicit premise counts.
 - [ ] Restate recursive extraction and interpretation contracts in Fren once
   Fren2 supports their actual recursive carriers and judgments. No Fren1
   recursion extension or copied executable pass is a prerequisite.
-- [ ] Complete the separate SMT normative correction. Source model decoding,
-  evaluation confirmation and aggregate verdict delivery remain later work.
+- [x] Supply SMT normative contracts, bounded model/source confirmation and
+  conservative checker reports; their universal semantic bridges remain pending.
 
 The FLS/SML primary-source material already consulted for the Language/LIR
 correction was read from its retained cache while network access was paused:
@@ -631,8 +634,8 @@ explicit edges to their checks. When those others are also partial, the
 questions and dependent requests carry an unresolved reason. `ready` means
 this dependency rule is supported, not that any question has been proved.
 Guard and binding entries conservatively depend on earlier checks in their
-body; these edges are prerequisites, never Boolean premises. No aggregate
-verification success is produced.
+body; these edges are prerequisites, never Boolean premises. OIR itself produces
+no aggregate verdict; the downstream source checker discharges these edges.
 
 The native `oir`, `oirControls` and `oirProperties` jobs exercise actual
 source production. The fixed source checks unused functions, both Boolean
@@ -1204,7 +1207,35 @@ for changed SMT rejected by the source interpreter, conservative static-domain
 rejection, unresolved prerequisites, and bounded transport failures. Direct
 Plausible tests the actual assignment boundary with accepted/rejected counts
 and deterministic regressions. These checks are finite evidence, not proofs
-of the named universal contracts or a complete verified-program implementation.
+of the named universal contracts or all-language verification.
 
 The shared library dependency table must explicitly permit the actual source
 evaluator import; it must not be bypassed or replaced with a copied evaluator.
+
+
+## Source checker result coverage
+
+`FrenOirToSmt.Checker.checkSource` runs actual parsing, admission, production,
+bounded solving, typed readback and source confirmation. The pure `summarize`
+boundary regenerates the admitted program's inventory, validates exact ordered
+source/question envelopes and run/question/request/limits/process bindings,
+and recomputes model decoding and source observations. A bounded dependency
+fixed point and confirmed owner nonvacuity gate conservative verification.
+Verified, refuted, inconsistent, inconclusive, no-checks and input-failure
+reports retain original questions, source spans, reasons and physical evidence
+references. Sat definedness sites and source forms outside the existing total
+confirmation fragment remain unconfirmed.
+
+`FrenOirToSmtTests.Checker` runs through normal `smtControls` and parent dispatch.
+Real source cases cover supported verification, source-confirmed refutation,
+all-Unsat inconsistent/vacuous assumptions, static undefinedness in unused
+bindings/definitions and both Boolean operands, lexical guards/binders,
+unresolved readiness, no-checks, admission, unsupported confirmation,
+input/resource and bounded unknown failures. Owned process/protocol failures enter the actual
+consumer. Direct Plausible tests actual successful run aggregation with 100
+accepted cases and 1000 rejected inventory/receipt mutations, without discarded
+premises; deterministic mutations supplement it. Model absence, staleness and
+conflict and cross-owner/program/source records are rejected. These are finite
+checks and cheap actual-code verdict laws, not proofs of `CheckerContract`,
+source/encoding preservation, solver trust or the existing universal model and
+evaluator contracts. Process bindings are retained IO evidence, not signatures.

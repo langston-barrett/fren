@@ -106,6 +106,8 @@ structure ModelRun where
   program : Program
   results : Array Readback
   limits : Limits
+  runId : String := ""
+  evaluationDepth : Nat := 10000
 
 /-- Eligibility is stricter than process success alone. The ordinary answer
 classifier remains unchanged; its full model output is intentionally a protocol
@@ -116,9 +118,12 @@ error there. Resource, UTF-8, diagnostics and helper failures stay failures. -/
 
 /-- Each retrieval replays the exact producer script and same solver argv and
 limits. Only strict complete typed readback enters the source interpreter. -/
-def solveModels (p : FrenThirDesugar.Program) (limits : Limits := {}) :
+def solveModels (p : FrenThirDesugar.Program) (limits : Limits := {})
+    (evaluationDepth : Nat := 10000) :
     IO (Except InputFailure ModelRun) := do
-  match ← solve p limits with
+  let evaluationDepth := min evaluationDepth 10000
+  let runId ← freshRunId
+  match ← solveTagged p limits runId with
   | .error e => return .error e
   | .ok (out, raw) =>
     let mut results := #[]
@@ -130,16 +135,16 @@ def solveModels (p : FrenThirDesugar.Program) (limits : Limits := {}) :
           match modelScript r.query with
           | .error e => entry := {entry with assignment := .error (reprStr e)}
           | .ok request =>
-            let receipt ← transport first.command request limits
+            let receipt ← transport first.command request limits s!"{runId}/{i}/model"
             let assignment := if modelData receipt then
               decodeModel out.oir r.query.question receipt.stdout limits.outputBytes
               else .error ("model transport: " ++ reprStr receipt.outcome)
             let confirmation := match assignment with
               | .error e => Confirmation.unconfirmed e
-              | .ok values => confirmProduced p out i values 10000
+              | .ok values => confirmProduced p out i values evaluationDepth
             entry := ⟨r, some request, some receipt, assignment, confirmation⟩
       results := results.push entry
-    return .ok ⟨p, out, results, limits⟩
+    return .ok ⟨p, out, results, limits, runId, evaluationDepth⟩
 
 theorem fragment_div (n : Nat) (a b : FrenAst.Expr) (token : FrenAst.Token) :
     confirmationFragment (n + 1) (.binary a token .div b) = false := rfl

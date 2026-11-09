@@ -236,7 +236,40 @@ def ConfirmationContract : Prop := ∀ p out, Produces p out → ∀ index entry
   confirmAssignment p index values depth = answer →
   (answer = .witness ∨ answer = .counterexample) →
     SourceCandidate p out entry.question values depth answer
+/-- Discharge names actual question checks and whole-definition safety, not
+caller-provided readiness flags. -/
+def DependenciesDischarged (out : FrenOirToSmt.Program) (report : Report) (q : FrenOir.Question) : Prop :=
+  ∀ edge ∈ q.dependencies.toList, match edge with
+  | .question id => ∃ r ∈ report.checks.toList, r.question.id = id ∧ r.status = .verified ∧
+      r.question.kind ∈ [FrenOir.Kind.functionDefinedness, .assumptionDefinedness, .goalDefinedness]
+  | .definition id => (∃ d ∈ out.oir.definitions.toList, d.signature.id = id) ∧
+      ∀ r ∈ report.checks.toList, r.question.owner = id → r.question.kind = .functionDefinedness → r.status = .verified
+
+/-- Independent inventory, polarity and source nonvacuity requirements.
+Physical process identity, solver truth and semantic bridges remain trusted. -/
+def VerifiedInventory (p : Input) (report : Report) : Prop :=
+  ∃ out, Produces p out ∧ report.checks.map CheckResult.question = out.oir.questions ∧
+    (∃ q ∈ out.oir.questions.toList, q.kind ≠ .assumptionsSatisfiable) ∧
+    ∀ q ∈ out.oir.questions.toList, q.readiness = .ready ∧ DependenciesDischarged out report q ∧
+      ∃ r ∈ report.checks.toList, r.question = q ∧ r.answerRef.isSome = true ∧
+        ((q.kind = .assumptionsSatisfiable ∧ r.status = .witness ∧ r.modelRef.isSome = true ∧
+          ∃ values depth, depth ≤ 10000 ∧ SourceCandidate p out q values depth .witness) ∨
+         (q.kind ≠ .assumptionsSatisfiable ∧ r.status = .verified))
+
+def CheckerContract : Prop := ∀ p command run,
+  (summarize p command run).verdict = .verified → VerifiedInventory p (summarize p command run)
 -- reference end
+
+theorem checker_stale_receipt (r : Receipt) (command : Array String) (request binding : String)
+    (limits : Limits) (h : (r.binding == binding) = false) :
+    receiptMatches r command request binding limits = false :=
+  FrenOirToSmt.stale_receipt r command request binding limits h
+
+theorem checker_empty : verdict #[] = .noChecks := FrenOirToSmt.empty_no_checks
+
+theorem checker_verified_rows (rows : Array CheckResult) (h : verdict rows = .verified) :
+    rows.all (fun r => r.status == .verified || r.status == .witness) = true :=
+  FrenOirToSmt.verified_all rows h
 
 theorem model_transport_nonzero (r : Receipt) (h : r.exitCode ≠ some 0) : modelData r = false :=
   FrenOirToSmt.model_nonzero r h

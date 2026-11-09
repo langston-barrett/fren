@@ -25,24 +25,37 @@ def fromSource (file : FrenSource.FileId) (text : String) : Except String Progra
   let p ← (FrenThirDesugar.fromSource file text).mapError reprStr
   (produce p).mapError reprStr
 
-private def solveQueries (p : Program) (limits : Limits) : IO (Array Result) := do
+private def solveQueries (p : Program) (limits : Limits) (runId : String) : IO (Array Result) := do
   let command ← solverCommand limits
-  p.queries.mapM fun query => do
+  p.queries.mapIdxM fun i query => do
     match query.script with
     | .error (.unsupported reason) => return ⟨query, .unsupported reason, none⟩
     | .error (.resourceExhausted reason) => return ⟨query, .resourceExhausted reason, none⟩
     | .error (.invalid reason) => return ⟨query, .error reason, none⟩
     | .ok text =>
-      let receipt ← transport command text limits
+      let receipt ← transport command text limits s!"{runId}/{i}/answer"
       return ⟨query, receipt.outcome, some receipt⟩
 
-/-- Raw answers retain their questions, dependencies and unresolved readiness.
-There is deliberately no aggregate verified-source result or model decoding. -/
-def solve (p : FrenThirDesugar.Program) (limits : Limits := {}) :
+/-- Raw execution with a receipt namespace. The checker allocates its own namespace;
+this low-level entry does not authenticate caller-constructed records. -/
+def solveTagged (p : FrenThirDesugar.Program) (limits : Limits) (runId : String) :
     IO (Except InputFailure (Program × Array Result)) := do
   match produce p with
   | .error e => return .error e
-  | .ok out => return .ok (out, ← solveQueries out limits)
+  | .ok out => return .ok (out, ← solveQueries out limits runId)
+
+initialize runCounter : IO.Ref Nat ← IO.mkRef 0
+
+/-- Process-local uniqueness plus a physical clock separates repeated source runs.
+Receipt bindings detect accidental reuse; they are not cryptographic signatures. -/
+def freshRunId : IO String := do
+  let counter ← runCounter.modifyGet (fun n => (n, n + 1))
+  return s!"{← IO.Process.getPID}:{← IO.monoNanosNow}:{counter}"
+
+/-- Raw answers retain every question and unresolved dependency. -/
+def solve (p : FrenThirDesugar.Program) (limits : Limits := {}) :
+    IO (Except InputFailure (Program × Array Result)) := do
+  solveTagged p limits (← freshRunId)
 
 theorem deterministic (p : FrenThirDesugar.Program) (a b : Program)
     (ha : produce p = .ok a) (hb : produce p = .ok b) : a = b :=

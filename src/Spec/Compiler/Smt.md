@@ -385,6 +385,28 @@ def ConfirmationContract : Prop := ∀ p out, Produces p out → ∀ index entry
   confirmAssignment p index values depth = answer →
   (answer = .witness ∨ answer = .counterexample) →
     SourceCandidate p out entry.question values depth answer
+/-- Discharge names actual question checks and whole-definition safety, not
+caller-provided readiness flags. -/
+def DependenciesDischarged (out : FrenOirToSmt.Program) (report : Report) (q : FrenOir.Question) : Prop :=
+  ∀ edge ∈ q.dependencies.toList, match edge with
+  | .question id => ∃ r ∈ report.checks.toList, r.question.id = id ∧ r.status = .verified ∧
+      r.question.kind ∈ [FrenOir.Kind.functionDefinedness, .assumptionDefinedness, .goalDefinedness]
+  | .definition id => (∃ d ∈ out.oir.definitions.toList, d.signature.id = id) ∧
+      ∀ r ∈ report.checks.toList, r.question.owner = id → r.question.kind = .functionDefinedness → r.status = .verified
+
+/-- Independent inventory, polarity and source nonvacuity requirements.
+Physical process identity, solver truth and semantic bridges remain trusted. -/
+def VerifiedInventory (p : Input) (report : Report) : Prop :=
+  ∃ out, Produces p out ∧ report.checks.map CheckResult.question = out.oir.questions ∧
+    (∃ q ∈ out.oir.questions.toList, q.kind ≠ .assumptionsSatisfiable) ∧
+    ∀ q ∈ out.oir.questions.toList, q.readiness = .ready ∧ DependenciesDischarged out report q ∧
+      ∃ r ∈ report.checks.toList, r.question = q ∧ r.answerRef.isSome = true ∧
+        ((q.kind = .assumptionsSatisfiable ∧ r.status = .witness ∧ r.modelRef.isSome = true ∧
+          ∃ values depth, depth ≤ 10000 ∧ SourceCandidate p out q values depth .witness) ∨
+         (q.kind ≠ .assumptionsSatisfiable ∧ r.status = .verified))
+
+def CheckerContract : Prop := ∀ p command run,
+  (summarize p command run).verdict = .verified → VerifiedInventory p (summarize p command run)
 ```
 
 General source preservation additionally consumes the named MIR, LIR and OIR
@@ -508,7 +530,73 @@ semantic domains remain premises of any universal source-soundness claim.
 The nonzero-transport, wrong-model-sort and partial-operation exclusion laws
 constrain actual functions without supplying those recursive bridges.
 
-## 7. Primitive laws and examples
+## 7. Source checker reports
+
+**Dynamic semantics**
+
+r[smt.checker.entry]
+`checkSource` parses and admits source text, and `check` accepts the admitted
+program witness. Both invoke the actual producer, bounded solver, typed model
+readback and source confirmation themselves. Neither accepts caller outcomes,
+proof flags or a selected question subset. Input failures remain explicit.
+`Report` retains the complete physical `ModelRun`; each `CheckResult` retains
+the original question, owner, source-token byte span, reason and references to
+its answer/model receipts. A process setup exception is inconclusive.
+
+r[smt.checker.inventory]
+`summarize` is the pure consumer of retained raw runs. It regenerates the
+complete inventory from its admitted source argument and requires exact source,
+OIR and ordered query equality, including all IDs, owners, contexts, assumptions,
+frames, definitions, dependencies, readiness and translation errors. Missing,
+duplicate, reordered, skipped and foreign outcomes cannot verify a program.
+Every physical receipt records its request, limits, command and a distinct
+run/question/phase binding. The consumer checks those fields, reclassifies the
+complete protocol and checks successful output bytes against their retained hex.
+Absent, stale and conflicting receipts fail these gates. Model decoding and
+source confirmation are recomputed rather than trusting stored assignments or
+confirmation labels. Source evaluation uses the requested depth capped at
+10000; exhaustion remains unconfirmed. The bindings detect reuse within retained evidence; they
+are not cryptographic authentication of editable records.
+
+r[smt.checker.discharge]
+Unsat discharges an ordinary counterexample search, conditionally on solver
+truth and encoding adequacy. Unsat for an assumption-satisfiability search
+instead marks an inconsistent context. Ready means the dependency rule is
+supported; it does not mean discharged. Question dependencies require verified
+definedness questions. Definition dependencies require the actual equations
+and every global definedness question of that definition. A finite fixed point
+resolves forward edges and blocks unresolved rules, cycles and unproved edges.
+Goal and goal-definedness verification additionally requires the same owner's
+confirmed source nonvacuity witness with identical hypotheses. An inconsistent
+owner makes those Unsat goals vacuous. Static obligations include unused
+bindings/definitions, both Boolean operands and scoped conditional/binder sites;
+none are filtered by runtime demand or a solver's Boolean simplification.
+
+r[smt.checker.verdict]
+A report is verified only when it contains at least one obligation other than
+nonvacuity and every complete inventory row is verified or a confirmed premise
+witness, with correct question polarity. A confirmed source false-goal model
+reports refutation. Bare Sat, unsupported definedness-site confirmation, model
+rejection and evaluator failures remain unconfirmed. Conflicting source
+counterexample and owner Unsat evidence is inconclusive. Unknown, unsupported,
+resource, process/protocol failures, blocked dependencies and invalid evidence
+are distinct row statuses. Inconsistent contexts remain distinct from these
+failures. An empty inventory or only nonvacuity searches reports no-checks.
+
+**Proof obligations**
+
+r[smt.checker.boundary]
+`DependenciesDischarged`, `VerifiedInventory` and `CheckerContract` state
+complete inventory, dependency discharge, polarity and actual source witness
+requirements independently of the consumer implementation. The stale-binding,
+empty-inventory and all-positive-row laws constrain actual gates and verdicts. They are not a
+universal proof of the checker contract. Positive execution relies on trusted
+physical transport, solver identity/truth, encoding preservation, model
+existence, static-domain adequacy and source evaluation. Existing universal
+MIR/LIR/OIR/SMT and model/source bridges remain unproved; concrete reports do
+not require those proofs as a new admission gate.
+
+## 8. Primitive laws and examples
 
 **Dynamic semantics**
 
