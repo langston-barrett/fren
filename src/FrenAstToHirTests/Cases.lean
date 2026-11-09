@@ -83,8 +83,13 @@ def runCases : IO Unit := do
     ("enum Light { Red, Red }", "F0213", "variant `Red`"),
     ("expect e(x: Int) { expect x: true }", "F0213", "label `x`"),
     ("expect e() { assume q: true expect q: true }", "F0213", "label `q`"),
-    ("enum Bool { A }", "F0212", "built-in") ] do
+    ("enum Bool { A }", "F0212", "built-in"), ("enum Int { A }", "F0212", "`Int`"),
+    ("enum Light { Red, Int }", "F0212", "`Int`"), ("fn Bool(x: Int): Int := x", "F0212", "`Bool`"),
+    ("fn f(Int: Bool): Bool := true", "F0212", "`Int`"), ("expect Int() {}", "F0212", "`Int`"),
+    ("expect e(Bool: Int) {}", "F0212", "`Bool`") ] do
     discard <| failure (moduleText ++ text) code name
+  -- `Bool` and `Int` are reserved type names (`syntax.name.reserved`), for modules too.
+  discard <| failure "mod Bool\nfn f(x: Int): Int := x" "F0212" "`Bool`"
 
   -- Every item-kind pair shares the one module namespace.
   let sameNamed := ["enum repeated { A }", "fn repeated(x: Int): Int := x", "expect repeated() {}"]
