@@ -1603,6 +1603,7 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
         except (OSError, ValueError) as error:
             print(f"heavy: cannot own a controlled session: {error}", file=sys.stderr)
             return 125
+    helper_started = time.monotonic()
     try:
         child = subprocess.Popen(command, start_new_session=True)
     except OSError as e:
@@ -1660,6 +1661,8 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
             handlers[sig] = signal.signal(sig, lambda s, _: terminate(f"signal {s}", final_wait=False))
         while True:
             now = time.monotonic()
+            if record.get("_forecast_helper") and now - helper_started >= record.get("_forecast_timeout", 250):
+                return 124 if terminate("forecast helper timeout") else 125
             try:
                 boot_now = time.clock_gettime(getattr(time, "CLOCK_BOOTTIME", time.CLOCK_MONOTONIC))
             except OSError:
@@ -1687,6 +1690,9 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
                 machine.sample(time.monotonic(), machine_counters())
             if completed:
                 break
+            if record.get("_forecast_helper") and child.returncode is not None:
+                terminate("forecast helper left descendants")
+                return 125
             if child.returncode is not None and (group_reported is None or now - group_reported >= 30):
                 pids = ("unavailable" if readings is None else
                         ", ".join(str(row["pid"]) for row in readings) or "none sampled")
@@ -1738,7 +1744,37 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
         machine.finish(record)
         processes.finish(record)
 
-def run(f, command, shown, kind, record, began, state, environ, load_reader):
+def monitored_forecast(f, command, record, state, environ, load_reader, offline_wrapper):
+    """Run all forecast I/O and builds inside the holder's monitored group."""
+    path = environ.get("HEAVY_LOG") or os.path.join(state, "log.jsonl")
+    try:
+        temporary = tempfile.TemporaryDirectory(prefix="heavy-forecast-")
+    except OSError:
+        return None, 0, 0
+    with temporary as directory:
+        result_path = os.path.join(directory, "result.json")
+        helper = [sys.executable, "-I", "-B", os.path.realpath(__file__),
+                  "--forecast-helper", command, state, path, str(record["started_at"]), result_path]
+        budget = record.get("compiler_budget", False)
+        record["compiler_budget"] = False
+        record["_forecast_helper"] = True
+        try:
+            status = run_command(f, offline_wrapper + helper, "forecast adviser", record,
+                                 state, environ, load_reader)
+        finally:
+            record.pop("_forecast_helper", None)
+            record["compiler_budget"] = budget
+        if status:
+            return None, 0, status
+        try:
+            with open(result_path) as result:
+                peak, count = json.load(result)
+            return peak, count, 0
+        except (OSError, ValueError, TypeError):
+            return None, 0, 0
+
+
+def run(f, command, shown, kind, record, began, state, environ, load_reader, offline_wrapper=None):
     record.update(event="job", command=shown, job_kind=kind,
                   worktree=os.getcwd(), peak_rss_kb=0, load_samples=[],
                   cpu_user_seconds=0.0, cpu_system_seconds=0.0, cpu_busy_samples=[],
@@ -1751,10 +1787,11 @@ def run(f, command, shown, kind, record, began, state, environ, load_reader):
     MachineSampler().finish(record)
     prediction_command = record.get("prediction_command", shlex.join(command))
     record["prediction_command"] = prediction_command
-    prediction, history_jobs = command_forecast(prediction_command, state, environ, record["started_at"])
+    prediction, history_jobs, helper_status = monitored_forecast(
+        f, prediction_command, record, state, environ, load_reader, offline_wrapper or [])
     record.update(predicted_peak_rss_kb=prediction, prediction_jobs=history_jobs,
                   prediction_method="max_last_20_same_command_7d")
-    code = run_command(f, command, shown, record, state, environ, load_reader)
+    code = helper_status or run_command(f, command, shown, record, state, environ, load_reader)
     record.update(ended_at=time.time(), run_seconds=time.monotonic() - began, exit_status=code)
     loads = record["load_samples"]
     record.update(load_mean=sum(loads) / len(loads) if loads else None,
@@ -1951,7 +1988,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
                 entries = {os.path.join(os.path.dirname(os.path.realpath(__file__)), name)
                            for name in ("fren-build", "heavy-lean-build")}
                 record["compiler_budget"] = os.path.realpath(launched[0]) in entries
-                return run(f, offline_wrapper + launched, shown, kind, record, admitted, state, environ, load_reader)
+                return run(f, offline_wrapper + launched, shown, kind, record, admitted, state, environ, load_reader, offline_wrapper)
             finally:
                 release_slot(f, state)
         if wait_message != warned:
@@ -1961,4 +1998,10 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 7 and sys.argv[1] == "--forecast-helper":
+        _, _, command, state, path, started, output = sys.argv
+        forecast = command_forecast(command, state, {"HEAVY_LOG": path}, float(started))
+        with open(output, "w") as result:
+            json.dump(forecast, result)
+        sys.exit(0)
     sys.exit(main(sys.argv[1:]))

@@ -1504,12 +1504,18 @@ though a killed job's peak does not show how much memory it needed to finish.
 adviser verifies that its embedded adapter, kernel, toolchain selection and
 Lake configuration match this checkout. Heavy builds it from this checkout
 if it is missing or stale, so a fresh checkout and a stale adviser use the
-current key and forecast rules. Concurrent Heavy starts serialize verification
-and build, with a bounded wait. If the toolchain or build is unavailable the
-optional forecast is `null` and the job still runs; with no usable history it
-is also `null`, not zero. The script integration test exercises fresh and stale
-advisers. Malformed records are skipped; `HEAVY_LOG` selects the prediction's
-source as well as destination. The Lean adviser reads the log and applies
+current key and forecast rules. The adviser, including verification and any
+build, runs as an owned monitored process group under the admitted holder. Its
+RSS is reported and enforced by the same cap and contributes to the job's
+recorded peak. Its descendants are terminated on timeout, cap enforcement or
+interruption, and an interrupted or killed helper stops the requested command. `--offline` isolates the adviser and its
+build from the network as well as the requested command. Concurrent Heavy
+starts serialize verification and build, with a bounded wait. If the toolchain
+or build is unavailable the optional forecast is `null` and the job still
+runs; with no usable history it is also `null`, not zero. Script integration
+tests exercise fresh and stale advisers, monitoring, cleanup and offline mode.
+Malformed records are skipped; `HEAVY_LOG` selects the prediction's source as
+well as destination. The Lean adviser reads the log and applies
 `Heavy.Forecast`'s bounded selection;
 its key and forecast functions are bound to `heavy_prediction_key` and
 `heavy_memory_prediction` in `Impls.Heavy`. Python invokes it and logs the
