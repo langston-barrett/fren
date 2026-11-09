@@ -34,7 +34,7 @@ with its written grouping and order.
 r[parsing.grammar.declaration-trees]
 The parser's tree of an accepted file, without parentheses and trivia, is
 the sequence of declaration trees that `syntax.tree.productions` gives.
-<!-- status: tested Spec.Language.Syntax.trees_agree -->
+<!-- status: tested Spec.Language.Syntax.declarations_agree -->
 
 ## One parser and its entries
 

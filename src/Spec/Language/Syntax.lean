@@ -796,10 +796,81 @@ def roundtrip_agrees : Bool := Id.run do
 
 #guard roundtrip_agrees
 
+/-- A declaration tree printed: its tokens, with each expression printed as
+`syntax.property.unambiguous` says, and a trailing comma when `trailing`. -/
+def declPrint (trailing : Bool) : spec.surface.DeclarationF Tree → String
+  | .Module d => s!"{if d.public? then "pub " else ""}mod {pathText d.path}"
+  | .Enumeration d =>
+    s!"{if d.public? then "pub " else ""}enum {d.name} \{ " ++ ", ".intercalate d.variants.toList ++
+      (if trailing then "," else "") ++ " }"
+  | .Function d =>
+    s!"{if d.public? then "pub " else ""}fn {d.name}(" ++ ", ".intercalate (d.parameters.toList.map paramText) ++
+      (if trailing then "," else "") ++ s!"): {typeText d.result} := {d.body.print.text}"
+  | .Expectation d =>
+    s!"expect {d.name}(" ++ ", ".intercalate (d.parameters.toList.map paramText) ++
+      (if trailing && !d.parameters.toList.isEmpty then "," else "") ++ ") { " ++
+      " ".intercalate (d.members.toList.map fun m =>
+        s!"{match m.kind with | .Assume => "assume" | .Expect => "expect"} {m.label}: {m.body.print.text}") ++ " }"
+where
+  typeText : spec.surface.TypeName → String
+    | .Boolean => "Bool" | .Integer => "Int" | .Named p => pathText p
+  paramText (p : spec.surface.Parameter) : String :=
+    p.name ++ ((p.annotation.map fun t => ": " ++ typeText t).getD "")
+
+/-- A seeded pseudo-random declaration tree, with random visibility, names,
+paths, parameters, types and members. -/
+def randomDecl (seed : Nat) : spec.surface.DeclarationF Tree × Nat := Id.run do
+  let mut s := lcg seed
+  let pick (s n : Nat) : Nat := s / 2 ^ 33 % n
+  let names := ["a", "b", "c?", "next_step", "Bool", "Int", "T"]
+  let name (s : Nat) := names[pick s 4]!
+  let isPub := pick s 2 == 0
+  s := lcg s
+  let path := Fren.Seq.ofList ((List.range (1 + pick s 3)).map fun i => names[(pick s 7 + i) % 7]!)
+  s := lcg s
+  let types : List spec.surface.TypeName := [.Boolean, .Integer, .Named (Fren.Seq.ofList ["E"]),
+    .Named (Fren.Seq.ofList ["Int", "T"])]
+  let params := (List.range (1 + pick s 3)).map fun i =>
+    let n := names[(pick s 5 + i) % 4]!
+    let t := types[(pick s 11 + i) % 4]!
+    (⟨n, if n.endsWith "?" && (pick s 13 + i) % 2 == 0 then none else some t⟩ : spec.surface.Parameter)
+  s := lcg s
+  let (body, s') := randomTree s 3
+  let (other, s'') := randomTree s' 2
+  s := lcg s''
+  let decl : spec.surface.DeclarationF Tree := match pick s 4 with
+    | 0 => .Module ⟨isPub, path⟩
+    | 1 => .Enumeration ⟨isPub, name s, Fren.Seq.ofList (names.take (1 + pick s 3))⟩
+    | 2 => .Function (.mk! isPub (name s) (Fren.Seq.ofList params) (types[pick s 4]!) body)
+    | _ => .Expectation (.mk! (name s) (Fren.Seq.ofList (if pick s 3 == 0 then [] else params))
+        (Fren.Seq.ofList [.mk! .Assume "a" other, .mk! .Expect "c" body]))
+  return (decl, s)
+
+--@ reference: syntax.tree.productions
+--@ reference: parsing.grammar.declaration-trees
+/-- `parsing.grammar.declaration-trees`: a generated declaration tree, printed
+and parsed, gives back that tree, field for field. The trees are generated
+independently of the parser. Bounded: 1000 seeded random files of one to three
+declarations, with and without trailing commas. -/
+def declarations_agree : Bool := Id.run do
+  let mut seed := 9091
+  for _ in [:1000] do
+    let mut decls := []
+    for _ in [:1 + seed / 2 ^ 33 % 3] do
+      let (d, s) := randomDecl seed
+      seed := s
+      decls := decls ++ [d]
+    let trailing := seed % 2 == 0
+    let text := "\n".intercalate (decls.map (declPrint trailing))
+    let expected := "(File" ++ String.join (decls.map fun d => " " ++ declSexp d) ++ ")"
+    if fileSexp? text != some expected then return false
+  return true
+
+#guard declarations_agree
+
 --@ reference: syntax.path.syntax
 --@ reference: syntax.tree.productions
 --@ reference: syntax.tree.well-formed
---@ reference: parsing.grammar.declaration-trees
 /-- `syntax.tree.productions` and `syntax.tree.well-formed`: each line of the
 chapter's `fren2 trees` blocks has the tree it states, and the tree of every
 expression that the parser accepts among `grammarInputs` is well formed. -/

@@ -2,6 +2,8 @@ import Fren.Impl
 import Fren.Literate
 import FrenParse
 import Spec.Language.LexicalStructure
+import Spec.Language.Syntax
+import FrenParseTests
 
 open Fren.Lang
 
@@ -19,5 +21,12 @@ def space_bytes_agree : Bool :=
     FrenParse.spaceByte b == (b < 128 && decide (String.singleton (Char.ofNat b) ∈ spec.lexical.WHITESPACE))
 
 #guard space_bytes_agree
+
+-- Each `tested` or `lean` status of the chapter names a declaration that exists.
+open Lean Elab Command in
+#eval show CommandElabM Unit from do
+  let md ← IO.FS.readFile ("src" / "Spec" / "Compiler" / "AstAndParsing.md")
+  for name in Spec.Language.LexicalStructure.statusNames md do
+    unless (← getEnv).contains name.toName do throwError s!"the status names `{name}`, which does not exist"
 
 end Spec.Compiler.AstAndParsing
