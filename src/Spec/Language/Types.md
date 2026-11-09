@@ -266,7 +266,7 @@ Here b is a Boolean, n an integer, c a constructor and f a function, each
 item named by its canonical identity; ⊖ is a unary and ⊕ a binary operator.
 A match has at least one arm.
 
-r[types.expression.syntax] spec::types::{UnaryOp, BinaryOp, ArmF, ExprF}
+r[types.expression.syntax] spec::types::{ArmF, ExprF}
 A Core expression is a finite tree whose nodes have the forms of `ExprF<E>`,
 where E is the position of a child. A literal carries its value, and a let
 carries the type annotation written on it, if any. A call's arguments and a
@@ -280,8 +280,7 @@ level), the rules' premises (`E` a child's typing) and the maps between
 them share.
 
 ```fren
-pub enum UnaryOp { Neg, Not }
-pub enum BinaryOp { Add, Sub, Mul, Div, Mod, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Iff }
+use spec::surface::{BinaryOp, UnaryOp}
 
 pub struct ArmF<E> { constructor: ItemId, body: E }
 

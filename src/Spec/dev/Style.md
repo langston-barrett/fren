@@ -258,7 +258,8 @@ and supplies no `impl ... by plausible` or `sorry`.
 
 [Lexical structure](../Language/LexicalStructure.md) and
 [Syntax](../Language/Syntax.md) check their grammar and examples against the
-actual lexer and parser, through blocks that their wrappers read:
+actual lexer and parser, through blocks that the `syntaxChapters` job of
+`fren_test` reads:
 
 - A `grammar` block holds normative grammar rules, read as a parsing
   expression grammar; the reader rejects malformed notation, a rule defined
@@ -268,6 +269,8 @@ actual lexer and parser, through blocks that their wrappers read:
   sentence that starts with the identifier of the rule it breaks, and
   carries a `--~ error:` annotation with the parser's message, which is not
   normative.
+- A `fren2 unresolved` block is a file that the parser accepts and name
+  resolution rejects, with the annotated message on the annotated line.
 - A `fren2 groups` block lists `text -- grouping` lines, whose sides have
   the same tree; a `fren2 trees` block lists `text -- tree` lines, the tree
   written with the constructor names of the abstract syntax.

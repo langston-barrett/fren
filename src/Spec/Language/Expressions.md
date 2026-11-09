@@ -24,7 +24,8 @@ constructor of its canonical enum owner; `value_type` gives its type.
 pub mod spec
 pub mod spec::expressions
 
-use spec::types::{ArmF, BinaryOp, ExprF, ItemId, ItemKind, Snoc, Symb, Ty, UnaryOp, entry}
+use spec::surface::{BinaryOp, UnaryOp}
+use spec::types::{ArmF, ExprF, ItemId, ItemKind, Snoc, Symb, Ty, entry}
 
 pub enum Value { Boolean(Bool), Integer(Int), Nominal(ItemId, ItemId) }
 

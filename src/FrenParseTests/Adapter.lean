@@ -55,6 +55,7 @@ def sameResult [BEq ε] [BEq α] (left right : Except ε α) : Bool :=
   | .error a, .error b => a == b
   | _, _ => false
 
+-- fren-covers: spec::parsing::tree_structure
 --@ reference: parsing.tree.structure
 /-- Audit actual terminal occurrences against independently scanned tokens. -/
 def coherent (doc : Document) : Bool :=
@@ -64,6 +65,7 @@ def coherent (doc : Document) : Bool :=
     doc.root.tokens.toArray == lexed.tokens &&
     doc.tape.all (fun piece => boundary doc.source piece.span.start && boundary doc.source piece.span.stop)
 
+-- fren-covers: spec::parsing::ownership, spec::parsing::bounds, spec::parsing::boundaries, spec::parsing::complete_input, spec::parsing::failure, spec::parsing::diagnostic_anchor, spec::parsing::reconstruction
 --@ reference: parsing.lossless.ownership
 --@ reference: parsing.source.bounds
 --@ reference: parsing.source.utf8
@@ -88,6 +90,7 @@ def audit (entry : Entry) (file : FrenSource.FileId) (text : String) : Bool :=
       boundary text d.span.start && boundary text d.span.stop && !d.expected.isEmpty &&
       (d.span == failed.lexed.eof || failed.lexed.tokens.any (·.span == d.span))
 
+-- fren-covers: spec::parsing::shared_entry
 --@ reference: parsing.shared.entry
 /-- The file and context entries give the same tree or the same diagnostic. -/
 def entriesAgree (text : String) (file : Nat) : Bool :=

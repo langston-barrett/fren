@@ -1,9 +1,8 @@
 import Fren.Impl
 import Fren.Literate
+import Fren.Trace
 import FrenParse
-import Spec.Language.LexicalStructure
 import Spec.Language.Syntax
-import FrenParseTests
 
 open Fren.Lang
 
@@ -13,20 +12,38 @@ open Fren.Lang
 
 namespace Spec.Compiler.AstAndParsing
 
+--@ reference: parsing.lexer.keywords
+-- The lexer classifies a word as a keyword exactly when it is in this table.
+impl reserved: reserved for (word : String) {
+  word := word, keyword? := FrenParse.keywords.contains word
+} by
+  intro word _
+  simp [fren_spec, FrenParse.keywords]
+
 --@ reference: parsing.primitive.space
-/-- `parsing.primitive.space`: the lexer's whitespace bytes are the ASCII
-encodings of the lexical chapter's `WHITESPACE` characters. -/
+impl space_case: space_case for (byte : Nat) {
+  byte := byte, space? := FrenParse.spaceByte byte
+} by
+  intro byte _
+  simp [fren_spec, FrenParse.spaceByte_iff]; omega
+
+--@ reference: parsing.primitive.continuation
+impl continuation_case: continuation_case for (byte : Nat) {
+  byte := byte, continuation? := FrenParse.continuationByte byte
+} by
+  intro byte _
+  simp [fren_spec, FrenParse.continuationByte_iff]; omega
+
+--@ reference: parsing.primitive.space
+/-- The lexer's whitespace bytes are the ASCII encodings of the lexical
+chapter's `WHITESPACE` characters. -/
 def space_bytes_agree : Bool :=
   (List.range 256).all fun b =>
     FrenParse.spaceByte b == (b < 128 && decide (String.singleton (Char.ofNat b) ∈ spec.lexical.WHITESPACE))
 
 #guard space_bytes_agree
 
--- Each `tested` or `lean` status of the chapter names a declaration that exists.
-open Lean Elab Command in
-#eval show CommandElabM Unit from do
-  let md ← IO.FS.readFile ("src" / "Spec" / "Compiler" / "AstAndParsing.md")
-  for name in Spec.Language.LexicalStructure.statusNames md do
-    unless (← getEnv).contains name.toName do throwError s!"the status names `{name}`, which does not exist"
-
 end Spec.Compiler.AstAndParsing
+
+set_option fren.requireEvidence "trusted" in
+#fren_trace

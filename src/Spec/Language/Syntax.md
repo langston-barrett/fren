@@ -13,8 +13,10 @@ index; name resolution and the derived forms relate the two. The lossless
 tree, which also keeps parentheses, trivia and every token, is the subject
 of [AST and parsing](../Compiler/AstAndParsing.md).
 
-The chapter's wrapper reads the `grammar` blocks below as they are written
-and runs them against the actual parser. Example blocks are checked too: a
+The `syntaxChapters` test of `fren_test` reads the `grammar` blocks below
+as they are written and runs them against the actual parser, as
+[AST and parsing](../Compiler/AstAndParsing.md#parsing) requires. Example
+blocks are checked too: a
 `fren2` block is a file that the parser accepts, a `fren2 rejected` block
 one that it rejects, a `fren2 groups` block lists expressions with the
 grouping that parentheses would write, and a `fren2 trees` block lists
@@ -35,7 +37,6 @@ what `A` matches if `A` matches, and otherwise what `B` matches; `A?`, `A*`
 and `A+` match `A` at most once, any number of times or at least once, as
 many times as it matches, and never give a match back; and `!A` matches no
 token, where `A` does not match.
-<!-- status: definition -->
 
 r[syntax.notation.trivia-sensitive]
 Trivia may come between any two tokens, and line endings are trivia like
@@ -43,7 +44,6 @@ any other: an expression may continue on the next line, as `let r := a`
 and then `% b` does. One terminal depends on the trivia before it:
 `TouchingOpen` is a `(` with no trivia between it and the token before it,
 no space, tab, line ending or comment.
-<!-- status: tested Spec.Language.Syntax.grammar_agrees -->
 
 ## Programs
 
@@ -54,7 +54,6 @@ A source text is read as a `File`, or, where a single expression is
 expected, as an `ExpressionEntry`. Either is accepted only when it matches
 all of the text's tokens. A text of trivia alone is an empty `File`, and no
 `ExpressionEntry`.
-<!-- status: tested Spec.Language.Syntax.grammar_agrees -->
 
 ```grammar
 File            ::= Declaration*
@@ -71,9 +70,8 @@ r[syntax.path.syntax]
 A path is one or more identifiers separated by `::`; a qualified path has at
 least two. A type is written as a path. Its tree is the built-in Boolean
 type for the path `Bool`, the built-in integer type for `Int`, and otherwise
-the type that the path names, as for `Int::T` and `A::Int`, which name
-resolution finds.
-<!-- status: tested Spec.Language.Syntax.trees_agree -->
+the type that the path names, as for `E` and `a::T`, which name resolution
+finds.
 
 ```grammar
 Path          ::= Identifier ("::" Identifier)*
@@ -81,11 +79,46 @@ QualifiedPath ::= Identifier ("::" Identifier)+
 Type          ::= Path
 ```
 
-> **Note:** A declaration may be named `Bool` or `Int`, and a type written
-> as that single identifier still denotes the built-in type. Whether such
-> a declaration is allowed belongs to [names and scope](NamesAndScope.md),
-> and is recorded as design debt D2 in the
+r[syntax.name.reserved] spec::surface::reserved_names
+`Bool` and `Int` are reserved type names: no module, enumeration, variant,
+function, global expectation or parameter is named `Bool` or `Int`. They
+are identifiers, so the grammar accepts such a declaration, and name
+resolution rejects it; [names and scope](NamesAndScope.md) enforces this
+rule.
+
+```fren
+pub mod spec::surface
+
+use spec::lexical
+
+pub proc reserved_names(): (holds?) { ensure output: holds? }
+
+tested reserved_names: "src/FrenTest/SpecChapters/Syntax.lean"
+```
+
+> **Rationale:** A type written `Bool` or `Int` always denotes the built-in
+> type, so a declaration of that name could never be referred to as a
+> type. This is decision D2 in the
 > [development coverage](../../../docs/fren2-specification-coverage.md#syntax-decisions-and-design-debt).
+
+### Examples
+
+Each of these is rejected by name resolution, with the annotated message,
+by the rule it names.
+
+`syntax.name.reserved`: an enumeration is named `Int`.
+
+```fren2 unresolved
+mod shapes
+enum Int { Small, Large }  --~ error: `Int` is a built-in type and cannot be redefined
+```
+
+`syntax.name.reserved`: a function's parameter is named `Bool`.
+
+```fren2 unresolved
+mod shapes
+fn f(Bool: Int): Int := 1  --~ error: `Bool` is a built-in type and cannot be redefined
+```
 
 ## Declarations
 
@@ -102,7 +135,6 @@ members are not separated, and each ends where its expression does. A
 parameter writes its type, unless its name ends in `?`, when it may omit the
 type, which is then `Bool`: `b?`, `b?: Bool` and `b?: Int` are all
 parameters, and typing reports the last.
-<!-- status: tested Spec.Language.Syntax.grammar_agrees -->
 
 ```grammar
 ModuleDeclaration      ::= "pub"? "mod" Path
@@ -122,7 +154,6 @@ be empty where that is meaningful: an expectation may have no parameters and
 a match no arms. A function has at least one parameter, a call at least one
 argument and an enumeration at least one variant. No list has a comma
 without an item before it.
-<!-- status: tested Spec.Language.Syntax.grammar_agrees -->
 
 > **Rationale:** A trailing comma lets a list be written one item per line
 > and grow without editing the line before, as in Rust. A function without
@@ -146,7 +177,6 @@ not nested operations, and parentheses write the nesting. A `let` is
 admitted only where an `Expression` is, and is never the bare operand of an
 operator, a `let`'s definition or an arm's body. A match's scrutinee is a
 `Primary`.
-<!-- status: tested Spec.Language.Syntax.grammar_agrees -->
 
 ```grammar
 Expression  ::= "let" Identifier ":=" Iff "in" Expression | Iff
@@ -172,20 +202,14 @@ right as they can, because the grammar's repetitions never give a match
 back: `a + if b then c else d + e` groups as `a + (if b then c else (d + e))`.
 Only a `(` that touches a path makes a call: in `f (x)` the path `f` is
 complete, and no rule accepts the `(x)` after it.
-<!-- status: tested Spec.Language.Syntax.groups_agree -->
 
 r[syntax.expression.terminals] spec::surface::{CONTEXTUAL, GRAMMAR_KEYWORDS}
 The quoted terminals of the grammar are every punctuator, the keywords
 `GRAMMAR_KEYWORDS`, and the contextual word `assume`, which the grammar
 reads only at the start of a member and which is otherwise an identifier.
 `Bool` and `Int` are identifiers, which only the tree of a type interprets.
-<!-- status: tested Spec.Language.Syntax.terminals_agree -->
 
 ```fren
-pub mod spec::surface
-
-use spec::lexical
-
 pub const GRAMMAR_KEYWORDS: Set<String> := {
     "mod",
     "pub",
@@ -303,7 +327,6 @@ whose subexpressions are of type `E`. A file's tree is the sequence of its
 declarations' trees, each a `DeclarationF` whose expressions are expression
 trees. The trees keep names as written paths and have no parentheses. An
 `Identifier` is a word that is not a keyword, as `identifier?` says.
-<!-- status: definition -->
 
 > **Note:** `ExprF` takes its subexpressions as a parameter, rather than
 > being a recursive enumeration, because a call's arguments and a match's
@@ -312,7 +335,7 @@ trees. The trees keep names as written paths and have no parentheses. An
 > today's Fren, `Identifier` constrains only the names that no sequence
 > holds: a constraint on the elements of a `Seq` quantifies over them,
 > outside the decidable core, so the other conditions of
-> `syntax.tree.well-formed` are stated, and tested, rather than typed. This is gap G1 in the
+> `syntax.tree.well-formed` are stated, and tested, rather than typed. This is decision G1 in the
 > [development coverage](../../../docs/fren2-specification-coverage.md#syntax-decisions-and-design-debt).
 
 ```fren
@@ -387,20 +410,16 @@ repetition such as `a - b - c` gives the nodes `(a - b) - c`, from the left.
 type's tree is as `syntax.path.syntax` says, a parameter's is its name and
 its type if written, and each declaration's is the `DeclarationF` node of
 its parts, with `public?` true when it is written with `pub`.
-<!-- status: tested Spec.Language.Syntax.trees_agree -->
 
 r[syntax.tree.well-formed]
 A tree is *well formed* when every identifier in it, a path's segment, a
 binder, a label, a parameter's or a declaration's name, or a variant,
 satisfies `identifier?`; every path has at least one segment and every
-arm's path at least two; and every call has at least one argument. The tree
-of every accepted text is well formed.
-<!-- status: tested Spec.Language.Syntax.trees_agree -->
+arm's path at least two; and every call has at least one argument.
 
 r[syntax.tree.operators] spec::surface::{unary_spelling, binary_spelling}
 The operators are spelled as `unary_spelling` and `binary_spelling` say. `-`
 is both `Neg` and `Sub`, and its position decides which.
-<!-- status: tested Spec.Language.Syntax.operators_agree -->
 
 ```fren
 pub fn unary_spelling(op: UnaryOp): String := match op {
@@ -445,7 +464,7 @@ match f(l) { E::A => not a, E::B => 1, } -- (Match (Call f (Name l)) (Arm E::A (
 match l {} -- (Match (Name l))
 pub mod a::b -- (File (Module pub a::b))
 enum E { A, B, } -- (File (Enumeration E A B))
-fn f(a: Bool, b: Int, c: E, d: Int::T, q?,): Bool := (a) -- (File (Function f (Parameter a Boolean) (Parameter b Integer) (Parameter c (Named E)) (Parameter d (Named Int::T)) (Parameter q?) Boolean (Name a)))
+fn f(a: Bool, b: Int, c: E, d: a::T, q?,): Bool := (a) -- (File (Function f (Parameter a Boolean) (Parameter b Integer) (Parameter c (Named E)) (Parameter d (Named a::T)) (Parameter q?) Boolean (Name a)))
 expect e(x: Int,) { assume a: x > 0 expect b: let y := x in y >= 0 } -- (File (Expectation e (Parameter x Integer) (Member Assume a (Binary Gt (Name x) (Integer 0))) (Member Expect b (Let y (Name x) (Binary Ge (Name y) (Integer 0))))))
 ```
 
@@ -453,13 +472,31 @@ expect e(x: Int,) { assume a: x > 0 expect b: let y := x in y >= 0 } -- (File (E
 
 These properties of the grammar and its trees are proved or tested.
 
+r[syntax.property.well-formed] spec::surface::accepted_trees_well_formed
+The tree of every text that the grammar accepts is well formed.
+
+```fren
+pub proc accepted_trees_well_formed(): (holds?) { ensure output: holds? }
+
+tested accepted_trees_well_formed: "src/FrenTest/SpecChapters/Syntax.lean"
+```
+
+r[syntax.property.terminals] spec::surface::grammar_terminals
+The grammar's punctuators are exactly `PUNCTUATORS`, its keywords exactly
+`GRAMMAR_KEYWORDS`, and its other quoted words exactly `CONTEXTUAL`.
+
+```fren
+pub proc grammar_terminals(): (holds?) { ensure output: holds? }
+
+tested grammar_terminals: "src/FrenTest/SpecChapters/Syntax.lean"
+```
+
 r[syntax.property.spellings] spec::surface::spellings::{binary, unary, shared, tokens, grammar_keywords, contextual}
 Two binary operators have different spellings, as do two unary operators,
 and a unary and a binary operator share a spelling only for `Neg` and `Sub`:
 a token and its position determine the operator. Every operator's spelling
 is a punctuator or a keyword of the grammar. The grammar's keywords are
 keywords, and its contextual word is not.
-<!-- status: smt -->
 
 ```fren
 expect spellings(a: BinaryOp, b: BinaryOp, u: UnaryOp, v: UnaryOp, word: String) {
@@ -473,7 +510,7 @@ expect spellings(a: BinaryOp, b: BinaryOp, u: UnaryOp, v: UnaryOp, word: String)
 }
 ```
 
-r[syntax.property.unambiguous] spec::surface::{binary_category, unary_category, left_category, right_category, fits?}
+r[syntax.property.unambiguous] spec::surface::{binary_category, unary_category, left_category, right_category, fits?, unambiguity}
 The grammar is unambiguous up to parentheses and complete for well-formed
 expression trees. Every well-formed tree has a text whose tree it is: the
 text that writes each node's tokens and puts a subtree in parentheses
@@ -491,7 +528,6 @@ parentheses, and it is the left operand of a binary operator, which would
 follow it. Elsewhere a keyword or punctuator that no expression continues
 with, such as `then`, `in`, `,` or `)`, ends an open subtree. Declarations
 are outside this property.
-<!-- status: tested Spec.Language.Syntax.roundtrip_agrees -->
 
 ```fren
 pub enum Category { Expression, Iff, Or, And, Not, Comparison, Sum, Product, Negation, Primary }
@@ -549,6 +585,10 @@ pub fn left_category(op: BinaryOp): Category :=
 -- the place is a binary operator's left operand.
 pub fn fits?(child: Category, open?, place: Category, left_operand?) :=
     rank(child) >= rank(place) and not (open? and left_operand?)
+
+pub proc unambiguity(): (holds?) { ensure output: holds? }
+
+tested unambiguity: "src/FrenTest/SpecChapters/Syntax.lean"
 ```
 
 r[syntax.property.operands] spec::surface::operands::{right, left_associative, non_associative}
@@ -557,7 +597,6 @@ operator. Its left operand is of the operator's own category when the
 operator groups to the left, and of a tighter one when it does not
 associate. For example, `a - b - c` needs no parentheses, and
 `a < (b < c)` and `(a < b) < c` both do.
-<!-- status: smt -->
 
 ```fren
 expect operands(b: BinaryOp) {
@@ -583,7 +622,7 @@ expect operands(b: BinaryOp) {
 
 ## Examples
 
-These declarations use the forms of the grammar: the wrapper checks that
+These declarations use the forms of the grammar: the `syntaxChapters` test checks that
 each rule alternative, and each optional or repeated part of a rule, is
 used somewhere in the chapter's `fren2` blocks.
 
@@ -621,7 +660,7 @@ expect operators() {
 
 fn none(l: Light): Int := match l {}
 
-fn typed(b?: Bool, n: Int::T,): Bool := b?
+fn typed(b?: Bool, n: a::T,): Bool := b?
 ```
 
 These are syntax, though later rules reject them: `y` is not in scope,

@@ -26,6 +26,7 @@ import FrenTest.ReadingBeside
 import FrenTest.Resolved
 import FrenTest.SmallValues
 import FrenTest.SolverPairing
+import FrenTest.SpecChapters.Syntax
 import FrenTest.TheoryDump
 import FrenTest.TimeoutMatch
 import FrenTest.Ui
@@ -847,7 +848,8 @@ def ruleAdjacentChapters : Array String :=
 converted. Their wrappers trace their procedures with `trusted` as the
 required level, so that `lake build --wfail` fails when a property loses its
 evidence, and their Markdown has no hand-written status comments. -/
-def evidenceChapters : Array String := ruleAdjacentChapters.push "src/Spec/Compiler/Thir.md"
+def evidenceChapters : Array String := ruleAdjacentChapters ++ #["src/Spec/Compiler/Thir.md",
+  "src/Spec/Language/LexicalStructure.md", "src/Spec/Language/Syntax.md", "src/Spec/Compiler/AstAndParsing.md"]
 
 /-- The two lines with which a converted chapter's wrapper must end, as an
 active command: a comment around them would leave other last lines. -/
@@ -4631,7 +4633,7 @@ def jobs : IO (Array (List String)) := do
     "ui" :: ((List.range ui.size).filter (· % n == k)).map (ui[·]!.toString)
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
-    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["fren2Deadlines"], ["fren2", "resolver"], ["fren2", "resolverProperties"], ["fren2", "walking"], ["fren2", "walkingProperties"], ["fren2", "typing"], ["fren2", "typingOperators"], ["fren2", "typingProperties"], ["fren2", "evaluator"], ["fren2", "evaluatorProperties"], ["fren2", "desugaring"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
+    ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["syntaxChapters"], ["fren2Deadlines"], ["fren2", "resolver"], ["fren2", "resolverProperties"], ["fren2", "walking"], ["fren2", "walkingProperties"], ["fren2", "typing"], ["fren2", "typingOperators"], ["fren2", "typingProperties"], ["fren2", "evaluator"], ["fren2", "evaluatorProperties"], ["fren2", "desugaring"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
       ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["heavyProcess", "publisher"], ["heavyProcess", "forecast"], ["heavyProcess", "entrypoint"], ["heavyProcess", "cohort"], ["heavyProcess", "core"], ["heavyProcess", "automatic"], ["heavyProcess", "automaticEvidence"], ["heavyProcess", "automaticStore"], ["heavyProcess", "automaticIO"], ["heavyProcess", "automaticOwnership"], ["heavyProcess", "tmpState"], ["heavyBudget"], ["heavyBudgetBoundaries"], ["heavyMissingSource"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
@@ -4783,6 +4785,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
   | ["fixing"] => fixing
   | ["libraries"] => libraries
   | ["layering"] => FrenTest.Layering.check
+  | ["syntaxChapters"] => FrenTest.SpecChapters.Syntax.check
   | ["fren2Deadlines"] => do
     let out ← IO.Process.output { cmd := ".lake/build/bin/fren2_test", args := #["--fren2-deadline-controls"] }
     return if out.exitCode == 0 then #[] else #[s!"Fren2 deadline controls failed:\n{out.stdout}{out.stderr}"]

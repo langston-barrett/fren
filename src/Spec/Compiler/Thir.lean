@@ -499,16 +499,16 @@ def coreType : spec.types.Ty → FrenExpr.ValueType (Fren.Seq String)
   | .Integer => .int
   | .Nominal owner => .enum owner
 
-def coreUnary : spec.types.UnaryOp → FrenAst.UnaryOp
+def coreUnary : spec.surface.UnaryOp → FrenAst.UnaryOp
   | .Neg => .neg | .Not => .not
 
-def coreBinary : spec.types.BinaryOp → FrenAst.BinaryOp
+def coreBinary : spec.surface.BinaryOp → FrenAst.BinaryOp
   | .Add => .add | .Sub => .sub | .Mul => .mul | .Div => .div | .Mod => .mod
   | .Lt => .lt | .Le => .le | .Gt => .gt | .Ge => .ge
   | .And => .and | .Or => .or | .Iff => .iff | .Eq => .eq | .Ne => .ne
 
 /-- The Core unary rule agrees with the actual generic primitive. -/
-theorem core_unary (op : spec.types.UnaryOp) (operand result : spec.types.Ty) :
+theorem core_unary (op : spec.surface.UnaryOp) (operand result : spec.types.Ty) :
     @FrenExpr.unary (Fren.Seq String) ⟨fun x y => decide (x = y)⟩
       (coreUnary op) (coreType operand) = some (coreType result) ↔
         spec.types.unary_type? op operand result := by
@@ -517,7 +517,7 @@ theorem core_unary (op : spec.types.UnaryOp) (operand result : spec.types.Ty) :
       FrenExpr.ValueType.compatible, fren_spec]
 
 /-- Every operator and nominal identity is covered; there is no bounded enum domain. -/
-theorem core_binary (op : spec.types.BinaryOp) (left right result : spec.types.Ty) :
+theorem core_binary (op : spec.surface.BinaryOp) (left right result : spec.types.Ty) :
     @FrenExpr.binary (Fren.Seq String) ⟨fun x y => decide (x = y)⟩
       (coreBinary op) (coreType left) (coreType right) = some (coreType result) ↔
         spec.types.binary_type? op left right result := by

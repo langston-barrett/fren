@@ -5,11 +5,9 @@ whitespace, comments, words, numerals, punctuators and rejected text. The
 [grammar](Syntax.md) reads the words, numerals and punctuators, and skips
 whitespace and comments.
 
-Each rule's status comment says how it is established, as the
-[style guide](../dev/Style.md#rule-evidence-metadata) defines. A `tested`
-check of this chapter's wrapper compares the actual lexer with the
-chapter's definitions on finitely many inputs, every text up to a bound
-and seeded random texts, and proves nothing beyond them.
+The rules define lexing; their properties are Fren expectations that the
+checker proves. That the actual lexer lexes as they say is a requirement of
+[AST and parsing](../Compiler/AstAndParsing.md#lexing).
 
 ## Source text
 
@@ -22,13 +20,11 @@ sequence of Unicode characters that it encodes. Bytes that are not valid
 UTF-8 are no source text: they are rejected before lexing, and no
 character replaces them. Positions in a source text are byte offsets into
 its UTF-8 encoding, and a position is never inside a character.
-<!-- status: tested Spec.Language.LexicalStructure.encoding_agrees -->
 
 r[lexical.source.line-ending] spec::lexical::line_ending?
 A *line ending* is a line feed (LF, U+000A), or a carriage return (CR,
 U+000D) immediately followed by a line feed. A CR that no LF follows is
 whitespace, but ends no line.
-<!-- status: tested Spec.Language.LexicalStructure.lexer_agrees -->
 
 ```fren
 pub mod spec
@@ -46,7 +42,6 @@ Each piece that lexing produces, but rejected text, belongs to one class.
 r[lexical.class.definition] spec::lexical::in_class?
 The *lexical classes* are whitespace, comments, words, numerals and
 punctuators, and `in_class?` states which texts belong to each:
-<!-- status: definition -->
 
 - *whitespace* is a single space, tab (U+0009), LF or CR;
 - a *comment* is `--` and then any characters but LF;
@@ -108,21 +103,18 @@ belongs to a lexical class, and it has that class, the rule of *maximal
 munch*: `next_step` is one word, `<=` one punctuator, `123` one numeral
 and `--` a comment rather than two punctuators. There are two exceptions,
 stated next.
-<!-- status: tested Spec.Language.LexicalStructure.lexer_agrees -->
 
 r[lexical.piece.comment-end]
 A comment ends before a line ending: when the longest comment ends with a
 CR that an LF follows, the comment does not include that CR, which is
 whitespace.
-<!-- status: tested Spec.Language.LexicalStructure.lexer_agrees -->
 
 r[lexical.piece.rejected]
 Where `<-` starts, those two characters are one piece of *rejected text*.
 Where no text of any class starts, the piece is the next character alone,
 and is rejected text too: `/`, `!` without `=`, `?` after a non-word,
-`.`, `;`, and any character outside ASCII outside a comment. No parse of
-a source text that contains rejected text succeeds.
-<!-- status: tested Spec.Language.LexicalStructure.lexer_agrees -->
+`.`, `;`, and any character outside ASCII outside a comment. A source text
+that contains rejected text is no program.
 
 > **Rationale:** `<-` is reserved for a possible future operator, and is
 > a Lean token, which today's Fren, read by Lean, cannot accept as `<`
@@ -134,7 +126,6 @@ r[lexical.class.disjoint] spec::lexical::classes::{disjoint, punctuator_extensio
 No text belongs to two classes: the class of each piece is determined.
 A punctuator of two characters, other than `!=`, extends one of one
 character.
-<!-- status: smt -->
 
 ```fren
 expect classes(a: Class, b: Class, text: String) {
@@ -201,19 +192,17 @@ Trivia may come before the first token, after the last, and between any
 two tokens. The grammar does not read trivia, except where the
 [Syntax](Syntax.md#notation) chapter says so: a `(` that must touch the
 token before it.
-<!-- status: definition -->
 
 ## Words, identifiers and keywords
 
 Words are the names of a program and its reserved words.
 
-r[lexical.keyword.set] spec::lexical::reserved
+r[lexical.keyword.set] spec::lexical::{KEYWORDS, keyword?}
 A word is a *keyword* if it is one of `KEYWORDS`, and an *identifier*
 otherwise. A keyword is never an identifier, even where the grammar has no
 construct that uses it. A word that ends in `?` is never a keyword: `if?`
 and `true?` are identifiers. `true`, `false` and `not` are keywords: no
 declaration, parameter, binder, label or path segment is named by one.
-<!-- status: lean Spec.Language.LexicalStructure.reserved -->
 
 ```fren
 pub const KEYWORDS: Set<String> := {
@@ -259,7 +248,7 @@ pub const KEYWORDS: Set<String> := {
     "not",
 }
 
-pub proc reserved(word: String): (keyword?) { ensure rule: keyword? iff word in KEYWORDS }
+pub fn keyword?(word: String) := word in KEYWORDS
 ```
 
 > **Rationale:** Most keywords name constructs of today's Fren that the
@@ -272,7 +261,6 @@ pub proc reserved(word: String): (keyword?) { ensure rule: keyword? iff word in 
 
 r[lexical.keyword.words] spec::lexical::keywords::words
 Every keyword is a word of lowercase ASCII letters.
-<!-- status: smt -->
 
 ```fren
 expect keywords(word: String) {
@@ -290,4 +278,3 @@ bound. Leading zeros are allowed: `007` denotes 7. A numeral has no sign,
 base prefix, digit separator, fraction or exponent: a negative number is
 written with unary minus, `0x1F` is the numeral `0` then the word `x1F`,
 and `1.5` is the numeral `1`, the rejected text `.` and the numeral `5`.
-<!-- status: tested Spec.Language.LexicalStructure.numerals_agree -->

@@ -1382,17 +1382,19 @@ Decisions:
   expectation's parameters and a match's arms may be empty.
 - **S2.** The remainder is written `%`, and `mod` is only the module keyword.
 
-Design debt:
+- **D2.** `Bool` and `Int` are reserved type names: no module,
+  enumeration, variant, function, expectation or parameter is named by one.
+  Name resolution enforces it (F0212).
+- **G1.** Decided: deferred to Fren 2.5's nested types and element
+  constraints, with no new features in today's Fren. Today's Fren has no
+  recursive datatype whose recursion passes through a `Seq`, so the
+  abstract syntax is the one-layer `ExprF<E>`, and a constraint on the
+  elements of a `Seq` is outside the decidable core, so only the
+  identifiers that no sequence holds are typed as `Identifier`, and full
+  well-formedness is a tested rule.
 
-- **D2.** A declaration may be named `Bool` or `Int`, while a type written
-  as that single identifier denotes the built-in type. Names and scope has
-  to say whether such a declaration is allowed.
-- **G1.** Today's Fren has no recursive datatype whose recursion passes
-  through a `Seq`, so the abstract syntax is the one-layer `ExprF<E>`, and
-  a constraint on the elements of a `Seq` is outside the decidable core, so
-  only the identifiers that no sequence holds are typed as `Identifier`.
-
-Evidence of these chapters, and its bounds:
+Evidence of these chapters, and its bounds; the compiled `syntaxChapters`
+job of `fren_test` runs these checks in about 20 seconds:
 
 - [ ] The lexer agrees with the lexical classes and maximal munch on every
   text of up to three characters over 24 characters, of four over ten, a

@@ -18,7 +18,7 @@ resolution or typing decisions.
 
 The defined source domain has Booleans, mathematical integers, payload-free
 nominal enums, named functions, locals and lets, conditionals, constructor
-matches and global assumptions and expectations. The [source grammar](../Compiler/AstAndParsing.md#source-forms)
+matches and global assumptions and expectations. The [source grammar](Syntax.md)
 fixes its concrete forms. Static semantics comprises resolution, typing and
 verification, including definedness, match coverage and the absence of
 recursive call cycles.
