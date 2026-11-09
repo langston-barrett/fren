@@ -64,7 +64,7 @@ bounded enumeration or sampled traversal soundness.
 
 ## Compiler correction units
 
-The current correction's substantive Compiler unit is THIR: the wrapper now
+The shared-core correction's first Compiler unit is THIR: the wrapper
 states `ChildContext`, `AtContext`, `Produces`, `BodyTyping`,
 `OccurrenceTyping`, `DeclaresBody`, `BodyEntry`, `BodyInventory`,
 `TypePassContract`, `MatchCoverage`, `Calls`, `CallPath`,
@@ -73,15 +73,15 @@ It proves retention/admission, uniqueness, failure exclusion, static-boundary
 factorization and equivalence of the body obligation to `TypingSound`.
 It does not prove `TypePassContract`, `CoverageContract` or
 `NonrecursionContract`, or a complete source-to-Fren-derivation bridge.
-The other Compiler edits remove development narrative and preserve semantics;
-they do not claim to complete those chapters' formal specification work.
+The desugaring unit below adds its own actual-code contracts. The remaining
+MIR/LIR/OIR/SMT narrative edits do not complete their formal specifications.
 
 Continue the same correction objective with these separate chapter units:
 
-1. **Desugaring** (`SCdesugar`, queued edit 1012): actual pass interface and
-   typing/context/occurrence preservation, with one rule per admitted sugar;
-   preserve the identity boundary on present source forms. No unsupported
-   sugar is admitted merely to formalize a law.
+1. **Desugaring extensions** (`SCdesugar`, queued edit 1012): the core identity
+   relation and actual API correspondence are specified below. Each additional
+   sugar still needs Language semantics, its own transformation rule, typing
+   and scoped-obligation/value preservation. No additional sugar is admitted.
 2. **MIR** (`SCmir`, 1018): actual theory/signature/member/request judgments,
    owner/parameter roles, scoped assumptions and domain retention, with
    bidirectional source-check correspondence. Extend to procedures/views
@@ -100,6 +100,74 @@ Continue the same correction objective with these separate chapter units:
 
 These are retained substantive obligations, not completed chapters or a
 separate plan replacing the implemented shared-core and THIR correction.
+
+## Desugaring contracts and proof boundary
+
+`Spec/Compiler/Desugaring.md` displays the exact compiled definitions in its
+wrapper: `Program`, `Desugars`, `Produces`, `Rejects`, `Retains`, `Guard`,
+`ScopedChild`, `ScopedAt`, `DomainSite`, `Members`, `StaticPreservation`,
+`Evaluator`, `InterpretationPreservation`, `ObligationPreservation` and
+`PassContract`. These use actual production IR and the shared THIR judgments;
+there is no copied executable compiler. Recursive source/typed carriers and
+proof-carrying admission are stated in Lean because the current Fren subset
+cannot quantify over those actual recursive objects. The existing Fren
+example checks its arithmetic/check claims separately. It is not evidence
+for the Lean pass contracts.
+
+The wrapper proves the actual `desugar` implements the specified relation,
+the complete identity pass contract, exact resolved success and failure,
+the type/coverage/non-recursion admission factorization, failure exclusion,
+source-result projection, and exact output admission/retention/static facts.
+`observation` transfers any predicate or interpretation on the whole retained
+resolved/typed pair. `ScopedChild` and its closure project to the shared THIR
+context relations. These are universal Lean proofs, not Plausible samples.
+The admitted identity transfers properties without proving them true initially.
+
+`DomainSite` states a structural source-obligation inventory over the actual
+AST. It includes unused let values and both ordinary Boolean operands;
+branch guards retain the context of their subject across later binders.
+It records candidate division/remainder sites, not discharged nonzero-divisor
+proofs or a complete verification engine. Ordered `Members` observations keep
+all assumptions and expectations of a canonical block, including assumptions
+written after goals. Full retention separately covers empty blocks and all
+source/origin data. Interpreter equality includes all depths, requests and
+argument arrays, including negative cases. Neither it nor the generic
+observation law proves declarative verification soundness.
+
+The wrapper's structural positive/negative controls distinguish explicit
+branches, unguarded ordinary operands, unused let definitions and guard
+contexts across binders. Its actual-source control retains bodies, ordered
+members, signatures, references and file origins, and rejects type, coverage,
+recursion, parse and unsupported-syntax inputs. The existing actual-code
+`FrenThirDesugarTests` Plausible and finite tests remain separate bounded
+evidence; they do not prove a universal recursive bridge. Exact executions
+and deliberate failing mutations are recorded in the external check receipts.
+
+- [ ] Prove `TypePassContract`, `CoverageContract` and `NonrecursionContract`
+  for actual THIR production. Identity's static transfer does not discharge
+  these antecedent contracts.
+- [ ] Preserve the independently reviewed THIR follow-up: `OccurrenceTyping`
+  currently supplies a sound witness for each source descendant, but does
+  not constrain every output occurrence, uniqueness or postorder. Prove the
+  reverse output-to-source soundness direction and exact occurrence inventory,
+  with surplus/wrong-type/context/duplicate mutation controls. This unit does
+  not edit shared THIR or claim to resolve that specification gap.
+- [ ] Prove the converse context projection and the complete scoped-traversal
+  bridge to Language free-local/mentioned-item/interpretation semantics,
+  including guard evaluation under lexical lets and call substitution.
+- [ ] Relate the structural `DomainSite` inventory and retained members to
+  declarative source verification and each MIR/LIR/OIR request inventory in
+  both directions; prove completeness across all definitions and members.
+  Do not infer it from an interpreter's execution trace.
+- [ ] Justify the dependency semantics of mutually partial assumptions before
+  claiming a verification result for them. No rule in this unit chooses it.
+- [ ] Specify each additional sugar and prove its typing, origin and scoped
+  obligation/value correspondence, including tables' disjointness marker.
+- [ ] Restate these recursive actual-code relations in Fren when its recursive
+  types/judgments permit them, without extending Fren1 as a prerequisite.
+
+MIR, LIR, OIR and SMT remain separate substantive correction units above.
+No production pass or broader source admission changes in this unit.
 
 ## Residual technical spellings
 
