@@ -10,7 +10,8 @@ Fren language or compiler has been verified.
 ## Language core correspondence
 
 The [Core typing chapter](../src/Spec/Language/Types.md) opens with an
-overview: a table of its judgment forms and an abstract interface whose
+overview: a table of its judgment forms and a figure of its main relation
+and laws. It ends with an interface of uninterpreted functions whose
 contract states that a derivation records its type, which it therefore
 determines, and regularity, interpreted in the wrapper by the detailed
 definitions. That an expression's type is unique, whatever table types it,
@@ -94,10 +95,15 @@ are not yet converted.
   `fren.evidence` setting that defers a procedure's checks to its `impl`
   (no `"lean"`; see [Methods](../src/Reqs/Methods.md)). Once either is
   fixed, the template drops `holds?` and the random setting.
-- **Abstract interface.** An uninterpreted function's contract over an
-  abstract output type has a realizability check outside the decidable
-  core, so the overview cannot state weakening as a contract of a
-  `weaken` function; it links to the procedure below instead. Fren1 also
+- **Interface.** A contract on a function returning a derivation has a
+  realizability check outside the decidable core, so the interface cannot
+  state weakening as a contract of a `weaken` function; the overview links
+  to the procedure instead. The interface uses the chapter's concrete types,
+  not abstract ones, and so comes at the end: with four abstract types in
+  the reference, the random test of the unrelated `lang::element_witness`
+  in `src/Reqs/Lang/ElementQuantifiers.md` found no outputs (`F0609`) and
+  `ownSpec` failed. A procedure's random tests should not depend on
+  unrelated declarations; that is a Fren bug to file. Fren1 also
   cannot name constructors of `Ty` `Bool` and `Int`, which are built-in
   types, so `Ty::Boolean` and `Ty::Integer` remain.
 - **Lean-only correspondence.** The THIR chapter's level-to-index and

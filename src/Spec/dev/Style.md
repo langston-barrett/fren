@@ -66,19 +66,24 @@ rule before it.
 ## Overview
 
 A chapter opens with an overview: a table of its judgment forms, their
-meanings and the Fren that states them, and an abstract interface. The
-interface declares abstract types and uninterpreted functions for the
-chapter's main objects and relation, and states its key laws as their
-contracts, or as expectations that the contracts prove. The chapter's
-wrapper interprets each abstract type and function by its detailed
+meanings and the Fren that states them, and a short figure of the main
+relation's signature and key laws, with each law linked to the rule that
+states it. The chapter ends with the interface: uninterpreted functions
+for the main relation, over the chapter's own types, whose contracts state
+the laws that a contract can state, or expectations that the contracts
+prove. The chapter's wrapper interprets each function by its detailed
 definition (`interp`), which proves the contracts for the detailed
-definitions: the interpretation is the refinement relation. A law that
-would be a contract on a function returning an abstract type, such as a
-`weaken` that returns a derivation, cannot be one: that contract's
-realizability check is outside the decidable core. Such a law links to the
-property that states it below. Say exactly what a contract law states; a
-derivation that records its type determines it, which is not uniqueness of
-an expression's type.
+definitions: the interpretation is the refinement relation. Say exactly
+what a contract law states; a derivation that records its type determines
+it, which is not uniqueness of an expression's type.
+
+Two Fren limits shape this. A contract on a function that returns an
+abstract or recursive value, such as a `weaken` that returns a derivation,
+has a realizability check outside the decidable core, so such a law links
+to the property that states it. And the interface uses the chapter's
+concrete types rather than abstract ones, and so comes after them: adding
+abstract types to the reference changes the random tests of unrelated
+procedures elsewhere in it.
 
 ## Notation
 

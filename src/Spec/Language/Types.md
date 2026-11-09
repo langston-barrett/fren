@@ -23,59 +23,34 @@ The chapter's judgments, and the Fren definitions that state them:
 | `Σ ⊢ d ok` | a declaration is well typed | `decl_ok?` |
 | `⊢ (Σ, ds) ok` | a program is well typed | `prog_ok?` |
 
-r[types.overview.interface] spec::typing::{Symb, Ctx, Derivation, Ty, symb_ok?, ctx_ok?, ty_ok?, type_of, derives?}
+r[types.overview.laws]
 In outline, typing is a decidable relation `derives?(Σ, Γ, d, τ)` between a
-symbol environment, a context, a derivation d of an expression and a type.
-A derivation records the type it derives, `type_of(Σ, Γ, d)`. Only
-well-formed environments and contexts admit derivations, and every derived
-type is well formed. The rest of the chapter
-defines these objects and the relation; the chapter's wrapper interprets
-each of them by its detailed definition, which proves this contract for
-the detailed definitions.
+symbol environment, a context, a derivation d of an expression and a type:
 
-```fren
-pub mod spec
-pub mod spec::typing
+```text
+  derives? : Symb × Ctx × Derivation × Ty → Bool
+  type_of  : Symb × Ctx × Derivation → Ty
 
-pub type Symb
-pub type Ctx
-pub type Derivation
-pub type Ty
-
-pub fn symb_ok?(Symb)
-pub fn ctx_ok?(Symb, Ctx)
-pub fn ty_ok?(Symb, Ty)
-pub fn type_of(Symb, Ctx, Derivation): Ty
-
-pub fn derives?(symb: Symb, ctx: Ctx, deriv: Derivation, ty: Ty): (holds?) {
-    ensure records_type: when holds?, ty = type_of(symb, ctx, deriv)
-    ensure well_formed: when holds?, symb_ok?(symb) and ctx_ok?(symb, ctx)
-    ensure regular: when holds?, ty_ok?(symb, ty)
-}
+  derives?(Σ, Γ, d, τ)  implies  τ = type_of(Σ, Γ, d)
+                                 ⊢ Σ ok  and  Σ ⊢ Γ ok  and  Σ ⊢ τ ok
 ```
 
-r[types.overview.determinism] spec::typing::determinism::unique
-A derivation derives at most one type, the type it records. That an
-*expression* has at most one type, whatever derivation types it, is the
-open [uniqueness of an expression's type](#r-types.derivation.unique-expression);
-two tables with the same rows have the same types by
-[determinism for a table](#r-types.derivation.unique).
-
-```fren
-expect determinism(symb: Symb, ctx: Ctx, deriv: Derivation, a: Ty, b: Ty) {
-    expect unique: when derives?(symb, ctx, deriv, a) and derives?(symb, ctx, deriv, b), a = b
-}
-```
-
+A derivation records the type it derives, so it derives at most one type;
+only well-formed environments and contexts admit derivations; and every
+derived type is well formed. The [interface](#r-types.overview.interface)
+at the end of the chapter states these as a contract of uninterpreted
+functions, which the chapter's wrapper interprets by the detailed
+definitions. That an *expression* has at most one type, whatever
+derivation types it, is the open [uniqueness of an expression's
+type](#r-types.derivation.unique-expression); two tables with the same rows
+have the same types by [determinism for a table](#r-types.derivation.unique).
 The other headline laws are stated with the detailed definitions:
 [regularity](#r-types.judgment.regularity), that a derived type is well
 formed; [weakening](#r-types.judgment.weakening), that a derivation
 survives extending its context; [inference for a
 layer](#r-types.layer.inference), that a layer's type can be computed; and,
-open, [decidability of the
-judgment](#r-types.judgment.decidability) and [uniqueness of an
-expression's type](#r-types.derivation.unique-expression). `fren trace`
-reports the evidence for each law stated as a procedure.
+open, [decidability of the judgment](#r-types.judgment.decidability).
+`fren trace` reports the evidence for each law stated as a procedure.
 
 ## Semantic objects
 
@@ -87,6 +62,7 @@ constructors are `Ty::Boolean`, `Ty::Integer` and `Ty::Nominal`. Types are
 compared by equality, including every component of a nominal identity.
 
 ```fren
+pub mod spec
 pub mod spec::types
 
 pub type ItemId := Seq<String>
@@ -1566,6 +1542,40 @@ expect rejected(
         ItemKind::Function(Sig { params := one(third.ty), result := ty })
     ),
         not rule?(symb, ctx, ExprF::Call(item, two(first, second)), ty)
+}
+```
+
+## Interface
+
+r[types.overview.interface] spec::typing::{type_of, derives?}
+The overview's interface: `derives?` and `type_of` are uninterpreted
+functions over this chapter's types, whose contract states that a
+derivation records the type it derives, that only well-formed environments
+and contexts admit derivations, and that every derived type is well formed.
+The chapter's wrapper interprets `derives?` by `derivation?` and `type_of`
+by the type of a table's root, and so proves the contract for the detailed
+definitions: the interpretation is the refinement relation.
+
+```fren
+pub mod spec::typing
+
+use spec::types::{Ctx, Row, Snoc, Symb, Ty, ctx_ok?, symb_ok?, ty_ok?}
+
+pub fn type_of(Symb, Ctx, Snoc<Row>): Ty
+
+pub fn derives?(symb: Symb, ctx: Ctx, rows: Snoc<Row>, ty: Ty): (holds?) {
+    ensure records_type: when holds?, ty = type_of(symb, ctx, rows)
+    ensure well_formed: when holds?, symb_ok?(symb) and ctx_ok?(symb, ctx)
+    ensure regular: when holds?, ty_ok?(symb, ty)
+}
+```
+
+r[types.overview.determinism] spec::typing::determinism::unique
+A derivation derives at most one type, the type it records.
+
+```fren
+expect determinism(symb: Symb, ctx: Ctx, rows: Snoc<Row>, a: Ty, b: Ty) {
+    expect unique: not derives?(symb, ctx, rows, a) or not derives?(symb, ctx, rows, b) or a = b
 }
 ```
 

@@ -870,6 +870,8 @@ end Spec.Language.Types
 
 /-! ## Laws bound to their procedures -/
 
+pub mod spec::types
+
 open spec.types in
 impl call_arity_proof: call_arity for (args : Snoc Typing) (params : Snoc Ty) {
   args := args, params := params, holds? := true
@@ -989,22 +991,13 @@ impl worked_examples_proof: worked_examples { holds? := true } by
 
 pub mod spec::typing
 
-
-interp Symb := spec.types.Snoc spec.types.Entry
-interp Ctx := spec.types.Snoc spec.types.Ty
-interp Derivation := spec.types.Snoc spec.types.Row
-interp Ty := spec.types.Ty
-interp symb_ok? := spec.types.symb_ok?
-interp ctx_ok? := spec.types.ctx_ok?
-interp ty_ok? := spec.types.ty_ok?
 interp type_of := fun _ _ rows => match rows with
   | .Empty => default
   | .Extend _ root => root.ty
 interp derives? := fun symb ctx rows ty => spec.types.derivation? symb rows ctx ty by
   intro symb ctx rows ty
   simp only [spec.typing.derives?.records_type, spec.typing.derives?.well_formed,
-    spec.typing.derives?.regular, spec.typing.type_of, spec.typing.symb_ok?, spec.typing.ctx_ok?,
-    spec.typing.ty_ok?]
+    spec.typing.derives?.regular, spec.typing.type_of]
   refine ⟨fun h => ?_, fun h => ?_, fun h => Spec.Language.Types.judgment_regular symb rows ctx ty h⟩
   · cases rows with
     | Empty => simp [spec.types.derivation?, fren_spec] at h
