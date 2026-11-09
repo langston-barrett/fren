@@ -47,6 +47,26 @@ def main (args : List String) : IO Unit := do
     for flag in modes do
       unless !Heavy.ModuleMemory.directFile [neutral, flag, selected] do
         throw (IO.userError "known neutral prefix preserves genuine modes")
+  let newRoot := "/source/Fren2CheckMain.lean"
+  unless Heavy.ModuleMemory.selected "/source" newRoot &&
+      Heavy.ModuleMemory.selected "/source" "/source/Fren2CheckMain/Nested.lean" do
+    throw (IO.userError "new root selection")
+  for path in ["/source/Fren2CheckMainExtra.lean", "/source/Fren2CheckMainx/Nested.lean",
+      "/other/Fren2CheckMain.lean", "/source/FrenTestMain.lean"] do
+    unless !Heavy.ModuleMemory.selected "/source" path do
+      throw (IO.userError "new root near miss or legacy selection")
+  for root in ["", "/", "source"] do
+    unless !Heavy.ModuleMemory.selected root newRoot do
+      throw (IO.userError "invalid root selection")
+  for mode in ["--run", "-r", "--stdin", "--version"] do
+    unless !Heavy.ModuleMemory.directFile [mode, newRoot] do
+      throw (IO.userError "new root excluded mode")
+  for kind in ["query", "stdin"] do
+    unless Heavy.ModuleMemory.limit "/source" newRoot kind 1073741824 == some 0 do
+      throw (IO.userError "new root excluded input")
+  unless Heavy.ModuleMemory.limit "/source" newRoot "file" 1073741824 == some 1073741824 &&
+      Heavy.ModuleMemory.limit "/source" newRoot "unknown" 1073741824 == none do
+    throw (IO.userError "new root input limit")
   let second := "/source/FrenSource/Span.lean"
   for (candidates, expected) in [([], ""), (["/other/source-alias"], ""),
       (["/other/source-alias", selected], selected), ([selected, "/other/a.txt"], selected),

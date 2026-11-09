@@ -93,6 +93,7 @@ def selected (root source : String) : Bool :=
     inRoot root source "FrenTextTestsTests" ||
     inRoot root source "FrenTextDemo" ||
     inRoot root source "FrenTextDemoTests" ||
+    inRoot root source "Fren2CheckMain" ||
     inRoot root source "Fren2TestMain" ||
     inRoot root source "FrenTest/Layering" ||
     inRoot root source "FrenTest/Fren2Resolver" ||
