@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Optional setup and owned harness regressions; no real Lean target workloads."""
+import atexit
+import shutil
 import json
 import os
 from pathlib import Path
@@ -24,6 +26,7 @@ def workspace(mode):
         assert not existed, parent
     parent.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='automatic-' + mode + '-', dir=parent))
+    atexit.register(shutil.rmtree, work, ignore_errors=True)
     (work / 'setup.json').write_text(json.dumps(dict(mode=mode, parent=str(parent),
         parent_preexisting=existed, created_parent=True)))
     return work

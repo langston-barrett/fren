@@ -3,6 +3,8 @@
 Copy only the installed executable into an owned temporary view, delegating
 installed immutable assets read-only in use; no package/cache installation.
 """
+import atexit
+import shutil
 import argparse
 import hashlib
 import json
@@ -38,6 +40,7 @@ def main():
     else:
         (HERE / 'test-work').mkdir(exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix='compiler-discovery-', dir=HERE / 'test-work'))
+        atexit.register(shutil.rmtree, work, ignore_errors=True)
     view = work / 'portable'; (view / 'bin').mkdir(parents=True)
     selected = view / 'bin/lean'; selected.write_bytes(source.read_bytes()); selected.chmod(0o700)
     for name in ('lib', 'include', 'share', 'src'):

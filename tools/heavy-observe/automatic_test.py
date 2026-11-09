@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Small ordinary-build and raw-evidence controls; each partition targets 30s."""
+import atexit
+import shutil
 import fcntl
 import hashlib
 import importlib.util
@@ -7,7 +9,6 @@ import json
 import os
 import re
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -30,6 +31,7 @@ def main():
         assert not parent_existed, parent
     parent.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='automatic-', dir=parent))
+    atexit.register(shutil.rmtree, work, ignore_errors=True)
     (work / 'setup.json').write_text(json.dumps(dict(mode=mode, parent=str(parent),
         parent_preexisting=parent_existed, created_parent=True)))
     configured = os.environ.get('HEAVY_TEST_REAL_LEAN')
@@ -64,6 +66,8 @@ def main():
     for key in ('HEAVY_BUDGET_DIR', 'LEAN_SYSROOT', 'LAKE_OVERRIDE_LEAN', 'HEAVY_OBSERVE_DIR',
                 'HEAVY_LOG', 'FREN_BUILD_REQUESTS_FILE'):
         env.pop(key, None)
+    env['HEAVY_TEST_STATE_CAPTURE'] = str(work)
+    env['PYTHONPATH'] = str(HERE / 'test-hooks')
     receipts = []
     def build(label, extra=None, expect=0, compiler_error=False):
         # Only this fixture's single compiler output; keep all warm dependencies.
@@ -74,6 +78,8 @@ def main():
                             'build', '+Tiny', '--offline', '--no-cache', '--wfail'],
                            cwd=pkg, env=dict(env, **(extra or {})), directory=work, label=label, timeout=12)
         states = set(work.glob('fren-build-*')) - before
+        match = re.search(rb'fren-build: retained private state: ([^\n]+)', p.stderr)
+        if match: states.add(Path(os.fsdecode(match[1])))
         rows = [json.loads(path.read_bytes()) for state in states
                 for path in (state / 'state/overlay/records').glob('process-*.json')]
         files = [r for r in rows if r['input_kind'] == 'file']
@@ -137,7 +143,7 @@ def main():
             setup = {'info: auto_control: no previous manifest, creating one from scratch',
                      'info: toolchain not updated; already up-to-date'}
             error = '\n'.join(line for line in item['stderr'].splitlines()
-                              if not line.startswith('fren-build: retained private state: ') and line not in setup)
+                              if not line.startswith(('fren-build: retained private state: ', 'fren-build: test state snapshot: ')) and line not in setup)
             return output, error
         # Compare the real ordinary-build streams across fallback and automatic
         # admission, excluding only the fixture receipt and Lake's setup/timing.

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Actual selected-module scope/readback/physical controls; no numerical model."""
+import atexit
+import shutil
 import json
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
@@ -23,6 +25,13 @@ def fixture(work):
     compiler=prefix/'bin/lean'
     compiler.write_text('#!'+sys.executable+'\n'+r'''
 import json,os,pathlib,signal,sys,time
+def write_marker(path, value):
+ pending=path.with_name(path.name+'.pending')
+ with pending.open('w') as stream:
+  if os.environ.get('MARKER_PAUSE'):
+   while not pathlib.Path(os.environ['MARKER_PAUSE']).exists(): time.sleep(.005)
+  stream.write(json.dumps(value))
+ os.replace(pending,path)
 args=sys.argv[1:]
 if args==['--print-prefix']: print(pathlib.Path(__file__).resolve().parent.parent);sys.exit(0)
 if args==['--version']: print('memory fixture');sys.exit(0)
@@ -31,7 +40,7 @@ relative=next(s[3:] for s in pathlib.Path('/proc/self/cgroup').read_text().split
 cg=pathlib.Path('/sys/fs/cgroup')/relative.lstrip('/')
 mode=os.environ['MODE'];marker=pathlib.Path(os.environ['MARKER'])
 info=dict(args=args,cwd=os.getcwd(),pid=os.getpid(),parent=os.getppid(),scope=str(cg),inode=cg.stat().st_ino,maximum=(cg/'memory.max').read_text().strip(),swap=(cg/'memory.swap.max').read_text().strip())
-marker.write_text(json.dumps(info))
+write_marker(marker,info)
 print('fixture stdout',flush=True);print('fixture stderr',file=sys.stderr,flush=True)
 if mode=='term':os.kill(os.getpid(),signal.SIGTERM)
 if mode in ('oom','cancel','leftover'):
@@ -40,12 +49,12 @@ if mode in ('oom','cancel','leftover'):
   os.setsid()
   if mode!='oom': signal.signal(signal.SIGTERM,signal.SIG_IGN)
   child_info=dict(pid=os.getpid(),session=os.getsid(0),scope=relative)
-  if mode=='oom':pathlib.Path(str(marker)+'.child').write_text(json.dumps(child_info))
+  if mode=='oom':write_marker(pathlib.Path(str(marker)+'.child'),child_info)
   data=bytearray((96 if mode=='oom' else 16)*1024*1024)
   for i in range(0,len(data),4096): data[i]=1
-  if mode!='oom':pathlib.Path(str(marker)+'.child').write_text(json.dumps(child_info))
+  if mode!='oom':write_marker(pathlib.Path(str(marker)+'.child'),child_info)
   time.sleep(10);os._exit(0)
- info['child']=child;marker.write_text(json.dumps(info))
+ info['child']=child;write_marker(marker,info)
  if mode=='leftover':
   deadline=time.monotonic()+2
   while not pathlib.Path(str(marker)+'.child').exists() and time.monotonic()<deadline:time.sleep(.005)
@@ -56,7 +65,7 @@ if mode in ('oom','cancel','leftover'):
   signal.signal(signal.SIGTERM,signal.SIG_IGN)
   deadline=time.monotonic()+2
   while not pathlib.Path(str(marker)+'.child').exists() and time.monotonic()<deadline:time.sleep(.005)
-  pathlib.Path(str(marker)+'.ready').write_text(json.dumps(info))
+  write_marker(pathlib.Path(str(marker)+'.ready'),info)
  os.waitpid(child,0)
 else:
  data=bytearray(16*1024*1024)
@@ -73,6 +82,22 @@ else:
 
 def controls(work, part):
     compiler,driver,home,manifest=fixture(work)
+    if part=='producer':
+        marker=work/'atomic-marker'
+        release=work/'marker-release'
+        child=subprocess.Popen([str(compiler)],env=dict(os.environ,MODE='marker-test',MARKER=str(marker),MARKER_PAUSE=str(release)),
+                               stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        try:
+            pending=marker.with_name(marker.name+'.pending')
+            deadline=time.monotonic()+3
+            while not pending.exists() and time.monotonic()<deadline: time.sleep(.005)
+            assert pending.exists() and not marker.exists()
+            release.write_text('release')
+            stdout,stderr=child.communicate(timeout=5)
+            assert child.returncode==0 and json.loads(marker.read_text())['pid']==child.pid,(stdout,stderr)
+        finally:
+            if child.poll() is None:
+                child.terminate();child.wait(timeout=3)
     selected=ROOT/'src/FrenBase/Identity.lean';legacy=ROOT/'src/FrenTestMain.lean'
     env=dict(os.environ,HOME=str(home),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off')
     for k in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG','HEAVY_COMPILER_CPU_SECONDS','HEAVY_COMPILER_WALL_MS','FREN_BUILD_REQUESTS_FILE'):env.pop(k,None)
@@ -313,7 +338,8 @@ p=subprocess.run([exe,*tail[1:]])
 sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
 ''')
     lake.chmod(0o755)
-    env=dict(os.environ,HOME=str(home),TMPDIR=str(work),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off')
+    env=dict(os.environ,HOME=str(home),TMPDIR=str(work),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off',
+             HEAVY_TEST_STATE_CAPTURE=str(work),PYTHONPATH=str(HERE/'test-hooks'))
     for k in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG',
               'HEAVY_COMPILER_CPU_SECONDS','HEAVY_COMPILER_WALL_MS','HEAVY_COMPILER_MEMORY_BYTES',
               'FREN_BUILD_REQUESTS_FILE','FREN_BUILD_ALLOWANCE_KIB','FREN_BUILD_HEADROOM_KIB',
@@ -325,7 +351,7 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
         command=[str(script),'--offline',str(executable),'env','lean',*map(str,args)]
         p=run(command,directory=work,label=label,cwd=cwd,
               env=dict(env,MODE=mode,MARKER=str(marker),NO_ARTIFACT='1',**(extra or {})),timeout=8,grace=3)
-        match=re.search(rb'fren-build: retained private state: ([^\n]+)',p.stderr)
+        match=re.search(rb'fren-build: (?:retained private state|test state snapshot): ([^\n]+)',p.stderr)
         state=Path(os.fsdecode(match[1]))/'state' if match else None
         rows=[json.loads(f.read_text()) for f in (state/'overlay/records').glob('process-*.json')] if state else []
         row=dict(case=label,command=command,status=p.returncode,stdout=p.stdout.decode(),stderr=p.stderr.decode(),
@@ -351,7 +377,7 @@ sys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)
     args=['-o','--run','src/FrenBase/Identity.lean']
     r=case('direct-selected',args,'exit7')
     assert r['status']==7 and r['stdout']=='fixture stdout\n',r
-    assert r['stderr'].endswith('fixture stderr\n') and r['marker']['cwd']==str(ROOT),r
+    assert r['stderr'].startswith('fixture stderr\n') and r['marker']['cwd']==str(ROOT),r
     assert r['marker']['args']==list(map(str,args)),r
     record=r['records'][0];marker=r['marker']
     assert record['raw_wait_status']==7*256 and record['real_compiler']==str(compiler),r
@@ -455,7 +481,8 @@ def direct_option_controls(work, shard, operand=False):
     real=Path(subprocess.check_output(['lean','--print-prefix'],text=True).strip())/'bin/lean'
     selected=ROOT/'src/FrenBase/Identity.lean'
     home=work/'home';home.mkdir()
-    env=dict(os.environ,HOME=str(home),TMPDIR=str(work),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off',HEAVY_SLOTS='2')
+    env=dict(os.environ,HOME=str(home),TMPDIR=str(work),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off',HEAVY_SLOTS='2',
+             HEAVY_TEST_STATE_CAPTURE=str(work),PYTHONPATH=str(HERE/'test-hooks'))
     for key in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG'):
         env.pop(key,None)
     prefix='operand' if operand else 'terminator'
@@ -486,7 +513,7 @@ def direct_option_controls(work, shard, operand=False):
         snapshot_bytes=snapshot.read_bytes() if snapshot and snapshot.exists() else None
         wrapped_command=[str(ROOT/'scripts/heavy'),'--offline',*native_command]
         wrapped=subprocess.run(wrapped_command,cwd=cwd,env=env,capture_output=True,timeout=5)
-        match=re.search(rb'fren-build: retained private state: ([^\n]+)',wrapped.stderr)
+        match=re.search(rb'fren-build: (?:retained private state|test state snapshot): ([^\n]+)',wrapped.stderr)
         state=Path(os.fsdecode(match[1]))/'state' if match else None
         records=[json.loads(p.read_text()) for p in (state/'overlay/records').glob('process-*.json')] if state else []
         row=dict(flag=flag,args=args,native_command=native_command,wrapped_command=wrapped_command,cwd=str(cwd),
@@ -531,14 +558,15 @@ def actual_compile(work):
     (package/'lean-toolchain').write_bytes((ROOT/'lean-toolchain').read_bytes())
     (package/'lakefile.lean').write_text('import Lake\nopen Lake DSL\npackage memoryExample\n'
         f'lean_lib FrenBase where\n  srcDir := "{ROOT}/src"\n  roots := #[`FrenBase.Identity]\n')
-    env=dict(os.environ,HOME=str(work/'real-home'),LAKE_CACHE_DIR=str(work/'real-cache'),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off')
+    env=dict(os.environ,HOME=str(work/'real-home'),LAKE_CACHE_DIR=str(work/'real-cache'),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off',
+             HEAVY_TEST_STATE_CAPTURE=str(work),PYTHONPATH=str(HERE/'test-hooks'))
     Path(env['HOME']).mkdir()
     for key in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_COMPILER_MEMORY_BYTES','FREN_BUILD_REQUESTS_FILE'):
         env.pop(key,None)
     command=[str(ROOT/'scripts/heavy'),'lake','-d',str(package),'build','+FrenBase.Identity:olean','--offline','--no-cache','--wfail']
     start=time.monotonic()
     result=run(command,directory=work,label='actual-compile',env=env,timeout=12,grace=3)
-    match=re.search(rb'fren-build: retained private state: ([^\n]+)',result.stderr)
+    match=re.search(rb'fren-build: (?:retained private state|test state snapshot): ([^\n]+)',result.stderr)
     state=Path(os.fsdecode(match[1]))/'state' if match else None
     records=[json.loads(p.read_text()) for p in (state/'overlay/records').glob('process-*.json')] if state else []
     selected=[r for r in records if r.get('compiler_memory_selected')]
@@ -558,6 +586,7 @@ if __name__=='__main__':
         'directTerminator0','directTerminator1','directOperands0','directOperands1')
     parent=Path(os.environ.get('HEAVY_MODULE_TEST_ROOT',HERE/'test-work'));parent.mkdir(parents=True,exist_ok=True)
     work=Path(tempfile.mkdtemp(prefix='module-'+part+'-',dir=parent))
+    atexit.register(shutil.rmtree, work, ignore_errors=True)
     if part=='direct':direct_controls(work)
     elif part=='directRun':direct_run_controls(work)
     elif part.startswith('directTerminator'):direct_option_controls(work,int(part[-1]))

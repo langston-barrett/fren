@@ -4,6 +4,8 @@ All state/permissions/symlinks are private to this bounded producer test.
 Select the active repository toolchain or HEAVY_TEST_REAL_LEAN explicitly;
 canonicalize once and use that same executable for hashes/calls/records.
 """
+import atexit
+import shutil
 import argparse
 import hashlib
 import json
@@ -42,6 +44,7 @@ def main():
     else:
         (HERE / 'test-work').mkdir(exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix='missing-source-', dir=HERE / 'test-work'))
+        atexit.register(shutil.rmtree, work, ignore_errors=True)
     binary = args.bin.absolute()
     env = dict(os.environ)
     for name in ('HEAVY_BUDGET_DIR','HEAVY_OBSERVE_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN'):
