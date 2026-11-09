@@ -108,7 +108,7 @@ and `b?: Int` are all parameters, and typing reports the last.
 ```grammar
 ModuleDeclaration      ::= "pub"? "mod" Path
 EnumDeclaration        ::= "pub"? "enum" Identifier "{" Identifier ("," Identifier)* ","? "}"
-FunctionDeclaration    ::= "pub"? "fn" Identifier TouchingOpen Parameter ("," Parameter)* ")"
+FunctionDeclaration    ::= "pub"? "fn" Identifier TouchingOpen Parameter ("," Parameter)* ","? ")"
                            ":" Type ":=" Expression
 ExpectationDeclaration ::= "expect" Identifier TouchingOpen (Parameter ("," Parameter)* ","?)? ")"
                            "{" Member* "}"
@@ -118,14 +118,18 @@ Member                 ::= ("assume" | "expect") Identifier ":" Expression
 
 r[syntax.declaration.lists]
 status: tested Spec.Language.Syntax.grammar_agrees
-The comma-separated lists differ. A function's parameters and a call's
-arguments are nonempty and have no trailing comma. An enumeration's
-variants are nonempty and may end in a comma. An expectation's parameters
-and a match's arms may be empty and may end in a comma.
+Every comma-separated list has one policy: its items are separated by
+commas, and a comma may follow the last item, as in `f(1, 2,)`. A list may
+be empty where that is meaningful: an expectation may have no parameters
+and a match no arms. A function has at least one parameter, a call at
+least one argument and an enumeration at least one variant. No list has a
+comma without an item before it.
 
-> **Note:** The differences are design debt, inherited from today's Fren
-> and recorded for the owner; one policy for every list is an open
-> question.
+> **Rationale:** A trailing comma lets a list be written one item per line
+> and grow without editing the line before, as in Rust. A function without
+> parameters would be a constant, and a call without arguments its use,
+> which the language does not have; an enumeration without variants would
+> have no values.
 
 ## Expressions
 
@@ -157,7 +161,7 @@ Sum         ::= Product (("+" | "-") Product)*
 Product     ::= Negation (("*" | "div" | SameLineMod) Negation)*
 Negation    ::= "-" Negation | Primary
 Primary     ::= "true" | "false" | Numeral | Call | Path | "(" Expression ")" | If | Match
-Call        ::= Path TouchingOpen Expression ("," Expression)* ")"
+Call        ::= Path TouchingOpen Expression ("," Expression)* ","? ")"
 If          ::= "if" Expression "then" Expression "else" Expression
 Match       ::= "match" Primary "{" (Arm ("," Arm)* ","?)? "}"
 Arm         ::= QualifiedPath "=>" Iff

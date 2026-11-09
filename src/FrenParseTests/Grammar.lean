@@ -240,21 +240,27 @@ namespace FrenParseTests
 open FrenAst FrenParse
 
 #eval show IO Unit from do
-  for source in ["f()", "f( -- é😀\n)", "f(x,)", "f(x, y,)", "f(x, -- comment\r\n)"] do
+  for source in ["f()", "f( -- é😀\n)", "f(,)", "f(x,,)", "f(x y)"] do
     forbiddenExpression source
+  for source in ["f(x,)", "f(x, y,)", "f(x, -- comment\r\n)"] do
+    requiredExpression source
   for entry in [Entry.file, Entry.context] do
     for source in ["fn f(): Int := 1", "fn f( -- comment\n): Int := 1",
-        "fn f(x: Int,): Int := x", "fn f(x: Int, -- comment\r\n): Int := x",
-        "enum E {}", "enum E { -- é😀\n}"] do
+        "fn f(,): Int := 1", "fn f(x: Int,,): Int := x",
+        "enum E {}", "enum E { -- é😀\n}", "enum E { , }", "expect e(,) {}",
+        "fn f(l: E): Int := match l { , }"] do
       let .error failure := parse entry ⟨1⟩ source | throw <| IO.userError s!"required list element: {source}"
       unless failure.emit == source do throw <| IO.userError "list failure ownership"
     for source in ["expect e() {}", "expect e(x: Int,) { expect c: true }",
         "expect e(x: Int, -- é😀\n) {}", "enum E { A, }", "enum E { A, B, }",
         "fn f(l: E): Int := match l {}", "fn f(l: E): Int := match l { E::A => 1, }",
-        "fn f(x: Int): Int := unknown(x)", "fn f(x: Int, y: Int): Int := x(y)"] do
+        "fn f(x: Int): Int := unknown(x)", "fn f(x: Int, y: Int): Int := x(y)",
+        "fn f(x: Int,): Int := x", "fn f(a: Int, b: Int,): Int := a",
+        "fn f(x: Int, -- comment\r\n): Int := x", "fn f(x: Int): Int := f(1, 2,)",
+        "fn f(l: E): Int := match l { E::A => 1, E::B => 2, }"] do
       let .ok doc := parse entry ⟨1⟩ source | throw <| IO.userError s!"valid distinct list policy: {source}"
       unless coherent doc && doc.emit == source do throw <| IO.userError "valid list ownership"
   for source in ["f(x)", "f(x, y)", "f(g(x), h(y))"] do requiredExpression source
-  IO.println "list policies: nonempty/no-trailing functions and applications; nonempty/trailing enums; empty/trailing expectations and matches passed"
+  IO.println "list policies: a trailing comma after any item; nonempty functions, applications and enums; empty expectations and matches passed"
 
 end FrenParseTests

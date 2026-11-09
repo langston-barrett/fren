@@ -75,7 +75,7 @@ private def parameters (entry : ParameterEntry) (c : Cursor) : Except Diagnostic
   for _ in [:c.lexed.tokens.size + 1] do
     if hasText c ")" then
       match entry with
-      | .functionGroup => fail c "a function parameter"
+      | .functionGroup => if values.isEmpty then fail c "a function parameter" else pure ()
       | .expectationGroup => pure ()
       let (closeToken, rest) ← take c ")"
       return (⟨openToken, values, commas, closeToken⟩, rest)
@@ -213,6 +213,8 @@ private def arguments : Nat → Cursor → Except Diagnostic (Array Expr × Arra
     let (value, c) ← expression fuel 0 c
     if !hasText c "," then return (#[value], #[], c)
     let (comma, c) ← take c ","
+    -- A trailing comma ends the list.
+    if hasText c ")" then return (#[value], #[comma], c)
     let (values, commas, c) ← arguments fuel c
     return (#[value] ++ values, #[comma] ++ commas, c)
 
