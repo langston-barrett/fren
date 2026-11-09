@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Bounded actual-entrypoint controls; requires prebuilt standalone tools."""
+import atexit
+import shutil
 import hashlib
 import json
 import os
 import re
 import resource
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -116,8 +117,10 @@ def main():
     real = Path(os.environ.get('HEAVY_TEST_REAL_LEAN') or
                 (subprocess.check_output(['lean', '--print-prefix'], text=True).strip() + '/bin/lean')).resolve(strict=True)
     lake = real.parent / 'lake'
-    parent = Path(os.environ.get('HEAVY_ENTRYPOINT_TEST_DIR', tempfile.gettempdir())).resolve()
+    parent = Path(os.environ.get('HEAVY_ENTRYPOINT_TEST_DIR', ROOT / 'tools/heavy-observe/test-work')).resolve()
+    parent.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix='heavy-entrypoint-', dir=parent))
+    atexit.register(shutil.rmtree, work, ignore_errors=True)
     pkg = work / 'pkg'; pkg.mkdir()
     (pkg / 'lakefile.toml').write_text('name = "entrypoint_test"\nenableArtifactCache = false\n[[lean_lib]]\nname = "Tiny"\n')
     (pkg / 'lean-toolchain').write_text((ROOT / 'lean-toolchain').read_text())
@@ -156,9 +159,14 @@ def main():
     assert all(x['child_present'] and x['raw_wait_status'] == 0 and x['gate_errno'] == 0 for x in compiled)
     cpu_controls(work, pkg, env, request, results)
     env['HEAVY_COMPILER_CPU_SECONDS'] = '10'
-    # The ordinary command builds in the caller's package and retains an empty
-    # manifest and fallback records in a private directory chosen under TMPDIR.
+    # Capture the successful session just before its private state is removed.
+    # The ordinary command builds in the caller's package using an empty
+    # manifest and fallback records.
     env['TMPDIR'] = str(work)
+    home = work / 'home'; home.mkdir()
+    env['HOME'] = str(home)
+    env['HEAVY_TEST_STATE_CAPTURE'] = str(work)
+    env['PYTHONPATH'] = str(ROOT / 'tools/heavy-observe/test-hooks')
     env['FREN_BUILD_FALLBACK_KIB'] = '550000'
     basic.write_text(basic.read_text() + '-- rebuild\n')
     p = subprocess.run([str(BUILD), '+Tiny'], cwd=pkg, env=env, capture_output=True, timeout=30)
@@ -302,6 +310,8 @@ runpy.run_path(script, run_name='__main__')
     del env['FREN_BUILD_REQUESTS_FILE']
     p = subprocess.run([str(BUILD), 'missing target $literal'], cwd=pkg, env=env, capture_output=True, timeout=30)
     assert p.returncode != 0 and b'missing target $literal' in p.stderr + p.stdout
+    retained = re.search(rb'fren-build: retained private state: ([^\n]+)', p.stderr)
+    assert retained and Path(os.fsdecode(retained[1])).is_dir()
     env['FREN_BUILD_FALLBACK_KIB'] = '0'
     p = subprocess.run([str(BUILD), '+Tiny'], cwd=pkg, env=env, capture_output=True, timeout=10)
     assert p.returncode == 125

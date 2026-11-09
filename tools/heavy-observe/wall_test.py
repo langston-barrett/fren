@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Actual private-session wall deadline controls, with retained observations."""
+import atexit
+import shutil
 import json
 import fcntl
 import os
-import shutil
 import re
 import signal
 from pathlib import Path
@@ -14,7 +15,10 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRY = ROOT / 'scripts/heavy-lean-build'
-work = Path(tempfile.mkdtemp(prefix='heavy-wall-'))
+parent = ROOT / 'tools/heavy-observe/test-work'
+parent.mkdir(parents=True, exist_ok=True)
+work = Path(tempfile.mkdtemp(prefix='heavy-wall-', dir=parent))
+atexit.register(shutil.rmtree, work, ignore_errors=True)
 fixture = work / 'fixture/bin/lean'
 fixture.parent.mkdir(parents=True)
 source = work / 'fixture.c'

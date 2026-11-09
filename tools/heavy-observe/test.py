@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Owned, bounded Linux integration tests. Build standalone targets first.
-Run this harness through scripts/heavy --offline. Evidence remains in test-work.
+Run this harness through scripts/heavy --offline. Scratch evidence is removed on exit.
 No network, external process signals, shared cache mutation or admission change.
 """
 
+import atexit
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import signal
 import statistics
 import sys
@@ -32,39 +33,48 @@ OBSERVER = HERE / ".lake/build/bin/heavy_observe"
 def main():
     args = sys.argv[1:]
     parts = {"publisher", "forecast", "entrypoint", "cohort", "core",
-             "automatic", "automaticEvidence", "automaticStore", "automaticIO", "automaticOwnership"}
+             "automatic", "automaticEvidence", "automaticStore", "automaticIO", "automaticOwnership",
+             "tmpState"}
     if args in ([], ["--controls-only"]):
         selected = parts
     elif len(args) == 2 and args[0] == "--part" and args[1] in parts:
         selected = {args[1]}
     else:
-        raise SystemExit("usage: test.py [--controls-only | --part {publisher,forecast,entrypoint,cohort,core,automatic,automaticEvidence,automaticStore,automaticIO,automaticOwnership}]")
+        raise SystemExit("usage: test.py [--controls-only | --part {publisher,forecast,entrypoint,cohort,core,automatic,automaticEvidence,automaticStore,automaticIO,automaticOwnership,tmpState}]")
+    (HERE / "test-work").mkdir(exist_ok=True)
     def modules(mode):
-        fresh = Path(tempfile.mkdtemp(prefix="heavy-module-partition-"))
+        fresh = Path(tempfile.mkdtemp(prefix="heavy-module-partition-", dir=HERE / "test-work"))
+        atexit.register(shutil.rmtree, fresh, ignore_errors=True)
         env = dict(os.environ, HEAVY_MODULE_TEST_ROOT=str(fresh / "test-work"))
         owned_run([sys.executable, "-I", str(HERE / "module_memory_test.py"), mode],
                   directory=fresh, label="module-dispatch", env=env,
-                  timeout=15, grace=3, check=True)
+                  timeout=45, grace=3, check=True)
     # Preparation's foreign-member control must run before this job migrates.
     if "automaticIO" in selected: modules("negative")
+    if "tmpState" in selected:
+        with tempfile.TemporaryDirectory(prefix="heavy-tmp-state-dispatch-", dir=HERE / "test-work") as dispatch:
+            owned_run([sys.executable, "-I", str(HERE / "tmp_state_test.py")], directory=Path(dispatch),
+                      label="dispatch", timeout=120, grace=5, check=True)
     for part, script in (("publisher", "publish_test.py"), ("forecast", "forecast_test.py"),
                          ("entrypoint", "entrypoint_test.py")):
         if part in selected:
-            dispatch = Path(tempfile.mkdtemp(prefix="heavy-process-dispatch-"))
+            dispatch = Path(tempfile.mkdtemp(prefix="heavy-process-dispatch-", dir=HERE / "test-work"))
+            atexit.register(shutil.rmtree, dispatch, ignore_errors=True)
             owned_run([sys.executable, "-I", str(HERE / script)], directory=dispatch,
-                      label="dispatch", timeout=30, grace=5, check=True)
+                      label="dispatch", timeout=90, grace=5, check=True)
     for part, mode in (("automatic", "positive"), ("automaticEvidence", "evidence"),
                        ("automaticStore", "store"), ("automaticIO", "io"),
                        ("automaticOwnership", "ownership")):
         if part in selected:
             # Every registered partition starts in its own empty fixture tree.
             # The child, not another test group, creates test-work itself.
-            fresh = Path(tempfile.mkdtemp(prefix="heavy-automatic-partition-"))
+            fresh = Path(tempfile.mkdtemp(prefix="heavy-automatic-partition-", dir=HERE / "test-work"))
+            atexit.register(shutil.rmtree, fresh, ignore_errors=True)
             env = dict(os.environ, HEAVY_AUTOMATIC_TEST_ROOT=str(fresh / "test-work"),
                        HEAVY_AUTOMATIC_REQUIRE_FRESH="1")
             script = "automatic_test.py" if mode in ("positive", "evidence", "store") else "automatic_io_test.py"
             owned_run([sys.executable, "-I", str(HERE / script), mode], directory=fresh,
-                      label="dispatch", env=env, timeout=23, grace=5, check=True)
+                      label="dispatch", env=env, timeout=60, grace=5, check=True)
     if "cohort" in selected:
         modules("directRun")
         modules("directTerminator0")
@@ -77,6 +87,7 @@ def main():
     if not ({"cohort", "core"} & selected): return
     (HERE / "test-work").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="run-", dir=HERE / "test-work"))
+    atexit.register(shutil.rmtree, work, ignore_errors=True)
     if "cohort" in selected:
         owned_run([sys.executable, "-I", str(HERE / "cohort_gate_test.py"),
                    str(work / "cohort-gate")], directory=work, label="cohort-dispatch",

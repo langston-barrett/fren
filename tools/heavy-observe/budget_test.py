@@ -3,6 +3,8 @@
 The registered gate runs no workload timing comparison. --lake is the one
 manual changed-source control, staged separately under a shared perf lease.
 """
+import atexit
+import shutil
 import fcntl
 import hashlib
 import json
@@ -191,6 +193,7 @@ def main():
         producer(sys.argv[2], Path(sys.argv[3]), Path(sys.argv[4])); return
     (HERE / "test-work").mkdir(exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="budget-", dir=HERE / "test-work"))
+    atexit.register(shutil.rmtree, work, ignore_errors=True)
     from entrypoint_test import cpu_controls
     cpu_work = work / "cpu"; cpu_work.mkdir()
     cpu_pkg = cpu_work / "pkg"; cpu_pkg.mkdir()

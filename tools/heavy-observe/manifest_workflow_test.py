@@ -1,7 +1,7 @@
 import json, os, pathlib, shutil, subprocess, sys
 root=pathlib.Path(__file__).resolve().parents[2]; out=pathlib.Path(sys.argv[1]).resolve(); out.mkdir(parents=True,exist_ok=False)
 pkg=out/'pkg'; pkg.mkdir(); (pkg/'lakefile.toml').write_text('name = "tiny"\nenableArtifactCache = false\n[[lean_lib]]\nname = "Tiny"\n'); (pkg/'lean-toolchain').write_text((root/'lean-toolchain').read_text()); source=pkg/'Tiny.lean'; source.write_text('import Std\ndef tiny : Nat := 42\n')
-env=os.environ.copy(); env.update(TMPDIR=str(out), LAKE_CACHE_DIR=str(out/'cache'), FREN_BUILD_FALLBACK_KIB='550000'); env.pop('FREN_BUILD_REQUESTS_FILE',None)
+env=os.environ.copy(); env.update(HOME=str(out/'home'), TMPDIR=str(out), LAKE_CACHE_DIR=str(out/'cache'), FREN_BUILD_FALLBACK_KIB='550000', HEAVY_TEST_STATE_CAPTURE=str(out), PYTHONPATH=str(root/'tools/heavy-observe/test-hooks')); env.pop('FREN_BUILD_REQUESTS_FILE',None)
 def build(label):
  shutil.rmtree(pkg/'.lake/build',ignore_errors=True)
  before=set(out.glob('fren-build-*'))

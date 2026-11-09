@@ -2319,6 +2319,16 @@ package must retain budgeting. Unknown routing grammar fails setup; literal
 forwarded arguments remain unchanged. These are caller IO checks against the
 pinned Lake, not a theorem supplied with precomputed build/bootstrap verdicts.
 
+The automatic build wrapper creates private state under
+`~/.cache/heavy/build-state` on disk, rejecting tmpfs and ramfs on Linux. It
+removes the state after a successful session. On failure it prints the path of
+the retained directory. At each completed session it removes retained failures
+older than seven days and limits retained file contents to one GiB, deleting
+older failures first and, if necessary, files from an oversized latest failure.
+Active sessions are excluded from that limit. An uncatchable termination or a
+filesystem error can leave active state behind; the age limit is enforced when
+a later session completes, not by a background service.
+
 For these controlled builds, the Python outer monitor requires native Linux
 procfs, pidfds and a working child subreaper before launch. It retains its own
 initial child unreaped as the session identity anchor while discovering

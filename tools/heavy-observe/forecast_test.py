@@ -2,6 +2,8 @@
 """Bounded actual-producer/JSON-mutation tests of the real Lean adviser.
 Build compiler_advice and heavy_observe first; run through Heavy offline.
 """
+import atexit
+import shutil
 import argparse
 import copy
 import json
@@ -29,6 +31,7 @@ def main():
     else:
         (HERE / 'test-work').mkdir(exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix='forecast-', dir=HERE / 'test-work'))
+        atexit.register(shutil.rmtree, work, ignore_errors=True)
     real = Path(os.environ.get('HEAVY_TEST_REAL_LEAN') or
                 subprocess.check_output(['lean', '--print-prefix'], text=True).strip() + '/bin/lean').resolve(strict=True)
     overlay = create(work / 'overlay', real, HERE / '.lake/build/bin/heavy_observe')
