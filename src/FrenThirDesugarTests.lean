@@ -24,6 +24,21 @@ private def source : String := "pub mod skeleton\n\n\
   pub fn wait(l: Light, base: Int): Int := match l { Light::Red => base + 30, Light::Amber => base + 5, Light::Green => base, }\n\
   fn partial(x: Int): Int := x div 0\n\
   fn unused(x: Int): Int := if true then x else 1 div 0\n\
+  fn unusedLet(dummy: Int): Int := let x := 1 div 0 in 0\n\
+  fn usedLet(dummy: Int): Int := let x := 1 div 0 in x\n\
+  fn guarded(d: Int): Int := let x := 1 div d in if d != 0 then x else 0\n\
+  fn conjunction(b?: Bool): Bool := b? and (1 div 0 = 0)\n\
+  fn disjunction(b?: Bool): Bool := b? or (1 mod 0 = 0)\n\
+  fn nested(dummy: Int): Int := let x := 1 div 0 in let y := x + 1 in 4\n\
+  fn nestedUsed(dummy: Int): Int := let x := 1 div 0 in let y := x + 1 in y\n\
+  fn shadow(dummy: Int): Int := let x := 1 div 0 in let x := 8 in x\n\
+  fn capture(x: Int): Int := let y := x + 1 in let x := 100 in y\n\
+  fn strictIff(b?: Bool): Bool := b? iff (1 div 0 = 0)\n\
+  fn strictEq(b?: Bool): Bool := b? = (1 div 0 = 0)\n\
+  fn strictNe(b?: Bool): Bool := b? != (1 div 0 = 0)\n\
+  fn first(x: Int, y: Int): Int := x\n\
+  fn argument(dummy: Int): Int := first(3, 1 div 0)\n\
+  expect demand(b?: Bool) { assume a: b? or (1 div 0 = 0) expect e: let x := 1 div 0 in b? }\n\
   expect cycles(l: Light) { expect back: next(next(next(l))) = l }\n\
   expect waits(l: Light, base: Int) { assume bounded: base <= 100 expect at_most: wait(l, base) <= 130 }\n\
   expect wrong(l: Light) { expect never_red: next(l) != Light::Red }\n"
@@ -53,6 +68,33 @@ private def sample (n : Nat) (x : Int) : Bool := Id.run do
   if !hasValue (result q "next" none #[light "Amber"] 100) (light "Red") then return false
   if !hasValue (result q "wrong" (some "never_red") #[light "Amber"] 100) (.bool false) then return false
   if !hasValue (result q "waits" (some "bounded") #[light "Red", .int x] 100) (.bool (x ≤ 100)) then return false
+  -- Independent Language outcomes, beyond the identity theorem above.
+  -- These exercise actual fromSource/desugar/evaluate, not a copied pass.
+  let definedDemand := #[("unusedLet", none, #[Value.int x], Value.int 0),
+    ("guarded", none, #[.int 0], .int 0), ("guarded", none, #[.int 1], .int 1),
+    ("conjunction", none, #[.bool false], .bool false),
+    ("disjunction", none, #[.bool true], .bool true),
+    ("nested", none, #[.int x], .int 4), ("shadow", none, #[.int x], .int 8),
+    ("capture", none, #[.int x], .int (x + 1)),
+    ("demand", some "a", #[.bool true], .bool true),
+    ("demand", some "e", #[.bool true], .bool true)]
+  for (name, member, args, expected) in definedDemand do
+    if !hasValue (result q name member args 100) expected then return false
+  let undefinedDemand := #[("usedLet", none, #[Value.int x]),
+    ("nestedUsed", none, #[.int x]), ("conjunction", none, #[.bool true]),
+    ("disjunction", none, #[.bool false]), ("strictIff", none, #[.bool false]),
+    ("strictIff", none, #[.bool true]), ("strictEq", none, #[.bool false]),
+    ("strictEq", none, #[.bool true]), ("strictNe", none, #[.bool false]),
+    ("strictNe", none, #[.bool true]), ("argument", none, #[.int x]),
+    ("demand", some "a", #[.bool false])]
+  for (name, member, args) in undefinedDemand do
+    if !undefined (result q name member args 100) then return false
+  if !hasValue (result q "demand" (some "e") #[.bool false] 100) (.bool false) then return false
+  for (label, kind) in [("a", FrenAst.MemberKind.assume), ("e", .expect)] do
+    let .ok e := evaluate (evaluator q) ⟨key "demand", some label⟩ #[.bool true] 100 | return false
+    if e.body.member.map (·.kind) != some kind ||
+        e.body.member.map (·.label.text) != some label ||
+        (e.body.expression.tokens.head?).map (·.span.file) != some ⟨n⟩ then return false
   if !undefined (result q "partial" none #[.int x] 100) then return false
   if !invalid (result q "wait" none #[.bool true] 100) then return false
   if !exhausted (result q "wait" none #[light "Red", .int x] 0) then return false
@@ -87,7 +129,7 @@ def run : IO Unit := do
   checkProperty <| ∀ (n : Nat) (x : Int), sample n x = true
   for n in [:24] do
     unless sample n (-(n : Int)) do throw (IO.userError s!"desugaring sample {n} failed")
-  IO.println "desugaring census: 24 admitted, 96 rejected source, 24 rejected edited resolved, 24 each undefined/invalid/exhausted and each witness/provenance/member/assumption/expectation/enum control; discarded=0"
+  IO.println "desugaring census: 24 admitted, 96 rejected source, 24 rejected edited resolved, 312 undefined (13/sample), 24 each invalid/exhausted, 264 independent demand-defined (11/sample) and each witness/provenance/member/assumption/expectation/enum control; discarded=0"
 
 #print axioms FrenThirDesugar.identity
 #print axioms FrenThirDesugar.static

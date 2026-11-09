@@ -16,8 +16,9 @@ successful typing and walking validation. An arbitrary edited `Typed` record
 is not such evidence. The expression is a value-typed retained body or
 occurrence in that module, evaluated in its corresponding lexical context. A callable designator supplies
 the resolved signature and body for a call; it is not itself a value or an
-undefined evaluation. Each local slot has a concrete value of its recorded type; arguments match the callee's
-signature in order. Enum values carry canonical enum and constructor identities.
+undefined evaluation. Parameter slots contain concrete values of their recorded
+types; let slots contain outcomes. Arguments match the callee's signature in
+order. Enum values carry canonical enum and constructor identities.
 
 r[evaluator.outcome.defined]
 Evaluation of a value-typed expression returns either a value of its type or
@@ -37,10 +38,13 @@ Evaluation must not infer those properties from a `Typed` record alone.
 
 r[evaluator.expression.walk]
 A literal evaluates to its value, a constructor to its nominal value, and a
-local to the value at its resolved nearest-first index. Parentheses preserve
-outcome. A let evaluates its value in the incoming environment and its body
-with that value prepended; undefined in either yields undefined. An if
-evaluates its condition and then only the selected branch. A match evaluates
+local to the outcome at its resolved nearest-first index. Parentheses preserve
+outcome. A let binds the outcome of its definition in the incoming environment
+and evaluates its body with that outcome prepended. An undefined definition
+makes the let undefined only where the body reads that slot. Nested definitions
+retain the incoming lexical bindings, even when later bindings shadow them.
+This follows the Language's [let rules](../../Reqs/Lang/EvaluationRules.md#let-expressions).
+An if evaluates its condition and then only the selected branch. A match evaluates
 its scrutinee and then only the arm with the same canonical constructor;
 patterns add no local slots. Undefined in a demanded subexpression propagates.
 
@@ -55,9 +59,13 @@ r[evaluator.expression.operator]
 Unary minus and `not` have their usual integer and Boolean meanings. Binary
 arithmetic uses mathematical integers; comparisons compare their left operand
 to their right, Boolean operators have their truth-table meanings, and equality
-compares values of the same type, including canonical enum identities. Both
-operands are demanded. Division and remainder use Euclidean quotient and
-remainder for a nonzero right operand: the remainder is nonnegative and less
+compares values of the same type, including canonical enum identities.
+As in the Language's [lazy Boolean rules](../../Reqs/Lang/EvaluationRules.md#lazy-boolean-expressions),
+`and` demands its right operand only when its left is true; `or` demands its
+right operand only when its left is false. An undefined left operand propagates.
+All other binary operators demand both operands, left first: in particular
+`iff`, equality and inequality remain strict. Division and remainder use
+Euclidean quotient and remainder for a nonzero right operand: the remainder is nonnegative and less
 than the divisor's absolute value, and `left = quotient * right + remainder`.
 A zero divisor yields undefined. This definedness rule does not assert that
 the current static checker rejects zero or enforces Fren's solver restrictions.
@@ -94,6 +102,38 @@ pub proc arithmetic(left: Int, right: Int): (sum: Int, difference: Int) {
 #fren_check
 ```
 
+## Primitive demand
+
+This small contract specifies the actual choice to visit a Boolean right
+operand, independently of its truth table. The wrapper binds it to
+`FrenEval.shortCircuit`, which the walker calls before visiting that operand.
+It does not encode syntax, environments or a second interpreter.
+
+**Dynamic semantics**
+
+r[evaluator.primitive.demand] spec::evaluator::right_demand
+Only `and` with false and `or` with true skip their right operands.
+
+```fren
+pub mod spec::evaluator
+
+pub enum BooleanOp { And, Or, Iff, Equal, NotEqual }
+
+pub proc right_demand(op: BooleanOp, left?): (needed?) {
+    ensure meaning: needed? iff match op {
+        BooleanOp::And => left?,
+        BooleanOp::Or => not left?,
+        BooleanOp::Iff => true,
+        BooleanOp::Equal => true,
+        BooleanOp::NotEqual => true,
+    }
+    expect skips_and: when op = BooleanOp::And and not left?, not needed?
+    expect skips_or: when op = BooleanOp::Or and left?, not needed?
+}
+
+#fren_check
+```
+
 For the walking example with `Light { Red, Amber, Green }`, `next(Amber)`
 evaluates to `Red`, and `wait(Red, 70)` evaluates to `100`. At `l = Amber`,
 `next(l) != Light::Red` evaluates to false. These are concrete evaluations,
@@ -105,16 +145,17 @@ This contract covers Bool, Int, payload-free nominal enums, locals, let,
 if, constructor matches, nonrecursive named calls and the operators in the
 walking typing table. It makes no claim about recursive calls, payload
 patterns, first-class functions, other types, effects or unsupported syntax.
-Only demanded branches are evaluated, although static checking visits all
-written branches. The actual walking grammar and static boundary determine
-which programs can reach this contract.
+Only selected branches and demanded Boolean right operands are visited;
+let-definition outcomes are stored without propagating failures at binding.
+Static checking still visits all written expressions. The actual walking grammar
+and static boundary determine which programs can reach this contract.
 
 A future evaluator over desugared THIR must relate its values, undefinedness
 and assumptions to these source-level outcomes through the actual desugaring
 pass. Neither that representation, pass, evaluator nor their correspondence
 is established by this chapter.
 
-- [x] Check the small arithmetic contract independently with Fren.
+- [x] Check the small arithmetic and demand contracts independently with Fren.
 - [x] Implement the walking evaluator on actual admitted typed syntax in
   `FrenEval`, with actual-code arithmetic and outcome boundary laws in Lean.
 - [x] Exercise actual code with direct Plausible and concrete controls on
@@ -152,10 +193,19 @@ body. These failures carry source spans and details; undefinedness also
 retains its operator. They are never converted to false or a solver verdict.
 
 The total implementation uses the static walker's depth approach: each
-demanded expression, including entry into a callee body, consumes one unit.
+visited expression, including entry into a callee body, consumes one unit.
 Siblings receive the same remaining depth; the bound does not count total
-steps. `defaultDepth` multiplies the largest body token count plus one by
-the function count plus one. Callers may supply another depth, including
+steps. Let definitions are computed once in the incoming environment at the
+let's remaining depth and stored as complete outcomes, without a thunk or
+closure machine. Reading a slot consumes the name's unit and returns that
+stored outcome; it does not reevaluate the definition at the use site's depth.
+An unused slot's undefined, exhausted, invalid or unsupported outcome does
+not escape. A read returns that exact outcome and its original diagnostic.
+Thus an unused definition may still cost work. A definition exhausted at
+binding depth remains exhausted at every read; slot reads do not retry it.
+Skipped `and`/`or` right expressions consume no depth or evaluation work.
+`defaultDepth` multiplies the largest body token count plus one by the function
+count plus one. Callers may supply another depth, including
 zero. Exhaustion is explicitly separate from semantic undefinedness. No
 theorem currently proves that this default suffices for every admitted
 program, or bounds total execution time, memory or integer magnitude.
@@ -171,13 +221,27 @@ inventory, and `evaluate_deterministic` proves uniqueness at fixed depth.
 The type theorem follows from an explicit output check, not a universal
 preservation proof of the recursive interpreter.
 
+`walk_and_false` and `walk_or_true` prove the Language's deciding-left facts
+about the actual recursive walker for every right expression. `walk_let`
+proves its outcome-binding equation at explicit depth, and `walk_local`
+proves exact retrieval of any stored outcome. `walk_strict_failure` preserves
+complete demanded right failures; `shortCircuit_strict` excludes every other
+operator from skipping. The wrapper also checks admitted source against
+independent lazy-let and Boolean outcomes. These laws and regressions close
+the reported strict-demand mistake; they do not prove universal correspondence
+to the Language evaluator or completeness at `defaultDepth`.
+
 Direct Plausible generates source programs and concrete values, then runs
 the real producer and evaluator. Every source sample requires defined,
 undefined, invalid, exhausted and rejected cases; no failed premise is
 discarded. The separate fixed census reports each class explicitly. These
-tests include S1's three concrete results above, strict operands and calls,
-unselected undefined branches, nearest-first shadowing, nominal input
-rejection and operator mutation sensitivity. They remain finite evidence.
+tests include S1's three concrete results above, unused/used/guarded lets,
+lexical shadowing, skipped/demanded `and`/`or` operands, strict `iff`, equality,
+inequality and calls, both check-member roles, depth controls, nominal input
+rejection and operator mutation sensitivity. The 24-source evaluator census
+requires 216 defined and 120 undefined outcomes, 96 invalid arguments, 24
+exhaustions, 120 rejected sources, 24 rejected edited producers and 24 operator
+mutants, with no discarded premises. These remain finite evidence.
 
 - [ ] Restate recursive evaluation and its correspondence laws in Fren once
   Fren2 can express recursive syntax and judgments, without copying the IR.

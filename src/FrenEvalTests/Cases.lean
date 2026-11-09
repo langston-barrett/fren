@@ -49,8 +49,8 @@ private def demandCases : IO Unit := do
     fn r(x: Int, y: Int): Int := x mod y\n\
     fn lazy(b?: Bool): Int := if b? then 7 else 9 div 0\n\
     fn arm(l: Light): Int := match l { Light::Red => 5, Light::Amber => 1 div 0, Light::Green => 6 }\n\
-    fn strict(b?: Bool): Bool := b? and (1 div 0 = 0)\n\
-    fn strictOr(b?: Bool): Bool := b? or (1 mod 0 = 0)\n\
+    fn conjunction(b?: Bool): Bool := b? and (1 div 0 = 0)\n\
+    fn disjunction(b?: Bool): Bool := b? or (1 mod 0 = 0)\n\
     fn first(x: Int, y: Int): Int := x\n\
     fn argument(dummy: Int): Int := first(3, 1 div 0)\n\
     fn order(dummy: Int): Int := first(1 div 0, 2 mod 0)\n\
@@ -66,10 +66,14 @@ private def demandCases : IO Unit := do
     isUndefined (result p "lazy" #[.bool false])) "if demanded/unselected"
   require (hasValue (result p "arm" #[light "Red"]) (.int 5) &&
     isUndefined (result p "arm" #[light "Amber"])) "match demanded/unselected"
-  require (isUndefined (result p "strict" #[.bool false]) &&
-    isUndefined (result p "strictOr" #[.bool true])) "Boolean operators short circuited"
-  for name in ["argument", "unusedLet"] do
-    require (isUndefined (result p name)) "unused strict value skipped"
+  require (hasValue (result p "conjunction" #[.bool false]) (.bool false) &&
+    hasValue (result p "disjunction" #[.bool true]) (.bool true)) "skipped Boolean right operand"
+  require (isUndefined (result p "conjunction" #[.bool true]) &&
+    isUndefined (result p "disjunction" #[.bool false])) "demanded Boolean right operand"
+  require (hasValue (result p "unusedLet") (.int 3)) "unused undefined let"
+  require (isUndefined (result p "argument")) "ordinary argument must stay strict"
+  require (isInvalid (result p "unusedLet" #[.bool true]) &&
+    isInvalid (result p "conjunction" #[.int 0])) "lazy demand bypassed argument validation"
   for member in ["a", "e"] do
     require (isUndefined (result p "partial" #[] (some member))) "partial check became verdict"
   let .error (.undefined span .div) := result p "q" #[.int 1, .int 0]
@@ -78,6 +82,83 @@ private def demandCases : IO Unit := do
   for name in ["order", "binaryOrder"] do
     let .error (.undefined _ .div) := result p name
       | throw (IO.userError "written operand/argument order changed")
+
+-- Independent expected outcomes from evaluation.let.lazy, evaluation.and/or,
+-- and semantics.derived.iff; none is a comparison of two evaluator calls.
+private def nestedDemandCases : IO Unit := do
+  let p ← load "mod skeleton\n\
+    fn guarded(d: Int): Int := let x := 1 div d in if d != 0 then x else 0\n\
+    fn used(dummy: Int): Int := let x := 1 div 0 in x\n\
+    fn nested(dummy: Int): Int := let x := 1 div 0 in let y := x + 1 in 4\n\
+    fn nestedUsed(dummy: Int): Int := let x := 1 div 0 in let y := x + 1 in y\n\
+    fn shadowUnused(dummy: Int): Int := let x := 1 div 0 in let x := 8 in x\n\
+    fn shadowUsed(x: Int): Int := let y := x + 1 in let x := 100 in y\n\
+    fn shadowFailure(dummy: Int): Int := let x := 1 div 0 in let y := x in let x := 8 in y\n\
+    fn repeated(x: Int): Int := let y := x + 1 in y + y\n\
+    fn letAnd(b?: Bool): Bool := let x := 1 div 0 = 0 in b? and x\n\
+    fn letOr(b?: Bool): Bool := let x := 1 mod 0 = 0 in b? or x\n\
+    fn eq(b?: Bool): Bool := b? = (1 div 0 = 0)\n\
+    fn ne(b?: Bool): Bool := b? != (1 div 0 = 0)\n\
+    fn strictIff(b?: Bool): Bool := b? iff (1 div 0 = 0)\n\
+    fn leftAnd(dummy: Int): Bool := (1 div 0 = 0) and false\n\
+    fn leftOr(dummy: Int): Bool := (1 div 0 = 0) or true\n\
+    fn inner(d: Int): Int := let x := 1 div d in if d != 0 then x else 0\n\
+    fn caller(d: Int): Int := let x := 99 in inner(d)\n\
+    expect checks(b?: Bool) {\n\
+      assume lazy_and: b? and (1 div 0 = 0)\n\
+      expect lazy_or: b? or (1 mod 0 = 0)\n\
+      assume lazy_let: let x := 1 div 0 in true\n\
+      expect guarded_let: let x := 1 div 0 in if b? then x = 0 else true\n\
+    }"
+  for (name, args, expected) in [
+      ("guarded", #[.int 0], .int 0), ("guarded", #[.int 1], .int 1),
+      ("nested", #[.int 0], .int 4), ("shadowUnused", #[.int 0], .int 8),
+      ("shadowUsed", #[.int 10], .int 11), ("repeated", #[.int 10], .int 22),
+      ("caller", #[.int 0], .int 0), ("caller", #[.int 1], .int 1),
+      ("letAnd", #[.bool false], .bool false), ("letOr", #[.bool true], .bool true)] do
+    require (hasValue (result p name args none 100) expected) s!"lazy binding {name}"
+  for name in ["used", "nestedUsed", "shadowFailure", "leftAnd", "leftOr"] do
+    require (isUndefined (result p name #[.int 0] none 100)) s!"demanded binding/left {name}"
+  for b in [false, true] do
+    for name in ["eq", "ne", "strictIff"] do
+      require (isUndefined (result p name #[.bool b] none 100)) s!"strict Boolean {name}"
+  require (isUndefined (result p "letAnd" #[.bool true] none 100) &&
+    isUndefined (result p "letOr" #[.bool false] none 100)) "demanded let Boolean"
+  for (member, b, expected) in [("lazy_and", false, false), ("lazy_or", true, true),
+      ("lazy_let", false, true), ("guarded_let", false, true)] do
+    let .ok e := evaluate p ⟨key "checks", some member⟩ #[.bool b] 100
+      | throw (IO.userError s!"missing check {member}")
+    require (hasValue e.outcome (.bool expected) &&
+      e.body.member.map (·.kind) == some (if member == "lazy_and" || member == "lazy_let"
+        then .assume else .expect) &&
+      e.body.member.map (·.label.text) == some member &&
+      (e.body.expression.tokens.head?).map (·.span.file) == some ⟨101⟩)
+      s!"check demand/role/provenance {member}"
+  for (member, b) in [("lazy_and", true), ("lazy_or", false), ("guarded_let", true)] do
+    require (isUndefined (result p "checks" #[.bool b] (some member) 100)) s!"demanded check {member}"
+  -- The complete definition failure survives storage and shadowing unchanged.
+  for name in ["used", "nestedUsed", "shadowFailure"] do
+    let some body := p.typed.bodies.find? (·.owner == key name)
+      | throw (IO.userError "missing let body")
+    let some token := body.expression.tokens.find? (·.text == "div")
+      | throw (IO.userError "missing definition operator")
+    let .error failure := result p name #[.int 0] none 100
+      | throw (IO.userError s!"missing stored failure {name}")
+    require (failure == .undefined token.span .div) s!"stored failure lost complete source identity {name}"
+
+private def depthCases : IO Unit := do
+  let p ← load "mod skeleton\n\
+    fn unused(dummy: Int): Int := let x := (((1 div 0))) in 7\n\
+    fn used(dummy: Int): Int := let x := (((1 div 0))) in x\n\
+    fn conjunction(dummy: Int): Bool := false and (((1 div 0 = 0)))\n\
+    fn disjunction(dummy: Int): Bool := true or (((1 div 0 = 0)))\n\
+    fn demanded(dummy: Int): Bool := true and (((1 div 0 = 0)))"
+  for (name, expected) in [("unused", .int 7), ("conjunction", .bool false), ("disjunction", .bool true)] do
+    require (hasValue (result p name #[.int 0] none 2) expected) s!"skipped exhausted outcome {name}"
+    require (isExhausted (result p name #[.int 0] none 1)) s!"body/left depth {name}"
+  for name in ["used", "demanded"] do
+    require (isExhausted (result p name #[.int 0] none 2)) s!"demanded depth {name}"
+    require (isUndefined (result p name #[.int 0] none 100)) s!"demanded semantic failure {name}"
 
 private def bindingCases : IO Unit := do
   let p ← load "mod skeleton\n\
@@ -135,9 +216,11 @@ private def rejectedCases : IO Unit := do
 def runCases : IO Unit := do
   walkingExample
   demandCases
+  nestedDemandCases
+  depthCases
   bindingCases
   operatorCases
   rejectedCases
-  IO.println "walking evaluator: S1, strictness, Euclidean arithmetic, bindings, nominal input and producer controls passed"
+  IO.println "walking evaluator: S1, lazy let/and/or, strict controls, depth, Euclidean arithmetic, bindings, nominal input and producer controls passed"
 
 end FrenEvalTests

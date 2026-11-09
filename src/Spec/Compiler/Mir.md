@@ -171,19 +171,21 @@ the same value. Assuming `at_most` rather than checking it makes a false
 claim pass. Using the wrong local slot changes both function values and
 the meaning of assumptions.
 
-There is a current partiality mismatch to resolve before claiming a general
-outcome simulation. The accepted [walking evaluator](Evaluator.md) eagerly
-evaluates let values and both operands of `and` and `or`. The design's
-demand-based assert insertion and the current Language
-[evaluation rules](../../Reqs/Lang/EvaluationRules.md#let-expressions) make
-let definitions and the right operands of `and` and `or` lazy. `iff`, Boolean
-equality/inequality and ordinary call arguments remain strict. For example,
-`let x := 1 div 0 in 0` does not demand `x` in its body, but the actual
-walking interpreter reports undefined. This chapter retains the deciding
-syntax and contexts and records the mismatch; it does not claim these
-outcomes are equal or choose a new language rule. The total examples below
-are unaffected. Full partial-outcome correspondence remains pending this
-reconciliation.
+The [walking evaluator](Evaluator.md) now follows the Language's
+[let rules](../../Reqs/Lang/EvaluationRules.md#let-expressions) and
+[lazy Boolean rules](../../Reqs/Lang/EvaluationRules.md#lazy-boolean-expressions):
+let definitions affect the outcome only where their slots are read, and
+`and`/`or` skip their right operands when the left decides the result.
+`iff`, Boolean equality/inequality and ordinary call arguments remain strict.
+For example, `let x := 1 div 0 in 0` now returns 0. Actual admitted-source
+regressions include unused and guarded lets, nested lexical shadowing,
+skipped and demanded Boolean operands, and both assumption and expectation
+bodies. Lean laws constrain the real walker's outcome binding, local reads
+and deciding-left branches; a bound primitive Fren contract independently
+checks the right-operand demand decision. This corrects the reported strict
+reference behavior before dependent encoding. It does not establish general
+partial-outcome simulation for a future MIR producer. Explicit operational
+depth and the evaluator's remaining correspondence limits still apply.
 
 The actual interpreter also distinguishes semantic undefinedness,
 operational depth exhaustion, invalid requests/arguments and unsupported
@@ -284,8 +286,8 @@ The eleven `mir.walking.*` rules are pending contracts, not eleven proofs.
 - [ ] Bind the actual code to admission, retention, definitions, contexts and
   member contracts, using Lean proofs where cheap.
 - [ ] Establish actual value, assumption and obligation correspondence,
-  including satisfiability and definedness, and reconcile the partiality
-  mismatch before claiming general outcome preservation.
+  including satisfiability and definedness. The evaluator demand correction
+  above is a prerequisite resolved, not a general outcome-preservation proof.
 - [ ] Test the real code directly with Plausible, reporting premise counts
   for admitted, rejected and partial inputs. Include mutations that drop an
   assumption or obligation, flip a role and use the wrong context.
