@@ -1,5 +1,6 @@
 import Fren.Impl
 import Fren.Literate
+import Fren.Trace
 
 open Fren.Lang
 
@@ -538,7 +539,7 @@ theorem arm_patterns_weaken (symbols : Snoc Entry) (arms : Snoc (ArmF Typing)) (
 
 /-- One layer: inserting a type at level `cutoff` and shifting levels keeps a
 layer typed. -/
-theorem layer_weakening (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF Typing) (ty : Ty)
+theorem layer_weakens (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF Typing) (ty : Ty)
     (cutoff : Int) (extra : Ty) (h0 : 0 ≤ cutoff) (hn : cutoff ≤ length _ context)
     (h : rule? symbols context form ty = true) :
     rule? symbols (insert_type context cutoff extra) (weaken_layer form cutoff extra) ty = true := by
@@ -669,7 +670,7 @@ theorem context_ok_insert (symbols : Snoc Entry) (context : Snoc Ty) (cutoff : I
 
 /-- Weakening a valid table whose row contexts reach the cutoff, by a
 well-formed type, keeps it valid. -/
-theorem table_weakening (symbols : Snoc Entry) (rows : Snoc Row) (cutoff : Int) (extra : Ty)
+theorem table_weakens (symbols : Snoc Entry) (rows : Snoc Row) (cutoff : Int) (extra : Ty)
     (hx : ty_ok? symbols extra = true) (h0 : 0 ≤ cutoff) (hv : rows_valid? symbols rows = true)
     (hr : contexts_reach? rows cutoff = true) :
     rows_valid? symbols (weaken rows cutoff extra) = true := by
@@ -687,7 +688,7 @@ theorem table_weakening (symbols : Snoc Entry) (rows : Snoc Row) (cutoff : Int) 
     | some form =>
       simp only [hf] at hl ha
       simp only [ha, Option.map]
-      exact layer_weakening symbols last.ctx form last.ty cutoff extra h0 hr.1.2 hl
+      exact layer_weakens symbols last.ctx form last.ty cutoff extra h0 hr.1.2 hl
 
 theorem insert_at_end (context : Snoc Ty) (extra : Ty) :
     insert_type context (length _ context) extra = .Extend context extra := by
@@ -745,7 +746,7 @@ theorem rows_extend_weaken (rows : Snoc Row) (base : Snoc Ty) (extra : Ty)
 
 /-- Weakening: if `derivation?(Σ, rows, Γ, τ)` and σ is well formed, then
 `derivation?(Σ, weaken(rows, |Γ|, σ), (Γ, σ), τ)`. -/
-theorem judgment_weakening (symbols : Snoc Entry) (rows : Snoc Row) (context : Snoc Ty) (ty extra : Ty)
+theorem judgment_weakens (symbols : Snoc Entry) (rows : Snoc Row) (context : Snoc Ty) (ty extra : Ty)
     (hx : ty_ok? symbols extra = true) (h : derivation? symbols rows context ty = true) :
     derivation? symbols (weaken rows (length _ context) extra) (.Extend context extra) ty = true := by
   cases rows with
@@ -754,19 +755,13 @@ theorem judgment_weakening (symbols : Snoc Entry) (rows : Snoc Row) (context : S
     simp only [derivation?, decide_eq_true_eq] at h ⊢
     have hroot := h.2
     simp [fren_spec] at hroot
-    have hv := table_weakening symbols (.Extend earlier root) (length _ context) extra hx
+    have hv := table_weakens symbols (.Extend earlier root) (length _ context) extra hx
       (by omega) h.1.1.2 (rows_extend_reach _ _ h.1.2)
     have he := rows_extend_weaken (.Extend earlier root) context extra h.1.2
     refine ⟨⟨⟨⟨h.1.1.1.1, (context_ok_extend _ _ _).2 ⟨hx, h.1.1.1.2⟩⟩, hv⟩, he⟩, ?_⟩
     simp [weaken, fren_spec, hroot.1, hroot.2, insert_at_end]
 
 /-! ## Examples -/
-
-/-- The chapter's worked derivations. -/
-theorem worked_examples :
-    OLDEST_LEVEL_EXAMPLE = true ∧ LET_EXAMPLE = true ∧ MATCH_EXAMPLE = true ∧
-    CALL_EXAMPLE = true ∧ PROGRAM_EXAMPLE = true := by
-  decide
 
 /-- Snoc sequences of one to four entries, oldest first. -/
 abbrev t1 {α : Type} (a : α) : Snoc α := .Extend .Empty a
@@ -879,3 +874,153 @@ theorem coverage_separate :
   decide
 
 end Spec.Language.Types
+
+/-! ## Laws bound to their procedures -/
+
+open spec.types in
+impl call_arity_proof: call_arity for (args : Snoc Typing) (params : Snoc Ty) {
+  args := args, params := params, holds? := true
+} by
+  intro args params _
+  simp only [call_arity.ensures, call_arity.ensure.output, call_arity.ensure.equal]
+  refine ⟨trivial, ?_⟩
+  intro h
+  rw [Spec.Language.Types.argument_types_length args params h]
+
+open spec.types in
+impl layer_regularity_proof: layer_regularity for (symb : Snoc Entry) (ctx : Snoc Ty)
+    (form : ExprF Typing) (ty : Ty) {
+  symb := symb, ctx := ctx, form := form, ty := ty, holds? := true
+} by
+  intro symb ctx form ty _
+  simp only [layer_regularity.ensures, layer_regularity.ensure.output, layer_regularity.ensure.regular]
+  refine ⟨trivial, ?_⟩
+  intro h
+  exact Spec.Language.Types.layer_regular symb ctx form ty h.1.1.1 h.1.1.2 h.1.2 h.2
+
+open spec.types in
+impl table_regularity_proof: table_regularity for (symb : Snoc Entry) (rows : Snoc Row)
+    (pos : Int) (found : Row) {
+  symb := symb, rows := rows, pos := pos, found := found, holds? := true
+} by
+  intro symb rows pos found _
+  simp only [table_regularity.ensures, table_regularity.ensure.output, table_regularity.ensure.regular]
+  refine ⟨trivial, ?_⟩
+  intro h
+  exact Spec.Language.Types.table_regular symb rows h.1.1 h.1.2 pos found h.2
+
+open spec.types in
+impl judgment_regularity_proof: judgment_regularity for (symb : Snoc Entry)
+    (rows : Snoc Row) (ctx : Snoc Ty) (ty : Ty) {
+  symb := symb, rows := rows, ctx := ctx, ty := ty, holds? := true
+} by
+  intro symb rows ctx ty _
+  simp only [judgment_regularity.ensures, judgment_regularity.ensure.output, judgment_regularity.ensure.regular]
+  refine ⟨trivial, ?_⟩
+  exact Spec.Language.Types.judgment_regular symb rows ctx ty
+
+open spec.types in
+impl table_scoping_proof: table_scoping for (symb : Snoc Entry) (rows : Snoc Row)
+    (pos : Int) (found : Row) (level : Int) {
+  symb := symb, rows := rows, pos := pos, found := found, level := level, holds? := true
+} by
+  intro symb rows pos found level _
+  simp only [table_scoping.ensures, table_scoping.ensure.output, table_scoping.ensure.in_scope]
+  refine ⟨trivial, ?_⟩
+  intro h
+  exact Spec.Language.Types.table_scoped symb rows pos level found h.1.1 h.1.2 h.2
+
+open spec.types in
+impl table_uniqueness_proof: table_uniqueness for (symb : Snoc Entry)
+    (left right : Snoc Row) {
+  symb := symb, left := left, right := right, holds? := true
+} by
+  intro symb left right _
+  simp only [table_uniqueness.ensures, table_uniqueness.ensure.output, table_uniqueness.ensure.equal]
+  refine ⟨trivial, ?_⟩
+  intro h
+  exact Spec.Language.Types.table_unique symb left right h.1.1 h.1.2 h.2
+
+open spec.types in
+impl layer_weakening_proof: layer_weakening for (symb : Snoc Entry) (ctx : Snoc Ty)
+    (form : ExprF Typing) (ty : Ty) (cutoff : Int) (extra : Ty) {
+  symb := symb, ctx := ctx, form := form, ty := ty, cutoff := cutoff, extra := extra, holds? := true
+} by
+  intro symb ctx form ty cutoff extra _
+  simp only [layer_weakening.ensures, layer_weakening.ensure.output, layer_weakening.ensure.weakened]
+  refine ⟨trivial, ?_⟩
+  intro h
+  exact Spec.Language.Types.layer_weakens symb ctx form ty cutoff extra h.1.1 h.1.2 h.2
+
+open spec.types in
+impl lookup_shifting_proof: lookup_shifting for (ctx : Snoc Ty) (cutoff : Int)
+    (extra : Ty) (level : Int) {
+  ctx := ctx, cutoff := cutoff, extra := extra, level := level, holds? := true
+} by
+  intro ctx cutoff extra level _
+  simp only [lookup_shifting.ensures, lookup_shifting.ensure.output, lookup_shifting.ensure.shifted, lookup_shifting.ensure.inserted]
+  refine ⟨trivial, ?_⟩
+  exact ⟨fun h => (Spec.Language.Types.lookup_shift ctx cutoff extra h.1 h.2).1 level,
+    fun h => (Spec.Language.Types.lookup_shift ctx cutoff extra h.1 h.2).2⟩
+
+open spec.types in
+impl table_weakening_proof: table_weakening for (symb : Snoc Entry) (rows : Snoc Row)
+    (cutoff : Int) (extra : Ty) {
+  symb := symb, rows := rows, cutoff := cutoff, extra := extra, holds? := true
+} by
+  intro symb rows cutoff extra _
+  simp only [table_weakening.ensures, table_weakening.ensure.output, table_weakening.ensure.valid]
+  refine ⟨trivial, ?_⟩
+  intro h
+  exact Spec.Language.Types.table_weakens symb rows cutoff extra h.1.1.1 h.1.1.2 h.1.2 h.2
+
+open spec.types in
+impl judgment_weakening_proof: judgment_weakening for (symb : Snoc Entry)
+    (rows : Snoc Row) (ctx : Snoc Ty) (ty extra : Ty) {
+  symb := symb, rows := rows, ctx := ctx, ty := ty, extra := extra, holds? := true
+} by
+  intro symb rows ctx ty extra _
+  simp only [judgment_weakening.ensures, judgment_weakening.ensure.output, judgment_weakening.ensure.weakened]
+  refine ⟨trivial, ?_⟩
+  intro h
+  exact Spec.Language.Types.judgment_weakens symb rows ctx ty extra h.1 h.2
+
+open spec.types in
+impl worked_examples_proof: worked_examples { holds? := true } by
+  intro _
+  simp only [worked_examples.ensures, worked_examples.ensure.output, worked_examples.ensure.valid]
+  refine ⟨trivial, ?_⟩
+  decide
+
+/-! ## The overview's interface, interpreted by the detailed definitions -/
+
+pub mod spec::typing
+
+
+interp Symb := spec.types.Snoc spec.types.Entry
+interp Ctx := spec.types.Snoc spec.types.Ty
+interp Derivation := spec.types.Snoc spec.types.Row
+interp Ty := spec.types.Ty
+interp symb_ok? := spec.types.symb_ok?
+interp ctx_ok? := spec.types.ctx_ok?
+interp ty_ok? := spec.types.ty_ok?
+interp type_of := fun _ _ rows => match rows with
+  | .Empty => default
+  | .Extend _ root => root.ty
+interp derives? := fun symb ctx rows ty => spec.types.derivation? symb rows ctx ty by
+  intro symb ctx rows ty
+  simp only [spec.typing.derives?.deterministic, spec.typing.derives?.well_formed,
+    spec.typing.derives?.regular, spec.typing.type_of, spec.typing.symb_ok?, spec.typing.ctx_ok?,
+    spec.typing.ty_ok?]
+  refine ⟨fun h => ?_, fun h => ?_, fun h => Spec.Language.Types.judgment_regular symb rows ctx ty h⟩
+  · cases rows with
+    | Empty => simp [spec.types.derivation?, fren_spec] at h
+    | Extend earlier root =>
+      simp only [spec.types.derivation?, decide_eq_true_eq] at h
+      have hr := h.2
+      simp [fren_spec] at hr
+      simp [hr.2]
+  · simp only [spec.types.derivation?, decide_eq_true_eq] at h
+    exact ⟨by simp only [spec.types.symb_ok?, decide_eq_true_eq]; exact h.1.1.1.1, h.1.1.1.2⟩
+
+#fren_trace
