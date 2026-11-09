@@ -27,8 +27,8 @@ private def expression : Nat → Typed → TypedBody → TypeContext → Expr �
     let ty ← valueType t b ctx e
     let visit := expression depth t b ctx
     let lowered ← match e with
-    | .bool _ v => pure ⟨.bool v, .bool true⟩
-    | .integer _ v => pure ⟨.int v, .bool true⟩
+    | .bool _ v => pure ⟨.bool v, .empty⟩
+    | .integer _ v => pure ⟨.int v, .empty⟩
     | .name path => do
       let some ref := t.resolved.referenceAt path.head.slice
         | throw (failure t e "missing reference")
@@ -37,16 +37,16 @@ private def expression : Nat → Typed → TypedBody → TypeContext → Expr �
       match ref.target with
       | .local i =>
         unless (ctx[i]?.map Prod.snd) == some ty do throw (failure t e "local type mismatch")
-        pure ⟨.local ty i .value, .local ty i .domain⟩
+        pure ⟨.local ty i .value, .check (.local ty i .domain)⟩
       | .item id =>
         let some (.enum owner) := FrenHirToThir.constructorType t.resolved id
           | throw (failure t e "non-constructor item")
-        pure ⟨.constructor owner id, .bool true⟩
+        pure ⟨.constructor owner id, .empty⟩
       | _ => throw (failure t e "type used as value")
     | .paren _ child _ => visit child
     | .unary _ op child => do
       let a ← visit child
-      pure ⟨.unary op a.value, a.defined⟩
+      pure ⟨.unary op a.value, a.verification⟩
     | .binary left _ op right => pure (Lowered.binary op (← visit left) (← visit right))
     | .ifE _ c _ yes _ no => pure (Lowered.branch (← visit c) (← visit yes) (← visit no))
     | .letE _ binder _ value _ rest => do
@@ -78,8 +78,8 @@ private def expression : Nat → Typed → TypedBody → TypeContext → Expr �
       -- Admission proved exhaustive coverage. The final arm is the fallback;
       -- no fabricated default value/domain enters this nominal enum domain.
       let selected := branches.dropLast.foldr (fun (guard, arm) rest =>
-        Lowered.branch ⟨guard, .bool true⟩ arm rest) last
-      pure ⟨selected.value, both s.defined selected.defined⟩
+        Lowered.branch ⟨guard, .empty⟩ arm rest) last
+      pure ⟨selected.value, .both s.verification selected.verification⟩
     return lowered.mark ⟨b.owner, b.member, e, ctx⟩
 
 private def body (t : Typed) (b : TypedBody) : Result Body := do

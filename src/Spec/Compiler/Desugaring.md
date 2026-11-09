@@ -61,7 +61,12 @@ future transformations and their consumers must establish their own corresponden
 The current evaluator's depth bound is operational: exhaustion is distinct from
 semantic undefinedness such as division by zero. Identity must preserve both;
 it does not prove that the default depth always suffices. Static validation
-visits written branches even when evaluation selects only one.
+visits written branches even when evaluation selects only one. Raw evaluator
+correspondence is distinct from declarative source verification. The identity
+also retains every written operand and unused let definition, hence the data
+needed for their obligations and explicit conditional scopes. A later pass
+must preserve that information independently of a concrete execution trace;
+ordinary `and`/`or` do not introduce verification guards.
 
 ## Example
 

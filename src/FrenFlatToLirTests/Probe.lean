@@ -128,15 +128,26 @@ def sourceOutcome (c : Compiled) (name : String) (args : Array Value)
   | .error d => .error d
   | .ok e => e.outcome
 
-/-- Expected is independent concrete data. Undefined requires a false domain,
-not any chosen symbolic value. Invalid/exhausted source outcomes never pass. -/
+/-- An independently expected verification result at one input. This never
+consults the value interpreter, and never proves a universally quantified goal. -/
+def domainIs (c : Compiled) (name : String) (args : Array Value) (expected : Bool)
+    (label : Option String := none) : Bool := Id.run do
+  let some b := body? c.program name label | return false
+  let env := args.toList.reverse.map fun v => (v, true)
+  return observe 400 symbols env b.term.defined == some (.bool expected)
+
+/-- Value comparison is conditional on an independently expected true domain.
+`none` requests a false verification domain only, without a source-outcome
+oracle. Operational interpreter failures never establish this predicate. -/
 def agrees (c : Compiled) (name : String) (args : Array Value)
     (expected : Option Value) (label : Option String := none) : Bool := Id.run do
-  let some b := body? c.program name label | return false
-  let some (v, wd) := observations b args | return false
-  match expected, sourceOutcome c name args label with
-  | some want, .ok actual => return wd && v == want && actual == want
-  | none, .error (.undefined ..) => return !wd
-  | _, _ => return false
+  match expected with
+  | none => return domainIs c name args false label
+  | some want =>
+    let some b := body? c.program name label | return false
+    let some (v, wd) := observations b args | return false
+    match sourceOutcome c name args label with
+    | .ok actual => return wd && v == want && actual == want
+    | _ => return false
 
 end FrenFlatToLirTests

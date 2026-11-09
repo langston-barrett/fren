@@ -1,6 +1,6 @@
 module
 
-public import FrenFlatToLirTests.Fixtures
+public import FrenFlatToLirTests.Verification
 import Plausible
 
 public section
@@ -10,9 +10,13 @@ open scoped Plausible.Decorations
 
 private def generated (n : Nat) : String :=
   "mod lir_walk\nfn add(x: Int): Int := let y := x + " ++ toString n ++ " in y + y\n" ++
-  "fn guard(d: Int): Int := let x := 1 div d in if d != 0 then x else 0\n" ++
+  "fn guard(d: Int): Int := if d != 0 then let x := 1 div d in x else 0\n" ++
   "expect checks(x: Int) { expect first: x <= " ++ toString n ++
-  " assume later: x <= " ++ toString n ++ " }\nexpect empty() {}"
+  " assume later: x <= " ++ toString n ++ " }\nexpect empty() {}\n" ++
+  "fn andCheck(b?: Bool): Bool := b? and (1 div 0 = 0)\n" ++
+  "fn orCheck(b?: Bool): Bool := b? or (1 div 0 = 0)\n" ++
+  "fn unusedCheck(x: Int): Int := let bad := 1 div 0 in x\n" ++
+  "fn scoped(d: Int): Int := let d := d + 1 in if d != 0 then 1 div d else 0"
 
 /-- Direct Plausible over the real admitted-source producer. Each sample has
 valid, partial and invalid classes, with no implication/discarded premises.
@@ -32,6 +36,20 @@ private def sample (file n : Nat) : Bool := Id.run do
         (key "checks", #["later"], #["later", "first"]), (key "empty", #[], #[])] then return false
   if !agrees c "checks" #[.int (k : Int)] (some (.bool true)) (some "first") ||
       !agrees c "checks" #[.int ((k : Int) + 1)] (some (.bool false)) (some "first") then return false
+  -- Mandatory old-semantics counterexamples: no evaluation trace oracle.
+  if !domainIs c "andCheck" #[.bool false] false ||
+      !domainIs c "orCheck" #[.bool true] false ||
+      !domainIs c "unusedCheck" #[.int (k : Int)] false ||
+      !agrees c "scoped" #[.int (-1)] (some (.int 0)) then return false
+  for name in ["andCheck", "orCheck", "unusedCheck"] do
+    let some b := body? c.program name | return false
+    let [leaf] := nonzeroLeaves b | return false
+    if !leaf.guards.isEmpty || !leaf.binders.isEmpty || leaf.origin.isNone then return false
+  let some scopedBody := body? c.program "scoped" | return false
+  let [leaf] := nonzeroLeaves scopedBody | return false
+  if leaf.guards.map Prod.snd != [true] || leaf.binders.map (·.1.text) != ["d"] then return false
+  let some origin := leaf.origin | return false
+  if origin.context.map (·.1.text) != ["d", "d"] then return false
   let .ok again := compile file source | return false
   if c.program != again.program then return false
   let .ok moved := compile (file + 1) source | return false
@@ -62,7 +80,7 @@ def runProperties : IO Unit := do
   for n in [:24] do
     unless sample (400 + n) n do throw (IO.userError s!"LIR census sample {n} failed")
   IO.println s!"LIR properties execution: {(← IO.monoMsNow) - started} ms"
-  IO.println "LIR census: 24 valid base + 24 partial sources, 96 rejected sources + 24 edited-resolution rejections, 24 admitted arithmetic mutants killed; 72 base + 48 partial requests, 24 undefined goal domains. Plausible: 100 samples, same mandatory classes; discarded=0, all admission premises witnessed by actual producer."
+  IO.println "LIR census: 24 valid base + 24 partial sources, 96 rejected sources + 24 edited-resolution rejections, 24 admitted arithmetic mutants killed; 72 base + 48 partial requests, 96 false verification domains + 24 guarded/scoped obligation trees. Plausible: 100 samples, same mandatory classes; discarded=0, 7 value comparisons/sample require true verification domains; false domains checked without the evaluator; all admission premises witnessed by actual producer."
 
 #print axioms FrenFlatToLir.retains_mir
 #print axioms FrenFlatToLir.retains_source
@@ -76,5 +94,7 @@ def runProperties : IO Unit := do
 #print axioms FrenLir.bind_domain
 #print axioms FrenLir.strict_domain
 #print axioms FrenLir.call_domain
+#print axioms FrenLir.binary_verification
+#print axioms FrenLir.bind_verification
 
 end FrenFlatToLirTests

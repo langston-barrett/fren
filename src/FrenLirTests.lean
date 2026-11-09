@@ -5,11 +5,11 @@ import FrenLir
 -- Structural laws are proved against the actual production combinators.
 example (a b : FrenLir.Lowered) :
     (FrenLir.Lowered.binary .and a b).defined =
-      FrenLir.both a.defined (.ite a.value b.defined (.bool true)) := rfl
+      FrenLir.both a.defined b.defined := rfl
 
 example (a b : FrenLir.Lowered) :
     (FrenLir.Lowered.binary .or a b).defined =
-      FrenLir.both a.defined (.ite a.value (.bool true) b.defined) := rfl
+      FrenLir.both a.defined b.defined := rfl
 
 example (a b : FrenLir.Lowered) :
     (FrenLir.Lowered.binary .div a b).defined = FrenLir.both
@@ -17,3 +17,7 @@ example (a b : FrenLir.Lowered) :
 
 example (a b : FrenLir.Lowered) :
     (FrenLir.Lowered.binary .iff a b).defined = FrenLir.both a.defined b.defined := rfl
+
+example (binder : FrenAst.Token) (ty : FrenExpr.Ty) (v b : FrenLir.Lowered) :
+    (FrenLir.Lowered.bind binder ty v b).verification =
+      .both v.verification (.letE binder ty v.value v.defined b.verification) := rfl

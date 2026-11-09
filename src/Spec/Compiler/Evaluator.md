@@ -2,8 +2,10 @@
 
 Evaluation gives a concrete meaning to an expression for a particular choice
 of its inputs. This chapter specifies the walking subset of
-[typed syntax](Thir.md), before a desugared THIR exists. It does not decide
-whether a property holds for all inputs.
+[typed syntax](Thir.md). It does not decide whether a property holds for
+all inputs. It describes the implemented raw
+value-debugging strategy, not the pure fragment's declarative source
+verification policy in [Expressions](../Language/Expressions.md).
 
 ## Inputs and outcomes
 
@@ -43,7 +45,9 @@ outcome. A let binds the outcome of its definition in the incoming environment
 and evaluates its body with that outcome prepended. An undefined definition
 makes the let undefined only where the body reads that slot. Nested definitions
 retain the incoming lexical bindings, even when later bindings shadow them.
-This follows the Language's [let rules](../../Reqs/Lang/EvaluationRules.md#let-expressions).
+This is the current value strategy: it does not discard the written
+definition's verification obligations. Logical lowering retains those even
+when the slot is unused.
 An if evaluates its condition and then only the selected branch. A match evaluates
 its scrutinee and then only the arm with the same canonical constructor;
 patterns add no local slots. Undefined in a demanded subexpression propagates.
@@ -60,15 +64,20 @@ Unary minus and `not` have their usual integer and Boolean meanings. Binary
 arithmetic uses mathematical integers; comparisons compare their left operand
 to their right, Boolean operators have their truth-table meanings, and equality
 compares values of the same type, including canonical enum identities.
-As in the Language's [lazy Boolean rules](../../Reqs/Lang/EvaluationRules.md#lazy-boolean-expressions),
+In the current raw value strategy,
 `and` demands its right operand only when its left is true; `or` demands its
 right operand only when its left is false. An undefined left operand propagates.
-All other binary operators demand both operands, left first: in particular
+All other binary operators evaluate both operands, left first: in particular
 `iff`, equality and inequality remain strict. Division and remainder use
 Euclidean quotient and remainder for a nonzero right operand: the remainder is nonnegative and less
 than the divisor's absolute value, and `left = quotient * right + remainder`.
 A zero divisor yields undefined. This definedness rule does not assert that
 the current static checker rejects zero or enforces Fren's solver restrictions.
+Source verification independently retains both ordinary Boolean operands'
+obligations in the incoming context. Only explicit conditional/guard scopes
+supply conditional verification contexts; unused values do not erase checks.
+Pure value semantics require no fixed evaluation order. Written-order
+traversal and first diagnostics are implementation policies.
 
 For a check member, evaluation produces its Boolean value under supplied
 parameter values. Assumptions restrict which parameter assignments are relevant
@@ -107,7 +116,9 @@ pub proc arithmetic(left: Int, right: Int): (sum: Int, difference: Int) {
 This small contract specifies the actual choice to visit a Boolean right
 operand, independently of its truth table. The wrapper binds it to
 `FrenEval.shortCircuit`, which the walker calls before visiting that operand.
-It does not encode syntax, environments or a second interpreter.
+It does not encode syntax, environments or a second interpreter. This is
+only a concrete visitation-strategy contract: ordinary `and`/`or` still
+contribute both source operands' verification obligations.
 
 **Dynamic semantics**
 
@@ -148,12 +159,16 @@ patterns, first-class functions, other types, effects or unsupported syntax.
 Only selected branches and demanded Boolean right operands are visited;
 let-definition outcomes are stored without propagating failures at binding.
 Static checking still visits all written expressions. The actual walking grammar
-and static boundary determine which programs can reach this contract.
+and static boundary determine which programs can reach this contract. A full
+verification-aware debugger must also check applicable executable obligations
+or report unresolved predicates. The current raw `FrenEval` result alone
+performs no such discharge; LIR now retains this information separately.
+Conditions proved by verification may be erased for value evaluation.
 
-A future evaluator over desugared THIR must relate its values, undefinedness
-and assumptions to these source-level outcomes through the actual desugaring
-pass. Neither that representation, pass, evaluator nor their correspondence
-is established by this chapter.
+The identity [desugaring stage](Desugaring.md) already preserves these
+raw outcomes. A future transformation must establish its own value
+correspondence under the required well-definedness premises, independently
+of completeness of its retained source verification information.
 
 - [x] Check the small arithmetic and demand contracts independently with Fren.
 - [x] Implement the walking evaluator on actual admitted typed syntax in
@@ -221,15 +236,16 @@ inventory, and `evaluate_deterministic` proves uniqueness at fixed depth.
 The type theorem follows from an explicit output check, not a universal
 preservation proof of the recursive interpreter.
 
-`walk_and_false` and `walk_or_true` prove the Language's deciding-left facts
+`walk_and_false` and `walk_or_true` prove the current strategy's deciding-left facts
 about the actual recursive walker for every right expression. `walk_let`
 proves its outcome-binding equation at explicit depth, and `walk_local`
 proves exact retrieval of any stored outcome. `walk_strict_failure` preserves
 complete demanded right failures; `shortCircuit_strict` excludes every other
 operator from skipping. The wrapper also checks admitted source against
 independent lazy-let and Boolean outcomes. These laws and regressions close
-the reported strict-demand mistake; they do not prove universal correspondence
-to the Language evaluator or completeness at `defaultDepth`.
+the earlier concrete strategy regression. They do not establish declarative
+source-obligation completeness, universal value correspondence or completeness
+at `defaultDepth`.
 
 Direct Plausible generates source programs and concrete values, then runs
 the real producer and evaluator. Every source sample requires defined,

@@ -22,6 +22,9 @@ def demandSource : String := "mod lir_walk\n\
   fn ignore(x: Int): Int := 0\n\
   fn unused(dummy: Int): Int := let x := 1 div 0 in 0\n\
   fn guarded(d: Int): Int := let x := 1 div 0 in if d != 0 then x else 0\n\
+  fn conditional(b?: Bool): Int := if b? then 1 div 0 else 0\n\
+  fn constantBranch(dummy: Int): Int := if false then 1 div 0 else 0\n\
+  fn bothGood(b?: Bool): Bool := b? and (2 = 2)\n\
   fn divide(n: Int, d: Int): Int := if d != 0 then n div d else 0\n\
   fn remainder(n: Int, d: Int): Int := if d != 0 then n mod d else 0\n\
   fn lazyAnd(b?: Bool): Bool := b? and (1 div 0 = 0)\n\
@@ -64,18 +67,22 @@ def requestAudit (p : FrenLir.Program) : Bool :=
     (key "vacuous", #["contradiction"], "no", #["contradiction", "no"], #[], []),
     (key "empty", #[], "sat", #[], #[], [])]
 
-/-- Native controls use these independently expected outcomes, then compare
-both the actual lowering and accepted source walker against them. -/
+/-- Static domains are independent expectations. Value comparisons are used
+only in true-domain cases; lazy interpreter outcomes do not decide checks. -/
 def demandAudit (c : Compiled) : Bool :=
   requestAudit c.program && c.program.wellFormed &&
-  agrees c "unused" #[.int 0] (some (.int 0)) &&
-  agrees c "guarded" #[.int 0] (some (.int 0)) &&
+  domainIs c "unused" #[.int 0] false &&
+  domainIs c "guarded" #[.int 0] false &&
   agrees c "guarded" #[.int 1] none &&
+  agrees c "conditional" #[.bool false] (some (.int 0)) &&
+  domainIs c "conditional" #[.bool true] false &&
+  agrees c "constantBranch" #[.int 0] (some (.int 0)) &&
+  agrees c "bothGood" #[.bool false] (some (.bool false)) &&
   agrees c "divide" #[.int 9, .int 0] (some (.int 0)) &&
   agrees c "divide" #[.int (-9), .int 2] (some (.int (-5))) &&
   agrees c "remainder" #[.int (-9), .int (-2)] (some (.int 1)) &&
-  agrees c "lazyAnd" #[.bool false] (some (.bool false)) &&
-  agrees c "lazyOr" #[.bool true] (some (.bool true)) &&
+  domainIs c "lazyAnd" #[.bool false] false &&
+  domainIs c "lazyOr" #[.bool true] false &&
   agrees c "lazyAnd" #[.bool true] none && agrees c "lazyOr" #[.bool false] none &&
   agrees c "strictIff" #[.bool false] none && agrees c "strictEq" #[.bool false] none &&
   agrees c "strictNe" #[.bool true] none && agrees c "reflexive" #[.int 0] none &&
@@ -84,9 +91,9 @@ def demandAudit (c : Compiled) : Bool :=
   agrees c "selected" #[light "Green"] (some (.int 0)) &&
   agrees c "selected" #[light "Red"] none &&
   agrees c "shadow" #[.int 4] (some (.int 14)) &&
-  agrees c "skipped" #[.int 0] (some (.int 14)) &&
-  agrees c "demand" #[.bool false] (some (.bool false)) (some "goal") &&
-  agrees c "demand" #[.bool true] (some (.bool true)) (some "later") &&
+  domainIs c "skipped" #[.int 0] false &&
+  domainIs c "demand" #[.bool false] false (some "goal") &&
+  domainIs c "demand" #[.bool true] false (some "later") &&
   agrees c "demand" #[.bool false] none (some "later") &&
   agrees c "demand" #[.bool true] none (some "strict") &&
   agrees c "vacuous" #[] (some (.bool false)) (some "no") &&
