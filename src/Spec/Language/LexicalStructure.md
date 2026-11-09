@@ -15,6 +15,8 @@ lexer with the chapter's definitions.
 
 ## Source text
 
+Lexing reads a source text one character at a time.
+
 **Syntax**
 
 r[lexical.source.characters]
@@ -41,6 +43,8 @@ pub fn line_ending?(remaining: String) :=
 ```
 
 ## Lexical elements
+
+Lexing divides a source text into pieces, each of one class.
 
 **Syntax**
 
@@ -91,7 +95,7 @@ r[lexical.element.rejected]
 status: tested Spec.Language.LexicalStructure.lexer_agrees
 Rejected text is a single character that starts no lexical element, such
 as `/`, `!`, `?`, `.`, `;` or a character outside ASCII, or the two
-characters `<-`, which are rejected together, so that `x<-1` does not read
+characters `<-`, which are rejected together: `x<-1` does not read
 as `x < -1`. No parse of a source text that contains rejected text
 succeeds (`parsing.complete`).
 
@@ -133,14 +137,15 @@ pub fn element_class(remaining: String): Class :=
 -- Whether a piece of class `kind` whose text so far is `lexeme` ends
 -- before `remaining`, the source text after it. The `++` puts one character
 -- after a punctuator, outside the decidable core; the wrapper compares this
--- function with the lexer on every short text instead.
+-- function with the lexer on all texts of up to three characters instead.
 set_option fren.lint.undecidable "allow" in
 pub fn element_ends?(kind: Class, lexeme: String, remaining: String) := match kind {
     Class::Whitespace => true,
     Class::Comment => remaining = "" or line_ending?(remaining),
     Class::Word => lexeme.ends_with?("?") or not remaining.at(0).matches?(r"[A-Za-z0-9_?]"),
     Class::Numeral => not remaining.at(0).matches?(r"[0-9]"),
-    Class::Punctuator => lexeme.len = 2 or not (lexeme ++ remaining.at(0)) in PUNCTUATORS,
+    Class::Punctuator =>
+        remaining = "" or lexeme.len = 2 or not (lexeme ++ remaining.at(0)) in PUNCTUATORS,
     Class::Rejected => not (lexeme = "<" and remaining.starts_with?("-")),
 }
 ```
@@ -166,6 +171,8 @@ and `1`.
 
 ## Comments
 
+Comments are notes for the reader, which the grammar skips.
+
 **Syntax**
 
 r[lexical.comment.extent]
@@ -173,10 +180,12 @@ status: tested Spec.Language.LexicalStructure.lexer_agrees
 `--` starts a comment, which runs up to the next line ending, not
 including it, or to the end of the source text. A comment may contain any
 character. There are no block comments: `/-` is the rejected text `/`
-then the punctuator `-`. Since `--` always starts a comment, `x--1` is the
+then the punctuator `-`. `--` always starts a comment: `x--1` is the
 word `x` then a comment.
 
 ## Words, identifiers and keywords
+
+Words are the names of a program and its reserved words.
 
 **Syntax**
 
@@ -196,7 +205,7 @@ the grammar has no construct that uses it.
 
 r[lexical.keyword.shape] spec::lexical::keyword_shape::{lowercase, grammar, contextual}
 status: smt
-Every keyword is lowercase ASCII letters, so it is a word, and none ends
+Every keyword is lowercase ASCII letters, and therefore a word, and none ends
 in `?`: `if?` and `match?` are identifiers. The keywords that the grammar
 uses, `GRAMMAR_KEYWORDS`, are keywords. The *contextual words*,
 `CONTEXTUAL`, are identifiers, not keywords, which the grammar gives a
@@ -275,6 +284,8 @@ expect keyword_shape(word: String) {
 
 ## Numerals
 
+Numerals write natural numbers.
+
 **Syntax**
 
 r[lexical.numeral.value]
@@ -287,6 +298,8 @@ minus, `0x1F` is the numeral `0` then the word `x1F`, and `1.5` is the
 numeral `1`, the rejected text `.` and the numeral `5`.
 
 ## Punctuators
+
+Punctuators are the operators and delimiters of the grammar.
 
 **Syntax**
 

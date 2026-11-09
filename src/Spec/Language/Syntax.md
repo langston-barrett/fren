@@ -4,7 +4,7 @@ This chapter gives the concrete grammar of Fren: which sequences of tokens
 form a program, and the tree that each one has. The tokens are those of
 [Lexical structure](LexicalStructure.md). Syntax alone gives a program no
 meaning: names are resolved, types checked and checks verified by later
-rules, so `y + 1` is a syntactically valid body even where no `y` is in
+rules: `y + 1` is a syntactically valid body even where no `y` is in
 scope, and `l + 1` is valid even where `l` is not an integer.
 
 Each rule's `status:` line says how it is established, as in
@@ -25,9 +25,11 @@ A grammar rule `A ::= B` defines the nonterminal `A`, written in
 spelling: a keyword, a punctuator or a contextual word. `Identifier` and
 `Numeral` are tokens of those lexical classes. `A | B` is either, `A B` is
 `A` then `B`, `A?` is `A` or nothing, `A*` is zero or more and `A+` one or
-more of `A`, and parentheses group. A `--` comment in a grammar is not
-part of it. Trivia may come between any two tokens, except where a rule
-says otherwise.
+more of `A`, and parentheses group. An alternative followed by `if` and
+a condition, `A if C`, is an alternative only where `C` holds; `C` may
+name a level `m` of the rule or the precedence `p` of an operator. A
+`--` comment in a grammar is not part of it. Trivia may come between any
+two tokens, except where a rule says otherwise.
 
 r[syntax.notation.trivia-sensitive]
 status: tested Spec.Language.Syntax.productions_agree
@@ -103,6 +105,9 @@ Type ::= Path
 
 ## Declarations
 
+A file's declarations introduce modules, enumerations, functions and
+global expectations.
+
 ### Modules
 
 **Syntax**
@@ -149,8 +154,8 @@ r[syntax.function.parameter]
 status: tested Spec.Language.Syntax.productions_agree
 A `QuestionIdentifier` is an identifier that ends in `?`. Such a parameter
 may omit its type, which is then `Bool`, or write one: `b?` and `b?: Bool`
-are both parameters, and so is `b?: Int`, whose inconsistency typing
-reports. Any other parameter writes its type.
+are both parameters, and `b?: Int` is one too, whose inconsistency
+typing reports. Any other parameter writes its type.
 
 ### Expectations
 
@@ -161,7 +166,7 @@ status: tested Spec.Language.Syntax.productions_agree
 A global expectation has a name, a parameter list that starts with a
 `TouchingOpen`, and a block of members. Its parameter list may be empty
 and may have a trailing comma. Its block may have no members. A member is
-an assumption or an expectation, with a label and a Boolean expression.
+an assumption or an expectation, with a label and an expression.
 Members are not separated: each ends where its expression does. A global
 expectation is never `pub`.
 
@@ -215,18 +220,18 @@ more than its operator's precedence.
 ```text
 Expression     ::= Expression[0]
 Expression[m]  ::= Leading[m] Continuation[m]*
-Leading[m]     ::= "-" Expression[8]                                  -- only if m <= 8
-                 | "not" Expression[4]                                -- only if m <= 4
-                 | "let" Identifier ":=" Expression[1] "in" Expression  -- only if m = 0
+Leading[m]     ::= "-" Expression[8]                                    if m <= 8
+                 | "not" Expression[4]                                  if m <= 4
+                 | "let" Identifier ":=" Expression[1] "in" Expression  if m = 0
                  | Primary
 Continuation[m] ::= BinaryOperator Expression[p + 1]
-                   -- where p is the operator's precedence, and only if p >= m
+                    if p >= m, where p is the precedence of BinaryOperator
 BinaryOperator ::= "iff" | "or" | "and" | "=" | "!=" | "<" | "<=" | ">" | ">="
                  | "+" | "-" | "*" | "div" | SameLineMod
 Primary        ::= "true" | "false" | Numeral | Name | Call | "(" Expression ")"
                  | "if" Expression "then" Expression "else" Expression
                  | "match" Expression[9] "{" (Arm ("," Arm)* ","?)? "}"
-Name           ::= Path    -- whose first identifier is not "true", "false" or "not"
+Name           ::= Path    if its first Identifier is not "true", "false" or "not"
 Call           ::= Name TouchingOpen Expression ("," Expression)* ")"
 Arm            ::= QualifiedPath "=>" Expression[1]
 ```
@@ -235,8 +240,8 @@ r[syntax.expression.extent]
 status: tested Spec.Language.Syntax.groupings_agree
 Every `Expression[m]` extends as far to the right as the grammar allows:
 a continuation, or a touching `(` after a name, that can belong to an
-inner expression belongs to it, not to one that encloses it. This makes
-each accepted token sequence have exactly one tree. In particular the
+inner expression belongs to it, not to one that encloses it. With this
+rule, each accepted token sequence has exactly one tree. In particular the
 operand of a prefix operator, the right operand of a binary operator, the
 body of a `let` and the `else` branch of an `if` take every continuation
 they admit: `a + if b then c else d + e` is `a + (if b then c else (d + e))`.
@@ -245,11 +250,13 @@ they admit: `a + if b then c else d + e` is `a + (if b then c else (d + e))`.
 
 **Syntax**
 
-r[syntax.operator.table] spec::grammar::{spelling, prefix?, precedence, non_associative?}
-status: tested Spec.Language.Syntax.operators_agree
+r[syntax.operator.table] spec::grammar::{spelling, prefix?, precedence, non_associative?, operator_reading}
+status: lean Spec.Language.Syntax.operator_reading
 Each operator has a spelling, is prefix or binary, and has a precedence.
 A larger precedence binds more tightly. `-` is both the prefix operator
-`Negate` and the binary `Subtract`, and the position decides which.
+`Negate` and the binary `Subtract`, and the position decides which. The
+parser reads each spelling as `operator_reading` states: as its binary
+operator, at its precedence, or as its prefix operator.
 
 | Precedence | Operators | Position | Associativity |
 |---|---|---|---|
@@ -338,6 +345,15 @@ pub fn operand_level(op: Operator): Int :=
 -- Whether `op` may start (if prefix) or continue (if binary) an expression at `level`.
 pub fn admitted?(op: Operator, level: Int) := level <= precedence(op)
 
+-- How the parser reads `op`'s spelling: as the binary operator `op`
+-- (`binary?`), at precedence `level`, or before an operand as the prefix
+-- operator `op` (`unary?`).
+pub proc operator_reading(op: Operator): (unary?, binary?, level: Int) {
+    ensure unary: unary? iff prefix?(op)
+    ensure binary: binary? iff not prefix?(op)
+    ensure precedence: when binary?, level = precedence(op)
+}
+
 pub enum Grouping { Left, Right, Rejected }
 
 -- How `first y second z` groups, or `x first y second z` if `first` is
@@ -354,7 +370,7 @@ pub fn grouping(first: Operator, second: Operator): Grouping :=
 r[syntax.operator.properties] spec::grammar::operator_properties::{spellings, tokens, same_level, left, non_associative, negate_operand, not_operand, not_level}
 status: smt
 The table has these properties, which the checker proves. Two operators
-of the same position have different spellings, so a token and its
+of the same position have different spellings: a token and its
 position determine the operator. Every spelling is a punctuator, a keyword
 of the grammar or a contextual word. Binary operators of the same
 precedence are all left-associative or all non-associative. A
@@ -362,7 +378,7 @@ left-associative operator groups to the left with itself, and a
 non-associative one rejects itself. Unary minus may follow any binary
 operator, while `not` may follow only `and`, `or` and `iff`: `a + not b`
 and `a = not b` need parentheses. `not` binds more loosely than every
-comparison and more tightly than `and`, so `not a = b` is `not (a = b)`
+comparison and more tightly than `and`: `not a = b` is `not (a = b)`
 and `not a and b` is `(not a) and b`.
 
 ```fren
@@ -412,9 +428,9 @@ status: tested Spec.Language.Syntax.places_agree
 The grammar reads most expressions at level 0: a function body, a
 member's expression, a `let` body, an argument, the parts of an `if` and
 the inside of parentheses. A `let`'s definition and an arm's body are read
-at level 1, so a bare `let` there needs parentheses, while every operator
+at level 1, where a bare `let` needs parentheses, while every operator
 is admitted. A `match`'s scrutinee is read at level 9, which admits no
-operator and no `let`, so it is a `Primary`: a literal, a name, a call, a
+operator and no `let`; a scrutinee is therefore a `Primary`: a literal, a name, a call, a
 parenthesized expression, an `if` or a `match`.
 
 ```fren
@@ -458,7 +474,7 @@ r[syntax.call.syntax]
 status: tested Spec.Language.Syntax.productions_agree
 A call applies a name to one or more arguments, separated by commas, with
 no trailing comma. Its `(` touches the name's last identifier. Only a name
-is called: `f(x)(y)`, `(f)(x)` and `1(x)` are syntax errors, and so is
+is called: `f(x)(y)`, `(f)(x)` and `1(x)` are syntax errors, as is
 `f (x)`, whose `(` does not touch `f`. A call is syntax whatever the name
 resolves to: `unknown(x)` and `x(y)` are calls.
 
@@ -483,9 +499,9 @@ extends as far as it can (`syntax.expression.extent`).
 r[syntax.let.syntax]
 status: tested Spec.Language.Syntax.productions_agree
 `let x := value in body` binds one identifier. The definition is read at
-level 1 and the body at level 0, so the body extends as far as it can and
+level 1 and the body at level 0. The body extends as far as it can, and
 a `let` may follow `in` directly: `let x := 1 in let y := x in y`. A `let`
-is admitted only at level 0, so it is never the bare operand of an
+is admitted only at level 0, and is never the bare operand of an
 operator: `a and (let x := true in x)` needs its parentheses.
 
 ### Matches
@@ -509,12 +525,14 @@ r[syntax.remainder.line]
 status: tested Spec.Language.Syntax.productions_agree
 The binary `mod` is a `SameLineMod`: it must be on the line where its
 left operand ends. A `mod` after a line ending, even with comments
-between, does not continue the expression before it. In a file it starts
-the next declaration, a module; in an `ExpressionEntry`, or inside a
-delimiter that is not yet closed, it is a syntax error. The right operand
+between, does not continue the expression before it. In a file, after a
+complete declaration, it starts the next declaration, a module. In an
+`ExpressionEntry`, inside a delimiter that is not yet closed, or where an
+expression still lacks a part, such as the `else` of an `if` or the `in`
+of a `let`, it is a syntax error. The right operand
 of a `mod` may start on the next line.
 
-```text
+```fren2
 fn half(x: Int): Int := x mod 2    -- a remainder
 fn whole(x: Int): Int := x
 mod second                         -- a module declaration

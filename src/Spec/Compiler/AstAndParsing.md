@@ -61,7 +61,9 @@ A *token* is a written word (an identifier or keyword), numeral or
 punctuator. *Trivia* is text between tokens: whitespace and comments.
 *Rejected text* starts no lexical element. [Lexical
 structure](../Language/LexicalStructure.md) defines each of these, and how
-the source text is divided into them.
+the source text is divided into them. For example, `/` is rejected text: integer
+division is written `div`. The wrapper also checks that the `fren`
+command's lexer rejects `/` and suggests `div`.
 
 **Proof obligations**
 

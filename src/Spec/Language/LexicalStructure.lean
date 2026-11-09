@@ -33,11 +33,13 @@ where
     | fuel + 1 =>
       if cs.isEmpty then [] else
       let cls := spec.lexical.element_class (String.ofList cs)
-      let n := ((List.range cs.length).map (· + 1)).find? (fun n =>
-        spec.lexical.«element_ends?» cls (String.ofList (cs.take n)) (String.ofList (cs.drop n)))
-        |>.getD cs.length
-      let lexeme := String.ofList (cs.take n)
-      (kindOf cls lexeme, lexeme) :: go (cs.drop n) fuel
+      match ((List.range cs.length).map (· + 1)).find? (fun n =>
+          spec.lexical.«element_ends?» cls (String.ofList (cs.take n)) (String.ofList (cs.drop n))) with
+      | some n =>
+        let lexeme := String.ofList (cs.take n)
+        (kindOf cls lexeme, lexeme) :: go (cs.drop n) fuel
+      -- No piece ends: the rules define none, which no lexer output equals.
+      | none => [(.rejected, "")]
 
 /-- The actual lexer's slices of a source text, with their kinds. -/
 def actualPieces (source : String) : List (LexicalKind × String) :=
@@ -61,13 +63,24 @@ def corpus : List String :=
    "assume not true false Bool Int", "forall exists proc use struct where with table",
    "é😀 x", "f(x)<=-1 -- note"]
 
+--@ reference: lexical.source.characters
+--@ reference: lexical.source.line-ending
+--@ reference: lexical.element.partition
+--@ reference: lexical.element.class
+--@ reference: lexical.element.longest
+--@ reference: lexical.element.rejected
+--@ reference: lexical.comment.extent
+--@ reference: lexical.word.shape
+--@ reference: lexical.punctuator.longest
 /-- `lexical.element.partition`, `lexical.element.class`, `lexical.element.longest`
 and the rules of each class: the actual lexer gives exactly the chapter's
 pieces, with their kinds, for every text of up to three characters over
 `alphabet`, every text of four over a smaller one, and `corpus`. -/
 def lexer_agrees : Bool :=
   let texts := strings alphabet 3 ++ strings ['a', '?', '-', '<', '=', '!', ':', '\r', '\n', '1'] 4 ++ corpus
-  texts.all (fun s => actualPieces s == specPieces s) &&
+  texts.all (fun s => actualPieces s == specPieces s &&
+    -- Positions are UTF-8 byte offsets of the source text, with no gaps.
+    FrenAst.ownsSource ⟨0⟩ s (FrenParse.tokenize ⟨0⟩ s).tape) &&
   -- The chapter's worked example.
   actualPieces "f(x)<=-1 -- note" ==
     [(.identifier, "f"), (.punctuation, "("), (.identifier, "x"), (.punctuation, ")"),
@@ -83,6 +96,7 @@ unsafe def lexerKeywords : CoreM (List String) := do
   let name := Name.mkNum (`_private ++ `FrenParse.Lex) 0 ++ `FrenParse.keywords
   ofExcept <| (← getEnv).evalConst (List String) (← getOptions) name
 
+--@ reference: lexical.keyword.set
 /-- `lexical.keyword.set`: the lexer's reserved spellings `lexer` are exactly
 `KEYWORDS`, and each of them, and each near miss, lexes as one word that is a
 keyword exactly when `keyword?` says so. -/
@@ -100,6 +114,7 @@ open Lean in
   unless lexer.length == 37 && keywords_agree lexer do
     throwError "the lexer's keywords differ from `KEYWORDS`: {lexer}"
 
+--@ reference: lexical.numeral.value
 /-- `lexical.numeral.value`: the parser gives each numeral its decimal value,
 leading zeros included, beyond any fixed width. -/
 def numerals_agree : Bool :=

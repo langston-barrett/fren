@@ -73,6 +73,7 @@ def grammarKeywords : List String :=
    "match", "let"]
 def contextual : List String := ["assume", "not", "true", "false", "Bool", "Int"]
 
+--@ reference: syntax.operator.table
 /-- `syntax.operator.table`: the parser's binary operator table is the
 chapter's, spelling for spelling and precedence for precedence, and no other
 punctuator, keyword or contextual word, nor sample identifier, is a binary
@@ -92,6 +93,38 @@ def operators_agree : Bool :=
 
 #guard operators_agree
 
+/-- The AST's prefix operator for an `Operator`. -/
+def astUnary : Operator → Option UnaryOp
+  | .Not => some .not | .Negate => some .neg
+  | _ => none
+
+/-- Whether the parser reads `spelling op` as the binary operator `op`. -/
+def readsBinary (op : Operator) : Bool :=
+  match FrenParse.binaryOperator (spelling op), astBinary op with
+  | some (ast, _), some expected => ast == expected
+  | _, _ => false
+
+/-- The parser's precedence for `spelling op`, or 0 if it is no binary operator. -/
+def readLevel (op : Operator) : Int :=
+  ((FrenParse.binaryOperator (spelling op)).map fun (_, p) => (p : Int)).getD 0
+
+/-- Whether the parser reads `spelling op` before an operand as the prefix operator `op`. -/
+def readsUnary (op : Operator) : Bool :=
+  match FrenParse.parseExpression ⟨0⟩ (spelling op ++ " x") with
+  | .ok { root := .expression (.unary _ u (.name _)), .. } => some u == astUnary op
+  | _ => false
+
+--@ reference: syntax.operator.table
+/- The parser's own table and prefix reading, bound to the chapter's operator
+table for every operator. `FrenParse` does not expose these definitions'
+bodies to the kernel, so each operator's case is evaluated by the compiled
+parser (`native_decide`). -/
+impl operator_reading: operator_reading for (op : Operator) {
+  op := op, unary? := readsUnary op, binary? := readsBinary op, level := readLevel op
+} by
+  intro op _
+  cases op <;> simp [fren_spec] <;> native_decide
+
 /-- The tree that `grouping` gives `x first y second z` (or `first y second z`). -/
 def groupingShape (first second : Operator) : Option String :=
   let (a, b) := (spelling first, spelling second)
@@ -104,6 +137,9 @@ def groupingShape (first second : Operator) : Option String :=
 def groupingSource (first second : Operator) : String :=
   (if isPrefix first then "" else "x ") ++ s!"{spelling first} y {spelling second} z"
 
+--@ reference: syntax.operator.grouping
+--@ reference: syntax.operator.non-associative
+--@ reference: syntax.expression.extent
 /-- `syntax.operator.grouping`, `syntax.operator.non-associative` and
 `syntax.expression.extent`: for every operator followed by every binary
 operator, the parser builds the tree that `grouping` gives, or rejects the
@@ -121,7 +157,12 @@ def groupings_agree : Bool :=
   expr? "x * let y := 1 in y + 2" == none &&
   expr? "(let y := 1 in y + 2) * x" == some "(* (paren (let y 1 (+ y 2))) x)" &&
   expr? "(a < b) <= c" == some "(<= (paren (< a b)) c)" &&
-  expr? "a iff (b iff c)" == some "(iff a (paren (iff b c)))"
+  expr? "a iff (b iff c)" == some "(iff a (paren (iff b c)))" &&
+  -- The chapter's operator examples.
+  expr? "base + 5 * 2" == some "(+ base (* 5 2))" && expr? "base - 5 - 2" == some "(- (- base 5) 2)" &&
+  expr? "-x * 2" == some "(* (- x) 2)" && expr? "not x = y and true" == some "(and (not (= x y)) true)" &&
+  expr? "a or b and c iff d" == some "(iff (or a (and b c)) d)" && expr? "- - x" == some "(- (- x))" &&
+  expr? "a + not b" == none && expr? "-not b" == none && expr? "not a and b" == some "(and (not a) b)"
 
 #guard groupings_agree
 
@@ -133,6 +174,7 @@ def placed (place : Place) (e : String) : String :=
   | .ArmBody => s!"fn f(w: Int): Int := match w \{ E::A => {e} }"
   | .Scrutinee => s!"fn f(w: Int): Int := match {e} \{ E::A => 1 }"
 
+--@ reference: syntax.expression.places
 /-- `syntax.expression.places`: at each place, the parser accepts a bare
 `let`, each prefix operator and each binary operator exactly as
 `place_level`, `let_admitted?` and `admitted?` say, and always accepts a
@@ -160,6 +202,7 @@ def listSource (list : Separated) (items : Nat) (trailing : Bool) : String :=
   let items := ", ".intercalate (List.replicate items item)
   wrap (items ++ if trailing then "," else "")
 
+--@ reference: syntax.list.policy
 /-- `syntax.list.policy`: each list accepts zero, one, two or three items,
 with or without a trailing comma, exactly as `accepts?` says. -/
 def lists_agree : Bool :=
@@ -191,6 +234,24 @@ def declarations? (source : String) : Option (List String) :=
         ";".intercalate (ms.toList.map fun m => s!"{m.keyword.text} {m.label.text} {shape m.body}")
   | _ => none
 
+--@ reference: syntax.notation.trivia-sensitive
+--@ reference: syntax.file.syntax
+--@ reference: syntax.file.entry
+--@ reference: syntax.path.syntax
+--@ reference: syntax.path.contextual
+--@ reference: syntax.type.syntax
+--@ reference: syntax.module.syntax
+--@ reference: syntax.enumeration.syntax
+--@ reference: syntax.function.syntax
+--@ reference: syntax.function.parameter
+--@ reference: syntax.expectation.syntax
+--@ reference: syntax.expression.syntax
+--@ reference: syntax.literal.syntax
+--@ reference: syntax.call.syntax
+--@ reference: syntax.if.syntax
+--@ reference: syntax.let.syntax
+--@ reference: syntax.match.syntax
+--@ reference: syntax.remainder.line
 /-- The grammar's productions, each with texts that it accepts, with their
 trees, and texts that it rejects. -/
 def productions_agree : Bool :=
