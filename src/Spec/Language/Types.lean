@@ -183,6 +183,84 @@ theorem arms_each (s : spec.types.Snoc spec.types.Entry)
     · cases found; simpa [spec.types.arm?] using h.1
     · exact ih h.2 found
 
+/-- Children that satisfy `in_context?` each use the context. -/
+theorem children_context (children : spec.types.Snoc spec.types.Judgment)
+    (context : spec.types.Snoc spec.types.Ty) (level : Int) (child : spec.types.Judgment)
+    (h : spec.types.in_context? children context = true)
+    (found : spec.types.lookup _ children level = some child) :
+    child.context = context := by
+  induction children with
+  | Empty => simp [spec.types.lookup] at found
+  | Extend earlier last ih =>
+    simp only [spec.types.in_context?, decide_eq_true_eq] at h
+    simp only [spec.types.lookup] at found
+    split at found
+    · cases found; exact h.1
+    · exact ih h.2 found
+
+/-- Every argument of a typed call, at every level, uses the call's context. -/
+theorem call_arguments_context (s : spec.types.Snoc spec.types.Entry)
+    (context : spec.types.Snoc spec.types.Ty) (item : Fren.Seq String)
+    (args : spec.types.Snoc spec.types.Judgment) (ty : spec.types.Ty)
+    (h : spec.types.layer_rule? s context (.Call item args) ty = true)
+    (level : Int) (arg : spec.types.Judgment)
+    (found : spec.types.lookup _ args level = some arg) :
+    arg.context = context := by
+  simp [spec.types.layer_rule?, fren_spec] at h
+  exact children_context args context level arg h.2.1.2 found
+
+/-- A typed match's scrutinee and every arm body, at every level, use the
+match's context, and every arm body has the match's type. -/
+theorem match_arms_context (s : spec.types.Snoc spec.types.Entry)
+    (context : spec.types.Snoc spec.types.Ty) (scrutinee : spec.types.Judgment)
+    (arms : spec.types.Snoc (spec.types.ArmF spec.types.Judgment)) (ty : spec.types.Ty)
+    (h : spec.types.layer_rule? s context (.Match scrutinee arms) ty = true) :
+    scrutinee.context = context ∧
+      ∀ (level : Int) (arm : spec.types.ArmF spec.types.Judgment),
+        spec.types.lookup _ arms level = some arm →
+          arm.body.context = context ∧ arm.body.ty = ty := by
+  cases arms with
+  | Empty => simp [spec.types.layer_rule?, fren_spec] at h
+  | Extend earlier last =>
+    simp [spec.types.layer_rule?, fren_spec] at h
+    obtain ⟨hs, _, ⟨hlast, hentry⟩, hrest⟩ := h
+    refine ⟨hs, fun level arm found => ?_⟩
+    have whole : spec.types.arms? s (.Extend earlier last)
+        (match scrutinee.ty with | .Nominal x0 => x0 | _ => default) context ty = true := by
+      simp [spec.types.arms?, spec.types.arm?, hlast, hentry, hrest]
+    have := arms_each s _ _ context ty level arm whole found
+    simp only [spec.types.arm?, decide_eq_true_eq] at this
+    exact this.1
+
+/-- Context discipline for every form with children: ordinary children use
+the layer's context, a let body extends it by the value's type, and match
+arms add no binder. -/
+theorem layer_context (s : spec.types.Snoc spec.types.Entry)
+    (context : spec.types.Snoc spec.types.Ty) (ty : spec.types.Ty) :
+    (∀ op operand, spec.types.layer_rule? s context (.UnaryExpression op operand) ty = true →
+      operand.context = context) ∧
+    (∀ op left right, spec.types.layer_rule? s context (.BinaryExpression op left right) ty = true →
+      left.context = context ∧ right.context = context) ∧
+    (∀ item args, spec.types.layer_rule? s context (.Call item args) ty = true →
+      ∀ level arg, spec.types.lookup _ args level = some arg → arg.context = context) ∧
+    (∀ q value body, spec.types.layer_rule? s context (.Let q value body) ty = true →
+      value.context = context ∧ body.context = .Extend context value.ty) ∧
+    (∀ condition yes no, spec.types.layer_rule? s context (.Conditional condition yes no) ty = true →
+      condition.context = context ∧ yes.context = context ∧ no.context = context) ∧
+    (∀ scrutinee arms, spec.types.layer_rule? s context (.Match scrutinee arms) ty = true →
+      scrutinee.context = context ∧ ∀ level arm, spec.types.lookup _ arms level = some arm →
+        arm.body.context = context) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro op operand h; simp [spec.types.layer_rule?, fren_spec] at h; exact h.1
+  · intro op left right h; simp [spec.types.layer_rule?, fren_spec] at h; exact h.1
+  · intro item args h level arg found; exact call_arguments_context s context item args ty h level arg found
+  · intro q value body h; simp [spec.types.layer_rule?, fren_spec] at h; exact ⟨h.1.1.1, h.1.2⟩
+  · intro condition yes no h; simp [spec.types.layer_rule?, fren_spec] at h
+    exact ⟨h.1.1.1.1.1, h.1.1.1.2, h.1.2⟩
+  · intro scrutinee arms h
+    have := match_arms_context s context scrutinee arms ty h
+    exact ⟨this.1, fun level arm found => (this.2 level arm found).1⟩
+
 example : spec.types.INTEGER_EXAMPLE := by
   decide
 

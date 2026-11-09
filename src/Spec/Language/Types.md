@@ -566,11 +566,12 @@ expect unique_match(
 }
 ```
 
-r[types.layer.context] spec::types::{context_unary, context_binary, context_call, context_let, context_conditional, context_match}
+r[types.layer.context]
 Each child's context is fixed by its position: every ordinary child uses Γ,
-the body of a let uses exactly `Γ, σ` for its value's type σ, and match arms
-introduce no binder. The rules below state it for each form with children.
-<!-- status: smt -->
+including every argument and every arm body at every level, the body of a
+let uses exactly `Γ, σ` for its value's type σ, and match arms introduce no
+binder. The rules below state it for each form with children.
+<!-- status: lean Spec.Language.Types.layer_context -->
 
 r[types.layer.context-unary] spec::types::context_unary
 A unary operand uses Γ.
@@ -580,9 +581,9 @@ r[types.layer.context-binary] spec::types::context_binary
 Both binary operands use Γ, including both sides of `and` and `or`.
 <!-- status: smt -->
 
-r[types.layer.context-call] spec::types::context_call
-Every argument of a call uses Γ.
-<!-- status: smt -->
+r[types.layer.context-call]
+Every argument of a call, at every level, uses Γ.
+<!-- status: lean Spec.Language.Types.call_arguments_context -->
 
 r[types.layer.context-let] spec::types::context_let
 A let value uses Γ, and its body uses exactly `Γ, σ` for the value's type σ.
@@ -592,9 +593,10 @@ r[types.layer.context-conditional] spec::types::context_conditional
 A condition is a Boolean in Γ, and both branches use Γ.
 <!-- status: smt -->
 
-r[types.layer.context-match] spec::types::context_match
-A match scrutinee uses Γ, and so does the newest arm body.
-<!-- status: smt -->
+r[types.layer.context-match]
+A match scrutinee uses Γ, and every arm body, at every level, uses Γ and has
+the match's type.
+<!-- status: lean Spec.Language.Types.match_arms_context -->
 
 r[types.layer.children-each] spec::types::children_each
 If children satisfy `in_context?` for Γ, the child at every level uses Γ.
@@ -632,10 +634,6 @@ expect context_binary(
         left.context = context and right.context = context
 }
 
-expect context_call(s: Symbols, context: Context, item: ItemId, args: Snoc<Judgment>, ty: Ty) {
-    expect arguments_context: when layer_rule?(s, context, ExprF::Call(item, args), ty), in_context?(args, context)
-}
-
 expect context_let(
     s: Symbols,
     context: Context,
@@ -663,23 +661,6 @@ expect context_conditional(
         ty
     ),
         condition.context = context and condition.ty = Ty::Boolean and yes.context = context and no.context = context
-}
-
-expect context_match(
-    s: Symbols,
-    context: Context,
-    scrutinee: Judgment,
-    earlier: Snoc<ArmF<Judgment>>,
-    last: ArmF<Judgment>,
-    ty: Ty,
-) {
-    expect match_context: when layer_rule?(
-        s,
-        context,
-        ExprF::Match(scrutinee, Extend(earlier, last)),
-        ty
-    ),
-        scrutinee.context = context and last.body.context = context
 }
 
 expect children_each(children: Snoc<Judgment>, context: Context, level: Int, child: Judgment) {

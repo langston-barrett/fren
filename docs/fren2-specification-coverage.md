@@ -70,7 +70,8 @@ constructors; they move to `spec::syntax` when that chapter lands.
 | `types.symbols.lookup` | Fren expectation: a new binding determines its item and leaves others unchanged |
 | `types.layer.operators`, `types.operator.unary-unique`, `types.operator.binary-unique` | Fren expectations for result uniqueness at fixed operand types |
 | `types.layer.determinism`, `types.layer.unique-*` (ten forms) | One Fren expectation per form, for arbitrary symbol environments, contexts and child judgments |
-| `types.layer.context`, `types.layer.context-*` (six forms) | One Fren expectation per form for exact child contexts, including let extension and binder-free match arms |
+| `types.layer.context-unary`, `-binary`, `-let`, `-conditional` | One Fren expectation per form for exact child contexts, including let extension |
+| `types.layer.context-call`, `types.layer.context-match`, `types.layer.context` | `Spec.Language.Types.call_arguments_context`, `match_arms_context` and `layer_context` in Lean: every argument and arm body at every level, composed with `children_context` and `arms_each` |
 | `types.layer.children-each` | Fren expectation, by induction over the child sequence |
 | `types.layer.arms-each`, `types.layer.call-arity` | `Spec.Language.Types.arms_each` and `argument_types_length`, by induction in Lean |
 | `types.value.examples` | Fren expectation for the stated arithmetic examples only; the general operator meanings are not checked here |
