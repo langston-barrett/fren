@@ -130,10 +130,10 @@ and is rejected text too: `/`, `!` without `=`, `?` after a non-word,
 `.`, `;`, and any character outside ASCII outside a comment. No parse of
 a source text that contains rejected text succeeds.
 
-> **Rationale:** `<-` is a Lean token, which today's Fren, read by Lean,
-> cannot accept as `<` then `-`. Rejecting it as one piece keeps `x<-1`
-> from meaning `x < -1` in one front end and an error in the other; write
-> `x < -1`.
+> **Rationale:** `<-` is reserved for a possible future operator, and is
+> a Lean token, which today's Fren, read by Lean, cannot accept as `<`
+> then `-`. Rejecting it as one piece keeps `x<-1` from meaning `x < -1`,
+> which a future `<-` would change; write `x < -1`.
 
 **Properties**
 
