@@ -1013,9 +1013,11 @@ def terminals_agree (md : String) : Except String Unit := do
 -- fren-covers: spec::parsing::operators
 --@ reference: syntax.tree.operators
 /-- `syntax.tree.operators`: the parser reads each binary spelling as that
-operator and no other punctuator or keyword as a binary operator, orders the
-binary operators' precedences as the chapter's categories rank them, and reads
-each unary spelling before an operand as that unary operator. -/
+operator and nothing else as a binary operator, among every text of up to
+three of the characters `(){},:=<>!+-*%/.?&|`, which includes each punctuator,
+the lexer's keywords, `x`, `1` and `assume`; orders the binary operators'
+precedences as the chapter's categories rank them; and reads each unary
+spelling before an operand as that unary operator. -/
 def operators_agree : Bool :=
   let prec (op : SBinary) : Option Nat := (FrenParse.binaryOperator (spellBinary op)).map (·.2)
   let rank (op : SBinary) : Int := spec.surface.rank (spec.surface.binary_category op)
@@ -1026,8 +1028,8 @@ def operators_agree : Bool :=
     match prec a, prec b with
     | some p, some q => (p < q) == (rank a < rank b)
     | _, _ => false) &&
-  (["(", ")", "{", "}", ",", ":", ":=", "=>", "::", "not", "in", "if", "let", "mod", "x", "1", "assume"].all
-    fun s => (FrenParse.binaryOperator s).isNone) &&
+  (strings "(){},:=<>!+-*%/.?&|".toList 3 ++ FrenParse.keywords ++ ["x", "1", "assume"]).all
+    (fun s => (FrenParse.binaryOperator s).isSome == (binaryOps.map spellBinary).contains s) &&
   unaryOps.all fun op => exprSexp? (spellUnary op ++ " x") == some s!"(Unary {unaryName op} (Name x))"
 
 
