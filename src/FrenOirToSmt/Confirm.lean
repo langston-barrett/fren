@@ -113,13 +113,13 @@ private def containsSite : Nat → FrenAst.Expr → FrenAst.Expr → Bool
 conditional guards. Boolean operands and unused lets retain static obligations;
 only if/match select branches. Never evaluate the target operation itself. -/
 private def siteEnvironment : Nat → FrenModule.Typed → FrenModule.TypedBody →
-    FrenEval.Environment → FrenAst.Expr → FrenAst.Expr → Except String FrenEval.Environment
-  | 0, _, _, _, _, _ => .error "source site traversal exhausted"
+    FrenEval.Environment → FrenAst.Expr → FrenAst.Expr → Except (Option String) FrenEval.Environment
+  | 0, _, _, _, _, _ => .error (some "source site traversal exhausted")
   | n + 1, t, b, env, target, e => do
     if e == target then return env
     let has := containsSite 10000 target
     let visit := siteEnvironment n t b
-    let eval := fun a => (FrenEval.walk n t b env a).mapError reprStr
+    let eval := fun a => (FrenEval.walk n t b env a).mapError (some ∘ reprStr)
     match e with
     | .paren _ a _ | .unary _ _ a => visit env target a
     | .binary a _ _ c => visit env target (if has a then a else c)
@@ -129,23 +129,24 @@ private def siteEnvironment : Nat → FrenModule.Typed → FrenModule.TypedBody 
     | .ifE _ c _ yes _ no =>
       if has c then visit env target c
       else
-        let .bool choice ← eval c | throw "source guard is not Boolean"
+        let .bool choice ← eval c | throw (some "source guard is not Boolean")
         let selected := if choice then yes else no
-        unless has selected do throw "source site is unreachable"
+        unless has selected do throw none
         visit env target selected
     | .matchE _ a _ arms _ =>
       if has a then visit env target a
       else
-        let .enum _ ctor ← eval a | throw "source match guard is not an enum"
+        let .enum _ ctor ← eval a | throw (some "source match guard is not an enum")
         let some (_, _, selected, _) := arms.find? (fun (pattern, _, _, _) =>
-          (t.resolved.referenceAt pattern.head.slice).any (·.target == .item ctor))
-          | throw "source match arm missing"
-        unless has selected do throw "source site is unreachable"
+          (t.resolved.referenceAt pattern.head.slice).any (fun ref =>
+            ref.role == .pattern && ref.target == .item ctor))
+          | throw (some "source match arm missing")
+        unless has selected do throw none
         visit env target selected
     | .call _ _ args _ _ =>
-      let some a := args.find? has | throw "source site not in call arguments"
+      let some a := args.find? has | throw (some "source site not in call arguments")
       visit env target a
-    | _ => throw "source site not found"
+    | _ => throw (some "source site not found")
 
 private def confirmDefinedness (p : FrenEval.Program) (q : FrenOir.Question)
     (values : Array FrenEval.Value) (depth : Nat) : Confirmation := Id.run do
@@ -160,12 +161,13 @@ private def confirmDefinedness (p : FrenEval.Program) (q : FrenOir.Question)
   -- confirmation to the producer's divisor-nonzero leaf, never call domains.
   let .binary .ne _ (.int 0) := q.condition
     | return .unconfirmed "source definedness condition unsupported"
-  let result : Except String FrenEval.Value := do
-    let env ← (FrenEval.arguments p.typed b values).mapError reprStr
+  let result : Except (Option String) FrenEval.Value := do
+    let env ← (FrenEval.arguments p.typed b values).mapError (some ∘ reprStr)
     let env ← siteEnvironment depth p.typed b env origin.expression b.expression
-    (FrenEval.walk depth p.typed b env divisor).mapError reprStr
+    (FrenEval.walk depth p.typed b env divisor).mapError (some ∘ reprStr)
   match result with
-  | .error reason => return .unconfirmed ("source definedness evaluation: " ++ reason)
+  | .error none => return .rejected "source site is unreachable"
+  | .error (some reason) => return .unconfirmed ("source definedness evaluation: " ++ reason)
   | .ok (.int 0) => return .counterexample
   | .ok (.int _) => return .rejected "source divisor is nonzero"
   | .ok _ => return .unconfirmed "source divisor is not an integer"
