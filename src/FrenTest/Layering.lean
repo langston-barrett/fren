@@ -30,7 +30,7 @@ private def allowed : List (String × List String) :=
    -- Direct walking lowering requires the real admitted MIR producer.
    ("FrenFlatToLir", base ++ ["FrenExpr", "FrenMir", "FrenLir", "FrenThirToMir"]),
    ("FrenLirToOir", base ++ ["FrenLir", "FrenOir", "FrenModule", "FrenFlatToLir"]),
-   ("FrenOirToSmt", base ++ ["FrenOir", "FrenLir", "FrenModule", "FrenLirToOir"]),
+   ("FrenOirToSmt", base ++ ["FrenOir", "FrenLir", "FrenModule", "FrenLirToOir", "FrenEval"]),
    -- The walking adapter proves admission with the actual checked producer.
    -- This dependency does not prescribe the future generic evaluator boundary.
    ("FrenEval", base ++ ["FrenModule", "FrenExpr", "FrenMir", "FrenHirToThir"]),
