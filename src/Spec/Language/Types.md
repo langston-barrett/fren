@@ -238,8 +238,8 @@ pub struct Typing { context: Context, ty: Ty }
 ```
 
 r[types.judgment.typing] spec::types::{derivation?, rule?}
-The judgment `Σ; Γ ⊢ e : τ` holds when e has a finite derivation tree with
-root context Γ and type τ. Each node satisfies `rule?` for its form, with
+The judgment `Σ; Γ ⊢ e : τ` is defined for a well-formed Σ. It holds when e
+has a finite derivation tree with root context Γ and type τ. Each node satisfies `rule?` for its form, with
 each child position replaced by the typing derived for that child. A child
 typing contains its own context and type; it is justified by that child's
 subtree. `derivation?` checks such a tree, given as a table.
@@ -577,7 +577,7 @@ pub fn rows_valid?(symbols: Symbols, rows: Snoc<Row>) := match rows {
 }
 
 pub fn derivation?(symbols: Symbols, rows: Snoc<Row>, context: Context, ty: Ty) :=
-    rows_valid?(symbols, rows) and match rows {
+    symbols_ok?(symbols) and rows_valid?(symbols, rows) and match rows {
         Empty => false,
         Extend(_, root) => root.context = context and root.ty = ty,
     }

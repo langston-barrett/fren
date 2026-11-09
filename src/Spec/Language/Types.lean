@@ -318,4 +318,8 @@ example : program_ok? EXAMPLE_SYMBOLS (.Extend (.Extend .Empty
 example : program_ok? EXAMPLE_SYMBOLS (.Extend .Empty
     (.Function F (one (row (.Local 0) (.Extend .Empty .Integer) .Integer)))) = true := by decide
 
+-- Rejected: no judgment holds in an ill-formed environment, even for a literal.
+example : derivation? (.Extend .Empty (binding LIGHT_RED (.Constructor LIGHT))) (one (int 7))
+    .Empty .Integer = false := by decide
+
 end Spec.Language.Types
