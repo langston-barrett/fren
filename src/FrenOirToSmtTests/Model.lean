@@ -147,10 +147,8 @@ def runSourceConfirmation : IO Unit := do
   require ((real.results[i]?).any (·.confirmation == .counterexample)) "actual model not source-confirmed"
   require ((real.results[sat]?).any (·.confirmation == .witness)) "actual witness not source-confirmed"
   -- Reuse bounded transport controls directly at the new admission boundary.
-  let root ← sourceRoot
-  let fake := (root / "src/FrenOirToSmtTests/fake_solver.py").toString
   for mode in ["unknown", "unsupported", "nonzero", "bytes", "protocol", "stderr", "flood", "sleep", "hold-input"] do
-    let receipt ← transport #["python3", fake, mode] "(get-value (true))\n" {wallMs := 100, outputBytes := 64}
+    let receipt ← transport (← fakeSolver mode) "(get-value (true))\n" {wallMs := 100, outputBytes := 64}
     evidence ("readback-" ++ mode) (receiptJson receipt)
     let decoded : Except String (Array FrenEval.Value) := if modelData receipt then
       decodeModel goals.oir q.question receipt.stdout 64

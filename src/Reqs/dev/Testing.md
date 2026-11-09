@@ -84,13 +84,14 @@ pub mod testing
   `fren ARGS` alone. `lake test -- --bless` updates them.
 - **Fren2 runner:** `fren2_test` gives each selected job a 30-second
   elapsed deadline. Its default run gives each constituent job its own
-  deadline. A Linux Python controller runs the job in its own process group,
-  outside the controller. It kills the group and reaps its waitable children
-  when the job ends, the deadline expires, or the runner exits. It keeps the
-  direct child waitable until it signals the group. The timer starts before
-  job startup; a blocked startup can delay enforcement. The controller requires Python 3,
-  Linux pidfds, subreaping and procfs. Controller setup or control failures
-  return 125; failure to launch Python also returns nonzero.
+  deadline. A Linux controller, a separate process of `fren2_test` itself,
+  runs the job in its own process group, outside the controller. It kills
+  the group and reaps its waitable children when the job ends, the deadline
+  expires, or the runner exits. It keeps the direct child waitable until it
+  signals the group. The timer starts before job startup; a blocked startup
+  can delay enforcement. The controller requires Linux subreaping and
+  procfs, and its regression Linux pidfds; nothing needs Python. Controller
+  setup or control failures return 125.
   A deadline returns 124 and a diagnostic. A job exit is forwarded; a signal
   is reported as 128 plus its number. Those numeric codes can also be returned
   by a job. Standard output and error stream through; working directory,

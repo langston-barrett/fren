@@ -111,29 +111,22 @@ private def runJob (args : List String) : IO UInt32 := do
     return 0
   return ← Fren.TextTests.cli textRunners args
 
--- The helper is shipped with the source tree containing this Lake executable.
-private def helperPath : IO System.FilePath := do
-  let app ← IO.appPath
-  let some bin := app.parent | throw <| IO.userError "fren2_test: no executable directory"
-  let root ← IO.FS.realPath (bin / ".." / ".." / "..")
-  return root / "test" / "Fren2Driver" / "deadlines.py"
-
+-- Each job runs under the deadline controller, a separate process of this
+-- same executable (`FrenCli2Tests.Deadline`), with the fixed production deadline.
 private def bounded (args : List String) (internal : String := "--fren2-internal-job") : IO UInt32 := do
   try
-    let original ← IO.getEnv "PYTHONCOERCECLOCALE"
+    let self := (← IO.appPath).toString
     let child ← IO.Process.spawn {
-      cmd := "python3", args := #[(← helperPath).toString, "--run", toString (← IO.Process.getPID),
-        (if original.isSome then "set" else "unset"), original.getD "",
-        (← IO.appPath).toString, internal] ++ args.toArray,
-      env := #[("PYTHONCOERCECLOCALE", some "0")],
+      cmd := self, args := #["--fren2-controller-run", toString (← IO.Process.getPID), self, internal] ++
+        args.toArray,
       stdin := .inherit, stdout := .inherit, stderr := .inherit }
     return ← child.wait
   catch e =>
     IO.eprintln s!"fren2_test: deadline controller failed: {e}"
     return 125
 
--- Reject accidental direct dispatch; the helper's fixed --run mode supplies
--- the 30-second deadline. This is not an authorization boundary.
+-- Reject accidental direct dispatch; the controller's fixed production entry
+-- supplies the 30-second deadline. This is not an authorization boundary.
 private def controlled (args : List String) : IO Bool := do
   try
     let status ← IO.FS.readFile "/proc/self/status"
@@ -146,12 +139,26 @@ private def controlled (args : List String) : IO Bool := do
     let bytes ← IO.FS.readBinFile (parent ++ "/cmdline")
     let some cmdline := String.fromUTF8? bytes | return false
     let parts := cmdline.splitOn (String.singleton (Char.ofNat 0))
-    let original ← IO.getEnv "PYTHONCOERCECLOCALE"
-    return parts.drop 1 == [(← helperPath).toString, "--run", runnerPid,
-      (if original.isSome then "set" else "unset"), original.getD "", (← IO.appPath).toString] ++ args ++ [""]
+    let self := (← IO.appPath).toString
+    return parts == [self, "--fren2-controller-run", runnerPid, self] ++ args ++ [""]
   catch _ => return false
 
+/-- Hidden entries of the controller and its regression's fixtures. -/
+private def controllerEntry : List String → Option (IO UInt32)
+  | "--fren2-controller-run" :: runner :: command => some do
+    let some runner := runner.toNat? | return 125
+    FrenCli2Tests.Deadline.control command.toArray FrenCli2Tests.Deadline.productionMs runner.toUInt32
+  | "--fren2-controller-test" :: ms :: runner :: command => some do
+    let (some ms, some runner) := (ms.toNat?, runner.toNat?) | return 125
+    FrenCli2Tests.Deadline.control command.toArray ms runner.toUInt32
+  | ["--fren2-controller-cleanup", mode] => some (FrenCli2Tests.Deadline.testCleanup mode)
+  | args@("--fren2-deadline-fixture" :: mode :: _) => some (FrenCli2Tests.Deadline.fixture mode args)
+  | ["--fren2-deadline-parent"] => some FrenCli2Tests.Deadline.testParent
+  | ["--fren2-deadline-controls"] => some FrenCli2Tests.Deadline.runControls
+  | _ => none
+
 public def main (args : List String) : IO UInt32 := do
+  if let some entry := controllerEntry args then return ← entry
   if args.head? == some "--fren2-internal-job" || args.head? == some "--fren2-internal-sexp" then
     unless ← controlled args do
       IO.eprintln "fren2_test: internal dispatch requires the deadline controller"

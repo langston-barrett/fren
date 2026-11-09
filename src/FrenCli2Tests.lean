@@ -1,12 +1,11 @@
 module
 
 public import FrenCli2
+public import FrenCli2Tests.Command
+public import FrenCli2Tests.DeadlineControls
 
 public section
 namespace FrenCli2Tests
-
-private def require (b : Bool) (message : String) : IO Unit :=
-  unless b do throw (IO.userError message)
 
 /-- Library tests and real standalone command controls share the existing
 bounded SMT job, so the ordinary parent/default path executes them too. -/
@@ -21,10 +20,6 @@ def run : IO Unit := do
   let good ← FrenCli2.checkText "mod test\nexpect c() { expect good: true }"
   require (good.report.verdict == .verified && good.report.checks.any (·.status == .witness))
     "actual library source check"
-  let root ← FrenOirToSmt.sourceRoot
-  let out ← IO.Process.output {cmd := "python3", args := #[(root / "test/FrenCli2/controls.py").toString,
-    (root / ".lake/build/bin/fren2_check").toString]}
-  unless out.exitCode == 0 do throw (IO.userError (out.stdout ++ out.stderr))
-  IO.print out.stdout
+  runCommandControls
 
 end FrenCli2Tests

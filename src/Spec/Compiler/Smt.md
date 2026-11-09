@@ -426,7 +426,7 @@ with reasons on nonanswers. `classify` first recognizes a transport resource
 limit, then requires a finished process, exit zero and empty trimmed stderr.
 Only then does it accept exactly one trimmed stdout token: `sat`, `unsat`,
 `unknown` or `unsupported`. Missing/multiple answers, diagnostics, malformed
-output, helper/setup errors and nonzero exits are errors. An output containing
+output, transport/setup errors and nonzero exits are errors. An output containing
 `unsat` alongside failure is never a proof. Unknown stays unknown under the
 configured limits. Resource exhaustion and unsupported translation are
 separate nonanswers.
@@ -456,12 +456,15 @@ resource reasons. Invalid UTF-8 is an error with raw captured hex retained;
 it replaces any earlier resource reason when captured bytes fail decoding.
 Invalid bounds and missing assets remain errors.
 
-The helper reaps its owned process after completion, failure and normal
-cancellation. It observes exit with `waitid`/`WNOWAIT` and keeps the direct
-leader waitable through the last process-group signal, then reaps it. The
-unreleased PID anchors that numeric group against reuse, including on normal
-completion. Loss of ownership forbids a group signal. These are process
-ownership guarantees of the helper, not guarantees under controller death,
+The transport, in Lean with a small C binding (`FrenOirToSmt.Process`), runs
+the solver in a new session and reaps its owned process after completion,
+failure and cancellation. It observes exit with `waitid`/`WNOWAIT` and keeps
+the direct leader waitable through the last process-group signal, then reaps
+it. The unreleased PID anchors that numeric group against reuse, including on
+normal completion. Loss of ownership forbids a group signal. SIGINT, SIGTERM
+and SIGHUP during a query cancel it; after the cleanup the signal takes its
+usual effect on the checking process. These are process ownership guarantees
+of the transport, not guarantees under the checking process's sudden death,
 escaped descendants or uninterruptible execution.
 
 ## 6. Typed model readback and source observation

@@ -1,7 +1,7 @@
 # Checking a Fren2 source file
 
 Build the ordinary standalone command and run it from a checkout with the
-repository's pinned local cvc5 and Python 3 available:
+repository's pinned local cvc5 available:
 
 ```sh
 scripts/heavy lake build fren2_check --wfail
@@ -57,8 +57,8 @@ outcomes use the production checker's precedence and retain all question rows.
 
 The source cap is 1,048,576 bytes. The solver is fixed to the pinned executable
 under `.lake/packages/cvc5/cvc5-Linux-x86_64-static/bin/cvc5` in the source tree
-containing `.lake/build/bin/fren2_check`. That tree must also contain
-`src/FrenOirToSmt/transport.py`. Missing assets produce explicit failures;
+containing `.lake/build/bin/fren2_check`; nothing else, Python included, is
+needed at runtime. Missing assets produce explicit failures;
 the command does not download or install them. Filenames are passed as argv
 and filesystem paths, with `--` before a filename beginning with a dash.
 

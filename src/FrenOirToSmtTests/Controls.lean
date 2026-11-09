@@ -3,6 +3,7 @@ module
 public import FrenOirToSmtTests.Cases
 public import FrenOirToSmtTests.Model
 public import FrenOirToSmtTests.Checker
+public import FrenOirToSmtTests.Ownership
 
 public section
 namespace FrenOirToSmtTests
@@ -19,10 +20,8 @@ def runControls : IO Unit := do
   runModelReadback
   runSourceConfirmation
   let started ← IO.monoMsNow
-  let root ← sourceRoot
-  let fake := (root / "src/FrenOirToSmtTests/fake_solver.py").toString
   let control (mode : String) (limits : Limits := {}) : IO Receipt := do
-    let r ← transport #["python3", fake, mode] "(check-sat)\n" limits
+    let r ← transport (← fakeSolver mode) "(check-sat)\n" limits
     evidence ("control-" ++ mode) (receiptJson r)
     return r
   let unknown ← control "unknown"
@@ -83,10 +82,7 @@ def runControls : IO Unit := do
   match prelude missing with
   | .error (.unsupported _) => pure ()
   | _ => throw (IO.userError "missing function equation silently encoded")
-  let cancellation ← IO.Process.output {
-    cmd := "python3"
-    args := #[(root / "src/FrenOirToSmtTests/transport_controls.py").toString]}
-  require (cancellation.exitCode == 0) s!"cancellation cleanup controls: {cancellation.stdout}{cancellation.stderr}"
+  runOwnership
   IO.println s!"SMT negative controls execution: {(← IO.monoMsNow) - started} ms; actual cvc5 malformed/multiple-answer cases; owned unknown/nonzero/protocol/stderr/UTF8/wall/output/input/missing/invalid controls; 4 independent polarity/arithmetic/capture mutants; 3 rejected sources"
 
 end FrenOirToSmtTests

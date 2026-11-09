@@ -1140,6 +1140,18 @@ target glibc_c23.o pkg : FilePath := do
 extern_lib glibc_c23 pkg := do
   buildStaticLib (pkg.staticLibDir / nameToStaticLib "glibc_c23") #[← glibc_c23.o.fetch]
 
+-- Process ownership primitives of Fren2's solver transport and test
+-- runner (`c/fren2_process.c`, bound in `FrenOirToSmt.Process`): observing
+-- a child's exit without reaping it, group signals and reaping, signal
+-- watches, subreaping and pidfds, which Lean's `IO.Process` lacks. Linked
+-- into every executable, like `glibc_c23`.
+target fren2_process.o pkg : FilePath := do
+  let src ← inputTextFile (pkg.dir / "c" / "fren2_process.c")
+  buildO (pkg.buildDir / "c" / "fren2_process.o") src #["-I", (← getLeanIncludeDir).toString] #["-std=gnu17", "-fPIC", "-O2"]
+
+extern_lib fren2_process pkg := do
+  buildStaticLib (pkg.staticLibDir / nameToStaticLib "fren2_process") #[← fren2_process.o.fetch]
+
 -- `malloc`, and the functions around it, by the mimalloc that Lean's
 -- runtime links in, on Linux (`c/mimalloc_malloc.c`), so that cvc5
 -- allocates with it. Linked into every executable, as an object of its
@@ -1236,9 +1248,14 @@ lean_exe fren_fuzz_frontends where
 
 -- Default S-expression checks and selected registered textual tests.
 lean_exe fren2_test where
-  needs := #[`@/FrenTextDemoTests, `@/FrenTextTestsTests, `@/fren2_check]
+  needs := #[`@/FrenTextDemoTests, `@/FrenTextTestsTests, `@/fren2_check, `@/fren2_fake_solver]
   root := `Fren2TestMain
 
 -- Ordinary single-file Fren2 source checker; runtime assets ship with this tree.
 lean_exe fren2_check where
   root := `Fren2CheckMain
+
+-- Owned solver failures for the transport and command controls of
+-- `fren2_test`; never solver evidence.
+lean_exe fren2_fake_solver where
+  root := `Fren2FakeSolver

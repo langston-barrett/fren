@@ -57,6 +57,10 @@ def evidence (stem : String) (value : Lean.Json) : IO Unit := do
     let file := System.FilePath.mk dir / s!"{← IO.Process.getPID}-{stem}-{index}.json"
     IO.FS.writeFile file (value.pretty ++ "\n")
 
+/-- The owned fake solver (`Fren2FakeSolver`) in one of its modes. -/
+def fakeSolver (mode : String) : IO (Array String) := do
+  return #[((← sourceRoot) / ".lake/build/bin/fren2_fake_solver").toString, mode]
+
 def ask (script : String) (limits : Limits := {}) : IO Receipt := do
   let r ← transport (← solverCommand limits) script limits
   evidence "query" (Lean.Json.mkObj [("script", Lean.toJson script), ("receipt", receiptJson r)])

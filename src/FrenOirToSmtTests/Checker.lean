@@ -142,11 +142,10 @@ def runCheckerEntryControls : IO Unit := do
   let wrong := {original with raw := {original.raw with query := {q with question :=
     {q.question with owner := foreign.raw.query.question.owner}}}}
   require ((summarize run.source command (change wrong)).verdict == .inconclusive) "cross-owner result accepted"
-  let root ← sourceRoot
   for (mode, expected) in [("unknown", CheckStatus.unknown), ("unsupported", .unsupported),
       ("nonzero", .processFailure), ("protocol", .processFailure), ("stderr", .processFailure),
       ("bytes", .processFailure), ("sleep", .resourceExhausted), ("flood", .resourceExhausted)] do
-    let fake := #["python3", (root / "src/FrenOirToSmtTests/fake_solver.py").toString, mode]
+    let fake ← fakeSolver mode
     let receipt ← transport fake (q.script.toOption.getD "") {wallMs := 100, outputBytes := 64}
       s!"{run.runId}/{i}/answer"
     let raw : Result := ⟨q, receipt.outcome, some receipt⟩
