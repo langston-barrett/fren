@@ -76,8 +76,10 @@ theorem rule_unique (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF Typ
     rcases scrutinee with ⟨sc, sty⟩
     cases sty <;> cases arms <;>
       simp [rule?, match_rule?, fren_spec] at ha hb <;> simp_all
+  | Let annotation value body =>
+    cases annotation <;> simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at ha hb <;> simp_all
   | _ =>
-    simp [rule?, boolean_rule?, integer_rule?, local_rule?, let_rule?, if_rule?,
+    simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?,
       fren_spec] at ha hb <;> simp_all
 
 /-- Every local of a valid table is in scope in its row's context. -/
@@ -302,9 +304,10 @@ theorem layer_regular (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF T
         exact (entry_types_ok symbols item hs).2 signature he
       | _ => simp [rule?, call_rule?, he, fren_spec] at h
   | Let annotation value body =>
-    simp [rule?, let_rule?, fren_spec] at h
+    have hty : body.ty = ty := by
+      cases annotation <;> simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at h <;> simp_all
     simp only [children, two, one] at hch
-    rw [← h.2]
+    rw [← hty]
     exact ((typings_ok_extend _ _ _).1 hch).1
   | If condition t e =>
     simp [rule?, if_rule?, fren_spec] at h
@@ -548,10 +551,9 @@ theorem layer_weakens (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF T
     simp [rule?, local_rule?, fren_spec] at h ⊢
     rw [(lookup_shift context cutoff extra h0 hn).1 level]; exact h
   | Let annotation value body =>
-    simp [rule?, let_rule?, fren_spec] at h ⊢
-    obtain ⟨⟨⟨hv, ha⟩, hb⟩, hty⟩ := h
-    refine ⟨⟨⟨by rw [hv], ha⟩, ?_⟩, hty⟩
-    rw [hb, insert_extend context cutoff extra value.ty hn]
+    have he := insert_extend context cutoff extra value.ty hn
+    cases annotation <;> simp [rule?, let_rule?, let_annotated_rule?,
+      fren_spec] at h ⊢ <;> simp_all
   | Call item args =>
     have hi := in_context_weaken args context cutoff extra
     cases he : entry symbols item with
@@ -777,50 +779,50 @@ abbrev bool (b : Bool) : Row := row (.BooleanLiteral b) .Empty .Boolean
 abbrev red : Row := row (.Constructor LIGHT_RED) .Empty (.Nominal LIGHT)
 abbrev arm (c : Fren.Seq String) (body : Int) : ArmF Int := ⟨c, body⟩
 
--- A table for ⊢ 7 : Integer is valid; one typing 7 at Boolean is rejected.
+-- A table for ⊢ 7 : Int is valid; one typing 7 at Bool is rejected.
 example : typed (t1 (int 7)) .Integer = true := by decide
 example : typed (t1 (row (.IntegerLiteral 7) .Empty .Boolean)) .Boolean = false := by decide
--- A table for ⊢ true : Boolean is valid.
+-- A table for ⊢ true : Bool is valid.
 example : typed (t1 (bool true)) .Boolean = true := by decide
 -- This table, for · ⊢ #0, is rejected: level 0 has no entry.
 example : typed (t1 (row (.Local 0) .Empty .Integer)) .Integer = false := by decide
--- A table for ·, Boolean, Integer ⊢ #1 : Integer is valid.
+-- A table for ·, Bool, Int ⊢ #1 : Int is valid.
 example : derivation? SYMB (t1 (row (.Local 1) BOOLEAN_INTEGER .Integer))
     BOOLEAN_INTEGER .Integer = true := by decide
--- A table for ⊢ -1 : Integer is valid; one for -true at Integer is rejected.
+-- A table for ⊢ -1 : Int is valid; one for -true at Int is rejected.
 example : typed (t2 (int 1) (row (.Unary .Neg 0) .Empty .Integer)) .Integer = true := by decide
 example : typed (t2 (bool true) (row (.Unary .Neg 0) .Empty .Integer)) .Integer = false := by decide
--- A table for ⊢ not true : Boolean is valid.
+-- A table for ⊢ not true : Bool is valid.
 example : typed (t2 (bool true) (row (.Unary .Not 0) .Empty .Boolean)) .Boolean = true := by decide
 -- This table is rejected: its child row does not exist.
 example : typed (t1 (row (.Unary .Neg 0) .Empty .Integer)) .Integer = false := by decide
--- A table for ⊢ 1 + 2 : Integer is valid; one for false + 2 is rejected.
+-- A table for ⊢ 1 + 2 : Int is valid; one for false + 2 is rejected.
 example : typed (t3 (int 1) (int 2) (row (.Binary .Add 0 1) .Empty .Integer)) .Integer = true := by
   decide
 example : typed (t3 (bool false) (int 2) (row (.Binary .Add 0 1) .Empty .Integer)) .Integer =
     false := by decide
--- A table for ⊢ 1 < 2 : Boolean is valid.
+-- A table for ⊢ 1 < 2 : Bool is valid.
 example : typed (t3 (int 1) (int 2) (row (.Binary .Lt 0 1) .Empty .Boolean)) .Boolean = true := by
   decide
 -- This table for false and #0 is rejected: its right operand is checked although the left is false.
 example : typed (t3 (bool false) (row (.Local 0) .Empty .Boolean)
     (row (.Binary .And 0 1) .Empty .Boolean)) .Boolean = false := by decide
--- A table for ⊢ M::Light::Red = M::Light::Red : Boolean is valid; one comparing across enumerations is rejected.
+-- A table for ⊢ M::Light::Red = M::Light::Red : Bool is valid; one comparing across enumerations is rejected.
 example : typed (t3 red red (row (.Binary .Eq 0 1) .Empty .Boolean)) .Boolean = true := by decide
 example : typed (t3 red (row (.Constructor SIGNAL_RED) .Empty (.Nominal SIGNAL))
     (row (.Binary .Eq 0 1) .Empty .Boolean)) .Boolean = false := by decide
--- A table for ⊢ let 1 in #0 : Integer is valid; the same table with annotation Boolean is rejected.
+-- A table for ⊢ let x := 1 in x : Int is valid; the same table with annotation Bool is rejected.
 example : typed (t3 (int 1) (row (.Local 0) (.Extend .Empty .Integer) .Integer)
     (row (.Let none 0 1) .Empty .Integer)) .Integer = true := by decide
 example : typed (t3 (int 1) (row (.Local 0) (.Extend .Empty .Integer) .Integer)
     (row (.Let (some .Boolean) 0 1) .Empty .Integer)) .Integer = false := by decide
--- A table for ·, Boolean ⊢ let 1 in #1 : Integer is valid: its binder has level 1.
+-- A table for ·, Bool ⊢ let x := 1 in x : Int is valid: its binder has level 1.
 example : derivation? SYMB
     (t3 (row (.IntegerLiteral 1) (.Extend .Empty .Boolean) .Integer)
       (row (.Local 1) BOOLEAN_INTEGER .Integer)
       (row (.Let none 0 1) (.Extend .Empty .Boolean) .Integer))
     (.Extend .Empty .Boolean) .Integer = true := by decide
--- A table for ⊢ if true then 1 else 2 : Integer is valid; one for if 0 then 1 else 2 is rejected.
+-- A table for ⊢ if true then 1 else 2 : Int is valid; one for if 0 then 1 else 2 is rejected.
 example : typed (t4 (bool true) (int 1) (int 2) (row (.If 0 1 2) .Empty .Integer))
     .Integer = true := by decide
 example : typed (t4 (int 0) (int 1) (int 2) (row (.If 0 1 2) .Empty .Integer))
@@ -838,7 +840,7 @@ example : typed (t2 (bool true) (row (.Call F (.Extend .Empty 0)) .Empty .Intege
 example : typed (t2 (int 1) (row (.Call LIGHT_RED (.Extend .Empty 0)) .Empty .Integer)) .Integer =
     false := by decide
 example : typed (t1 (row (.Constructor F) .Empty .Integer)) .Integer = false := by decide
--- This table, typing a constructor at Integer, is rejected.
+-- This table, typing a constructor at Int, is rejected.
 example : typed (t1 (row (.Constructor LIGHT_RED) .Empty .Integer)) .Integer = false := by decide
 -- This environment, which binds M::f twice, is ill formed.
 example : symb_ok? (.Extend SYMB (bind F (.Constructor LIGHT))) = false := by decide
@@ -1000,7 +1002,7 @@ interp type_of := fun _ _ rows => match rows with
   | .Extend _ root => root.ty
 interp derives? := fun symb ctx rows ty => spec.types.derivation? symb rows ctx ty by
   intro symb ctx rows ty
-  simp only [spec.typing.derives?.deterministic, spec.typing.derives?.well_formed,
+  simp only [spec.typing.derives?.records_type, spec.typing.derives?.well_formed,
     spec.typing.derives?.regular, spec.typing.type_of, spec.typing.symb_ok?, spec.typing.ctx_ok?,
     spec.typing.ty_ok?]
   refine ⟨fun h => ?_, fun h => ?_, fun h => Spec.Language.Types.judgment_regular symb rows ctx ty h⟩

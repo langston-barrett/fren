@@ -26,9 +26,9 @@ The chapter's judgments, and the Fren definitions that state them:
 r[types.overview.interface] spec::typing::{Symb, Ctx, Derivation, Ty, symb_ok?, ctx_ok?, ty_ok?, type_of, derives?}
 In outline, typing is a decidable relation `derives?(Σ, Γ, d, τ)` between a
 symbol environment, a context, a derivation d of an expression and a type.
-It is a function of Σ, Γ and d: a derivation derives at most the type
-`type_of(Σ, Γ, d)`. Only well-formed environments and contexts admit
-derivations, and every derived type is well formed. The rest of the chapter
+A derivation records the type it derives, `type_of(Σ, Γ, d)`. Only
+well-formed environments and contexts admit derivations, and every derived
+type is well formed. The rest of the chapter
 defines these objects and the relation; the chapter's wrapper interprets
 each of them by its detailed definition, which proves this contract for
 the detailed definitions.
@@ -48,14 +48,18 @@ pub fn ty_ok?(Symb, Ty)
 pub fn type_of(Symb, Ctx, Derivation): Ty
 
 pub fn derives?(symb: Symb, ctx: Ctx, deriv: Derivation, ty: Ty): (holds?) {
-    ensure deterministic: when holds?, ty = type_of(symb, ctx, deriv)
+    ensure records_type: when holds?, ty = type_of(symb, ctx, deriv)
     ensure well_formed: when holds?, symb_ok?(symb) and ctx_ok?(symb, ctx)
     ensure regular: when holds?, ty_ok?(symb, ty)
 }
 ```
 
 r[types.overview.determinism] spec::typing::determinism::unique
-Typing is deterministic: a derivation derives at most one type.
+A derivation derives at most one type, the type it records. That an
+*expression* has at most one type, whatever derivation types it, is the
+open [uniqueness of an expression's type](#r-types.derivation.unique-expression);
+two tables with the same rows have the same types by
+[determinism for a table](#r-types.derivation.unique).
 
 ```fren
 expect determinism(symb: Symb, ctx: Ctx, deriv: Derivation, a: Ty, b: Ty) {
@@ -66,9 +70,9 @@ expect determinism(symb: Symb, ctx: Ctx, deriv: Derivation, a: Ty, b: Ty) {
 The other headline laws are stated with the detailed definitions:
 [regularity](#r-types.judgment.regularity), that a derived type is well
 formed; [weakening](#r-types.judgment.weakening), that a derivation
-survives extending its context; [decidability of a
-layer](#r-types.layer.decidability), that an algorithm computes a layer's
-type; and, open, [decidability of the
+survives extending its context; [inference for a
+layer](#r-types.layer.inference), that a layer's type can be computed; and,
+open, [decidability of the
 judgment](#r-types.judgment.decidability) and [uniqueness of an
 expression's type](#r-types.derivation.unique-expression). `fren trace`
 reports the evidence for each law stated as a procedure.
@@ -171,27 +175,18 @@ pub fn entry(symb: Symb, item: ItemId): Option<ItemKind> := match symb {
 }
 ```
 
-r[types.symbols.well-formed] spec::types::{ty_ok?, ctx_ok?, member?, constructors_ok?, binding_ok?, bindings_ok?, symb_ok?}
+r[types.symbols.types-ok] spec::types::{ty_ok?, ctx_ok?}
 A type is *well formed* in Σ when it is `Bool`, `Int`, or `Nominal(a)` with
 `Σ(a)` an enumeration; a context is well formed when each of its types is.
-Σ is well formed when it binds each item once, every signature's types are
-well formed, every constructor's owner is an enumeration that lists it, and
-every enumeration lists distinct constructors, each bound as a constructor
-of that enumeration.
 
 ```text
-                                     Σ(a) = enumeration
-  Σ ⊢ Bool ok     Σ ⊢ Int ok         ──────────────────
-                                     Σ ⊢ Nominal(a) ok
+                                  Σ(a) = enumeration
+  Σ ⊢ Bool ok     Σ ⊢ Int ok      ──────────────────
+                                  Σ ⊢ Nominal(a) ok
 
                   Σ ⊢ Γ ok   Σ ⊢ τ ok
   Σ ⊢ · ok        ───────────────────
                   Σ ⊢ Γ, τ ok
-
-  each item bound once   signatures well formed   owners and
-  constructors agree
-  ─────────────────────────────────────────────────────────
-  ⊢ Σ ok
 ```
 
 ```fren
@@ -204,7 +199,35 @@ pub fn ctx_ok?(symb: Symb, ctx: Ctx) := match ctx {
     Empty => true,
     Extend(earlier, ty) => ty_ok?(symb, ty) and ctx_ok?(symb, earlier),
 }
+```
 
+r[types.symbols.well-formed] spec::types::{member?, constructors_ok?, binding_ok?, bindings_ok?, symb_ok?}
+Σ is well formed when it binds each item once, every signature's types are
+well formed, every constructor's owner is an enumeration that lists it, and
+every enumeration lists distinct constructors, each bound as a constructor
+of that enumeration. In the figure, `Σ' ⊢ Σ ok` checks the bindings of
+Σ against the whole environment Σ', as `bindings_ok?(Σ', Σ)` does, and
+x ∉ Σ says that Σ binds no x.
+
+```text
+                Σ' ⊢ Σ ok   x ∉ Σ   Σ' ⊢ Δ ok   Σ' ⊢ τ ok
+  Σ' ⊢ · ok     ─────────────────────────────────────────
+                Σ' ⊢ Σ, x = function (Δ) → τ ok
+
+  Σ' ⊢ Σ ok   x ∉ Σ   Σ'(a) = enumeration listing x
+  ─────────────────────────────────────────────────
+  Σ' ⊢ Σ, x = constructor of a ok
+
+  Σ' ⊢ Σ ok   x ∉ Σ   c₀, …, cₙ distinct   Σ'(cₖ) = constructor of x
+  ──────────────────────────────────────────────────────────────────
+  Σ' ⊢ Σ, x = enumeration listing c₀, …, cₙ ok
+
+  Σ ⊢ Σ ok
+  ────────
+  ⊢ Σ ok
+```
+
+```fren
 pub fn member?(items: Snoc<ItemId>, item: ItemId) := match items {
     Empty => false,
     Extend(earlier, other) => other = item or member?(earlier, item),
@@ -251,7 +274,8 @@ twice. This depends on the resolution chapter and is open.
 The Core has the following grammar. Figures and prose name locals, as in
 `let x := e₁ in e₂`, but each name stands for a de Bruijn level: the Core
 writes a local as `#i`, for the entry at level i, and a let binds the next
-level.
+level. In a figure, `Γ, x : σ` is the context `Γ, σ`, with x naming its new
+level `|Γ|`, and `Γ(x) = τ` says that x's entry is τ.
 
 ```text
 τ ::= Bool | Int | Nominal(a)
@@ -393,8 +417,8 @@ r[types.expression.unary] spec::types::unary_rule?
 A unary operation follows `unary_type?`.
 
 ```text
-  Σ; Γ ⊢ e : σ   unary(⊖, σ) = τ
-  ──────────────────────────────
+  Σ; Γ ⊢ e : σ   unary_type?(⊖, σ, τ)
+  ───────────────────────────────────
   Σ; Γ ⊢ ⊖ e : τ
 ```
 
@@ -408,8 +432,8 @@ r[types.expression.binary] spec::types::binary_rule?
 A binary operation follows `binary_type?`.
 
 ```text
-  Σ; Γ ⊢ l : σ   Σ; Γ ⊢ r : υ   binary(⊕, σ, υ) = τ
-  ─────────────────────────────────────────────────
+  Σ; Γ ⊢ l : σ   Σ; Γ ⊢ r : υ   binary_type?(⊕, σ, υ, τ)
+  ──────────────────────────────────────────────────────
   Σ; Γ ⊢ l ⊕ r : τ
 ```
 
@@ -454,25 +478,8 @@ pub fn call_rule?(symb: Symb, ctx: Ctx, item: ItemId, args: Snoc<Typing>, ty: Ty
     }
 ```
 
-r[types.expression.let-annotated] spec::types::annotation_matches?
-A let with an annotation requires its value to have the annotated type.
-
-```text
-  Σ; Γ ⊢ e₁ : σ   Σ; Γ, x : σ ⊢ e₂ : τ
-  ─────────────────────────────────────
-  Σ; Γ ⊢ let x : σ := e₁ in e₂ : τ
-```
-
-```fren
-pub fn annotation_matches?(annotation: Option<Ty>, ty: Ty) := match annotation {
-    Some(written) => written = ty,
-    None => true,
-}
-```
-
 r[types.expression.let] spec::types::let_rule?
-A let types its value in Γ and its body in Γ extended by the value's type,
-and checks its annotation, if any, by the rule above.
+A let types its value in Γ and its body in Γ extended by the value's type.
 
 ```text
   Σ; Γ ⊢ e₁ : σ   Σ; Γ, x : σ ⊢ e₂ : τ
@@ -481,11 +488,25 @@ and checks its annotation, if any, by the rule above.
 ```
 
 ```fren
-pub fn let_rule?(ctx: Ctx, annotation: Option<Ty>, value: Typing, body: Typing, ty: Ty) :=
+pub fn let_rule?(ctx: Ctx, value: Typing, body: Typing, ty: Ty) :=
     value.ctx = ctx
-    and annotation_matches?(annotation, value.ty)
     and body.ctx = Extend(ctx, value.ty)
     and body.ty = ty
+```
+
+r[types.expression.let-annotated] spec::types::let_annotated_rule?
+A let with an annotation σ is typed as a let whose value has type σ.
+
+```text
+  Σ; Γ ⊢ e₁ : σ   Σ; Γ, x : σ ⊢ e₂ : τ
+  ─────────────────────────────────────
+  Σ; Γ ⊢ let x : σ := e₁ in e₂ : τ
+```
+
+```fren
+pub fn let_annotated_rule?(ctx: Ctx, written: Ty, value: Typing, body: Typing, ty: Ty) :=
+    value.ty = written
+    and let_rule?(ctx, value, body, ty)
 ```
 
 r[types.expression.if] spec::types::if_rule?
@@ -513,7 +534,7 @@ constructor of the scrutinee's enumeration, and each arm body is typed in Γ
 at the match's type.
 
 ```text
-  Σ; Γ ⊢ s : Nominal(a)
+  Σ; Γ ⊢ s : Nominal(a)   at least one arm
   Σ(cₖ) = constructor of a   Σ; Γ ⊢ eₖ : τ   (each arm k)
   ─────────────────────────────────────────────────────────
   Σ; Γ ⊢ match s { c₀ ⇒ e₀ | … | cₘ ⇒ eₘ } : τ
@@ -557,7 +578,8 @@ pub fn rule?(symb: Symb, ctx: Ctx, form: ExprF<Typing>, ty: Ty) := match form {
     ExprF::Unary(op, operand) => unary_rule?(ctx, op, operand, ty),
     ExprF::Binary(op, left, right) => binary_rule?(ctx, op, left, right, ty),
     ExprF::Call(item, args) => call_rule?(symb, ctx, item, args, ty),
-    ExprF::Let(annotation, value, body) => let_rule?(ctx, annotation, value, body, ty),
+    ExprF::Let(None, value, body) => let_rule?(ctx, value, body, ty),
+    ExprF::Let(Some(written), value, body) => let_annotated_rule?(ctx, written, value, body, ty),
     ExprF::If(condition, then_branch, else_branch) =>
         if_rule?(ctx, condition, then_branch, else_branch, ty),
     ExprF::Match(scrutinee, arms) => match_rule?(symb, ctx, scrutinee, arms, ty),
@@ -652,6 +674,7 @@ r[types.derivation.unfolding]
 A row *unfolds* to the expression whose root form is the row's layer, with
 each child level replaced by the expression that the row at that level
 unfolds to, and argument and arm sequences replaced element by element.
+A valid table's children name only earlier rows, so unfolding ends.
 Every written child of the expression is a row, including an unused let
 value, both branches of a conditional and every arm body; several
 occurrences may share a row.
@@ -819,8 +842,10 @@ check.
 An `expect` below is proved by the solver. A procedure states a law that
 the chapter's wrapper proves in Lean, by an `impl` bound to the procedure,
 or that is open, with no `impl`; `fren trace` reports which. Each law's
-procedure has one output, `holds?`, so that its evidence is its own, and is
-also tested at random inputs.
+procedure has one output, `holds?`, so that its evidence is its own. Its own
+checks are set to random testing only so that the solver is not asked for
+an induction; random inputs rarely meet a law's hypotheses, so that testing
+is weak evidence.
 
 r[types.layer.operators] spec::types::operator_unique::{unary, binary}
 Each unary or binary operator has at most one result type for fixed operand
@@ -842,10 +867,13 @@ expect layer_unique(symb: Symb, ctx: Ctx, form: ExprF<Typing>, a: Ty, b: Ty) {
 }
 ```
 
-r[types.layer.decidability] spec::types::{unary_result, binary_result, provided, infer_layer, layer_inference::exact}
-The one-layer judgment is decidable: `infer_layer` computes a layer's type,
-if it has one, and `Σ; Γ ⊢ l ▷ τ` holds exactly when `infer_layer(Σ, Γ, l)`
-is τ.
+r[types.layer.inference] spec::types::{unary_result, binary_result, provided, infer_layer, layer_inference::exact}
+Inference for a layer: a layer's type, if it has one, can be computed from Σ,
+Γ and its children's typings. `infer_layer` computes it, and
+`Σ; Γ ⊢ l ▷ τ` holds exactly when `infer_layer(Σ, Γ, l)` is τ. Checking
+`rule?` at a given type is already a computation; this law adds that the
+type need not be given. `infer_layer` restates each rule as a computation,
+so the law mostly confirms that the two agree.
 
 ```fren
 pub fn unary_result(op: UnaryOp, operand: Ty): Option<Ty> := match op, operand {
@@ -884,7 +912,7 @@ pub fn infer_layer(symb: Symb, ctx: Ctx, form: ExprF<Typing>): Option<Ty> := mat
     },
     ExprF::Let(annotation, value, body) => provided(
         value.ctx = ctx
-            and annotation_matches?(annotation, value.ty)
+            and (annotation = None or annotation = Some(value.ty))
             and body.ctx = Extend(ctx, value.ty),
         Some(body.ty)
     ),
@@ -1557,7 +1585,7 @@ pub fn f(l: Light): Int := l + 1  --~ error: type mismatch: expected `Int`, foun
 ```
 
 ```fren example
---@ reference: types.expression.let
+--@ reference: types.expression.let-annotated
 pub mod bad
 
 pub fn f(n: Int): Int := let b: Bool := n in 0  --~ error: the definition of `b` has type `Int`, not `Bool`

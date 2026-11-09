@@ -847,7 +847,7 @@ def ruleAdjacentChapters : Array String :=
 converted. Their wrappers trace their procedures with `trusted` as the
 required level, so that `lake build --wfail` fails when a property loses its
 evidence, and their Markdown has no hand-written status comments. -/
-def evidenceChapters : Array String := ruleAdjacentChapters
+def evidenceChapters : Array String := ruleAdjacentChapters.push "src/Spec/Compiler/Thir.md"
 
 /-- The two lines with which a converted chapter's wrapper must end, as an
 active command: a comment around them would leave other last lines. -/

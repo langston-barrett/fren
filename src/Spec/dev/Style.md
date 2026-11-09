@@ -72,9 +72,13 @@ chapter's main objects and relation, and states its key laws as their
 contracts, or as expectations that the contracts prove. The chapter's
 wrapper interprets each abstract type and function by its detailed
 definition (`interp`), which proves the contracts for the detailed
-definitions: the interpretation is the refinement relation. Laws that Fren
-cannot state as contracts at the top, because they relate the relation to
-itself at other arguments, link to the property that states them below.
+definitions: the interpretation is the refinement relation. A law that
+would be a contract on a function returning an abstract type, such as a
+`weaken` that returns a derivation, cannot be one: that contract's
+realizability check is outside the decidable core. Such a law links to the
+property that states it below. Say exactly what a contract law states; a
+derivation that records its type determines it, which is not uniqueness of
+an expression's type.
 
 ## Notation
 
@@ -99,6 +103,10 @@ Fren identifiers and figures use one set of abbreviations:
 | `decl`, `decls`, `Decl` | a declaration, the declarations | d |
 | `prog` | a program | |
 | `pos` | a row's position in a table | |
+| `rows` | a derivation table, as a Fren value | |
+| `deriv`, `Derivation` | a derivation, in an abstract interface | d |
+| `form`, `Form` | a layer whose children are row positions | |
+| layer | one form `ExprF<E>` with its children | l |
 | `ok?` suffix | a well-formedness check | `⊢ … ok` |
 
 ## Semantic objects
@@ -158,9 +166,12 @@ rule's links and [`fren trace`](../../Reqs/Trace.md):
   proof uses that theorem; `fren trace` reports it `proved`. A procedure
   without outputs takes its level from its calls, and with none would be
   reported `proved` without evidence, so a law's procedure has one output,
-  `holds?`, with `ensure output: holds?`. Put the law's hypotheses in its
-  `ensure` as `when`, and set `fren.evidence` to `"random"`, so that its
-  own checks test it rather than ask the solver for an induction.
+  `holds?`, with `ensure output: holds?`, until Fren's trace takes account
+  of how a procedure's own checks ran. Put the law's hypotheses in its
+  `ensure` as `when`, and set `fren.evidence` to `"random"`: this only stops
+  the procedure's realizability check from asking the solver for the
+  induction. Random inputs rarely meet a law's hypotheses, so do not claim
+  that testing supports the law.
 - A property checked by tests is a procedure with a `tested` claim naming
   the test.
 - An open property that Fren can state is such a procedure with no `impl`

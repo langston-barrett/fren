@@ -11,8 +11,10 @@ Fren language or compiler has been verified.
 
 The [Core typing chapter](../src/Spec/Language/Types.md) opens with an
 overview: a table of its judgment forms and an abstract interface whose
-contract states determinism and regularity, interpreted in the wrapper by
-the detailed definitions. It then defines semantic objects and their
+contract states that a derivation records its type, which it therefore
+determines, and regularity, interpreted in the wrapper by the detailed
+definitions. That an expression's type is unique, whatever table types it,
+is open (`types.derivation.unique-expression`). It then defines semantic objects and their
 well-formedness, the grammar and the one-layer view `ExprF<E>`, one Fren
 function per typing rule with a small figure, derivation tables and what a
 table's root unfolds to, the judgment over tables, declarations and
@@ -32,12 +34,15 @@ trusted: `spec::types::expression_uniqueness`
 ```
 
 The one `trusted` procedure is the open `types.derivation.unique-expression`,
-whose claim's reason starts `open:`. Types.md and Expressions.md are the
-converted chapters: their wrappers trace with `trusted` as the required
+whose claim's reason starts `open:`. Types.md, Expressions.md and the THIR
+chapter are the converted chapters: their wrappers trace with `trusted` as the required
 level, so a property that loses its evidence fails `lake build --wfail`,
-and the `ruleReqs` job checks that they do, and that every Fren item of
-theirs is linked by the nearest rule before it. The other Spec chapters are
-not yet converted.
+and the `ruleReqs` job checks that they do. It also checks, for Types.md
+and Expressions.md, that every Fren item is linked by the nearest rule
+before it and every linking rule is followed by its Fren. The THIR
+chapter's correspondence theorems over production Lean types are named in
+its prose: Fren cannot state them as procedures. The other Spec chapters
+are not yet converted.
 
 ### Fren1 limits that shape the chapter
 
@@ -79,11 +84,16 @@ not yet converted.
 - **Evidence for Lean-proved laws.** A law that Lean proves has, as a
   procedure, its own realizability check, which asks the solver for the law
   itself; the solver cannot do the induction. So each law's procedure sets
-  `fren.evidence "random"`, and states its hypotheses in its `ensure` with
-  `when`, so that random testing finds admissible inputs. Fren has no way to
-  say that an `impl` discharges a procedure's own checks. A procedure
-  without outputs and calls is reported `proved` without evidence, so each
-  law's procedure has one output, `holds?`.
+  `fren.evidence "random"`, only so that the solver is not asked for that
+  induction, and states its hypotheses in its `ensure` with `when`. Random
+  inputs rarely meet the hypotheses, so the testing is weak and is not
+  claimed as evidence. A procedure without outputs and calls is reported
+  `proved` without evidence, so each law's procedure has one output,
+  `holds?`. Two Fren gaps to file: `fren trace` does not take into account
+  that a procedure's own checks ran only by random testing, and there is no
+  `fren.evidence` setting that defers a procedure's checks to its `impl`
+  (no `"lean"`; see [Methods](../src/Reqs/Methods.md)). Once either is
+  fixed, the template drops `holds?` and the random setting.
 - **Abstract interface.** An uninterpreted function's contract over an
   abstract output type has a realizability check outside the decidable
   core, so the overview cannot state weakening as a contract of a
@@ -106,8 +116,8 @@ compiler is specified later.
 
 | Rule | Evidence |
 | --- | --- |
-| `types.overview.interface`, `types.overview.determinism` | The interface's contract, checked for realizability by the solver and proved for the detailed definitions by the wrapper's `interp`; determinism follows from it by the solver |
-| `types.context.bound`, `types.context.weakening`, `types.layer.operators`, `types.layer.determinism`, `types.layer.decidability`, `types.judgment.coverage-separate`, `types.examples.rejected` | Fren expectations |
+| `types.overview.interface`, `types.overview.determinism` | The interface's contract, checked for realizability by the solver and proved for the detailed definitions by the wrapper's `interp`; that a derivation determines its type follows by the solver, because a table records its root's type |
+| `types.context.bound`, `types.context.weakening`, `types.layer.operators`, `types.layer.determinism`, `types.layer.inference`, `types.judgment.coverage-separate`, `types.examples.rejected` | Fren expectations |
 | `types.layer.call-arity`, `types.layer.regularity`, `types.derivation.regularity`, `types.judgment.regularity`, `types.derivation.scoped`, `types.derivation.unique`, `types.layer.weakening`, `types.derivation.weakening-lookup`, `types.derivation.weakening`, `types.judgment.weakening`, `types.examples.derivations` | Procedures bound by `impl` in the wrapper: `proved` |
 | `types.derivation.unique-expression` | A procedure with no `impl` and a `trusted` claim whose reason starts `open:` |
 | `types.judgment.adequacy`, `types.judgment.decidability`, `types.symbols.resolution`, `types.safety`, `expressions.value.denotation` | Open, stated in prose: Fren cannot state them |

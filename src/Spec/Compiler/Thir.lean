@@ -1,5 +1,6 @@
 import Fren.Impl
 import Fren.Literate
+import Fren.Trace
 import FrenWalking
 import FrenBase.Binding
 import FrenExpr
@@ -577,3 +578,6 @@ impl binary: binary for
   all_goals by_cases h : left_id = right_id <;> simp_all [primitiveKind, eq_comm]
 
 end Spec.Compiler.Thir
+
+set_option fren.requireEvidence "trusted" in
+#fren_trace
