@@ -238,7 +238,8 @@ open spec.verification in
 impl tables_proof: tables { holds? := true } by
   intro _
   simp only [tables.ensures, tables.ensure.output, tables.ensure.omitted,
-    tables.ensure.present, tables.ensure.extra]
+    tables.ensure.present, tables.ensure.extra, tables.ensure.separate,
+    tables.ensure.unmoved]
   decide
 
 open spec.surface (BinaryOp UnaryOp)

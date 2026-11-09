@@ -210,7 +210,7 @@ trusted: `spec::types::expression_uniqueness`, `spec::verification::complete`
 | `verification.examples.obligations`, `verification.examples.assignments`, `verification.examples.scopes`, `verification.examples.members`, `verification.examples.domain`, `verification.examples.tables` | Constant examples that the wrapper evaluates with `decide`: `proved` |
 | `verification.validity.interface` | The wrapper interprets `valid?` as satisfaction by every assignment of the obligation, a classical proposition, and `counterexample` as a choice of an assignment that does not satisfy it. It proves the four laws of `verdicts` from them, with `check` interpreted as the function that always answers `Unknown`: `proved`. The laws `satisfied` and `invalid` together fix `valid?` as satisfaction by every assignment; either alone admits an interpretation that is always false or always true |
 | `verification.generation.complete` | Stated as a procedure over tables, `trusted` and open |
-| `verification.program.tables` | A definition, `represents?`, with the law and the examples above. That each member has its source keyword and declaration is not stated |
+| `verification.program.tables` | A definition, `represents?`, with the law and the examples above. Typed tables are found in a declaration's table by position, with their row references moved. The correspondence does not count occurrences of equal conditions. That each member has its source keyword and declaration, and that every typed program has representing tables, are not stated |
 | `verification.validity.meaning`, `verification.validity.uncomputed`, `verification.program.defined`, `verification.program.verified`, `verification.program.assumptions`, `verification.generation.function`, `verification.keyword.evidence`, `verification.soundness` | Prose. Soundness is open |
 
 What shapes the chapter:
@@ -242,8 +242,14 @@ What shapes the chapter:
   `represents?` (`verification.program.tables`) ties the two: every typed
   function has a table with its signature's parameters and its body, every
   typed condition is a member of a table, and every member is a typed
-  condition. A defined program requires it, so a table that omits a body
-  or a condition, or adds a member, makes no program defined. Typing gives
+  condition. Core typing types each body and condition in a table of its
+  own, so a typed table is found in the declaration's one table at the
+  rows that end at its root, with its row references moved by the number
+  of rows before it. A defined program requires `represents?`, so tables
+  that omit a function body, or omit every occurrence of a condition, or
+  have a member that is no typed condition, make no program defined. The
+  correspondence does not count: one member may stand for several equal
+  typed conditions, and several equal members for one. Typing gives
   a condition no keyword and no owner, so definedness is relative to the
   keywords and owners that the tables state; that these are the source's
   is open.
@@ -282,6 +288,9 @@ commuting square with OIR condition generation, is open
 - [ ] Give the `Decl` of Core typing each condition's keyword and owner,
   so that `represents?` states that a member has its source keyword, or
   make `Decl` and the member table one definition.
+- [ ] State and prove that every well-typed program has tables that
+  represent it, and decide whether `represents?` should count the
+  occurrences of equal conditions.
 - [ ] Rename `PropertiesAndChecks.md` to match the chapter's title.
 - [ ] Bind `Lowered.branch`, `Lowered.bind` and `Lowered.call` to
   `if_condition`, `let_condition` and `call_condition` through an

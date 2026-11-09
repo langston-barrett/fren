@@ -781,30 +781,85 @@ pub fn discharged?(verdict: Verdict) := verdict = Verdict::Proved
 
 ## Defined and verified programs
 
-r[verification.program.tables] spec::verification::{rooted?, prefix?, has_member?, condition_tabled?, tabled?, all_tabled?, condition_typed?, members_typed?, tables_typed?, represents?}
+r[verification.program.tables] spec::verification::{moved_arguments, moved_arms, moved_form, moved, ends_with?, upto, rooted?, has_member?, condition_tabled?, tabled?, all_tabled?, condition_typed?, members_typed?, tables_typed?, represents?}
 The tables P *represent* the [declarations of a typed program](Types.md#declarations-and-programs)
-when each has the other's bodies. A typed table is *at root r* of a
-declaration's table when it is that table's rows up to r. Every typed
+when each has the other's bodies. Core typing gives each function body and
+each condition a table of its own, and a declaration here has one table
+for all of them, so a typed table is found inside a declaration's table
+with its rows renumbered. A typed table of n rows is *at root r* of a
+declaration's table when rows r + 1 - n to r of the declaration's table
+are the typed table's rows in order, each with its references to rows
+moved by r + 1 - n, the number of rows before them. Every typed
 function has a table for its item, with the parameters of the function's
 signature and with a body, at whose root the function's typed table is.
 Every typed condition is at the root of a member of some declaration that
 has the condition's parameters. Conversely, every declaration's table is
 [well formed](#r-verification.member.table), and every member is a typed
-condition: no table states a member that the program does not have. Core
-typing's conditions carry no keyword and no owner, so that a member has
-the keyword and the declaration that the source gave it is not stated;
-this part of the correspondence is open.
+condition. The correspondence does not count occurrences: one member may
+stand for several equal typed conditions, and several equal members for
+one. Core typing's conditions carry no keyword and no owner, so that a
+member has the keyword and the declaration that the source gave it is not
+stated; this part of the correspondence is open. That every typed program
+has tables that represent it, such as its typed tables one after another,
+is not stated as a law.
 
 ```fren
-pub fn prefix?(short: Snoc<Row>, long: Snoc<Row>) :=
-    short = long
-    or match long {
+pub fn moved_arguments(args: Snoc<Int>, offset: Int): Snoc<Int> := match args {
+    Empty => Empty,
+    Extend(earlier, arg) => Extend(moved_arguments(earlier, offset), arg + offset),
+}
+
+pub fn moved_arms(arms: Snoc<Arm>, offset: Int): Snoc<Arm> := match arms {
+    Empty => Empty,
+    Extend(earlier, arm) => Extend(
+        moved_arms(earlier, offset),
+        ArmF {
+            constructor := arm.constructor,
+            body := arm.body + offset,
+        }
+    ),
+}
+
+pub fn moved_form(form: Form, offset: Int): Form := match form {
+    ExprF::Unary(op, operand) => ExprF::Unary(op, operand + offset),
+    ExprF::Binary(op, left, right) => ExprF::Binary(op, left + offset, right + offset),
+    ExprF::Call(item, args) => ExprF::Call(item, moved_arguments(args, offset)),
+    ExprF::Let(annotation, value, body) => ExprF::Let(annotation, value + offset, body + offset),
+    ExprF::If(condition, then_branch, else_branch) => ExprF::If(
+        condition + offset,
+        then_branch + offset,
+        else_branch + offset
+    ),
+    ExprF::Match(scrutinee, arms) => ExprF::Match(scrutinee + offset, moved_arms(arms, offset)),
+    _ => form,
+}
+
+pub fn moved(rows: Snoc<Row>, offset: Int): Snoc<Row> := match rows {
+    Empty => Empty,
+    Extend(earlier, row) => Extend(
+        moved(earlier, offset),
+        { row with form := moved_form(row.form, offset) }
+    ),
+}
+
+pub fn ends_with?(long: Snoc<Row>, short: Snoc<Row>) := match short {
+    Empty => true,
+    Extend(short_earlier, short_row) => match long {
         Empty => false,
-        Extend(earlier, _) => prefix?(short, earlier),
-    }
+        Extend(long_earlier, long_row) =>
+            long_row = short_row and ends_with?(long_earlier, short_earlier),
+    },
+}
+
+pub fn upto(rows: Snoc<Row>, count: Int): Snoc<Row> := match rows {
+    Empty => Empty,
+    Extend(earlier, _) => if length(rows) <= count then rows else upto(earlier, count),
+}
 
 pub fn rooted?(root: Int, body: Snoc<Row>, rows: Snoc<Row>) :=
-    prefix?(body, rows) and root + 1 = length(body)
+    length(body) <= root + 1
+    and root < length(rows)
+    and ends_with?(upto(rows, root + 1), moved(body, root + 1 - length(body)))
 
 pub fn has_member?(members: Snoc<Member>, body: Snoc<Row>, rows: Snoc<Row>) := match members {
     Empty => false,
@@ -1873,20 +1928,58 @@ pub proc domains(): (holds?) {
 }
 ```
 
-r[verification.examples.tables] spec::verification::{F_DECLS, NONZERO_BODY, tables::{omitted, present, extra}}
+r[verification.examples.tables] spec::verification::{F_DECLS, NONZERO_BODY, ONE_DECLS, SEPARATE, UNMOVED, tables::{omitted, present, extra, separate, unmoved}}
 Let the typed program declare `M::f(x)` with the body `x` and the
 condition `x != 0`. The table above, which has no body, does not
 [represent](#r-verification.program.tables) it, and so no program with
 that table is defined, whatever its obligations. The same table with the
 body at row 0 represents it. That table does not represent the program
-without the condition: its member would be an assumption that the program
-does not state.
+without the condition: its member is no typed condition of that program.
+
+Let the body be `1` instead. Its typed table is the one row `1`, and the
+condition's typed table begins with the row `#0`, so neither is the
+beginning of the other. The table with the rows `1`, `#0`, `0` and
+`row 1 != row 2` represents the program: the body is at root 0, and the
+condition is at root 3 with its references moved by one. The same table
+with the last row `row 0 != row 1` is well formed, but its member is the
+condition `1 != x`, and it does not represent the program.
 
 ```fren
 pub const F_DECLS: Snoc<Decl> := two(
     Decl::Function(F, one(typed(ExprF::Local(0), BOUND, Ty::Integer))),
     Decl::Condition(BOUND, NONZERO.rows)
 )
+
+pub const ONE_DECLS: Snoc<Decl> := two(
+    Decl::Function(F, one(typed(ExprF::IntegerLiteral(1), BOUND, Ty::Integer))),
+    Decl::Condition(BOUND, NONZERO.rows)
+)
+
+pub const SEPARATE: Declared := Declared {
+    item := F,
+    params := BOUND,
+    rows := four(
+        typed(ExprF::IntegerLiteral(1), BOUND, Ty::Integer),
+        typed(ExprF::Local(0), BOUND, Ty::Integer),
+        typed(ExprF::IntegerLiteral(0), BOUND, Ty::Integer),
+        typed(ExprF::Binary(BinaryOp::Ne, 1, 2), BOUND, Ty::Boolean)
+    ),
+    body := Some(0),
+    members := one(Member { keyword := Keyword::Require, root := 3 }),
+}
+
+pub const UNMOVED: Declared := Declared {
+    item := F,
+    params := BOUND,
+    rows := four(
+        typed(ExprF::IntegerLiteral(1), BOUND, Ty::Integer),
+        typed(ExprF::Local(0), BOUND, Ty::Integer),
+        typed(ExprF::IntegerLiteral(0), BOUND, Ty::Integer),
+        typed(ExprF::Binary(BinaryOp::Ne, 0, 1), BOUND, Ty::Boolean)
+    ),
+    body := Some(0),
+    members := one(Member { keyword := Keyword::Require, root := 3 }),
+}
 
 pub const NONZERO_BODY: Declared := Declared {
     item := F,
@@ -1910,6 +2003,8 @@ pub proc tables(): (holds?) {
         ),
         one(NONZERO_BODY)
     )
+    ensure separate: represents?(SYMB, ONE_DECLS, one(SEPARATE))
+    ensure unmoved: declared_ok?(SYMB, UNMOVED) and not represents?(SYMB, ONE_DECLS, one(UNMOVED))
 }
 ```
 
