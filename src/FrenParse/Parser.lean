@@ -201,7 +201,7 @@ private def tails : Nat → Nat → Expr → Cursor → Except Diagnostic (Expr 
       | some (op, prec) =>
         if prec < minPrec then return (left, c)
         if unsupportedChain left op then
-          fail c "parentheses around nested comparisons or `iff` (chains are outside the walking subset)"
+          fail c "parentheses around a comparison or `iff` that would chain"
         let some token := peek c | fail c "an operator"
         let (right, c) ← expression fuel (prec + 1) (advance c)
         tails fuel minPrec (.binary left token op right) c

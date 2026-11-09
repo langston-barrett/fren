@@ -1,186 +1,155 @@
 # AST and parsing
 
-Parsing turns source text into a tree of its written forms. The abstract
-syntax tree (AST) retains names, punctuation, comments and whitespace so
-that tools can reproduce the source and locate each occurrence. Name
-resolution and type checking produce later intermediate representations
-(IRs); parsing alone establishes neither meaning nor validity of a check.
+Parsing turns source text into a tree of its written forms. The lossless
+syntax tree (AST) retains names, punctuation, parentheses, comments and
+whitespace, so that tools can reproduce the source and locate each
+occurrence. Name resolution and type checking produce later intermediate
+representations (IRs); parsing alone establishes neither the meaning of a
+program nor the validity of a check.
+
+Rule statuses are those of
+[Lexical structure](../Language/LexicalStructure.md). A `tested` status
+names the test module of the parser that checks the rule.
 
 ## Source forms
 
 The source grammar is specified in the language reference.
-[Lexical structure](../Language/LexicalStructure.md) defines the tokens,
-trivia and rejected text of a source text, and
-[Syntax](../Language/Syntax.md) the declarations and expressions that the
-parser accepts, with their grouping and order. This chapter states what
-the parser's result contains and how it relates to the source text.
+[Lexical structure](../Language/LexicalStructure.md) defines source text,
+its tokens, trivia and rejected text, and [Syntax](../Language/Syntax.md)
+the declarations and expressions that the parser accepts and their
+abstract syntax trees.
 
-**Proof obligations**
+**Implementation requirements**
 
 r[parsing.walking.forms]
-The shared parser recognizes the forms of [Syntax](../Language/Syntax.md)
-with their written grouping and order, independently of name resolution,
-typing and solver verdicts.
+status: tested Spec.Language.Syntax.grammar_agrees
+The shared parser accepts exactly the texts that the grammar of
+[Syntax](../Language/Syntax.md) accepts, with their written grouping and
+order, independently of name resolution, typing and solver verdicts. Its
+tree, without parentheses and trivia, is the abstract syntax tree that
+`syntax.tree.productions` gives.
 
-Thus `y + 1` is a syntactically valid body even when `y` is unbound, and
-`l + 1` parses even when `l` later has type `Light`. Their static errors
-belong to resolution and typing. A match with missing variants is also
-a syntax tree whose exhaustiveness remains to be checked.
+## One parser and its entries
 
-## One parser and its consumers
+Each driver hands Fren text to the same parser, with an entry category.
 
-`FrenParse` owns the shared parser, and `FrenAst` owns its lossless tree
-interface. The command-line driver supplies a source file. The hosted
-driver supplies extracted Markdown blocks or a `fren { … }` body, with a
-source map back to the containing document. Extraction is separate from
-parsing: delimiters belonging to the host are not Fren tokens.
-
-The textual test runner already accepts a typed context parser through
-`Runner.of`. Its Fren adapter will parse declarations from the context
-text once, then pass that typed AST context to the library callback. The
-runner's case/result markers remain its container format. They do not
-define another Fren grammar.
-
-**Proof obligations**
+**Implementation requirements**
 
 r[parsing.shared.entry]
-The drivers and the Fren textual-context adapter call the same parser;
-given identical Fren text, entry category and file identity, they obtain
-the same tree or parse diagnostic data before host-position translation.
-
-A context is a sequence of declarations, not an expression or an opaque
-string called an AST. Empty or comment-only context text denotes an empty
-sequence. File parsing also accepts an empty declaration sequence.
-Expression parsing, where offered for library tests, requires one expression.
-Each entry consumes its complete input, allowing trailing trivia. Separate
-entry categories select grammar roots, not independent parser implementations.
+status: tested FrenParseTests.Properties
+The drivers call the same parser. Given identical Fren text, entry
+category and file identity, they obtain the same tree or the same
+diagnostic, before host positions are translated. The file and context
+categories read a `File`, and the expression category an
+`ExpressionEntry`; each consumes its whole input. Extraction from a host
+document is separate from parsing: delimiters of the host are not Fren
+tokens.
 
 ## Source ownership and locations
 
-A *token* is a written word (an identifier or keyword), numeral or
-punctuator. *Trivia* is text between tokens: whitespace and comments.
-*Rejected text* starts no lexical element. [Lexical
-structure](../Language/LexicalStructure.md) defines each of these, and how
-the source text is divided into them. For example, `/` is rejected text: integer
-division is written `div`.
+The lossless tree owns each byte of its source exactly once.
 
-**Proof obligations**
+**Implementation requirements**
 
 r[parsing.lossless.ownership]
+status: tested FrenParseTests.Properties
 The parse result retains the immutable source and an ordered partition of
-its bytes into nonempty token, trivia or rejected-text slices, with no gaps
-or duplicated ownership, including leading and trailing trivia.
+its bytes into the pieces of `lexical.piece.longest`, as nonempty token,
+trivia or rejected-text slices, with no gaps or duplicated ownership,
+including leading and trailing trivia.
 
 r[parsing.tree.structure]
+status: tested FrenParseTests.Properties
 The AST exposes structured declarations, expressions and their ordered
-children, with written names and token references for each occurrence.
+children, with written names and a token reference for each occurrence:
+its terminals, in order, are exactly the lexer's tokens.
 
 r[parsing.source.bounds]
+status: tested FrenParseTests.Properties
 Every slice and diagnostic span has the source file identity and ordered
 half-open UTF-8 byte offsets within that source's byte length.
 
-Tree nodes may reference or enclose slices, so enclosing node spans may
-overlap their children's spans. Those references do not own the bytes a
-second time. Two uses of `base` have separate source occurrences even when
-later IR nodes share structure. The tree may store trivia separately from
-its grammar nodes; these contracts do not prescribe concrete constructors
-or freeze a storage layout. Keeping a source string without structured
-forms does not satisfy the AST contract.
-
-The [base definitions](BaseDefinitions.md#files-spans-and-source-maps)
-define spans and source maps. The existing `FrenSource.Span.checked` laws
-already characterize `start ≤ stop ≤ size` for natural byte offsets and
-preserve file identity and endpoints. Its `offset` laws cover translation
-of an unchanged embedded body after the caller establishes extraction and
-host bounds. Parsing must establish these premises from its actual source;
-a size supplied independently of that source is insufficient.
-
-For `aéz`, the UTF-8 byte length is 4 and `é` occupies `[1, 3)`.
-`[2, 2)` is byte-bounded but lies inside `é`. Bounds checking alone does
-not prove a character boundary.
-
-**Proof obligations**
-
 r[parsing.source.utf8]
-For decoded UTF-8 text, token, trivia and parse-diagnostic endpoints lie on
-character boundaries, with EOF at the byte length; ingestion rejects invalid
-UTF-8 bytes before constructing the text AST, without replacement decoding.
+status: tested FrenParseTests.Properties
+The parser reads source text as `lexical.source.encoding` defines it.
+Token, trivia and diagnostic endpoints lie on character boundaries, with
+the end of input at the byte length, and invalid bytes fail before any
+tree is built.
 
-The parser consumes decoded text. Invalid bytes are an ingestion
-failure, not a successful parse. A diagnostic for invalid encoding may
-identify the offending raw byte range. No editor column or UTF-16 offset
-is substituted for a byte offset; conversion occurs at the editor boundary.
+> **Note:** Tree nodes may reference or enclose slices, so the span of a
+> node may overlap its children's spans without owning their bytes a
+> second time. Two uses of `base` are separate occurrences even when later
+> IRs share structure. These rules fix no constructors or storage layout.
+> For `aéz`, the UTF-8 byte length is 4 and `é` occupies `[1, 3)`; `[2, 2)`
+> is within bounds but inside `é`, so bounds alone do not make a character
+> boundary.
 
-## Complete input, failure and partial text
+## Complete input and failure
 
-A parse result distinguishes success from failure. Failure is ordinary data
-and may retain a lossless partial tree for reporting or editing. It is
-never passed to name resolution as a successful complete tree.
+A parse result distinguishes success from failure.
 
-**Proof obligations**
+**Implementation requirements**
 
 r[parsing.complete]
+status: tested FrenParseTests.Properties
 Success accounts for every input byte and contains a complete tree of the
 selected entry category, with no missing or rejected syntax.
 
 r[parsing.failure]
-Malformed or unsupported input returns failure with a diagnostic, without
-exceptions, silent token deletion or success on a proper input prefix.
+status: tested FrenParseTests.Properties
+Malformed input, including truncated input such as `pub fn f(` or
+`let x :=`, and input of trivia alone for the expression category, gives a
+failure with a diagnostic: no exception, no silently dropped token, no
+invented token and no success on a proper prefix of the input. A failure
+keeps every byte of the input, and is never passed on as a complete tree.
 
 r[parsing.determinism]
+status: lean FrenParse.deterministic
 For fixed text, entry category and file identity, parsing terminates with
-the same success/failure result, tree contents and ordered diagnostic data.
+the same result, tree and diagnostic.
 
 r[parsing.diagnostic.anchor]
-A syntax diagnostic identifies the first unexpected token, rejected character or EOF where
-required syntax is missing, and describes the expected form.
+status: tested FrenParseTests.Grammar
+A syntax diagnostic is at the first token, rejected text or end of input
+where the grammar cannot continue, and says what was expected there. A
+missing `}`, or an arm that ends at `=>`, is reported at the end of input
+with the empty span `[size, size)`; an extra `}` after a valid
+declaration, at that `}`; and rejected text, at its bytes.
 
-This source grammar requires a primary diagnostic; additional recovery diagnostics
-are optional but deterministic and in source order. Missing `}` or an arm
-ending at `=>` reports EOF with the empty span `[size, size)`. An extra `}`
-after a valid declaration reports that token. `pub fn f(` and an incomplete
-`let x :=` fail rather than inventing a body. An unrecognized character is
-retained as rejected text and diagnosed at its byte span. These malformed
-and truncated inputs must be supported as failures, including comment-only
-expression input. Recovery nodes, if provided, explicitly distinguish missing
-syntax from written tokens and own no invented bytes. Incremental parsing,
-editor completion and tolerant recovery trees are outside this input contract.
+**Examples**
 
-**Proof obligations**
+The [Syntax](../Language/Syntax.md) chapter's rejected examples state
+their diagnostics, which its wrapper checks.
+
+## Reconstruction
+
+Emission reconstructs the source from the lossless tree.
+
+**Implementation requirements**
 
 r[parsing.roundtrip]
-Emitting a successful lossless parse reproduces the original UTF-8 bytes;
-reparsing those bytes under the same entry category and file identity reproduces the same
-structured syntax, token spelling and trivia, ignoring allocation identity.
+status: tested FrenParseTests.Properties
+Emitting a successful parse reproduces the original bytes, and parsing
+those bytes again, with the same entry category and file identity, gives
+the same tree, token spellings and trivia.
 
-The Lean proposition `LosslessOnSuccess parse emit` states
-`∀ source tree, parse source = .ok tree → emit tree = source`, with the
-entry category and file identity fixed by the supplied functions. The wrapper
-defines this obligation without asserting it or supplying a parser. It must
-be instantiated with the actual shared parser and emitter.
-
-Emission here means source reconstruction, not formatting or IR
-serialization. Retaining rejected input also allows failure results to
-reconstruct the input, but does not make a partial tree a successful parse.
-An arbitrary generated AST needs a separate well-formedness premise for
-printing/parsing; a raw source roundtrip proves no scope or type property.
-Resolution later replaces source names with item identities and de Bruijn
-indices using the [binding contracts](Bindings.md). Those semantic references
-do not replace written names in the AST.
+> **Note:** Emission is reconstruction, not formatting or serialization of
+> an IR. A failure also reconstructs its input, but is not a successful
+> parse. Printing an abstract syntax tree is `syntax.print.roundtrip`.
+> Resolution later replaces written names with item identities and de
+> Bruijn indices using the [binding contracts](Bindings.md); those
+> references do not replace written names in the AST.
 
 ## Byte classification
 
-These contracts classify raw byte values. They neither implement a lexer
-nor accept a caller-supplied parse verdict. The continuation-byte interval
-is useful only after UTF-8 validation: an internal offset in valid UTF-8
-text is a character boundary exactly when its byte is not a continuation
-byte. Zero and EOF are boundaries independently. This table alone cannot
-validate an encoding or connect a byte to a particular source offset.
+Two byte classes let the lexer and the boundary checks work on bytes.
 
-**Dynamic semantics**
+**Implementation requirements**
 
 r[parsing.primitive.space] spec::parsing::space_case::{classification, space, tab, lf, cr, ordinary}
-The ASCII whitespace bytes are space, tab, LF and CR.
+status: lean FrenParse.spaceByte_iff
+A byte is whitespace exactly when it encodes a character of
+`spec::lexical::WHITESPACE`: space, tab, LF or CR.
 
 ```fren
 pub mod spec
@@ -199,7 +168,11 @@ pub proc space_case(byte: Nat): (space?) {
 ```
 
 r[parsing.primitive.continuation] spec::parsing::continuation_case::{classification, first, last, ascii, lead}
+status: lean FrenParse.continuationByte_iff
 A UTF-8 continuation byte is in the inclusive interval 128 through 191.
+In valid UTF-8, an offset inside the text is a character boundary exactly
+when its byte is not a continuation byte; 0 and the byte length are
+boundaries too.
 
 ```fren
 pub proc continuation_case(byte: Nat): (continuation?) {
@@ -212,6 +185,3 @@ pub proc continuation_case(byte: Nat): (continuation?) {
     expect lead: when byte >= 192, not continuation?
 }
 ```
-
-Implementation correspondence and proof coverage are recorded in the
-[development coverage document](../../../docs/fren2-specification-coverage.md).

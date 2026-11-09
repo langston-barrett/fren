@@ -311,7 +311,7 @@ fn f(x: Int): Bool := x < -1
 
 -- case: comparison_chain
 fn f(x: Int): Bool := a < b <= c
--- result: syntax 28:30: expected parentheses around nested comparisons or `iff` (chains are outside the walking subset)
+-- result: syntax 28:30: expected parentheses around a comparison or `iff` that would chain
 
 -- case: parenthesized_comparison
 fn f(x: Int): Bool := (a < b) <= c
@@ -319,7 +319,7 @@ fn f(x: Int): Bool := (a < b) <= c
 
 -- case: iff_chain
 fn f(x: Int): Bool := a iff b iff c
--- result: syntax 30:33: expected parentheses around nested comparisons or `iff` (chains are outside the walking subset)
+-- result: syntax 30:33: expected parentheses around a comparison or `iff` that would chain
 
 -- case: parenthesized_iff
 fn f(x: Int): Bool := a iff (b iff c)

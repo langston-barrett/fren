@@ -121,10 +121,26 @@ open FrenAst FrenParse
     unless rejectedAt .expression word 0 word.utf8ByteSize do
       throw <| IO.userError s!"unsupported reserved word became a name: {word}"
   for source in ["fn f(assume: Int): Int := assume", "fn assume(x: Int): Int := 1",
-      "enum E { Int, Bool, not, assume, true, false }"] do
+      "enum E { Int, Bool, assume }"] do
     let .ok doc := parseFile ⟨1⟩ source | throw <| IO.userError "contextual name grammar"
     unless coherent doc && doc.emit == source do throw <| IO.userError "contextual name tree"
-  IO.println "prefix operand restrictions, explicit parentheses, atoms, and reserved/contextual names passed"
+  -- `true`, `false` and `not` are keywords: no declaration, binder, label,
+  -- path segment or match pattern names one. Each rejection is anchored at
+  -- the keyword itself.
+  for word in ["true", "false", "not"] do
+    for (entry, before, after) in [(Entry.file, "fn f(", ": Int): Int := 1"),
+        (.file, "fn ", "(x: Int): Int := 1"),
+        (.file, "enum E { A, ", " }"), (.file, "mod ", ""), (.file, "mod a::", ""),
+        (.file, "expect ", "() {}"), (.file, "expect e() { expect ", ": x }"),
+        (.file, "expect e(", ": Int) {}"), (.file, "fn f(x: Int): ", " := 1"),
+        (.expression, "let ", " := 1 in 1"), (.expression, "E::", ""),
+        (.expression, "match x { E::", " => 1 }"), (.expression, "match x { ", "::A => 1 }")] do
+      let source := before ++ word ++ after
+      unless rejectedAt entry source before.utf8ByteSize (before.utf8ByteSize + word.utf8ByteSize) do
+        throw <| IO.userError s!"keyword became a name: {source}"
+    -- With `?` the word is an identifier, as `if?` is.
+    let .ok _ := parseFile ⟨1⟩ s!"fn f({word}?): Bool := {word}?" | throw <| IO.userError "question word"
+  IO.println "prefix operand restrictions, explicit parentheses, atoms, reserved words and keywords as names passed"
 
 end FrenParseTests
 

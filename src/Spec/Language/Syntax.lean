@@ -12,339 +12,637 @@ open Fren.Lang
 namespace Spec.Language.Syntax
 
 open FrenAst
-open spec.grammar (Operator Separated Place Grouping)
+abbrev SUnary := spec.surface.UnaryOp
+abbrev SBinary := spec.surface.BinaryOp
+abbrev Category := spec.surface.Category
 
-/-! The chapter's checks run the actual parser, `FrenParse.parse`, and compare
-it with the chapter's grammar and with its Fren definitions, run as written. -/
+/-! The chapter's checks run the actual parser, `FrenParse.parse`, against the
+chapter as written: its `grammar` blocks, read from the Markdown and run as a
+parsing expression grammar; its abstract syntax and printing functions; and
+its example blocks. -/
 
-/-- A tree as text, with each operator, call and paren explicit. -/
-partial def shape : Expr → String
-  | .name path => "::".intercalate (path.tokens.filter (·.text != "::") |>.map (·.text))
-  | .bool _ b => toString b
-  | .integer _ n => toString n
-  | .paren _ body _ => s!"(paren {shape body})"
-  | .unary t _ body => s!"({t.text} {shape body})"
-  | .binary l t _ r => s!"({t.text} {shape l} {shape r})"
-  | .call f _ args _ _ => "(call " ++ shape f ++ (args.foldl (fun s e => s ++ " " ++ shape e) "") ++ ")"
-  | .ifE _ c _ y _ n => s!"(if {shape c} {shape y} {shape n})"
-  | .letE _ x _ v _ b => s!"(let {x.text} {shape v} {shape b})"
-  | .matchE _ s _ arms _ => "(match " ++ shape s ++
-      (arms.foldl (fun acc arm => acc ++ " (" ++ "".intercalate (arm.1.tokens.map (·.text)) ++
-        " " ++ shape arm.2.2.1 ++ ")") "") ++ ")"
+/-! ## The chapter's text -/
 
-/-- The tree of an expression entry, or `none` if it is rejected. -/
-def expr? (source : String) : Option String :=
+/-- The chapter, read when the wrapper is elaborated. -/
+def chapterPath : System.FilePath := "src" / "Spec" / "Language" / "Syntax.md"
+
+/-- The bodies of the chapter's blocks with info string `info`, each with the
+line of its fence. -/
+def blocks (md info : String) : List (Nat × String) :=
+  (Fren.Core.fencedBlocks md).toList.filterMap fun b =>
+    if b.info == info then some (b.line, "\n".intercalate b.body.toList) else none
+
+/-! ## The grammar, as data read from the chapter -/
+
+/-- A parsing expression. -/
+inductive G where
+  | term (spelling : String)
+  | nt (name : String)
+  | seq (parts : List G)
+  | alt (options : List G)
+  | opt (g : G)
+  | star (g : G)
+  | plus (g : G)
+  | neg (g : G)
+  deriving Inhabited, Repr, BEq
+
+/-- The lexemes of grammar notation: names, quoted strings, and `( ) | ? * + !`. -/
+def notationTokens (text : String) : List String := Id.run do
+  let mut out := []
+  let mut cs := text.toList
+  for _ in [:text.length + 1] do
+    match cs with
+    | [] => break
+    | c :: rest =>
+      if c == ' ' || c == '\n' then cs := rest
+      else if c == '"' then
+        let body := rest.takeWhile (· != '"')
+        out := out ++ [String.ofList ('"' :: body)]
+        cs := (rest.drop body.length).drop 1
+      else if c.isAlpha then
+        let name := cs.takeWhile Char.isAlphanum
+        out := out ++ [String.ofList name]
+        cs := cs.drop name.length
+      else
+        out := out ++ [String.singleton c]
+        cs := rest
+  return out
+
+mutual
+/-- `Alt := Seq ("|" Seq)*` -/
+partial def parseAlt (ts : List String) : G × List String :=
+  let (first, ts) := parseSeq ts
+  let rec more (acc : List G) (ts : List String) : List G × List String :=
+    match ts with
+    | "|" :: rest => let (s, rest) := parseSeq rest; more (acc ++ [s]) rest
+    | _ => (acc, ts)
+  let (all, ts) := more [first] ts
+  (if all.length == 1 then first else .alt all, ts)
+
+/-- `Seq := Item*`, up to `|`, `)`, or the end. -/
+partial def parseSeq (ts : List String) : G × List String :=
+  let rec go (acc : List G) (ts : List String) : List G × List String :=
+    match ts with
+    | [] | "|" :: _ | ")" :: _ => (acc, ts)
+    | _ => let (i, rest) := parseItem ts; go (acc ++ [i]) rest
+  let (parts, ts) := go [] ts
+  (if parts.length == 1 then parts.head! else .seq parts, ts)
+
+/-- `Item := "!" Item | Atom ("?" | "*" | "+")*` -/
+partial def parseItem (ts : List String) : G × List String :=
+  match ts with
+  | "!" :: rest => let (i, rest) := parseItem rest; (.neg i, rest)
+  | _ =>
+    let (a, ts) := parseAtom ts
+    let rec suffixes (g : G) (ts : List String) : G × List String :=
+      match ts with
+      | "?" :: rest => suffixes (.opt g) rest
+      | "*" :: rest => suffixes (.star g) rest
+      | "+" :: rest => suffixes (.plus g) rest
+      | _ => (g, ts)
+    suffixes a ts
+
+partial def parseAtom (ts : List String) : G × List String :=
+  match ts with
+  | "(" :: rest => let (g, rest) := parseAlt rest; (g, rest.drop 1)
+  | t :: rest => (if t.startsWith "\"" then .term (t.drop 1).toString else .nt t, rest)
+  | [] => (.seq [], [])
+end
+
+/-- The rules of a grammar block: a line that contains `::=` starts a rule,
+and the lines after it continue it. -/
+def rulesOfBlock (body : String) : List (String × G) := Id.run do
+  let mut rules : List (String × String) := []
+  for line in body.splitOn "\n" do
+    match line.splitOn "::=" with
+    | [lhs, rhs] => rules := rules ++ [(lhs.trimAscii.toString, rhs)]
+    | _ => match rules.getLast? with
+      | some (n, rhs) => rules := rules.dropLast ++ [(n, rhs ++ " " ++ line)]
+      | none => pure ()
+  return rules.map fun (n, rhs) => (n, (parseAlt (notationTokens rhs)).1)
+
+/-! ## Running the grammar on the lexer's tokens -/
+
+/-- A token, with what the trivia-sensitive terminals need of the trivia
+before it. -/
+structure Tok where
+  text : String
+  kind : LexicalKind
+  touching : Bool
+  afterLineEnding : Bool
+
+def toks (source : String) : Array Tok :=
+  let lexed := FrenParse.tokenize ⟨0⟩ source
+  lexed.tokens.mapIdx fun i t =>
+    let before := match (if i == 0 then none else lexed.tokens[i - 1]?) with
+      | some previous => lexed.tape.extract (previous.slice + 1) t.slice
+      | none => #[]
+    { text := t.text, kind := t.kind,
+      touching := i > 0 && before.isEmpty,
+      afterLineEnding := before.any fun piece => piece.text.contains '\n' }
+
+/-- Whether a token is the terminal `spelling` of the grammar. -/
+def terminal (spelling : String) (t : Tok) : Bool :=
+  match spelling with
+  | "Identifier" => t.kind == .identifier
+  | "QuestionIdentifier" => t.kind == .identifier && t.text.endsWith "?"
+  | "Numeral" => t.kind == .numeral
+  | "TouchingOpen" => t.text == "(" && t.touching
+  | "SameLineMod" => t.text == "mod" && !t.afterLineEnding
+  | _ => false
+
+def classTerminals : List String :=
+  ["Identifier", "QuestionIdentifier", "Numeral", "TouchingOpen", "SameLineMod"]
+
+/-- Match `g` at token `i`: the position after the match and the rule
+alternatives `(rule, index)` that it used, or `none` if it does not match. -/
+partial def run (rules : List (String × G)) (ts : Array Tok) (g : G) (i : Nat) :
+    Option (Nat × List (String × Nat)) :=
+  match g with
+  | .term s => match ts[i]? with
+    | some t => if t.text == s && t.kind != .rejected then some (i + 1, []) else none
+    | none => none
+  | .nt n =>
+    if classTerminals.contains n then
+      match ts[i]? with
+      | some t => if terminal n t then some (i + 1, []) else none
+      | none => none
+    else match rules.lookup n with
+      | some (.alt options) =>
+        options.zipIdx.findSome? fun (o, k) =>
+          (run rules ts o i).map fun (j, used) => (j, (n, k) :: used)
+      | some body => (run rules ts body i).map fun (j, used) => (j, (n, 0) :: used)
+      | none => none
+  | .seq parts => parts.foldlM (init := (i, [])) fun (j, used) p =>
+      (run rules ts p j).map fun (k, more) => (k, used ++ more)
+  | .alt options => options.findSome? (run rules ts · i)
+  | .opt g => some ((run rules ts g i).getD (i, []))
+  | .star g =>
+    let rec loop (j : Nat) (used : List (String × Nat)) (fuel : Nat) : Nat × List (String × Nat) :=
+      match fuel with
+      | 0 => (j, used)
+      | fuel + 1 => match run rules ts g j with
+        | some (k, more) => if k == j then (j, used) else loop k (used ++ more) fuel
+        | none => (j, used)
+    some (loop i [] (ts.size + 1))
+  | .plus g => run rules ts (.seq [g, .star g]) i
+  | .neg g => if (run rules ts g i).isSome then none else some (i, [])
+
+/-- Whether the grammar's `start` matches all of `source`'s tokens. -/
+def grammarAccepts (rules : List (String × G)) (start source : String) : Bool :=
+  let ts := toks source
+  match run rules ts (.nt start) 0 with
+  | some (j, _) => j == ts.size
+  | none => false
+
+def parserAccepts (entry : Entry) (source : String) : Bool :=
+  (FrenParse.parse entry ⟨0⟩ source).toBool
+
+/-- Every sequence of at most `n` of `pieces`, joined by spaces. -/
+def sequences (pieces : List String) : Nat → List String
+  | 0 => [""]
+  | n + 1 => "" :: (sequences pieces n).flatMap fun s =>
+      pieces.map fun p => if s.isEmpty then p else s ++ " " ++ p
+
+/-- `count` seeded pseudo-random sequences of 5 to 14 of `pieces`. -/
+def randomSequences (pieces : List String) (count seed : Nat) : List String := Id.run do
+  let mut seed := seed
+  let mut out := []
+  for _ in [:count] do
+    seed := (seed * 6364136223846793005 + 1442695040888963407) % 2 ^ 64
+    let len := 5 + seed / 2 ^ 40 % 10
+    let mut text := ""
+    for _ in [:len] do
+      seed := (seed * 6364136223846793005 + 1442695040888963407) % 2 ^ 64
+      text := text ++ " " ++ pieces[seed / 2 ^ 33 % pieces.length]!
+    out := text :: out
+  return out
+
+/-- Expression pieces: one of each kind of token, and the trivia-sensitive
+`(` and `mod`, written touching or after a line ending. -/
+def expressionPieces : List String :=
+  ["x", "1", "true", "not", "-", "+", "*", "<", "=", "and", "iff", "(", ")", "f(", ",", "if",
+   "then", "else", "let", ":=", "in", "match", "{", "}", "E::A", "=>", "mod", "\nmod"]
+
+def smallExpressionPieces : List String :=
+  ["x", "not", "-", "+", "<", "iff", "(", ")", "f(", ",", "if", "then", "else", "\nmod"]
+
+def declarationPieces : List String :=
+  ["pub", "fn f(x: Int): Int :=", "fn f(", "x", "b?", ":", "Int", ")", "mod m", "\nmod", "mod",
+   "enum E {", "A", ",", "}", "expect e(", "{", "expect c:", "assume", "a:", ":="]
+
+/-- The grammar of the chapter, from its `grammar` blocks. -/
+def grammarOf (md : String) : List (String × G) :=
+  (blocks md "grammar").flatMap fun (_, body) => rulesOfBlock body
+
+/-- `syntax.file.syntax`, `syntax.path.syntax`, `syntax.declaration.syntax`,
+`syntax.declaration.lists`, `syntax.expression.syntax`, `syntax.expression.extent`
+and `syntax.notation.trivia-sensitive`: the chapter's grammar, run as written,
+accepts exactly what the parser accepts. Bounded: as an `ExpressionEntry`,
+every sequence of up to three of `expressionPieces` (28 pieces), every
+sequence of up to five of `smallExpressionPieces` (14), and 3000 seeded random
+sequences of 5 to 14 of `expressionPieces`; as a `File`, every sequence of up
+to four of `declarationPieces` (21) and 3000 random ones of 5 to 14; every
+`fren2` and `fren2 rejected` block; and `near`, texts near valid ones. -/
+def grammarAgrees (md : String) (near : List String) : Option String := Id.run do
+  let rules := grammarOf md
+  let checks : List (Entry × String × List String) :=
+    [(.expression, "ExpressionEntry", sequences expressionPieces 3 ++
+        sequences smallExpressionPieces 5 ++ randomSequences expressionPieces 3000 7 ++ near),
+     (.file, "File", sequences declarationPieces 4 ++ randomSequences declarationPieces 3000 11 ++
+        ((blocks md "fren2") ++ (blocks md "fren2 rejected")).map (·.2))]
+  for (entry, start, texts) in checks do
+    for text in texts do
+      if grammarAccepts rules start text != parserAccepts entry text then
+        return some s!"the grammar and the parser disagree on {start} {repr text}"
+  return none
+
+/-! ## Abstract syntax -/
+
+/-- An expression tree: the fixed point of the chapter's `ExprF`, as
+`Tree.layer` and `Tree.ofLayer` show. -/
+inductive Tree where
+  | boolean (b : Bool)
+  | integer (n : Nat)
+  | name (path : List String)
+  | call (path : List String) (args : List Tree)
+  | unary (op : SUnary) (e : Tree)
+  | binary (op : SBinary) (l r : Tree)
+  | ifE (c t e : Tree)
+  | letE (x : String) (v b : Tree)
+  | matchE (s : Tree) (arms : List (List String × Tree))
+  deriving Inhabited
+
+/-- A tree's top node, as the chapter's `ExprF` over its subtrees. -/
+def Tree.layer : Tree → spec.surface.ExprF Tree
+  | .boolean b => .Boolean b
+  | .integer n => .Integer n
+  | .name p => .Name (Fren.Seq.ofList p)
+  | .call p args => .Call (Fren.Seq.ofList p) (Fren.Seq.ofList args)
+  | .unary op e => .Unary op e
+  | .binary op l r => .Binary op l r
+  | .ifE c t e => .If c t e
+  | .letE x v b => .Let x v b
+  | .matchE s arms => .Match s (Fren.Seq.ofList (arms.map fun (p, b) => ⟨Fren.Seq.ofList p, b⟩))
+
+/-- A tree from its top node. -/
+def Tree.ofLayer : spec.surface.ExprF Tree → Tree
+  | .Boolean b => .boolean b
+  | .Integer n => .integer n
+  | .Name p => .name p.toList
+  | .Call p args => .call p.toList args.toList
+  | .Unary op e => .unary op e
+  | .Binary op l r => .binary op l r
+  | .If c t e => .ifE c t e
+  | .Let x v b => .letE x v b
+  | .Match s arms => .matchE s (arms.toList.map fun a => (a.variant.toList, a.body))
+
+theorem Tree.ofLayer_layer (t : Tree) : Tree.ofLayer t.layer = t := by
+  cases t <;> simp [Tree.layer, Tree.ofLayer, Fren.Seq.ofList, Fren.Seq.toList, Function.comp_def]
+
+def unaryOps : List SUnary := [.Neg, .Not]
+def binaryOps : List SBinary :=
+  [.Add, .Sub, .Mul, .Div, .Mod, .Eq, .Ne, .Lt, .Le, .Gt, .Ge, .And, .Or, .Iff]
+
+theorem all_binary (op : SBinary) : op ∈ binaryOps := by cases op <;> simp [binaryOps]
+theorem all_unary (op : SUnary) : op ∈ unaryOps := by cases op <;> simp [unaryOps]
+
+def pathOf (p : Path) : List String := p.tokens.filter (·.text != "::") |>.map (·.text)
+
+def unaryOf : FrenAst.UnaryOp → SUnary
+  | .neg => .Neg | .not => .Not
+
+def binaryOf (op : FrenAst.BinaryOp) : SBinary :=
+  match op with
+  | .add => .Add | .sub => .Sub | .mul => .Mul | .div => .Div | .mod => .Mod | .eq => .Eq
+  | .ne => .Ne | .lt => .Lt | .le => .Le | .gt => .Gt | .ge => .Ge | .and => .And | .or => .Or
+  | .iff => .Iff
+
+/-- `syntax.tree.productions`: the tree of each production of an expression. -/
+partial def abstract : Expr → Tree
+  | .name path => .name (pathOf path)
+  | .bool _ b => .boolean b
+  | .integer _ n => .integer n
+  | .paren _ body _ => abstract body
+  | .unary _ op body => .unary (unaryOf op) (abstract body)
+  | .binary l _ op r => .binary (binaryOf op) (abstract l) (abstract r)
+  | .call (.name path) _ args _ _ => .call (pathOf path) (args.toList.map abstract)
+  | .call _ _ args _ _ => .call [] (args.toList.map abstract)
+  | .ifE _ c _ t _ e => .ifE (abstract c) (abstract t) (abstract e)
+  | .letE _ x _ v _ b => .letE x.text (abstract v) (abstract b)
+  | .matchE _ s _ arms _ => .matchE (abstract s) (arms.toList.map fun a => (pathOf a.1, abstract a.2.2.1))
+
+def spellBinary (op : SBinary) : String := spec.surface.binary_spelling op
+def spellUnary (op : SUnary) : String := spec.surface.unary_spelling op
+
+/-- A tree as fully parenthesized text, to compare trees. -/
+partial def Tree.show : Tree → String
+  | .boolean b => toString b
+  | .integer n => toString n
+  | .name p => "::".intercalate p
+  | .call p args => "::".intercalate p ++ "(" ++ ", ".intercalate (args.map Tree.show) ++ ")"
+  | .unary op e => s!"({spellUnary op} {e.show})"
+  | .binary op l r => s!"({l.show} {spellBinary op} {r.show})"
+  | .ifE c t e => s!"(if {c.show} then {t.show} else {e.show})"
+  | .letE x v b => s!"(let {x} := {v.show} in {b.show})"
+  | .matchE s arms => s!"(match {s.show} \{" ++
+      ", ".intercalate (arms.map fun (p, b) => "::".intercalate p ++ " => " ++ b.show) ++ "})"
+
+def tree? (source : String) : Option String :=
   match FrenParse.parseExpression ⟨0⟩ source with
-  | .ok { root := .expression e, .. } => some (shape e)
+  | .ok { root := .expression e, .. } => some (abstract e).show
   | _ => none
 
-def accepts (source : String) : Bool := (FrenParse.parseFile ⟨0⟩ source).toBool
-def acceptsExpr (source : String) : Bool := (expr? source).isSome
+/-- The tree of a type (`syntax.path.syntax`). -/
+def typeTree : Ty → spec.surface.TypeName
+  | .bool _ => .Boolean
+  | .int _ => .Integer
+  | .named p => .Named (Fren.Seq.ofList (pathOf p))
 
-/-- Every operator. `all_operators` proves the list complete. -/
-def operators : List Operator :=
-  [.Iff, .Or, .And, .Not, .Equal, .NotEqual, .Less, .LessEqual, .Greater, .GreaterEqual,
-   .Add, .Subtract, .Multiply, .Divide, .Remainder, .Negate]
+def showType : spec.surface.TypeName → String
+  | .Boolean => "Bool!" | .Integer => "Int!" | .Named p => "::".intercalate p.toList
 
-theorem all_operators (op : Operator) : op ∈ operators := by
-  cases op <;> simp [operators]
+def paramTree (p : Parameter) : spec.surface.Parameter :=
+  ⟨p.name.text, match p.annotation with | some (_, t) => .some (typeTree t) | none => .none⟩
 
-def spelling (op : Operator) : String := spec.grammar.spelling op
-def precedence (op : Operator) : Int := spec.grammar.precedence op
-def isPrefix (op : Operator) : Bool := spec.grammar.«prefix?» op
-def binaries : List Operator := operators.filter (!isPrefix ·)
-def prefixes : List Operator := operators.filter isPrefix
+def showParam (p : spec.surface.Parameter) : String :=
+  p.name ++ match p.annotation with | .some t => ":" ++ showType t | .none => ""
 
-/-- The AST's operator for a binary `Operator`. -/
-def astBinary : Operator → Option BinaryOp
-  | .Iff => some .iff | .Or => some .or | .And => some .and
-  | .Equal => some .eq | .NotEqual => some .ne | .Less => some .lt | .LessEqual => some .le
-  | .Greater => some .gt | .GreaterEqual => some .ge | .Add => some .add | .Subtract => some .sub
-  | .Multiply => some .mul | .Divide => some .div | .Remainder => some .mod
-  | .Not | .Negate => none
+/-- The tree of a declaration (`syntax.tree.productions`). -/
+def declTree : Decl → spec.surface.DeclarationF Tree
+  | .moduleDecl v _ p => .Module v.isSome (Fren.Seq.ofList (pathOf p))
+  | .enumDecl v _ n _ vs _ _ => .Enumeration v.isSome n.text (Fren.Seq.ofList (vs.toList.map (·.text)))
+  | .function v _ n ps _ r _ b =>
+    .Function v.isSome n.text (Fren.Seq.ofList (ps.values.toList.map paramTree)) (typeTree r) (abstract b)
+  | .expectation _ n ps _ ms _ =>
+    .Expectation n.text (Fren.Seq.ofList (ps.values.toList.map paramTree))
+      (Fren.Seq.ofList (ms.toList.map fun m =>
+        ⟨if m.kind == .assume then .Assume else .Expect, m.label.text, abstract m.body⟩))
 
-/-- Every token spelling that the lexer can give a punctuator, keyword or
-contextual word; `operators_agree` checks these lists against the lexical
-chapter's sets. -/
-def punctuators : List String :=
-  ["(", ")", "{", "}", ",", ":", "+", "-", "*", "=", "<", ">", "<=", ">=", "!=", ":=", "=>", "::"]
-def grammarKeywords : List String :=
-  ["mod", "pub", "enum", "fn", "expect", "iff", "and", "or", "div", "in", "if", "then", "else",
-   "match", "let"]
-def contextual : List String := ["assume", "not", "true", "false", "Bool", "Int"]
+def showDecl : spec.surface.DeclarationF Tree → String
+  | .Module isPub p => s!"{if isPub then "pub " else ""}mod " ++ "::".intercalate p.toList
+  | .Enumeration isPub n vs => s!"{if isPub then "pub " else ""}enum {n} " ++ ",".intercalate vs.toList
+  | .Function isPub n ps r b =>
+    s!"{if isPub then "pub " else ""}fn {n}(" ++ ",".intercalate (ps.toList.map showParam) ++
+      s!"):{showType r} {b.show}"
+  | .Expectation n ps ms =>
+    s!"expect {n}(" ++ ",".intercalate (ps.toList.map showParam) ++ ") " ++
+      ";".intercalate (ms.toList.map fun m =>
+        s!"{match m.kind with | .Assume => "assume" | .Expect => "expect"} {m.label} {m.body.show}")
 
---@ reference: syntax.operator.table
-/-- `syntax.operator.table`: the parser's binary operator table is the
-chapter's, spelling for spelling and precedence for precedence, and no other
-punctuator, keyword or contextual word, nor sample identifier, is a binary
-operator. Its prefix operators are those of the table: each prefix
-spelling, applied to a name, gives a unary node. -/
+def decls? (source : String) : Option (List String) :=
+  match FrenParse.parseFile ⟨0⟩ source with
+  | .ok { root := .declarations ds, .. } => some (ds.toList.map (showDecl ∘ declTree))
+  | _ => none
+
+/-! ## Printing -/
+
+/-- A tree printed by `syntax.print.roundtrip`: its text, its category and
+whether it is open. -/
+structure Printed where
+  text : String
+  category : Category
+  isOpen : Bool
+
+instance : Inhabited Printed := ⟨⟨"", .Primary, false⟩⟩
+
+/-- `place` gets `child`, in parentheses where `fits?` says it does not fit. -/
+def placed (child : Printed) (place : Category) (followed : Bool) : String :=
+  if spec.surface.«fits?» child.category child.isOpen place followed then child.text
+  else "(" ++ child.text ++ ")"
+
+partial def Tree.print : Tree → Printed
+  | .boolean b => ⟨toString b, .Primary, false⟩
+  | .integer n => ⟨toString n, .Primary, false⟩
+  | .name p => ⟨"::".intercalate p, .Primary, false⟩
+  | .call p args =>
+    ⟨"::".intercalate p ++ "(" ++ ", ".intercalate (args.map fun a => placed a.print .Expression false) ++ ")",
+     .Primary, false⟩
+  | .unary op e =>
+    let e := e.print
+    ⟨spellUnary op ++ " " ++ placed e (spec.surface.operand_category true op .Add false) false,
+     spec.surface.category true op .Add, e.isOpen⟩
+  | .binary op l r =>
+    let (l, r) := (l.print, r.print)
+    ⟨placed l (spec.surface.operand_category false .Neg op true) true ++ " " ++ spellBinary op ++ " " ++
+      placed r (spec.surface.operand_category false .Neg op false) false,
+     spec.surface.category false .Neg op, r.isOpen⟩
+  | .ifE c t e =>
+    ⟨s!"if {placed c.print .Expression false} then {placed t.print .Expression false} else " ++
+      placed e.print .Expression false, .Primary, true⟩
+  | .letE x v b =>
+    ⟨s!"let {x} := {placed v.print .Iff false} in {placed b.print .Expression false}", .Expression, true⟩
+  | .matchE s arms =>
+    ⟨s!"match {placed s.print .Primary false} \{ " ++
+      ", ".intercalate (arms.map fun (p, b) => "::".intercalate p ++ " => " ++ placed b.print .Iff false) ++
+      " }", .Primary, false⟩
+
+/-- A seeded pseudo-random tree of at most `depth` levels. -/
+partial def randomTree (seed : Nat) : Nat → Tree × Nat
+  | 0 => let s := (seed * 6364136223846793005 + 1442695040888963407) % 2 ^ 64
+    (match s / 2 ^ 33 % 4 with
+      | 0 => .name ["x"] | 1 => .integer (s / 2 ^ 40 % 100) | 2 => .boolean (s / 2 ^ 41 % 2 == 0)
+      | _ => .name ["E", "A"], s)
+  | depth + 1 =>
+    let s := (seed * 6364136223846793005 + 1442695040888963407) % 2 ^ 64
+    let pick := s / 2 ^ 33 % 12
+    if pick < 2 then randomTree s 0 else
+    let (a, s) := randomTree s depth
+    let (b, s) := randomTree s depth
+    let (c, s) := randomTree s depth
+    match pick with
+    | 2 => (.unary (unaryOps[s / 2 ^ 35 % 2]!) a, s)
+    | 3 | 4 | 5 | 6 => (.binary (binaryOps[s / 2 ^ 35 % 14]!) a b, s)
+    | 7 => (.ifE a b c, s)
+    | 8 => (.letE "v" a b, s)
+    | 9 => (.call ["f"] [a, b], s)
+    | 10 => (.matchE a [(["E", "A"], b), (["E", "B"], c)], s)
+    | _ => (.call ["g"] [a], s)
+
+/-- `syntax.print.roundtrip`: printing a tree and parsing the text gives the
+tree back. Bounded: 3000 seeded random trees of depth at most 5, and every
+pair of binary operators and every unary operator around binary operands. -/
+def roundtrip_agrees : Bool := Id.run do
+  let mut seed := 2026
+  let mut trees : List Tree := []
+  for _ in [:3000] do
+    let (t, s) := randomTree seed 5
+    seed := s
+    trees := t :: trees
+  let x := Tree.name ["x"]
+  let y := Tree.name ["y"]
+  let z := Tree.name ["z"]
+  for a in binaryOps do
+    for b in binaryOps do
+      trees := .binary a (.binary b x y) z :: .binary a x (.binary b y z) :: trees
+    for u in unaryOps do
+      trees := .unary u (.binary a x y) :: .binary a (.unary u x) y :: .binary a x (.unary u y) :: trees
+  return trees.all fun t => tree? t.print.text == some t.show
+
+#guard roundtrip_agrees
+
+/-- Texts near valid expressions: 1500 printed random trees, each also with
+its parentheses dropped and with each of its first eight tokens dropped in
+turn, which gives chains, bare operands and unfinished forms in every
+context. -/
+def nearExpressions : List String := Id.run do
+  let mut seed := 4049
+  let mut out := []
+  for _ in [:1500] do
+    let (t, s) := randomTree seed 4
+    seed := s
+    let text := t.print.text
+    let words := text.splitOn " "
+    out := out ++ [text, (text.replace "(" " ").replace ")" " "] ++
+      (List.range (min 8 words.length)).map fun i => " ".intercalate (words.eraseIdx i)
+  return out
+
+/-! ## Operators -/
+
+--@ reference: syntax.tree.operators
+/-- `syntax.tree.operators`: the parser reads each binary spelling as that
+operator, and at the precedence that orders the chapter's categories, and no
+other punctuator or keyword as a binary operator; it reads each unary spelling
+before an operand as that unary operator. -/
 def operators_agree : Bool :=
-  decide (spec.lexical.PUNCTUATORS = Fren.FinSet.ofList punctuators) &&
-  decide (spec.lexical.GRAMMAR_KEYWORDS = Fren.FinSet.ofList grammarKeywords) &&
-  decide (spec.lexical.CONTEXTUAL = Fren.FinSet.ofList contextual) &&
-  binaries.all (fun op =>
-    match FrenParse.binaryOperator (spelling op), astBinary op with
-    | some (ast, p), some expected => ast == expected && (p : Int) == precedence op
-    | _, _ => false) &&
-  (punctuators ++ grammarKeywords ++ contextual ++ ["x", "_", "mod?", "div?", "1"]).all (fun s =>
-    (FrenParse.binaryOperator s).isSome == binaries.any (spelling · == s)) &&
-  prefixes.all (fun op => expr? (spelling op ++ " x") == some s!"({spelling op} x)")
+  binaryOps.all (fun op =>
+    match FrenParse.binaryOperator (spellBinary op) with
+    | some (ast, p) => binaryOf ast == op &&
+        (p : Int) == spec.surface.rank (spec.surface.category false .Neg op)
+    | none => false) &&
+  (["(", ")", "{", "}", ",", ":", ":=", "=>", "::", "not", "in", "if", "let", "x", "1", "assume"].all
+    fun s => (FrenParse.binaryOperator s).isNone) &&
+  unaryOps.all fun op => tree? (spellUnary op ++ " x") == some s!"({spellUnary op} x)"
 
 #guard operators_agree
 
-/-- The AST's prefix operator for an `Operator`. -/
-def astUnary : Operator → Option UnaryOp
-  | .Not => some .not | .Negate => some .neg
-  | _ => none
+/-! ## Terminals -/
 
-/-- Whether the parser reads `spelling op` as the binary operator `op`. -/
-def readsBinary (op : Operator) : Bool :=
-  match FrenParse.binaryOperator (spelling op), astBinary op with
-  | some (ast, _), some expected => ast == expected
-  | _, _ => false
+/-- The quoted terminals of a grammar. -/
+partial def G.terminals : G → List String
+  | .term s => [s]
+  | .nt _ => []
+  | .seq gs | .alt gs => gs.flatMap G.terminals
+  | .opt g | .star g | .plus g | .neg g => g.terminals
 
-/-- The parser's precedence for `spelling op`, or 0 if it is no binary operator. -/
-def readLevel (op : Operator) : Int :=
-  ((FrenParse.binaryOperator (spelling op)).map fun (_, p) => (p : Int)).getD 0
+/-- The nonterminals that a grammar names. -/
+partial def G.nonterminals : G → List String
+  | .term _ => []
+  | .nt n => [n]
+  | .seq gs | .alt gs => gs.flatMap G.nonterminals
+  | .opt g | .star g | .plus g | .neg g => g.nonterminals
 
-/-- Whether the parser reads `spelling op` before an operand as the prefix operator `op`. -/
-def readsUnary (op : Operator) : Bool :=
-  match FrenParse.parseExpression ⟨0⟩ (spelling op ++ " x") with
-  | .ok { root := .expression (.unary _ u (.name _)), .. } => some u == astUnary op
-  | _ => false
+/-- `syntax.expression.terminals`: the grammar's punctuator terminals are
+exactly `PUNCTUATORS`, its keyword terminals exactly `GRAMMAR_KEYWORDS`, and
+its other terminals exactly `CONTEXTUAL`; and each binary operator's spelling
+is a terminal of the grammar rule named by its category (`CompareOp` for a
+comparison, `SameLineMod` for `mod`). -/
+def terminalsAgree (md : String) : Bool :=
+  let rules := grammarOf md
+  let ts := (rules.flatMap fun (_, g) => g.terminals).eraseDups
+  let words := ts.filter fun t => t.toList.all Char.isAlpha
+  decide (spec.lexical.PUNCTUATORS = Fren.FinSet.ofList (ts.filter fun t => !(t.toList.all Char.isAlpha))) &&
+  decide (spec.surface.GRAMMAR_KEYWORDS = Fren.FinSet.ofList (words.filter fun w => FrenParse.keywords.contains w)) &&
+  decide (spec.surface.CONTEXTUAL = Fren.FinSet.ofList (words.filter fun w => !(FrenParse.keywords.contains w))) &&
+  binaryOps.all fun op =>
+    let cat : Category := spec.surface.category false .Neg op
+    let ruleName : String := match cat with
+      | .Iff => "Iff" | .Or => "Or" | .And => "And" | .Comparison => "CompareOp"
+      | .Sum => "Sum" | .Product => "Product" | _ => ""
+    match rules.lookup ruleName with
+    | some g => g.terminals.contains (spellBinary op) || (op == .Mod && g.nonterminals.contains "SameLineMod")
+    | none => false
 
---@ reference: syntax.operator.table
-/- The parser's own table and prefix reading, bound to the chapter's operator
-table for every operator. `FrenParse` does not expose these definitions'
-bodies to the kernel, so each operator's case is evaluated by the compiled
-parser (`native_decide`). -/
-impl operator_reading: operator_reading for (op : Operator) {
-  op := op, unary? := readsUnary op, binary? := readsBinary op, level := readLevel op
-} by
-  intro op _
-  cases op <;> simp [fren_spec] <;> native_decide
+/-! ## The chapter's examples -/
 
-/-- The tree that `grouping` gives `x first y second z` (or `first y second z`). -/
-def groupingShape (first second : Operator) : Option String :=
-  let (a, b) := (spelling first, spelling second)
-  let left := if isPrefix first then s!"({a} y)" else s!"({a} x y)"
-  match spec.grammar.grouping first second with
-  | .Right => some (if isPrefix first then s!"({a} ({b} y z))" else s!"({a} x ({b} y z))")
-  | .Left => some s!"({b} {left} z)"
-  | .Rejected => none
+/-- The line of a byte offset, from 1. -/
+def lineOf (text : String) (offset : Nat) : Nat :=
+  ((String.fromUTF8! (text.toUTF8.extract 0 offset)).toList.filter (· == '\n')).length + 1
 
-def groupingSource (first second : Operator) : String :=
-  (if isPrefix first then "" else "x ") ++ s!"{spelling first} y {spelling second} z"
+/-- Each `fren2 rejected` block is rejected with the diagnostic that its
+`--~ error:` annotation states, on the annotated line. -/
+def rejectedAgree (md : String) : Option String := Id.run do
+  for (line, body) in blocks md "fren2 rejected" do
+    let lines := body.splitOn "\n"
+    let some (k, note) := lines.zipIdx.findSome? (fun (l, k) =>
+        match l.splitOn "--~ error: " with | [_, msg] => some (k + 1, msg) | _ => none)
+      | return some s!"Syntax.md:{line}: a rejected block has no `--~ error:` annotation"
+    match FrenParse.parseFile ⟨0⟩ body with
+    | .ok _ => return some s!"Syntax.md:{line}: the parser accepts a rejected block"
+    | .error f =>
+      unless lineOf body f.diagnostic.span.start == k && "expected " ++ f.diagnostic.expected == note do
+        return some s!"Syntax.md:{line}: the parser says {f.diagnostic.render} on line {lineOf body f.diagnostic.span.start}"
+  return none
 
---@ reference: syntax.operator.grouping
---@ reference: syntax.operator.non-associative
---@ reference: syntax.expression.extent
-/-- `syntax.operator.grouping`, `syntax.operator.non-associative` and
-`syntax.expression.extent`: for every operator followed by every binary
-operator, the parser builds the tree that `grouping` gives, or rejects the
-text when it says `Rejected`; for every operator followed by every prefix
-operator, the parser accepts exactly what `admitted?` admits. -/
-def groupings_agree : Bool :=
-  operators.all (fun first =>
-    binaries.all (fun second => expr? (groupingSource first second) == groupingShape first second) &&
-    prefixes.all (fun second =>
-      let source := (if isPrefix first then "" else "x ") ++ s!"{spelling first} {spelling second} y"
-      acceptsExpr source ==
-        spec.grammar.«admitted?» second (spec.grammar.operand_level first))) &&
-  -- The longest extent of an `if`'s else branch and of a `let` body.
-  expr? "a + if b then c else d + e" == some "(+ a (if b c (+ d e)))" &&
-  expr? "x * let y := 1 in y + 2" == none &&
-  expr? "(let y := 1 in y + 2) * x" == some "(* (paren (let y 1 (+ y 2))) x)" &&
-  expr? "(a < b) <= c" == some "(<= (paren (< a b)) c)" &&
-  expr? "a iff (b iff c)" == some "(iff a (paren (iff b c)))" &&
-  -- The chapter's operator examples.
-  expr? "base + 5 * 2" == some "(+ base (* 5 2))" && expr? "base - 5 - 2" == some "(- (- base 5) 2)" &&
-  expr? "-x * 2" == some "(* (- x) 2)" && expr? "not x = y and true" == some "(and (not (= x y)) true)" &&
-  expr? "a or b and c iff d" == some "(iff (or a (and b c)) d)" && expr? "- - x" == some "(- (- x))" &&
-  expr? "a and b < c < d" == none && expr? "not a < b < c" == none &&
-  expr? "a iff b iff c and d" == none &&
-  expr? "a + not b" == none && expr? "-not b" == none && expr? "not a and b" == some "(and (not a) b)"
+/-- Each line `lhs -- rhs` of a `fren2 groups` block has the same tree on
+both sides: the parser groups `lhs` as `rhs` writes with parentheses. -/
+def groupsAgree (md : String) : Option String := Id.run do
+  for (line, body) in blocks md "fren2 groups" do
+    for l in body.splitOn "\n" do
+      match l.splitOn " -- " with
+      | [lhs, rhs] =>
+        unless (tree? lhs).isSome && tree? lhs == tree? rhs do
+          return some s!"Syntax.md:{line}: `{lhs}` does not group as `{rhs}`"
+      | _ => return some s!"Syntax.md:{line}: `{l}` is not `lhs -- rhs`"
+  return none
 
-#guard groupings_agree
+/-- Every alternative of every grammar rule that the chapter's `fren2` blocks
+use, as `(rule, index)`. -/
+def coveredBy (md : String) : List (String × Nat) :=
+  let rules := grammarOf md
+  (blocks md "fren2").flatMap fun (_, body) =>
+    match run rules (toks body) (.nt "File") 0 with
+    | some (_, used) => used
+    | none => []
 
-/-- A text that places `e` at `place`. -/
-def placed (place : Place) (e : String) : String :=
-  match place with
-  | .Full => s!"fn f(w: Int): Int := {e}"
-  | .Member => s!"expect g(w: Int) \{ expect m: {e} }"
-  | .Definition => s!"fn f(w: Int): Int := let v := {e} in v"
-  | .ArmBody => s!"fn f(w: Int): Int := match w \{ E::A => {e} }"
-  | .Scrutinee => s!"fn f(w: Int): Int := match {e} \{ E::A => 1 }"
+/-- The alternatives of each rule whose body is an alternation, or `(rule, 0)`. -/
+def alternatives (md : String) : List (String × Nat) :=
+  (grammarOf md).flatMap fun (n, g) => match g with
+    | .alt options => (List.range options.length).map (n, ·)
+    | _ => [(n, 0)]
 
---@ reference: syntax.expression.places
-/-- `syntax.expression.places`: at each place, the parser accepts a bare
-`let`, each prefix operator and each binary operator exactly as
-`place_level`, `let_admitted?` and `admitted?` say, and always accepts a
-`Primary`. -/
-def places_agree : Bool :=
-  [Place.Full, .Member, .Definition, .ArmBody, .Scrutinee].all fun place =>
-    let level := spec.grammar.place_level place
-    accepts (placed place "let u := w in u") == spec.grammar.«let_admitted?» level &&
-    operators.all (fun op =>
-      let e := if isPrefix op then s!"{spelling op} w" else s!"w {spelling op} w"
-      accepts (placed place e) == spec.grammar.«admitted?» op level) &&
-    ["w", "1", "true", "E::A", "g(w)", "(w + 1)", "if w then w else w", "match w { E::A => w }"].all
-      (accepts <| placed place ·)
+/-- `syntax.tree.productions`: the trees of the productions, on examples of
+each, and of every `fren2 groups` line. -/
+def treesAgree (md : String) : Option String :=
+  let expected : List (String × String) :=
+    [("-1", "(- 1)"), ("not true", "(not true)"), ("007", "7"), ("A::B::c", "A::B::c"),
+     ("((x))", "x"), ("f(g(x), (y))", "f(g(x), y)"), ("a - b - c", "((a - b) - c)"),
+     ("if b then let x := 1 in x else 2", "(if b then (let x := 1 in x) else 2)"),
+     ("match f(l) { E::A => not a, E::B => 1, }", "(match f(l) {E::A => (not a), E::B => 1})"),
+     ("match l {}", "(match l {})")]
+  match expected.find? fun (s, t) => tree? s != some t with
+  | some (s, _) => some s!"the tree of `{s}` is {tree? s}"
+  | none =>
+    let files : List (String × List String) :=
+      [("pub mod a::b\nenum E { A, B, }", ["pub mod a::b", "enum E A,B"]),
+       ("fn f(a: Bool, b: Int, c: E, d: Int::T, e: A::Int, q?): Bool := (a)",
+         ["fn f(a:Bool!,b:Int!,c:E,d:Int::T,e:A::Int,q?):Bool! a"]),
+       ("expect e(x: Int,) { assume a: x > 0 expect b: x >= 0 }",
+         ["expect e(x:Int!) assume a (x > 0);expect b (x >= 0)"])]
+    match files.find? fun (s, t) => decls? s != some t with
+    | some (s, _) => some s!"the trees of `{s}` are {decls? s}"
+    | none => groupsAgree md
 
-#guard places_agree
-
-/-- A list of `items` items of `list`, then a comma if `trailing`. -/
-def listSource (list : Separated) (items : Nat) (trailing : Bool) : String :=
-  let (item, wrap) : String × (String → String) := match list with
-    | .FunctionParameters => ("x: Int", fun s => s!"fn f({s}): Int := 1")
-    | .ExpectationParameters => ("x: Int", fun s => s!"expect e({s}) \{}")
-    | .Arguments => ("x", fun s => s!"fn f(x: Int): Int := g({s})")
-    | .Variants => ("A", fun s => s!"enum E \{ {s} }")
-    | .Arms => ("E::A => 1", fun s => s!"fn f(x: Int): Int := match x \{ {s} }")
-  let items := ", ".intercalate (List.replicate items item)
-  wrap (items ++ if trailing then "," else "")
-
---@ reference: syntax.list.policy
-/-- `syntax.list.policy`: each list accepts zero, one, two or three items,
-with or without a trailing comma, exactly as `accepts?` says. -/
-def lists_agree : Bool :=
-  [Separated.FunctionParameters, .ExpectationParameters, .Arguments, .Variants, .Arms].all fun list =>
-    [0, 1, 2, 3].all fun items => [false, true].all fun trailing =>
-      accepts (listSource list items trailing) == spec.grammar.«accepts?» list items trailing
-
-#guard lists_agree
-
-def typeShape : Ty → String
-  | .bool _ => "Bool!"
-  | .int _ => "Int!"
-  | .named p => "".intercalate (p.tokens.map (·.text))
-
-/-- The declarations of a file, as their kinds and names. -/
-def declarations? (source : String) : Option (List String) :=
-  match FrenParse.parseFile ⟨0⟩ source with
-  | .ok { root := .declarations ds, .. } => some <| ds.toList.map fun
-    | .moduleDecl v _ p => s!"{if v.isSome then "pub " else ""}mod " ++ "".intercalate (p.tokens.map (·.text))
-    | .enumDecl v _ n _ vs _ _ =>
-      s!"{if v.isSome then "pub " else ""}enum {n.text} " ++ ",".intercalate (vs.toList.map (·.text))
-    | .function v _ n ps _ r _ b =>
-      let param : Parameter → String := fun p =>
-        p.name.text ++ (p.annotation.map (fun (_, t) => ":" ++ typeShape t)).getD ""
-      s!"{if v.isSome then "pub " else ""}fn {n.text}(" ++ ",".intercalate (ps.values.toList.map param) ++
-        s!"):{typeShape r} {shape b}"
-    | .expectation _ n ps _ ms _ =>
-      s!"expect {n.text}/{ps.values.size} " ++
-        ";".intercalate (ms.toList.map fun m => s!"{m.keyword.text} {m.label.text} {shape m.body}")
-  | _ => none
-
---@ reference: syntax.notation.trivia-sensitive
---@ reference: syntax.file.syntax
---@ reference: syntax.file.entry
---@ reference: syntax.path.syntax
---@ reference: syntax.path.contextual
---@ reference: syntax.type.syntax
---@ reference: syntax.module.syntax
---@ reference: syntax.enumeration.syntax
---@ reference: syntax.function.syntax
---@ reference: syntax.function.parameter
---@ reference: syntax.expectation.syntax
---@ reference: syntax.expression.syntax
---@ reference: syntax.literal.syntax
---@ reference: syntax.call.syntax
---@ reference: syntax.if.syntax
---@ reference: syntax.let.syntax
---@ reference: syntax.match.syntax
---@ reference: syntax.remainder.line
-/-- The grammar's productions, each with texts that it accepts, with their
-trees, and texts that it rejects. -/
-def productions_agree : Bool :=
-  -- `syntax.file.syntax` and `syntax.file.entry`
-  declarations? "" == some [] && declarations? " -- only trivia\r\n" == some [] &&
-  expr? "" == none && expr? "-- only trivia" == none &&
-  expr? "x y" == none && declarations? "fn f(x: Int): Int := x x" == none &&
-  declarations? "mod m pub mod n" == some ["mod m", "pub mod n"] &&
-  -- `syntax.path.syntax`
-  expr? "A::B::c" == some "A::B::c" && expr? "A::" == none && expr? "::a" == none &&
-  -- `syntax.path.contextual`
-  declarations? "enum E { Int, Bool, not, assume, true, false }" ==
-    some ["enum E Int,Bool,not,assume,true,false"] &&
-  declarations? "fn assume(not: Int, true: Int): Int := assume" == some ["fn assume(not:Int!,true:Int!):Int! assume"] &&
-  expr? "E::true" == some "E::true" && expr? "true::x" == none && expr? "not::x" == none &&
-  expr? "Bool::x" == some "Bool::x" && expr? "match x { true::A => 1 }" == some "(match x (true::A 1))" &&
-  expr? "proc" == none && expr? "forall" == none && expr? "where" == none &&
-  -- `syntax.type.syntax`
-  declarations? "fn f(a: Bool, b: Int, c: E, d: Int::T, e: A::Int): Bool := a" ==
-    some ["fn f(a:Bool!,b:Int!,c:E,d:Int::T,e:A::Int):Bool! a"] &&
-  declarations? "fn f(x: Int::): Int := 1" == none &&
-  -- `syntax.module.syntax`
-  declarations? "pub mod a::b" == some ["pub mod a::b"] && declarations? "mod" == none &&
-  -- `syntax.enumeration.syntax`
-  declarations? "pub enum E { A, B, }" == some ["pub enum E A,B"] &&
-  declarations? "enum E { A B }" == none && declarations? "enum E { A::B }" == none &&
-  -- `syntax.function.syntax` and `syntax.function.parameter`
-  declarations? "fn f(b?): Bool := b?" == some ["fn f(b?):Bool! b?"] &&
-  declarations? "fn f(b?: Int): Int := 1" == some ["fn f(b?:Int!):Int! 1"] &&
-  declarations? "fn f(b): Bool := b" == none && declarations? "fn f(x: Int) := x" == none &&
-  declarations? "fn f(x: Int): Int" == none && declarations? "pub fn f(x: Int): Int := " == none &&
-  -- `syntax.expectation.syntax`
-  declarations? "expect e() {}" == some ["expect e/0 "] &&
-  declarations? "expect e(x: Int,) { assume a: x > 0 expect b: x >= 0 }" ==
-    some ["expect e/1 assume a (> x 0);expect b (>= x 0)"] &&
-  declarations? "pub expect e() {}" == none && declarations? "expect e() { ensure a: true }" == none &&
-  declarations? "expect e() { expect a true }" == none &&
-  -- `syntax.notation.trivia-sensitive` and `syntax.call.syntax`
-  ([" ", "\t", "\n", "\r\n", " -- c\n"].all fun gap =>
-    expr? ("f" ++ gap ++ "(x)") == none && expr? ("A::f" ++ gap ++ "(x)") == none &&
-    declarations? ("fn f" ++ gap ++ "(x: Int): Int := x") == none &&
-    declarations? ("expect e" ++ gap ++ "() {}") == none &&
-    expr? ("1 +" ++ gap ++ "(x)") == some "(+ 1 (paren x))") &&
-  expr? "f(g(x), h(y))" == some "(call f (call g x) (call h y))" && expr? "unknown(x)" == some "(call unknown x)" &&
-  expr? "f(x)(y)" == none && expr? "(f)(x)" == none && expr? "1(x)" == none &&
-  expr? "f(let x := 1 in x)" == some "(call f (let x 1 x))" &&
-  -- `syntax.literal.syntax`
-  expr? "-1" == some "(- 1)" && expr? "true" == some "true" && expr? "x < -1" == some "(< x (- 1))" &&
-  -- `syntax.if.syntax`
-  expr? "if b then 1 else 2" == some "(if b 1 2)" && expr? "if b then 1" == none &&
-  expr? "if b then let x := 1 in x else 2" == some "(if b (let x 1 x) 2)" &&
-  -- `syntax.let.syntax`
-  expr? "let x := 1 in let y := x in y" == some "(let x 1 (let y x y))" &&
-  expr? "let x := a iff b in x" == some "(let x (iff a b) x)" &&
-  expr? "a and (let x := true in x)" == some "(and a (paren (let x true x)))" &&
-  expr? "a and let x := true in x" == none && expr? "let x = 1 in x" == none &&
-  -- `syntax.match.syntax`
-  expr? "match l {}" == some "(match l)" && expr? "match l { E::A => 1, }" == some "(match l (E::A 1))" &&
-  expr? "match l { A => 1 }" == none && expr? "match l { E::A => 1 E::B => 2 }" == none &&
-  expr? "match l { , }" == none && expr? "match f(l) { E::A => not a }" == some "(match (call f l) (E::A (not a)))" &&
-  -- `syntax.remainder.line`
-  (["\n", "\r\n", " -- c\n", "\n-- c\n"].all fun gap =>
-    declarations? ("fn f(x: Int): Int := x" ++ gap ++ "mod m") == some ["fn f(x:Int!):Int! x", "mod m"] &&
-    expr? ("x" ++ gap ++ "mod 2") == none && expr? ("(x" ++ gap ++ "mod 2)") == none) &&
-  expr? "x mod\n2" == some "(mod x 2)" && expr? "x\rmod 2" == some "(mod x 2)" &&
-  declarations? "fn f(x: Int): Int := x mod m" == some ["fn f(x:Int!):Int! (mod x m)"]
-
-#guard productions_agree
-
-/-- Nesting has no fixed bound: deep parentheses, prefixes and chains parse. -/
-def nesting_agrees : Bool :=
-  let n := 300
-  acceptsExpr (String.ofList (List.replicate n '(') ++ "x" ++ String.ofList (List.replicate n ')')) &&
-  acceptsExpr (" ".intercalate (List.replicate n "not") ++ " x") &&
-  acceptsExpr (" + ".intercalate (List.replicate n "x")) &&
-  acceptsExpr ("".intercalate (List.replicate n "f(") ++ "x" ++ String.ofList (List.replicate n ')'))
-
-#guard nesting_agrees
-
--- Each `fren2` block of the chapter is accepted as a file, and each
--- `fren2 rejected` block is rejected, by the actual parser.
+open Lean in
 #eval show IO Unit from do
-  let md ← IO.FS.readFile ("src" / "Spec" / "Language" / "Syntax.md")
-  let mut seen := 0
-  for block in Fren.Core.fencedBlocks md do
-    let text := "\n".intercalate block.body.toList
-    if block.info == "fren2" || block.info == "fren2 rejected" then
-      seen := seen + 1
-      unless accepts text == (block.info == "fren2") do
-        throw <| IO.userError s!"Syntax.md:{block.line}: the parser does not agree with `{block.info}`"
-  unless seen ≥ 8 do throw <| IO.userError s!"only {seen} example blocks found in Syntax.md"
+  let md ← IO.FS.readFile chapterPath
+  if let some e := grammarAgrees md nearExpressions then throw <| IO.userError e
+  unless terminalsAgree md do throw <| IO.userError "the grammar's terminals differ from the chapter's sets"
+  if let some e := rejectedAgree md then throw <| IO.userError e
+  if let some e := treesAgree md then throw <| IO.userError e
+  -- `fren2` blocks parse; the grammar's every alternative is used by one.
+  for (line, body) in blocks md "fren2" do
+    unless parserAccepts .file body do throw <| IO.userError s!"Syntax.md:{line}: the parser rejects a `fren2` block"
+  let missing := (alternatives md).filter fun a => a.1 != "ExpressionEntry" && !(coveredBy md).contains a
+  unless missing.isEmpty do
+    throw <| IO.userError s!"the `fren2` examples use no match of {missing}"
+
+-- Named results, for the chapter's status lines: each re-reads the chapter.
+def grammar_agrees : IO Bool := return (grammarAgrees (← IO.FS.readFile chapterPath) nearExpressions).isNone
+def terminals_agree : IO Bool := return terminalsAgree (← IO.FS.readFile chapterPath)
+def trees_agree : IO Bool := return (treesAgree (← IO.FS.readFile chapterPath)).isNone
+def examples_cover : IO Bool := do
+  let md ← IO.FS.readFile chapterPath
+  return (alternatives md).all fun a => a.1 == "ExpressionEntry" || (coveredBy md).contains a
 
 end Spec.Language.Syntax

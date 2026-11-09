@@ -1,31 +1,32 @@
 # Lexical structure
 
-A Fren source text is divided, from left to right, into *lexical
-elements*: whitespace, comments, words, numerals and punctuators. Words,
-numerals and punctuators are *tokens*, which the [grammar](Syntax.md)
-reads. Whitespace and comments are *trivia*, which it skips. Text that
-starts no lexical element is *rejected text*, and a source text that
-contains any is not a Fren program.
+Lexing divides a Fren source text, from left to right, into pieces:
+whitespace, comments, words, numerals, punctuators and rejected text. The
+[grammar](Syntax.md) reads the words, numerals and punctuators, and skips
+whitespace and comments.
 
 Each rule's `status:` line says how it is established: `definition` for a
-rule that only defines its terms, `smt` for a rule whose Fren block the
-checker proves, `lean` for a Lean theorem of the chapter's wrapper, and
-`tested` for an executable check of the wrapper that compares the actual
-lexer with the chapter's definitions.
+rule that only defines its terms; `smt` for a rule whose Fren block the
+checker proves; `lean` for a Lean theorem of the chapter's wrapper;
+`tested` for an executable check of the wrapper, which compares the actual
+lexer with the chapter's definitions on finitely many inputs, every text up
+to a bound and seeded random texts, and proves nothing beyond them; and
+`open` for a rule that nothing checks yet.
 
 ## Source text
 
-Lexing reads a source text one character at a time.
+A source text is what a Fren file or a Fren block of a host document
+contains.
 
 **Syntax**
 
-r[lexical.source.characters]
-status: tested Spec.Language.LexicalStructure.lexer_agrees
-A source text is a sequence of Unicode characters, decoded from UTF-8 as
-`parsing.source.utf8` requires. The lexical rules are stated over these
-characters. Positions in a source text are UTF-8 byte offsets. Only an
-ASCII character can start a lexical element; any other character is part
-of a comment or is rejected text.
+r[lexical.source.encoding]
+status: tested Spec.Language.LexicalStructure.encoding_agrees
+A source text is a sequence of bytes that is valid UTF-8, read as the
+sequence of Unicode characters that it encodes. Bytes that are not valid
+UTF-8 are no source text: they are rejected before lexing, and no
+character replaces them. Positions in a source text are byte offsets into
+its UTF-8 encoding, and a position is never inside a character.
 
 r[lexical.source.line-ending] spec::lexical::line_ending?
 status: tested Spec.Language.LexicalStructure.lexer_agrees
@@ -42,66 +43,29 @@ pub fn line_ending?(remaining: String) :=
     remaining.starts_with?("\n") or remaining.starts_with?("\r\n")
 ```
 
-## Lexical elements
+## Lexical classes
 
-Lexing divides a source text into pieces, each of one class.
+Each piece that lexing produces, but rejected text, belongs to one class.
 
 **Syntax**
 
-r[lexical.element.syntax]
+r[lexical.class.definition] spec::lexical::in_class?
 status: definition
-The lexical elements have these forms. A quoted string stands for its
-characters, `..` for a range of characters, `U+` and four hexadecimal
-digits for the character of that code point, and the other notation is
-that of the [grammar](Syntax.md#notation).
+The *lexical classes* are whitespace, comments, words, numerals and
+punctuators, and `in_class?` states which texts belong to each:
 
-```text
-LexicalElement    ::= Whitespace | Comment | Word | Numeral | Punctuator
-Whitespace        ::= U+0020 | U+0009 | U+000A | U+000D
-Comment           ::= "--" CommentCharacter*
-CommentCharacter  ::= any character but LF, and but a CR that an LF follows
-Word              ::= WordStart WordCharacter* "?"?
-WordStart         ::= "A".."Z" | "a".."z" | "_"
-WordCharacter     ::= WordStart | Digit
-Numeral           ::= Digit+
-Digit             ::= "0".."9"
-Punctuator        ::= "(" | ")" | "{" | "}" | "," | ":" | "+" | "-" | "*"
-                    | "=" | "<" | ">" | "<=" | ">=" | "!=" | ":=" | "=>" | "::"
-```
+- *whitespace* is a single space, tab (U+0009), LF or CR;
+- a *comment* is `--` and then any characters but LF;
+- a *word* is an ASCII letter or `_`, then any number of ASCII letters,
+  digits and `_`, then at most one `?`;
+- a *numeral* is one or more ASCII digits;
+- a *punctuator* is one of `PUNCTUATORS`.
 
-r[lexical.element.partition]
-status: tested Spec.Language.LexicalStructure.lexer_agrees
-Lexing divides the whole source text into consecutive, nonempty pieces,
-each a lexical element or rejected text, with no gaps and no overlaps. The
-pieces, in order, spell the source text exactly.
-
-r[lexical.element.class] spec::lexical::element_class
-status: tested Spec.Language.LexicalStructure.lexer_agrees
-The class of the piece that starts at a position is decided by the first
-one or two characters there, in this order: a whitespace character starts
-whitespace; `--` starts a comment; a letter or `_` starts a word; a digit
-starts a numeral; `<-` starts rejected text; a punctuator's first one or
-two characters start a punctuator; and any other character starts
-rejected text.
-
-r[lexical.element.longest] spec::lexical::element_ends?
-status: tested Spec.Language.LexicalStructure.lexer_agrees
-A piece is the shortest nonempty text from its start after which
-`element_ends?` holds of its class. For words, numerals, comments and
-punctuators this is the longest text of that class, the rule of *maximal
-munch*: `next_step` is one word, `<=` one punctuator and `123` one
-numeral.
-
-r[lexical.element.rejected]
-status: tested Spec.Language.LexicalStructure.lexer_agrees
-Rejected text is a single character that starts no lexical element, such
-as `/`, `!`, `?`, `.`, `;` or a character outside ASCII, or the two
-characters `<-`, which are rejected together: `x<-1` does not read
-as `x < -1`. No parse of a source text that contains rejected text
-succeeds (`parsing.complete`).
+Words, numerals and punctuators are *tokens*. Whitespace and comments are
+*trivia*.
 
 ```fren
-pub enum Class { Whitespace, Comment, Word, Numeral, Punctuator, Rejected }
+pub enum Class { Whitespace, Comment, Word, Numeral, Punctuator }
 
 pub const WHITESPACE: Set<String> := {" ", "\t", "\n", "\r"}
 
@@ -126,38 +90,66 @@ pub const PUNCTUATORS: Set<String> := {
     "::",
 }
 
-pub fn element_class(remaining: String): Class :=
-    if remaining.at(0) in WHITESPACE then Class::Whitespace
-    else if remaining.starts_with?("--") then Class::Comment
-    else if remaining.at(0).matches?(r"[A-Za-z_]") then Class::Word
-    else if remaining.at(0).matches?(r"[0-9]") then Class::Numeral
-    else if remaining.starts_with?("<-") then Class::Rejected
-    else if remaining.slice(0, 2) in PUNCTUATORS or remaining.at(0) in PUNCTUATORS then Class::Punctuator
-    else Class::Rejected
-
--- Whether a piece of class `kind` whose text so far is `lexeme` ends
--- before `remaining`, the source text after it. The `++` puts one character
--- after a punctuator, outside the decidable core; the wrapper compares this
--- function with the lexer on all texts of up to three characters instead.
-set_option fren.lint.undecidable "allow" in
-pub fn element_ends?(kind: Class, lexeme: String, remaining: String) := match kind {
-    Class::Whitespace => true,
-    Class::Comment => remaining = "" or line_ending?(remaining),
-    Class::Word => lexeme.ends_with?("?") or not remaining.at(0).matches?(r"[A-Za-z0-9_?]"),
-    Class::Numeral => not remaining.at(0).matches?(r"[0-9]"),
-    Class::Punctuator =>
-        remaining = "" or lexeme.len = 2 or not (lexeme ++ remaining.at(0)) in PUNCTUATORS,
-    Class::Rejected => not (lexeme = "<" and remaining.starts_with?("-")),
+pub fn in_class?(kind: Class, text: String) := match kind {
+    Class::Whitespace => text in WHITESPACE,
+    Class::Comment => text.matches?("--[^\n]*"),
+    Class::Word => text.matches?(r"[A-Za-z_][A-Za-z0-9_]*[?]?"),
+    Class::Numeral => text.matches?(r"[0-9]+"),
+    Class::Punctuator => text in PUNCTUATORS,
 }
 ```
 
-r[lexical.trivia]
-status: tested Spec.Language.Syntax.productions_agree
-Whitespace and comments are trivia. Trivia may come before the first
-token, after the last, and between any two tokens, and the grammar does
-not read it. The grammar depends on trivia only where the
-[Syntax](Syntax.md) chapter says so: a `(` that must touch the name
-before it, and a `mod` after a line ending.
+## Pieces
+
+Lexing reads the longest text of some class at each position.
+
+**Syntax**
+
+r[lexical.piece.longest]
+status: tested Spec.Language.LexicalStructure.lexer_agrees
+Lexing divides the whole source text into consecutive, nonempty pieces,
+with no gaps and no overlaps, which spell the source text exactly. From
+each position, the next piece is the longest nonempty text there that
+belongs to a lexical class, and it has that class, the rule of *maximal
+munch*: `next_step` is one word, `<=` one punctuator, `123` one numeral
+and `--` a comment rather than two punctuators. There are two exceptions,
+stated next.
+
+r[lexical.piece.comment-end]
+status: tested Spec.Language.LexicalStructure.lexer_agrees
+A comment ends before a line ending: when the longest comment ends with a
+CR that an LF follows, the comment does not include that CR, which is
+whitespace.
+
+r[lexical.piece.rejected]
+status: tested Spec.Language.LexicalStructure.lexer_agrees
+Where `<-` starts, those two characters are one piece of *rejected text*.
+Where no text of any class starts, the piece is the next character alone,
+and is rejected text too: `/`, `!` without `=`, `?` after a non-word,
+`.`, `;`, and any character outside ASCII outside a comment. No parse of
+a source text that contains rejected text succeeds.
+
+> **Rationale:** `<-` is a Lean token, which today's Fren, read by Lean,
+> cannot accept as `<` then `-`. Rejecting it as one piece keeps `x<-1`
+> from meaning `x < -1` in one front end and an error in the other; write
+> `x < -1`.
+
+**Properties**
+
+r[lexical.class.disjoint] spec::lexical::classes::{disjoint, punctuator_extension}
+status: smt
+No text belongs to two classes: the class of each piece is determined.
+A punctuator of two characters, other than `!=`, extends one of one
+character: the punctuators, `--` and `<-` are the only places where one
+character of lookahead decides between a short and a long piece.
+
+```fren
+expect classes(a: Class, b: Class, text: String) {
+    expect disjoint: when a != b and in_class?(a, text), not in_class?(b, text)
+    expect punctuator_extension: when text in PUNCTUATORS and text.len = 2 and text != "!=",
+        text.at(0) in PUNCTUATORS
+}
+```
 
 **Examples**
 
@@ -168,21 +160,21 @@ f(x)<=-1 -- note
 The pieces of this line are the word `f`, the punctuator `(`, the word
 `x`, the punctuators `)`, `<=` and `-`, the numeral `1`, a space, and the
 comment `-- note`. In `x<-1` the pieces are `x`, the rejected text `<-`
-and `1`.
+and `1`. `x--1` is the word `x` then a comment. `/-` is the rejected text
+`/` then the punctuator `-`: there are no block comments.
 
-## Comments
+## Trivia
 
-Comments are notes for the reader, which the grammar skips.
+The grammar reads tokens; trivia separates them.
 
 **Syntax**
 
-r[lexical.comment.extent]
-status: tested Spec.Language.LexicalStructure.lexer_agrees
-`--` starts a comment, which runs up to the next line ending, not
-including it, or to the end of the source text. A comment may contain any
-character. There are no block comments: `/-` is the rejected text `/`
-then the punctuator `-`. `--` always starts a comment: `x--1` is the
-word `x` then a comment.
+r[lexical.trivia]
+status: definition
+Trivia may come before the first token, after the last, and between any
+two tokens. The grammar does not read trivia, except where the
+[Syntax](Syntax.md#notation) chapter says so: a `(` that must touch the
+token before it, and a `mod` after a line ending.
 
 ## Words, identifiers and keywords
 
@@ -190,28 +182,13 @@ Words are the names of a program and its reserved words.
 
 **Syntax**
 
-r[lexical.word.shape]
-status: tested Spec.Language.LexicalStructure.lexer_agrees
-A word is an ASCII letter or `_`, then any number of ASCII letters, digits
-and `_`, then at most one `?`, which ends it. `_` alone is a word. In
-`a?b` the word `a?` ends at its `?`, and `b` is a second word.
-
-**Legality rules**
-
-r[lexical.keyword.set] spec::lexical::keyword?
-status: tested Spec.Language.LexicalStructure.keywords_agree
+r[lexical.keyword.set] spec::lexical::reserved
+status: lean Spec.Language.LexicalStructure.reserved
 A word is a *keyword* if it is one of `KEYWORDS`, and an *identifier*
-otherwise. No word is both. A keyword is never an identifier, even where
-the grammar has no construct that uses it.
-
-r[lexical.keyword.shape] spec::lexical::keyword_shape::{lowercase, grammar, contextual}
-status: smt
-Every keyword is lowercase ASCII letters, and therefore a word, and none ends
-in `?`: `if?` and `match?` are identifiers. The keywords that the grammar
-uses, `GRAMMAR_KEYWORDS`, are keywords. The *contextual words*,
-`CONTEXTUAL`, are identifiers, not keywords, which the grammar gives a
-meaning at certain positions (see
-[Syntax](Syntax.md#names-and-paths)).
+otherwise. A keyword is never an identifier, even where the grammar has no
+construct that uses it. A word that ends in `?` is never a keyword: `if?`
+and `true?` are identifiers. `true`, `false` and `not` are keywords: no
+declaration, parameter, binder, label or path segment is named by one.
 
 ```fren
 pub const KEYWORDS: Set<String> := {
@@ -252,34 +229,30 @@ pub const KEYWORDS: Set<String> := {
     "let",
     "where",
     "table",
+    "true",
+    "false",
+    "not",
 }
 
-pub const GRAMMAR_KEYWORDS: Set<String> := {
-    "mod",
-    "pub",
-    "enum",
-    "fn",
-    "expect",
-    "iff",
-    "and",
-    "or",
-    "div",
-    "in",
-    "if",
-    "then",
-    "else",
-    "match",
-    "let",
-}
+pub proc reserved(word: String): (keyword?) { ensure rule: keyword? iff word in KEYWORDS }
+```
 
-pub const CONTEXTUAL: Set<String> := {"assume", "not", "true", "false", "Bool", "Int"}
+> **Rationale:** Most keywords name constructs of today's Fren that the
+> grammar of [Syntax](Syntax.md) does not have yet, such as `struct`,
+> `proc`, `forall` and `table`. They are reserved now so that a program
+> keeps its meaning when those constructs arrive, and so that a text reads
+> alike in both front ends, which today's Fren, which reserves the same
+> words, requires.
 
-pub fn keyword?(word: String) := word in KEYWORDS
+**Properties**
 
-expect keyword_shape(word: String) {
-    expect lowercase: when keyword?(word), word.matches?(r"[a-z]+")
-    expect grammar: when word in GRAMMAR_KEYWORDS, keyword?(word)
-    expect contextual: when word in CONTEXTUAL, word.matches?(r"[A-Za-z]+") and not keyword?(word)
+r[lexical.keyword.words] spec::lexical::keywords::words
+status: smt
+Every keyword is a word of lowercase ASCII letters.
+
+```fren
+expect keywords(word: String) {
+    expect words: when word in KEYWORDS, word.matches?(r"[a-z]+") and in_class?(Class::Word, word)
 }
 ```
 
@@ -291,36 +264,8 @@ Numerals write natural numbers.
 
 r[lexical.numeral.value]
 status: tested Spec.Language.LexicalStructure.numerals_agree
-A numeral is a run of ASCII digits as long as possible, and denotes the
-natural number that it writes in decimal, without bound. Leading zeros
-are allowed: `007` denotes 7. A numeral has no sign, base prefix, digit
-separator, fraction or exponent: a negative number is written with unary
-minus, `0x1F` is the numeral `0` then the word `x1F`, and `1.5` is the
-numeral `1`, the rejected text `.` and the numeral `5`.
-
-## Punctuators
-
-Punctuators are the operators and delimiters of the grammar.
-
-**Syntax**
-
-r[lexical.punctuator.longest]
-status: tested Spec.Language.LexicalStructure.lexer_agrees
-A punctuator is one of `PUNCTUATORS`, and is two characters where its
-first two characters are one: `a<=b` has the punctuator `<=`, and `::=` is
-`::` then `=`. `!` is a punctuator only as the first character of `!=`;
-alone it is rejected text. `--` starts a comment, and `<-` is rejected
-text, not two punctuators.
-
-**Legality rules**
-
-r[lexical.punctuator.shape] spec::lexical::punctuator_shape
-status: smt
-Every punctuator is one or two characters, and neither `--` nor `<-` is
-one.
-
-```fren
-expect punctuator_shape(text: String) {
-    expect length: when text in PUNCTUATORS, text.len is 1 | 2 and not text is "--" | "<-"
-}
-```
+A numeral denotes the natural number that it writes in decimal, without
+bound. Leading zeros are allowed: `007` denotes 7. A numeral has no sign,
+base prefix, digit separator, fraction or exponent: a negative number is
+written with unary minus, `0x1F` is the numeral `0` then the word `x1F`,
+and `1.5` is the numeral `1`, the rejected text `.` and the numeral `5`.
