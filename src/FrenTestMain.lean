@@ -5,6 +5,7 @@ import FrenCli.Run
 import FrenTest.Conformance
 import FrenTest.Expansion
 import FrenTest.ExpansionFuzz
+import FrenTest.Fren2Mir
 import FrenTest.Frontends
 import FrenTest.FuzzFrontends.Checks
 import FrenTest.FuzzFrontends.Corpus
@@ -4527,6 +4528,7 @@ def jobs : IO (Array (List String)) := do
     ++ #[["implPaths"], ["readingBeside"], ["expansionFuzz", "60"], ["resolvedDump"], ["theoriesDump"], ["matchQuerySize"]]
     ++ (#["core", "wait", "own", "wrapper"].map (fun group => ["nativeDiagnostics", group]))
     ++ #[["nativeObservation"]]
+    ++ #[["fren2", "mir"], ["fren2", "mirProperties"]]
 
 /-- Runs a job in this process. -/
 unsafe def runJob (bless : Bool) : List String → IO (Array String)
@@ -4662,7 +4664,7 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     let out ← IO.Process.output { cmd := "python3", args := #["test/Fren2Driver/deadlines.py", ".lake/build/bin/fren2_test"] }
     return if out.exitCode == 0 then #[] else #[s!"Fren2 deadline controls failed:\n{out.stdout}{out.stderr}"]
   | ["fren2", job] => do
-    unless ["resolver", "resolverProperties", "walking", "walkingProperties", "typing", "typingOperators", "typingProperties", "evaluator", "evaluatorProperties", "desugaring"].contains job do
+    unless ["resolver", "resolverProperties", "walking", "walkingProperties", "typing", "typingOperators", "typingProperties", "evaluator", "evaluatorProperties", "desugaring", "mir", "mirProperties"].contains job do
       throw (IO.userError s!"unknown Fren2 job `{job}`")
     let out ← IO.Process.output { cmd := ".lake/build/bin/fren2_test", args := #["--job", job] }
     return if out.exitCode == 0 then #[] else #[s!"Fren2 {job} failed:\n{out.stdout}{out.stderr}"]
