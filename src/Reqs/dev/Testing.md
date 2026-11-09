@@ -2605,9 +2605,15 @@ pub proc heavy_pressure(running: Nat, cores: Nat): (det ratio: CpuRatio, det ove
 -- Missing or malformed fields are None; log readers default a missing
 -- event to Some("job"). Keys are opaque strings here; the Lean kernel
 -- accepts any key type with decidable equality.
-pub proc heavy_prediction_key(command: Option<String>, kind: String): (det uses_command?, det key: String) {
+pub proc heavy_prediction_key(command: Option<String>, kind: String): (
+    det uses_command?,
+    det key: String,
+) {
     out uses_command? := command is Option::Some(_)
-    out key := match command { Option::Some(c) => c, Option::None => kind }
+    out key := match command {
+        Option::Some(c) => c,
+        Option::None => kind,
+    }
 }
 
 pub struct MemoryObservation {

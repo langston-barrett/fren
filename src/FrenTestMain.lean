@@ -2104,16 +2104,11 @@ def renderedSets : Array String := Id.run do
 
 /-! ## Formatting -/
 
-/-- The specs in the repository: its `.fren` and Markdown files, outside
-`.lake`, `.git`, the built book and `.claude`, which may hold other
-worktrees, and the Git-ignored root `out` directory of local receipts. -/
+/-- The tracked `.fren` and Markdown files in the repository. -/
 def specFiles : IO (Array String) := do
-  let skip (p : FilePath) : IO Bool := pure
-    (!([".lake", ".git", "book", ".lun", ".claude"].contains (p.fileName.getD "")) &&
-      p != "./out" && p != "out")
-  let fs ← System.FilePath.walkDir "." skip
-  let fs := fs.filter fun f => f.extension == some "fren" || f.extension == some "md"
-  return (fs.map fun f => ((f.toString.dropPrefix? "./").map (·.toString)).getD f.toString).qsort (· < ·)
+  let out ← IO.Process.output { cmd := "git", args := #["ls-files", "-z", "--", "*.fren", "*.md"] }
+  if out.exitCode != 0 then throw (IO.userError s!"git ls-files failed: {out.stderr}")
+  return (out.stdout.splitOn (String.singleton (Char.ofNat 0))).filter (· != "") |>.toArray.qsort (· < ·)
 
 /-- Fren2 test corpora use their own syntax and fixtures, not Fren1 formatting.
 Keep the directory boundary so similarly named Fren1 paths remain checked. -/
@@ -2744,7 +2739,23 @@ spec that parses is formatted. -/
 def formatting : IO (Array String) := do
   let mut failures := #[]
   let mut relaidSome := false
-  let files := (← specFiles).filter fun f => !fmtFren2Corpus f
+  -- An ignored, unformatted spec must not enter the formatting corpus.
+  IO.FS.createDirAll "plans"
+  let ignored := s!"plans/formatting-regression-{← IO.Process.getPID}.fren"
+  let unformatted := "enum Mode {Heat,Cool}\n"
+  if ← System.FilePath.pathExists ignored then throw (IO.userError s!"{ignored} already exists")
+  let files ← try
+    IO.FS.writeFile ignored unformatted
+    let check ← IO.Process.output { cmd := "git", args := #["check-ignore", "-q", "--", ignored] }
+    if check.exitCode != 0 then throw (IO.userError s!"{ignored} is not ignored")
+    let files ← specFiles
+    if files.contains ignored || !files.contains "test/cli/fmt/check.fren" ||
+        !(FrenCli.Fmt.formatFile ignored unformatted).toOption.any (· != unformatted) then
+      failures := failures.push "formatting corpus does not exclude ignored unformatted specs and include tracked specs"
+    pure files
+  finally
+    IO.FS.removeFile ignored
+  let files := files.filter fun f => !fmtFren2Corpus f
   for f in files do
     let src ← IO.FS.readFile f
     let .ok new := FrenCli.Fmt.formatFile f src | continue
@@ -3477,7 +3488,7 @@ def mutation (paths : Array String) (slice slices : Nat) : IO (Array String) := 
   if slice == 0 then
     -- Empty chapters still reset the item-local fields, although no item runs.
     let empty := #[]
-    let dirty : FrenCli.State := { itemStart := 7, itemSpan := ⟨7, 9⟩ }
+    let dirty : FrenCli.State := { itemStart := 7, itemSpan := ⟨7, 9⟩, literals := #[(.invisibleCharacters, ⟨1, 2⟩, .internal "stale literal")] }
     let clean := FrenCli.elabParsed {} 0 empty (FrenCli.parseText empty)
     let after := FrenCli.elabParsed dirty 0 empty (FrenCli.parseText empty)
     unless same_fields% FrenCli.State clean after except [bound] && clean.bound.size == after.bound.size do
