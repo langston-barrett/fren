@@ -182,8 +182,9 @@ r[types.symbols.well-formed] spec::types::{member?, constructors_ok?, binding_ok
 well formed, every constructor's owner is an enumeration that lists it, and
 every enumeration lists distinct constructors, each bound as a constructor
 of that enumeration. In the figure, `Σ' ⊢ Σ ok` checks the bindings of
-Σ against the whole environment Σ', as `bindings_ok?(Σ', Σ)` does, and
-x ∉ Σ says that Σ binds no x.
+Σ against the whole environment Σ', as `bindings_ok?(Σ', Σ)` does,
+x ∉ Σ says that Σ binds no x, and an enumeration may list no constructors
+(n + 1 = 0).
 
 ```text
                 Σ' ⊢ Σ ok   x ∉ Σ   Σ' ⊢ Δ ok   Σ' ⊢ τ ok
@@ -820,8 +821,8 @@ the chapter's wrapper proves in Lean, by an `impl` bound to the procedure,
 or that is open, with no `impl`; `fren trace` reports which. Each law's
 procedure has one output, `holds?`, so that its evidence is its own. Its own
 checks are set to random testing only so that the solver is not asked for
-an induction; random inputs rarely meet a law's hypotheses, so that testing
-is weak evidence.
+an induction; random inputs rarely meet a law's hypotheses, and that
+testing is not claimed as evidence.
 
 r[types.layer.operators] spec::types::operator_unique::{unary, binary}
 Each unary or binary operator has at most one result type for fixed operand
