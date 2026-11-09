@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -118,6 +119,18 @@ def main():
         assert len({r['artifact_sha256'] for r in receipts}) == 1
         # Same compiler stream and output; Lake timing/progress is wrapper output.
         assert all('42' in r['stdout'] for r in receipts)
+        def streams(item):
+            output = re.sub(r'HEAVY_RUNNING [^\n]+', 'HEAVY_RUNNING RECEIPT', item['stdout'])
+            output = re.sub(r'(Built Tiny )\([0-9.]+(?:ms|s)\)', r'\1(TIME)', output)
+            setup = {'info: auto_control: no previous manifest, creating one from scratch',
+                     'info: toolchain not updated; already up-to-date'}
+            error = '\n'.join(line for line in item['stderr'].splitlines()
+                              if not line.startswith('fren-build: retained private state: ') and line not in setup)
+            return output, error
+        # Compare the real ordinary-build streams across fallback and automatic
+        # admission, excluding only the fixture receipt and Lake's setup/timing.
+        assert len({streams(item) for item in receipts}) == 1
+
         explicit = work / 'explicit.tsv'
         explicit.write_text(f"{source}\t{a['source_before']}\t444444\n")
         d = build('explicit-wins', {'FREN_BUILD_REQUESTS_FILE': str(explicit)})
