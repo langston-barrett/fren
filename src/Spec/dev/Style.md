@@ -17,25 +17,33 @@ Retain an existing identifier when its meaning survives a rewrite.
 A Language chapter has these parts, omitting empty ones:
 
 1. An introduction states the domain and links its prerequisites. A chapter
-   that defines syntax gives its grammar in the usual notation, and a
-   chapter of rules gives an informative figure of all of them, in the
-   notation of The Definition of Standard ML; the numbered rules remain
-   normative.
-2. Semantic objects define identities, types, contexts and environments.
+   that defines syntax gives its grammar in the usual notation. A chapter of
+   judgments gives a table of its judgment forms, their meanings and the
+   Fren definitions that state them, and an informative figure of all its
+   rules, in the notation of The Definition of Standard ML, with every
+   notation it uses defined; the numbered rules remain normative.
+2. Semantic objects define identities, types, contexts and environments,
+   with their well-formedness judgments.
 3. Abstract forms and judgment forms define the objects being related and
    the meaning of each judgment's inputs and outputs.
 4. Numbered rules give premises, conclusion and side conditions. Each
    expression constructor has its own rule paragraph, followed by the Fren
    function that states it, one premise per line.
-5. Properties state the chapter's headline metatheorems: for typing, at
-   least determinism, weakening, well-scopedness and safety with respect to
-   the dynamic semantics. State a property even when its evidence is open.
-6. Representations explain how finite witnesses encode the judgment, after
-   the judgment itself has been defined.
-7. Examples instantiate the rules, including rejected premises.
+5. Witnesses define the finite objects, such as derivation tables, over
+   which the judgment is stated, before any property mentions them.
+6. Declarations and programs lift the judgment to a whole program.
+7. Properties state the chapter's headline metatheorems: for typing, at
+   least determinism, decidability (an algorithm and its agreement with the
+   rules), regularity (typing produces well-formed types), well-scopedness,
+   weakening and safety with respect to the dynamic semantics. State a
+   property even when its evidence is open.
+8. Examples instantiate the rules, including rejected premises.
 
 Every normative paragraph, examples included, starts with an `r[...]` line
-and has a status. Every Fren definition is reachable from a rule's links.
+and has a status. Every Fren definition is reachable from a rule's links. A
+`definition` paragraph only defines: any sentence that could be true or
+false, such as that a construction ends or that a later judgment rejects
+something, is a property paragraph of its own, with a status.
 Material that a later chapter will own sits in a clearly marked section
 that names that chapter.
 
@@ -67,14 +75,14 @@ enumeration, and every constructor's owner lists it.
 ## One-layer relations
 
 Give a recursive position as a type parameter, for example `ExprF<E>`, with
-arguments and match arms as `Snoc<E>` and `Snoc<ArmF<E>>`. Say in one plain
-sentence why: Fren cannot yet declare a datatype that contains itself inside
-another type. Record that limit and the feature that would remove it in the
-development coverage document. The Core syntax is shared with the dynamic
-semantics, so it is complete: a literal carries its value, and a let carries
-its written type annotation. The Core is THIR after derived forms, so
-concrete syntax such as parentheses, and spelling such as a `?` suffix, has
-no Core form; it belongs to the Syntax or derived-forms chapter.
+arguments and match arms as `Snoc<E>` and `Snoc<ArmF<E>>`, and present the
+rules over this one-layer view. Why the chapter uses it, a limit of Fren,
+belongs in the development coverage document, with the feature that would
+remove it; the chapter says what the layers are, not why. The Core syntax
+is shared with the dynamic semantics, so it is complete: a literal carries
+its value, and a let carries its written type annotation. Concrete syntax
+such as parentheses, and spelling such as a `?` suffix, has no Core form;
+it belongs to the Syntax or derived-forms chapter.
 
 The one-layer rule takes `ExprF<Typing>`: each child position holds the
 child's typing, with its exact context and type. Each typing rule is its own
@@ -84,11 +92,12 @@ caller's success Boolean never replaces a premise that the relation can
 compute. All children have derivations: unused let values and both branches
 are included.
 
-Define a derivation once, as a finite tree whose every node satisfies the
-one-layer rule, and give it a Fren definition over whatever witness Fren
-can express, such as a postorder table whose rows look up children only
-among earlier rows and call the same rule. State the metatheorems over that
-witness rather than leaving them in prose.
+Define the judgment once, over whatever witness Fren can express, such as a
+table whose rows look up children only among earlier rows and call the same
+rule, and say precisely which expression a witness's root unfolds to. State
+the agreement of that definition with the inductive reading of the rules as
+a property of its own, and state the metatheorems over the witness rather
+than leaving them in prose.
 
 ## Properties and decidability
 
@@ -107,14 +116,15 @@ sequence, or a quantifier over a sequence's elements, is inside it. Where a
 rule reads better stated directly but undecidably, state it so, and give it
 a decidable abstraction that composes with the rest of the chapter,
 treating the direct statement as its refinement and stating the refinement
-relation. Each `fren.lint.undecidable "allow"` has a one-sentence reason
-beside it. A lint opt-out never excuses a failed expectation. A property
+relation. Every lint opt-out, of `undecidable` or any other lint, has a
+one-sentence reason beside it. A lint opt-out never excuses a failed expectation. A property
 that needs induction may be proved in the wrapper and given a `lean`
 status.
 
 ## Language and compiler
 
-A Language chapter states the language. Correspondence with production
+A Language chapter states the language; the THIR chapter refines its Core.
+Correspondence with production
 code, such as a different numbering of locals, primitive contracts bound
 by `impl`, or the agreement of a checker with the judgment, belongs to the
 Compiler chapter of that pass. A definition's status is never a
@@ -127,8 +137,13 @@ not in normative text.
 Precede each example with the judgment it shows, in the chapter's printed
 notation, such as `Σ; · ⊢ let 1 in #0 : Integer`. Keep a few complete
 witnesses in the chapter and check the rest in the wrapper, at least one for
-each rule. Add `fren example` source programs, each with the diagnostic it
-expects and a `--@ reference:` line for the rule it exercises.
+each rule. A rejected example claims that no witness exists, so state it as
+an expectation that quantifies over every part its premises leave free, such
+as the children's typings, rather than checking one table; or say only that
+one table is rejected. Source programs in `fren example` blocks, each with
+the diagnostic it expects and a `--@ reference:` line for the rule it
+exercises, are informative until the source-to-Core translation is
+specified.
 
 ## Rule evidence metadata
 

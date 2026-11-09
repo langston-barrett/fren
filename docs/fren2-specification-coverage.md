@@ -10,51 +10,50 @@ Fren language or compiler has been verified.
 ## Language core correspondence
 
 The [Core typing chapter](../src/Spec/Language/Types.md) opens with a Core
-grammar and an informative figure of its rules, then defines semantic
-objects, `ExprF<E>` and `ArmF<E>`, one Fren function per typing rule under
-its numbered paragraph, derivation tables, declarations and programs, the
-metatheory, a marked surface-elaboration section, the definitions that the
-Expressions chapter cites, and examples. It contains no Lean code. The
-[style guide](../src/Spec/dev/Style.md) specifies the chapter template and
-standalone `<!-- status: STATUS -->` metadata after each rule paragraph.
+grammar, a table of its judgment forms and an informative figure of its
+rules. It then defines semantic objects and their well-formedness, the
+one-layer view `ExprF<E>`, one Fren function per typing rule under its
+numbered paragraph, derivation tables and what a table's root unfolds to,
+the judgment over tables, declarations and programs, the metatheory, a
+marked surface-elaboration section and examples. It contains no Lean code.
+The [style guide](../src/Spec/dev/Style.md) specifies the chapter template
+and standalone `<!-- status: STATUS -->` metadata after each rule paragraph.
 This is the pilot; the rest of the reference has not yet adopted the syntax.
 No mechanical status checker is delivered by this unit.
 
 ### Fren1 limits that shape the chapter
 
-- **No recursive derivation datatype.** Fren1 refuses a recursive occurrence
+- **No nested recursive datatype.** Fren1 refuses a recursive occurrence
   inside another type instance and has no mutual datatypes
-  ([generic types](../src/Reqs/Lang/Generics.md)), so neither `Expr` nor a
-  `Derivation` tree can be declared. Expressions are one-layer `ExprF<E>`,
-  and a derivation is a postorder table of rows checked by `rows_valid?`.
-  The metatheory is stated over tables: determinism (`table_unique`) and
-  well-scopedness (`table_scoped`) are proved in Lean; weakening over tables
-  is stated in Fren and open, with its lookup step proved
-  (`lookup_shift`).
+  ([generic types](../src/Reqs/Lang/Generics.md)), so a Core expression
+  tree, whose call arguments and match arms are sequences of expressions,
+  cannot be declared. The chapter presents expressions through their
+  one-layer view `ExprF<E>`, defines the judgment over derivation tables,
+  and says which expression a table's root unfolds to. A direct recursive
+  form will come with nested recursive types in Fren2 (or a Fren 2.5
+  checker); `ExprF<E>` is that form's one-layer view, so the rules will not
+  change. The wrapper's Lean theorems are stated over tables too.
 - **Recursion is opaque to the solver past one step.** Snoc sequences are
   read by structural recursion. Properties that need induction with a
-  generalized argument (call arity, table determinism, scoping, the lookup
-  shift) are proved in the wrapper; Fren's own induction proves the rest.
+  generalized argument (call arity, table determinism, scoping, regularity
+  and weakening, the lookup shift) are proved in the wrapper.
 - **`Nat` inside recursive payloads.** Fren1 rejects a `Nat` within a
   recursive enumeration's payload (`F0389`, `F0714`), and derivation rows hold
   forms, so a local's level is an `Int`. A negative level names no entry, so
   no rule needs a `0 ≤ i` premise.
-- **Declaration order across chapters.** The Fren checker reads chapters in
-  file order, and `Expressions.md` precedes `Types.md`, so the definitions
-  that the Expressions chapter's rules cite (`Value`, `value_valid?`,
-  `integer_domain?`, `linear_meaning?`, `direct_item?`) are declared in a
-  marked section of the typing chapter.
+- **Nonlinear arithmetic.** A product of two variables, or a quotient by
+  one, is an error in Fren1, and a defined function cannot apply an
+  uninterpreted one, so the Expressions chapter's `binary_meaning?` states
+  the result's sort for `*` and `div` and the remainder's range for `mod`,
+  and its prose gives their equations.
+- **Chapter order.** The own-spec check reads `src/Spec` part by part, in
+  the order of each part's `index.md` (`specReadingOrder` in
+  `FrenTestMain`), so a chapter's Fren may use what the chapters before it
+  declare, and each chapter owns its definitions.
 - **Operator enums.** `UnaryOp` and `BinaryOp` use the Syntax chapter's names
   and constructors and move to `spec::syntax` when that chapter lands.
-- **Undecidable parts.** The chapter has no `fren.lint.undecidable` opt-out;
-  this is a consequence of the representation, not a rule. A part that
-  reads better stated directly but undecidably may be, with a decidable
-  abstraction and a stated refinement.
-
-Feature request for Fren2 (or a Fren 2.5 checker): recursion through a
-type's own instance inside another type, such as `Snoc<Derivation>` within
-`Derivation`, so that the judgment and its metatheory can be stated over
-derivation trees directly and the table becomes an implementation detail.
+- **Undecidable parts.** The chapter has no lint opt-out; this is a
+  consequence of the representation, not a rule.
 
 ### Correspondence with production
 
@@ -69,18 +68,20 @@ compiler is specified later.
 | Rule or obligation | Evidence and limit |
 | --- | --- |
 | `types.context.bound`, `types.context.weakening` | Fren expectations over arbitrary contexts; `lookup_bound` uses Fren's induction |
-| `types.expression.values`, `types.expression.items` | Fren inversion expectations, one claim per form |
-| `types.layer.operators`, `types.layer.determinism`, `types.layer.context`, `types.layer.each` | One Fren expectation per family, with a named claim per form, for arbitrary environments, contexts and child typings |
-| `types.layer.call-arity` | `Spec.Language.Types.argument_types_length`, by induction in Lean |
-| `types.derivation.scoped`, `types.derivation.unique` | `Spec.Language.Types.table_scoped` and `table_unique` over all valid tables, by induction in Lean |
-| `types.derivation.weakening-lookup` | `Spec.Language.Types.lookup_shift` in Lean |
-| `types.derivation.weakening` | Open: preservation of `rows_valid?` under `weaken`, by induction over rows |
-| `types.program.source` | Open: the source-to-Core translation of the derived-forms chapter, which does not exist yet |
-| `types.derivation.unique-expression` | Open: relate tables that represent the same expression with different sharing or extra rows |
-| `types.safety` | Open: needs the dynamic semantics of the Expressions chapter as a Fren definition |
-| `types.value.examples` | Fren expectation for the stated arithmetic examples only; the general operator meanings are not checked here |
+| `types.layer.operators`, `types.layer.determinism`, `types.expression.items` | Fren expectations: determinism once over every layer, generically in the form |
+| `types.layer.decidability` | Fren expectation: `rule?` holds at τ exactly when `infer_layer` returns τ, for every layer |
+| `types.layer.call-arity` | `Spec.Language.Types.argument_types_length` |
+| `types.layer.regularity`, `types.derivation.regularity` | `Spec.Language.Types.layer_regular` and `table_regular` |
+| `types.layer.weakening`, `types.derivation.weakening`, `types.derivation.weakening-lookup` | `Spec.Language.Types.layer_weakening`, `table_weakening` and `lookup_shift` |
+| `types.derivation.scoped`, `types.derivation.unique` | `Spec.Language.Types.table_scoped` and `table_unique` |
+| `types.judgment.coverage-separate` | `Spec.Language.Types.coverage_separate`, by `decide` on two tables |
 | `types.examples.derivations` | `Spec.Language.Types.worked_examples` by `decide`; the wrapper checks further cases, at least one for each rule; finite evidence only |
-| `types.examples.source` | `manualExamples` runs each source example through both of today's front ends |
+| `types.examples.rejected` | Fren expectation over every child typing that the premises leave free |
+| `types.judgment.adequacy` | Open: agreement of the table definition with the inductive reading of the rules; a Lean tree type with `ofLayer`/`layer`, as in the Syntax wrapper, would state it |
+| `types.derivation.unique-expression` | Open: lift `table_unique` across tables whose roots unfold alike |
+| `types.judgment.weakening` | Open: prune the rows a root does not use, so that `contexts_reach?` holds, then apply `table_weakening` |
+| `types.symbols.resolution`, `types.program.source` | Open: depend on the resolution chapter and the derived-forms chapter |
+| `types.safety` | Open: needs the dynamic semantics of the Expressions chapter as a Fren definition |
 | `thir.core.levels`, `thir.core.unary`, `thir.core.binary` | `Spec.Compiler.Thir.lookup_nearest`, `core_unary` and `core_binary` |
 | `thir.primitive.compatibility`, `thir.primitive.unary`, `thir.primitive.binary` | Universal `impl` proofs of the primitive contracts in the THIR wrapper |
 | `thir.core.derivation` | Open: prove both directions between the Core relation and the production checker in its admitted domain, through the level-to-index conversion |
@@ -92,13 +93,19 @@ remain normative obligations. Existing production `FrenHirToThir.HasValue`
 and `FrenHirToThir.TypingSound` concern the retained AST. Native tests,
 Plausible, closed examples and layer step cases do not establish
 `TypingSound`, its converse, or a complete source-to-Core occurrence
-correspondence. The source examples' diagnostic positions, such as `l + 1`
-at line 5 column 28, byte span `[71, 72)`, are today's checker's.
+correspondence. The informative source examples' diagnostics, such as
+`l + 1` at line 5 column 28, byte span `[71, 72)`, are today's checker's.
 
-- [ ] Prove weakening over derivation tables (`types.derivation.weakening`).
+- [ ] Prove `types.judgment.adequacy`, `types.derivation.unique-expression`
+  and `types.judgment.weakening` (pruning unused rows).
 - [ ] State the dynamic semantics as a Fren definition and prove `types.safety`.
-- [ ] Restate the judgment over recursive derivation trees once Fren supports
-  recursion through a type's own instance inside another type.
+- [ ] Restate the judgment over recursive expression trees once Fren
+  supports nested recursive types.
+- [ ] Move the surface-elaboration section to the derived-forms chapter and
+  rename its `types.surface.*` rules.
+- [ ] Drop the THIR chapter's `spec::thir` primitive operator contracts,
+  which duplicate `binary_type?` and production, once `core_unary` and
+  `core_binary` cover their `impl` uses.
 - [ ] Specify the erasure/refinement relation between the Core and the
   compiler representations, including the level-to-index conversion.
 - [ ] Prove the complete occurrence/context-preserving source-to-Core

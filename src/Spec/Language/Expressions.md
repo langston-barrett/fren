@@ -2,7 +2,7 @@
 
 An expression denotes a value in an interpretation of its declarations and
 an assignment to its free locals. [Types and expression typing](Types.md)
-defines the shared `Ty`, `Value`, `Symbols`, `Context` and expression forms.
+defines the shared `Ty`, `Symbols`, `Context` and expression forms.
 This chapter specifies how their meanings and source obligations compose.
 The domain is Booleans, integers, payload-free nominal enums, locals, named
 calls, unary and binary operators, lets, conditionals and constructor matches.
@@ -11,9 +11,30 @@ calls, unary and binary operators, lets, conditionals and constructor matches.
 
 **Dynamic semantics**
 
-r[expressions.value.type] spec::types::{value_type, value_valid?}
+r[expressions.value.type] spec::expressions::{Value, value_type, value_valid?}
 Every expression denotes a value of its type. A nominal value names an
 actual constructor of its canonical enum owner.
+
+```fren
+pub mod spec
+pub mod spec::expressions
+
+use spec::types::{ArmF, BinaryOp, ExprF, ItemId, ItemKind, Snoc, Symbols, Ty, UnaryOp, entry}
+
+pub enum Value { Boolean(Bool), Integer(Int), Nominal(ItemId, ItemId) }
+
+pub fn value_type(value: Value): Ty := match value {
+    Value::Boolean(_) => Ty::Boolean,
+    Value::Integer(_) => Ty::Integer,
+    Value::Nominal(owner, _) => Ty::Nominal(owner),
+}
+
+pub fn value_valid?(symbols: Symbols, value: Value) := match value {
+    Value::Nominal(owner, item) =>
+        entry(symbols, item) = Option::Some(ItemKind::Constructor(owner)),
+    _ => true,
+}
+```
 
 r[expressions.meaning.context]
 An interpretation assigns meanings to canonical items. A local assignment
@@ -25,18 +46,80 @@ inheriting the caller's locals. A let interprets its value in the incoming
 context and its body with that value appended as the newest level. An if denotes its selected
 branch; a match denotes the body for its constructor, in the incoming context.
 
-r[expressions.meaning.operators] spec::types::{linear_meaning?, meaning_examples}
+r[expressions.meaning.operators] spec::expressions::{unary_meaning?, integer_meaning?, boolean_meaning?, binary_meaning?}
 Within their domains, arithmetic operators have their mathematical meanings.
 Division and remainder are Euclidean: the remainder is nonnegative and
 strictly less than the absolute divisor, and `n = (n div d) * d + n mod d`.
 Comparisons use integer order; Boolean operators use their truth tables;
 equality compares values of one type, including canonical nominal identity.
-Unary minus negates an integer and `not` complements a Boolean.
+Unary minus negates an integer and `not` complements a Boolean. `binary_meaning?` and
+`unary_meaning?` state every operator's result; for `*`, `div` and `mod` they
+state the result's sort and the remainder's range, and the equations above
+give the values.
 
-r[expressions.mentions.direct] spec::types::direct_item?
+```fren
+pub fn unary_meaning?(op: UnaryOp, operand: Value, result: Value) := match op, operand {
+    UnaryOp::Neg, Value::Integer(n) => result = Value::Integer(-n),
+    UnaryOp::Not, Value::Boolean(b?) => result = Value::Boolean(not b?),
+    _, _ => false,
+}
+
+pub fn integer_meaning?(op: BinaryOp, a: Int, b: Int, result: Value) := match op {
+    BinaryOp::Add => result = Value::Integer(a + b),
+    BinaryOp::Sub => result = Value::Integer(a - b),
+    BinaryOp::Mul | BinaryOp::Div => result is Value::Integer(_),
+    BinaryOp::Mod => match result {
+        Value::Integer(r) => b = 0 or 0 <= r < b.abs,
+        _ => false,
+    },
+    BinaryOp::Lt => result = Value::Boolean(a < b),
+    BinaryOp::Le => result = Value::Boolean(a <= b),
+    BinaryOp::Gt => result = Value::Boolean(a > b),
+    BinaryOp::Ge => result = Value::Boolean(a >= b),
+    BinaryOp::Eq => result = Value::Boolean(a = b),
+    BinaryOp::Ne => result = Value::Boolean(a != b),
+    _ => false,
+}
+
+pub fn boolean_meaning?(op: BinaryOp, p?, q?, result: Value) := match op {
+    BinaryOp::And => result = Value::Boolean(p? and q?),
+    BinaryOp::Or => result = Value::Boolean(p? or q?),
+    BinaryOp::Iff | BinaryOp::Eq => result = Value::Boolean(p? iff q?),
+    BinaryOp::Ne => result = Value::Boolean(not (p? iff q?)),
+    _ => false,
+}
+
+pub fn binary_meaning?(op: BinaryOp, left: Value, right: Value, result: Value) :=
+    match left, right {
+        Value::Integer(a), Value::Integer(b) => integer_meaning?(op, a, b, result),
+        Value::Boolean(p?), Value::Boolean(q?) => boolean_meaning?(op, p?, q?, result),
+        Value::Nominal(_, _), Value::Nominal(_, _) => match op {
+            BinaryOp::Eq => result = Value::Boolean(left = right),
+            BinaryOp::Ne => result = Value::Boolean(left != right),
+            _ => false,
+        },
+        _, _ => false,
+    }
+```
+
+r[expressions.mentions.direct] spec::expressions::{arm_mentions?, direct_item?}
 An occurrence directly mentions its constructor, callee or match-pattern
 items. A local mentions its resolved context slot, rather than an item with
 the same written spelling.
+
+```fren
+pub fn arm_mentions?<E>(arms: Snoc<ArmF<E>>, item: ItemId) := match arms {
+    Snoc::Empty => false,
+    Snoc::Extend(earlier, arm) => arm.constructor = item or arm_mentions?(earlier, item),
+}
+
+pub fn direct_item?<E>(form: ExprF<E>, item: ItemId) := match form {
+    ExprF::Constructor(target) => item = target,
+    ExprF::Call(target, _) => item = target,
+    ExprF::Match(_, arms) => arm_mentions?(arms, item),
+    _ => false,
+}
+```
 
 r[expressions.mentions.closure]
 An expression's mentioned items are the union of its direct items and those
@@ -56,9 +139,14 @@ requires proof of the domain at the operation's written occurrence.
 
 **Legality rules**
 
-r[expressions.domain.integer] spec::types::integer_domain?
+r[expressions.domain.integer] spec::expressions::integer_domain?
 Division and remainder require a nonzero divisor. Typing alone does not
 establish this condition.
+
+```fren
+pub fn integer_domain?(op: BinaryOp, right: Int) :=
+    not op in {BinaryOp::Div, BinaryOp::Mod} or right != 0
+```
 
 r[expressions.domain.traversal]
 Verification traverses every written expression. Ordinary unary and binary

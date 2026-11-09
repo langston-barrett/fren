@@ -6,8 +6,17 @@ open Fren.Lang
 
 #fren_md "Expressions.md"
 
+#fren_check
+
 namespace Spec.Language.Expressions
 
--- The typing chapter's wrapper checks the examples that this chapter cites.
+open spec.types in
+example : spec.expressions.value_valid? SYMBOLS (.Nominal LIGHT LIGHT_RED) = true := by decide
+
+open spec.types in
+example : spec.expressions.value_valid? SYMBOLS (.Nominal SIGNAL LIGHT_RED) = false := by decide
+
+open spec.types in
+example : spec.expressions.direct_item? Int (.Call F .Empty) F = true := by decide
 
 end Spec.Language.Expressions

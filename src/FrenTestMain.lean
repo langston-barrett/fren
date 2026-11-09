@@ -1131,6 +1131,31 @@ partial def lintSpecFilesFrom (entry : FilePath) (seen : Array FilePath) : IO (A
         files := files.push (Fren.relativeTo "." (entry.parent.getD "" / name))
   return (seen, files)
 
+/-- The position of the first link to the chapter `name` in the text `index`
+of a part's `index.md`, if it links it at all. -/
+def indexRank (index name : String) : Option Nat :=
+  let targets := ((index.splitOn "](").drop 1).map fun s =>
+    (((s.splitOn ")").headD "").splitOn "#").headD ""
+  targets.findIdx? (· == name)
+
+#guard indexRank "[a](B.md), [c](A.md#x)" "A.md" == some 1
+#guard indexRank "[a](B.md)" "C.md" == none
+
+/-- The Markdown chapters of `src/Spec` in reading order: part by part, and
+within a part, in the order that its `index.md` first links them, then the
+chapters it does not link, by name. A chapter's Fren may then use what the
+chapters before it declare. -/
+def specReadingOrder : IO (Array FilePath) := do
+  let files ← sortedFiles "src/Spec" "md"
+  let dirs := (files.map (·.parent.getD "")).toList.eraseDups
+  let mut out := #[]
+  for d in dirs do
+    let index ← if ← (d / "index.md").pathExists then IO.FS.readFile (d / "index.md") else pure ""
+    let inDir := files.filter (·.parent.getD "" == d)
+    let key (f : FilePath) : Nat := (indexRank index (f.fileName.getD "")).getD inDir.size
+    out := out ++ inDir.qsort fun a b => key a < key b || (key a == key b && a.toString < b.toString)
+  return out
+
 /-- The Markdown specs of Fren's own requirements, in an order in which
 each module is declared before it is used. -/
 def ownSpecFiles : IO (Array String) := do
@@ -1182,7 +1207,7 @@ def ownSpecFiles : IO (Array String) := do
     "Markdown",
     "dev/Testing",
   ].flatMap fun r => if r == "Lint" then lint.2 else #[s!"src/Reqs/{r}.md"]
-  let spec ← sortedFiles "src/Spec" "md"
+  let spec ← specReadingOrder
   return chapters ++ (spec.filter fun p => !p.toString.startsWith "src/Spec/dev/").map (·.toString)
 
 /-- The Markdown specs that the Lean front end reads, by the `#fren_md`
