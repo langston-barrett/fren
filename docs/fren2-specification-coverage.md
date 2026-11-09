@@ -27,12 +27,17 @@ and one that is open is a procedure without one; `#fren_trace` in the
 wrapper reports their levels. For this chapter it reports:
 
 ```text
-evidence: 11 proved, 0 solver, 0 tested, 0 trusted, 1 missing
-missing: `spec::types::expression_uniqueness`
+evidence: 11 proved, 0 solver, 0 tested, 1 trusted, 0 missing
+trusted: `spec::types::expression_uniqueness`
 ```
 
-The `ruleReqs` job checks that every Fren item of Types.md and
-Expressions.md is linked by the nearest rule before it.
+The one `trusted` procedure is the open `types.derivation.unique-expression`,
+whose claim's reason starts `open:`. Types.md and Expressions.md are the
+converted chapters: their wrappers trace with `trusted` as the required
+level, so a property that loses its evidence fails `lake build --wfail`,
+and the `ruleReqs` job checks that they do, and that every Fren item of
+theirs is linked by the nearest rule before it. The other Spec chapters are
+not yet converted.
 
 ### Fren1 limits that shape the chapter
 
@@ -104,7 +109,7 @@ compiler is specified later.
 | `types.overview.interface`, `types.overview.determinism` | The interface's contract, checked for realizability by the solver and proved for the detailed definitions by the wrapper's `interp`; determinism follows from it by the solver |
 | `types.context.bound`, `types.context.weakening`, `types.layer.operators`, `types.layer.determinism`, `types.layer.decidability`, `types.judgment.coverage-separate`, `types.examples.rejected` | Fren expectations |
 | `types.layer.call-arity`, `types.layer.regularity`, `types.derivation.regularity`, `types.judgment.regularity`, `types.derivation.scoped`, `types.derivation.unique`, `types.layer.weakening`, `types.derivation.weakening-lookup`, `types.derivation.weakening`, `types.judgment.weakening`, `types.examples.derivations` | Procedures bound by `impl` in the wrapper: `proved` |
-| `types.derivation.unique-expression` | A procedure with no `impl`: `missing` |
+| `types.derivation.unique-expression` | A procedure with no `impl` and a `trusted` claim whose reason starts `open:` |
 | `types.judgment.adequacy`, `types.judgment.decidability`, `types.symbols.resolution`, `types.safety`, `expressions.value.denotation` | Open, stated in prose: Fren cannot state them |
 | `thir.core.levels`, `thir.core.unary`, `thir.core.binary` | Lean theorems named in the rules' prose |
 | `thir.primitive.compatibility`, `thir.primitive.unary`, `thir.primitive.binary` | Procedures bound by `impl` in the THIR wrapper |

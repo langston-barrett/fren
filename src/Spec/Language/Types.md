@@ -1266,7 +1266,8 @@ state the tree reading, so this is stated here and open.
 r[types.derivation.unique-expression] spec::types::expression_uniqueness::unique
 Typing is deterministic for an expression: if `derivation?(Σ, l, Γ, τ)` and
 `derivation?(Σ, r, Γ, υ)` and their roots unfold alike, then τ = υ, whatever
-the two tables' sharing of rows and extra rows. This is open.
+the two tables' sharing of rows and extra rows. This is open: its
+procedure has no `impl`, and a `trusted` claim says so.
 
 ```fren
 set_option fren.evidence "random" in
@@ -1284,6 +1285,8 @@ pub proc expression_uniqueness(
         and alike?(left, length(left) - 1, right, length(right) - 1, pairs),
         a = b
 }
+
+trusted expression_uniqueness: "open: lifting table_uniqueness across tables whose roots unfold alike is not yet proved"
 ```
 
 r[types.judgment.decidability]

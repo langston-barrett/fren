@@ -842,6 +842,27 @@ def guardRuleChapter (md text gap : String) : Array String :=
 def ruleAdjacentChapters : Array String :=
   #["src/Spec/Language/Types.md", "src/Spec/Language/Expressions.md"]
 
+/-- The chapters whose properties carry Fren's own evidence
+(`Spec/dev/Style#properties-and-evidence`): the list grows as chapters are
+converted. Their wrappers trace their procedures with `trusted` as the
+required level, so that `lake build --wfail` fails when a property loses its
+evidence, and their Markdown has no hand-written status comments. -/
+def evidenceChapters : Array String := ruleAdjacentChapters
+
+/-- The text that a converted chapter's wrapper must contain. -/
+def requiredTrace : String := "set_option fren.requireEvidence \"trusted\" in\n#fren_trace"
+
+/-- The problems with the evidence of the converted chapters. -/
+def evidenceProblems : IO (Array String) := do
+  let mut out := #[]
+  for md in evidenceChapters do
+    let wrapper := (md.dropEnd 3).toString ++ ".lean"
+    unless (← IO.FS.readFile wrapper).contains requiredTrace.toSlice do
+      out := out.push s!"{wrapper}: a converted chapter's wrapper ends with `{requiredTrace}`, so that a property without evidence fails the build"
+    if (← IO.FS.readFile md).contains "<!-- status:".toSlice then
+      out := out.push s!"{md}: a converted chapter states evidence through Fren, not status comments"
+  return out
+
 /-- The problems with the items of chapter `md` whose nearest rule before
 them does not link them. -/
 def unservedItems (md : String) (items : Array ReqItem)
@@ -900,6 +921,7 @@ def ruleLinks : IO (Array (String × Array (Rule × Array (ReqItem × Array Stri
           for (line, id) in citedRules src do cite s!"{md}:{start + line}" id
     : StateT _ IO Unit).run (tests, failures)
   tests := ts.map fun (here, id) => ((here.splitOn ":").head!, id)
+  let fs := fs ++ (← evidenceProblems)
   return (chapters, tests, fs)
 
 /-- The text of the page of the book that reports, for each rule, its

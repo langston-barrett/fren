@@ -163,10 +163,18 @@ rule's links and [`fren trace`](../../Reqs/Trace.md):
   own checks test it rather than ask the solver for an induction.
 - A property checked by tests is a procedure with a `tested` claim naming
   the test.
-- An open property that Fren can state is such a procedure with no `impl`:
-  `fren trace` reports it `missing`. One that Fren cannot state is prose
-  that says it is open.
+- An open property that Fren can state is such a procedure with no `impl`
+  and a `trusted` claim whose reason starts `open:` and says what is
+  missing, so that it is open on purpose. One that Fren cannot state is
+  prose that says it is open.
 - A definition carries no evidence.
+
+A converted chapter's wrapper ends with
+`set_option fren.requireEvidence "trusted" in #fren_trace`, so that a
+procedure that loses its evidence makes `lake build --wfail` fail. The
+`ruleReqs` job checks that each chapter on its list of converted chapters
+has this, and no hand-written status comments; the list grows as chapters
+are converted.
 
 Prefer properties that say something about the type system, such as
 inversion, determinism, scoping, weakening and safety, over facts about

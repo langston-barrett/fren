@@ -1014,4 +1014,5 @@ interp derives? := fun symb ctx rows ty => spec.types.derivation? symb rows ctx 
   · simp only [spec.types.derivation?, decide_eq_true_eq] at h
     exact ⟨by simp only [spec.types.symb_ok?, decide_eq_true_eq]; exact h.1.1.1.1, h.1.1.1.2⟩
 
+set_option fren.requireEvidence "trusted" in
 #fren_trace

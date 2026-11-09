@@ -1,5 +1,6 @@
 import Fren.Impl
 import Fren.Literate
+import Fren.Trace
 import Spec.Language.Types
 
 open Fren.Lang
@@ -20,3 +21,6 @@ open spec.types in
 example : spec.expressions.direct_item? Int (.Call F .Empty) F = true := by decide
 
 end Spec.Language.Expressions
+
+set_option fren.requireEvidence "trusted" in
+#fren_trace
