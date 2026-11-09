@@ -7,11 +7,15 @@ import io
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from test_inventory import check as check_inventory
 loader = importlib.machinery.SourceFileLoader('fren_build_test', str(ROOT / 'scripts/fren-build'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
 build = importlib.util.module_from_spec(spec)
@@ -19,6 +23,9 @@ loader.exec_module(build)
 
 
 def main():
+    # A manually invoked control is insufficient: the default driver must
+    # schedule it, and its focused-job dispatcher must accept it too.
+    check_inventory((ROOT / 'src/FrenTestMain.lean').read_text())
     parent = ROOT / 'tools/heavy-observe/test-work'
     parent.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='tmp-state-', dir=parent) as temp:
@@ -56,10 +63,20 @@ def main():
             env.pop(key, None)
         trace = work / 'mkdir.trace'
         command = [str(ROOT / 'scripts/heavy'), 'lake', '-d', str(pkg), 'build', '+Tiny', '--offline', '--no-cache']
-        ok = subprocess.run(['strace', '-f', '-e', 'trace=mkdir,mkdirat', '-o', str(trace), *command],
+        tracer = shutil.which('strace')
+        scratch = work / 'tmp'; scratch.mkdir()
+        if not tracer:
+            # The same mkdtemp leak is observable in an isolated TMPDIR on
+            # systems without strace; the traced path checks the default /tmp.
+            env['TMPDIR'] = str(scratch)
+        observed = [tracer, '-f', '-e', 'trace=mkdir,mkdirat', '-o', str(trace), *command] if tracer else command
+        ok = subprocess.run(observed,
                             env=env, capture_output=True, text=True, timeout=90)
         assert ok.returncode == 0, (ok.stdout, ok.stderr)
-        assert '/tmp/fren-build-' not in trace.read_text()
+        if tracer:
+            assert '/tmp/fren-build-' not in trace.read_text()
+        else:
+            assert not list(scratch.glob('fren-build-*'))
         state_root = home / '.cache/heavy/build-state'
         assert not list(state_root.glob('.active-*')) and not list(state_root.glob('fren-build-*'))
         assert 'retained private state:' not in ok.stderr

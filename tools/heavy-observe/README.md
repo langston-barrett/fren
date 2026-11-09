@@ -111,12 +111,12 @@ fork through wait4, excluding fingerprinting, version probes and publishing.
 Measure caller wall time for total observer overhead.
 
 The registered Linux `heavyProcess` jobs build the standalone targets and run
-ten disjoint harness selections as part of `lake test`: `publisher`,
+eleven disjoint harness selections as part of `lake test`: `publisher`,
 `forecast`, `entrypoint`, `cohort`, `core`, `automatic`, `automaticEvidence`,
-`automaticStore`, `automaticIO` and `automaticOwnership`. With the repository
+`automaticStore`, `automaticIO`, `automaticOwnership` and `tmpState`. With the repository
 driver already built, run a selection with `scripts/heavy --offline lake env
 .lake/build/bin/fren_test --job heavyProcess publisher` (substitute another
-selection). The manual `--job heavyProcess` runs all ten in one job, and
+selection). The manual `--job heavyProcess` runs all eleven in one job, and
 `--job heavyProcess controls` runs them with only the pre-scratch core controls.
 The normal `core` selection and the no-argument aggregate also retain the later changed-source assertions, warm
 pairs and concurrent discovery checks. Neither manual aggregate is a

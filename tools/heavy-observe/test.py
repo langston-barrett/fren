@@ -42,6 +42,9 @@ def main():
     else:
         raise SystemExit("usage: test.py [--controls-only | --part {publisher,forecast,entrypoint,cohort,core,automatic,automaticEvidence,automaticStore,automaticIO,automaticOwnership,tmpState}]")
     (HERE / "test-work").mkdir(exist_ok=True)
+    if "publisher" in selected:
+        from test_inventory import controls as inventory_controls
+        inventory_controls((HERE.parent.parent / "src/FrenTestMain.lean").read_text())
     def modules(mode):
         fresh = Path(tempfile.mkdtemp(prefix="heavy-module-partition-", dir=HERE / "test-work"))
         atexit.register(shutil.rmtree, fresh, ignore_errors=True)
