@@ -8,111 +8,23 @@ resolution and type checking produce later intermediate representations
 
 ## Source forms
 
-The source grammar includes modules, public declarations, payload-free
-enumerations, non-recursive expression-bodied functions, and global
-expectations with typed parameters and labelled `assume` and `expect`
-members. Types are `Bool`, `Int` and named enumerations. Expressions include
-names and qualified paths, Boolean and decimal integer literals, calls,
-parentheses, `if`, `let` and enumeration `match`. The operator slice is
-unary `-`; binary `+`, `-`, `*`, `div`, `mod`, `=`, `!=`, `<`, `<=`, `>`, `>=`;
-`not`, `and`, `or` and `iff`. Parsing an operator does not establish its
-operand types or definedness.
-
-For example, these declarations exercise ordered variants, match arms,
-argument lists, nested calls and labelled checks:
-
-```fren
-pub mod signals
-
-pub enum Light { Red, Amber, Green }
-
-pub fn next(l: Light): Light := match l {
-    Light::Red => Light::Green,
-    Light::Green => Light::Amber,
-    Light::Amber => Light::Red,
-}
-
-pub fn wait(l: Light, base: Int): Int := match l {
-    Light::Red => base + 30,
-    Light::Amber => base + 5,
-    Light::Green => base,
-}
-
-expect cycles(l: Light) { expect back: next(next(next(l))) = l }
-
-expect waits(l: Light, base: Int) {
-    assume bounded: base <= 100
-    expect at_most: wait(l, base) <= 130
-}
-
-pub fn choose(b?, base: Int): Int := let delay := base + 5 in if b? then delay else base
-
-expect division(x: Int) { expect euclidean: x = (x div 2) * 2 + x mod 2 }
-```
-
-Integer division is written `div`; `/` is rejected. The division example
-uses the constant nonzero divisor 2. The remainder operator `mod` must be
-on the line where its left operand ends. A `mod` after an LF or CRLF starts
-a module declaration instead, including when comments intervene. Within an
-expression entry or an unclosed delimiter, that declaration is unexpected.
-A remainder may put its right operand on the next line.
-
-`base + 5 * 2` groups as `base + (5 * 2)`, and `base - 5 - 2` as
-`(base - 5) - 2`. Calls bind before arithmetic; unary minus binds before
-multiplication, then addition, then comparisons, then `not`, `and`, `or`
-and `iff`, in decreasing precedence. Parentheses override that grouping.
-A prefix operand must respect this precedence too: `a + not b` and `-not b`
-require parentheses around the `not` expression. A `let` used as an
-operator's operand likewise requires parentheses, as in
-`a and (let x := true in x)`. Repeated `not not b` is valid. `if` and `match`
-are atoms and do not acquire these restrictions.
-`iff` does not associate: write `(a iff b) iff c` or `a iff (b iff c)`.
-This source grammar has binary comparisons only. Unparenthesized comparison
-chains, including the full language's `a < b <= c`, are unsupported rather
-than parsed as nested binary operators. Explicitly parenthesized comparisons
-remain syntax trees whose operand types are checked later.
-A `let` has the form `let x := value in body`; its body extends to the
-right. The definition's value is read at the `iff` level, so a nested `let`
-there requires parentheses; a right-nested `let` in the body remains valid.
-An `if` requires both `then` and `else`. A match scrutinee is an atom, such
-as a name, call, parenthesized expression, `if` or nested `match`; a bare
-operator or `let` expression there requires parentheses. A match arm pairs
-a qualified variant pattern with an expression at the `iff` level using
-`=>`, so a bare `let` arm body also requires parentheses. Arms are
-comma-separated and may have a trailing comma. Function parameters use
-`name: Type` (a `?` suffix supplies `Bool` when the annotation is omitted),
-and a function body follows `:=`. A suffix does not remove an explicit
-annotation: `b?: Bool` and `b?: Int` both parse, and the latter's type
-inconsistency is checked later. Named type paths are read in full before a
-bare `Bool` or `Int` is classified as built-in: `Int::T` and `Bool::T` are
-written paths whose resolution is also later work.
-Calls apply a written path, as in `f(x)` or `A::f(x)`, rather than an
-arbitrary expression or a previous call result. The opening `(` touches
-the last name: spaces, tabs, line endings and comments are not allowed
-between them. Function and global-expectation parameter lists likewise
-begin immediately after the declaration name. Ordinary grouping
-parentheses may still follow trivia. These are syntax rules; a named
-application such as `unknown(x)` or `x(y)` still parses before resolution
-or typing.
-Function parameter lists and ordinary call argument lists are nonempty and
-do not allow a trailing comma. An enumeration has at least one variant;
-its variants may have a trailing comma. Global-expectation parameters may
-be empty and may have a trailing comma. Match arms may have a trailing
-comma or be empty; missing-variant checking, including an empty match,
-remains a later pass. Empty declaration sequences and empty expectation
-member blocks are also syntax.
+The source grammar is specified in the language reference.
+[Lexical structure](../Language/LexicalStructure.md) defines the tokens,
+trivia and rejected text of a source text, and
+[Syntax](../Language/Syntax.md) the declarations and expressions that the
+parser accepts, with their grouping and order. This chapter states what
+the parser's result contains and how it relates to the source text.
 
 **Proof obligations**
 
 r[parsing.walking.forms]
-The shared parser recognizes these forms with their written grouping and
-order, independently of name resolution, typing and solver verdicts.
+The shared parser recognizes the forms of [Syntax](../Language/Syntax.md)
+with their written grouping and order, independently of name resolution,
+typing and solver verdicts.
 
 Thus `y + 1` is a syntactically valid body even when `y` is unbound, and
 `l + 1` parses even when `l` later has type `Light`. Their static errors
-belong to resolution and typing. Likewise the expectation
-`expect never_red: next(l) != Light::Red` parses successfully; its false
-claim is discovered after parsing. A match with missing variants is also
+belong to resolution and typing. A match with missing variants is also
 a syntax tree whose exhaustiveness remains to be checked.
 
 ## One parser and its consumers
@@ -145,22 +57,11 @@ entry categories select grammar roots, not independent parser implementations.
 
 ## Source ownership and locations
 
-A *token* is a written identifier, keyword, literal or punctuator. *Trivia*
-is text between tokens: spaces, tabs, line endings and comments. The
-identifiers start with an ASCII letter or `_`, followed by ASCII
-letters, digits or `_`, with an optional final `?`. Fren's reserved words
-remain reserved even when their constructs are unsupported: `proc` and
-`forall` are not names in this source domain. Contextual `assume` is an ordinary
-name outside an expectation member's keyword position. `Bool`, `Int`,
-`true`, `false` and `not` are interpreted at their type, literal or operator
-positions, rather than globally reserved from name positions. This does not
-admit additional lexical forms. The source grammar includes `--` line comments ending before LF or CRLF, or
-at EOF. LF and CRLF retain their original bytes. A keyword is recognized only
-at a token boundary: `next_step` is one identifier. Punctuators use longest
-matching spelling, so `<=`, `!=`, `:=`, `=>` and `::` are not split into
-shorter tokens. The unsupported punctuator `<-` is likewise one rejected
-slice; `x<-1` fails, while `x < -1` contains a comparison and unary minus.
-Comment text is not parsed as declarations.
+A *token* is a written word (an identifier or keyword), numeral or
+punctuator. *Trivia* is text between tokens: whitespace and comments.
+*Rejected text* starts no lexical element. [Lexical
+structure](../Language/LexicalStructure.md) defines each of these, and how
+the source text is divided into them.
 
 **Proof obligations**
 
