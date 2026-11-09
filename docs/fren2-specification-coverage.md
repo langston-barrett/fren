@@ -146,12 +146,12 @@ and deliberate failing mutations are recorded in the external check receipts.
 - [ ] Prove `TypePassContract`, `CoverageContract` and `NonrecursionContract`
   for actual THIR production. Identity's static transfer does not discharge
   these antecedent contracts.
-- [ ] Preserve the independently reviewed THIR follow-up: `OccurrenceTyping`
-  currently supplies a sound witness for each source descendant, but does
-  not constrain every output occurrence, uniqueness or postorder. Prove the
-  reverse output-to-source soundness direction and exact occurrence inventory,
-  with surplus/wrong-type/context/duplicate mutation controls. This unit does
-  not edit shared THIR or claim to resolve that specification gap.
+- [x] Specify reverse output-to-source soundness, exact occurrence multiplicity
+  and written-child postorder in the independently reviewed THIR contract,
+  with surplus/wrong-type/context/duplicate and order mutation controls.
+  The actual producer's universal `TypePassContract` correspondence remains
+  unproved, as recorded above; the strengthened relation and finite controls
+  do not discharge that theorem.
 - [ ] Prove the converse context projection and the complete scoped-traversal
   bridge to Language free-local/mentioned-item/interpretation semantics,
   including guard evaluation under lexical lets and call substitution.
