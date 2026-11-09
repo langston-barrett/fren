@@ -5,11 +5,13 @@ for asking logical questions. It must preserve both a term's value and
 where that value is defined. Keeping only Boolean formulas would lose the
 difference between a false expectation and an undefined one.
 
-This chapter specifies the next walking boundary after the actual
-[MIR producer](Mir.md). There is no LIR producer, logical evaluator or solver
-backend yet: `FrenLir`, `FrenFlatToLir` and `FrenLirEval` are stubs. The
-contract below concerns their eventual real code. The checked primitive
-facts at the end are independent tests of the contract's ingredients.
+This chapter specifies the walking boundary after the actual
+[MIR producer](Mir.md). [FrenLir](../../FrenLir/Walking.lean) now provides
+first-order terms with value and definedness components, and
+[FrenFlatToLir](../../FrenFlatToLir/Walking.lean) lowers the admitted walking
+fragment directly. No mono, closure or flat pass is claimed. `FrenLirEval`
+remains a stub; there is no production logical evaluator or solver backend.
+The checked primitive facts below remain independent contract tests.
 
 ## Input and retained program
 
@@ -96,11 +98,11 @@ encoding that guards every partial-operation obligation correctly. It
 preserves assumption and goal demand roots separately from Boolean values.
 
 For reasoning, write `V(e)` for the symbolic value and `WD(e)` for semantic
-definedness. This notation is not a second interpreter or a delivered pair
-datatype. Outside its domain a partial operation has an unspecified but
-fixed symbolic value; its required definedness check still exists. That
-symbolic value does not discharge definedness, and an interpreter's undefined
-outcome is not Boolean false.
+definedness. The actual `FrenLir.Lowered` datatype carries these two
+symbolic terms; it does not evaluate them. Outside its domain a partial
+operation has an unspecified but fixed symbolic value; its required
+definedness check still exists. That symbolic value does not discharge
+definedness, and an interpreter's undefined outcome is not Boolean false.
 In particular, simplifying `e = e` to true must not discard the demand for
 `e` when equality is strict.
 
@@ -154,8 +156,11 @@ These concrete regressions constrain the eventual producer and consumer;
 The match row uses exactly the two-constructor enum below. Static admission
 still visits unselected written branches. These examples must also be tested
 inside retained assumption and expectation bodies, with unused and repeated
-let reads, nested shadowing and calls. They are future actual-path regression
-targets here, not claimed executions of LIR.
+let reads, nested shadowing and calls. The
+[native controls](../../FrenFlatToLirTests/Fixtures.lean) now exercise
+these regressions through actual lowering and the source walker, with a
+test-only logical-term probe and finite fixture symbol interpretations.
+They do not establish universal evaluator correspondence.
 
 ## Sharing and attribution
 
@@ -273,11 +278,26 @@ control: `assumption? = true, goal? = false` refutes it. Removing the
 `not` before `selected?` in `then_guard` is refuted at `selected? = false,
 d = 0`. These are primitive counterexamples, not Fren2 solver models.
 
-## Actual-producer laws still to establish
+## Actual-producer evidence and remaining laws
+
+[Producer laws](../../FrenFlatToLir/Walking.lean) prove actual admission,
+retention of the complete MIR and typed source, determinism, rejection
+propagation and success of the output scope/retention checker. The latter
+includes Boolean declaration/request retention certificates; it is not a
+proof of their equality from unproved lawful-equality instances.
+[Combinator laws](../../FrenLir/Walking.lean) prove the actual branch, let,
+strict-operator and call domain equations. [Direct Plausible
+properties](../../FrenFlatToLirTests/Properties.lean) exercise the actual
+producer on mandatory admitted, rejected and partial classes, with explicit
+premise counts and independent arithmetic/request expectations. Native
+controls retain nominal identities, owned request roots and lexical origins,
+and kill source, domain and retention mutants.
+
+The universal laws below remain obligations, beyond those checked facts.
 
 For every `p : FrenThirDesugar.Program` and `t : FrenMir.Theory` with
-`FrenThirToMir.produce p = .ok t`, the eventual real logical-lowering
-producer must succeed on this walking domain and return a well-formed
+`FrenThirToMir.produce p = .ok t`, the logical-lowering producer must
+succeed on this walking domain and return a well-formed
 program satisfying the retention, requests, demand and sharing rules above.
 For every retained value body or occurrence, in its recorded lexical
 context, relate source and logical environments slot by slot at their
@@ -294,9 +314,9 @@ definitions and the demand regressions above. These are laws about the
 actual eventual producer and evaluators, not universal simulation theorems
 proved by the six primitive facts.
 
-- [ ] Implement the real representation and producer, then state and test
-  these laws directly in Lean, with Plausible over admitted, rejected and
-  partial inputs and reported premise counts; prove structural laws where cheap.
+- [x] Implement the walking representation and producer, with actual-code
+  structural laws, direct Plausible over admitted, rejected and partial inputs,
+  reported premise counts and independent native demand/context controls.
 - [ ] Establish whole-term value, definedness and request preservation;
   test actual guards and negative controls without a copied compiler model.
 - [ ] Restate these laws in Fren when recursive typed syntax, scoped
