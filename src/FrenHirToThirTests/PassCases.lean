@@ -26,7 +26,7 @@ private def module (body : Expr .hir) (param : Param := ⟨1, .int, false, true�
 
 private def rejects (body : Expr .hir) (o : OriginId) (r : Reason) : Bool :=
   match typeModule (module body) with
-  | .error e => e == ⟨f, o, r⟩
+  | .error e => e == #[⟨f, o, r⟩]
   | .ok _ => false
 
 -- Accepted: a call of `f`, with a constructor compared inside.
@@ -48,7 +48,7 @@ private def same : Expr .hir := h 4 (.binary .eq (h 5 (.item g A)) (h 6 (.item g
 #guard rejects (h 2 (.matchE (h 3 (.var 0)) #[(⟨4, f⟩, h 5 (.int 0))])) 3 (.matchNotEnum .int)
 -- An unwritten type needs the `?` suffix; the suffix needs `Bool`.
 #guard match typeModule (module (h 2 (.int 0)) ⟨1, .bool, false, false⟩) with
-  | .error e => e == ⟨f, 1, .missingAnnotation⟩ | .ok _ => false
+  | .error e => e == #[⟨f, 1, .missingAnnotation⟩] | .ok _ => false
 #guard (typeModule (module (h 2 (.int 0)) ⟨1, .bool, true, false⟩)).isOk
 -- A let's binder is in scope in its body only, and is the nearest local there.
 private def letBody : Expr .hir := h 5 (.ite (h 6 (.var 0)) (h 7 (.var 1)) (h 8 (.int 0)))
@@ -56,7 +56,28 @@ private def letBody : Expr .hir := h 5 (.ite (h 6 (.var 0)) (h 7 (.var 1)) (h 8 
 #guard rejects (h 2 (.letE ⟨3, false⟩ (h 4 (.var 1)) (h 5 (.int 0)))) 4 (.danglingLocal 1)
 -- Type errors carry spans only through the origin table: none here.
 #guard match typeModule (module (h 2 (.bool true))) with
-  | .error e => e.diagnostic (module (h 2 (.bool true))) == none && e.code == some "F0304"
+  | .error #[e] => e.diagnostic (module (h 2 (.bool true))) == none && e.code == some "F0304"
+  | _ => false
+
+-- Each item stops at its own first error, and the other items are still
+-- typed: one error for each failing item, in declaration order. Here the
+-- function has two faults (only the first is reported), the first check a bad
+-- signature and a bad member (only the signature), the second check none, and
+-- the third a bad second member.
+private def c (name : String) : FrenBase.ItemId := m.named name
+private def mem (o : OriginId) (body : Expr .hir) : Member (Expr .hir) := ⟨.expect, "", o, body⟩
+private def several : Hir :=
+  ⟨m, #[.function ⟨f, 0, #[⟨1, .int, false, true⟩], .int,
+          h 2 (.binary .add (h 3 (.bool true)) (h 4 (.bool false)))⟩ (Array.replicate 5 {}),
+        .check ⟨c "c1", 0, #[⟨1, .int, true, true⟩], #[mem 2 (h 3 (.int 0))]⟩ (Array.replicate 4 {}),
+        .check ⟨c "c2", 0, #[], #[mem 1 (h 2 (.bool true))]⟩ (Array.replicate 3 {}),
+        .check ⟨c "c3", 0, #[], #[mem 1 (h 2 (.bool true)), mem 3 (h 4 (.int 0)), mem 5 (h 6 (.int 1))]⟩
+          (Array.replicate 7 {})]⟩
+#guard match typeModule several with
+  | .error es => es == #[⟨f, 3, .mismatch .int .bool⟩, ⟨c "c1", 1, .mismatch .bool .int⟩,
+      ⟨c "c3", 4, .mismatch .bool .int⟩]
   | .ok _ => false
+-- With the faults repaired the same module is typed whole.
+#guard (typeModule ⟨m, several.items.extract 2 3⟩).isOk
 
 end FrenHirToThirTests.PassCases

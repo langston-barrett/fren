@@ -120,7 +120,7 @@ private def rejections : IO Unit := do
   for source in ["mod lir_walk\nfn f(x: Int): Int := (", "mod lir_walk\nfn f(x: Int): Int := false",
       "mod lir_walk\nfn f(x: Int): Int := absent", "mod lir_walk\nfn f(x: Int): Int := f(x)",
       "mod lir_walk\nenum E { A, B }\nfn f(e: E): Int := match e { E::A => 0 }"] do
-    let .error original := FrenThirDesugar.fromSource ⟨301⟩ source
+    let .error original := FrenWalking.fromSource ⟨301⟩ source
       | throw (IO.userError "invalid fixture admitted")
     let .error actual := FrenFlatToLir.fromSource ⟨301⟩ source
       | throw (IO.userError "invalid source lowered")

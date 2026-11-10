@@ -8,12 +8,12 @@ namespace FrenLirToOirTests
 open FrenLir FrenOir FrenModule FrenEval
 
 structure Compiled where
-  admitted : FrenThirDesugar.Program
+  admitted : FrenWalking.Program
   program : FrenOir.Program
   produced : FrenLirToOir.produce admitted = .ok program
 
 def compile (file : Nat) (source : String) : Except String Compiled := do
-  let p ← (FrenThirDesugar.fromSource ⟨file⟩ source).mapError reprStr
+  let p ← (FrenWalking.fromSource ⟨file⟩ source).mapError reprStr
   match h : FrenLirToOir.produce p with
   | .error e => .error (reprStr e)
   | .ok out => .ok ⟨p, out, h⟩

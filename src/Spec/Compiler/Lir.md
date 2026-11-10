@@ -26,7 +26,7 @@ bodies; blocks retain their MIR block and ordered lowered members.
 
 r[lir.walking.input]
 `Produces p out` means exactly `FrenFlatToLir.produce p = .ok out`, where
-`p : FrenThirDesugar.Program` carries actual admission evidence.
+`p : FrenWalking.Program` carries actual admission evidence.
 `Rejects p d` means exactly its error diagnostic. The producer reconstructs
 MIR from that witness; it has no public unchecked theory entry. Source entry
 succeeds exactly when source admission and this producer both succeed.
@@ -228,7 +228,7 @@ choice. Symbol-model existence is a separate obligation from this conditional
 correspondence. It cannot be inferred from an assumed functionality Boolean.
 
 ```lean
-abbrev Input := FrenThirDesugar.Program
+abbrev Input := FrenWalking.Program
 
 def Produces (p : Input) (out : Program) : Prop := FrenFlatToLir.produce p = .ok out
 

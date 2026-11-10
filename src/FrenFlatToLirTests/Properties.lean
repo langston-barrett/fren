@@ -63,7 +63,7 @@ private def sample (file n : Nat) : Bool := Id.run do
   for text in #[source ++ "\nfn loop(x: Int): Int := loop(x)", source ++ "\nfn bad(x: Int): Int := false",
       source ++ "\nfn bad(x: Int): Int := absent", source ++ "\nfn bad(x: Int): Int := ("] do
     if (FrenFlatToLir.fromSource ⟨file⟩ text).isOk then return false
-  if (FrenThirDesugar.fromResolved {c.admitted.input with references := #[]}).isOk then return false
+  if (FrenWalking.fromResolved {c.admitted.input with references := #[]}).isOk then return false
   return true
 
 private def property (p : Prop)

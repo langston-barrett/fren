@@ -35,7 +35,7 @@ private def runSource (label text : String) (limits : Limits := {}) : IO Report 
 
 /-- Mutate actual producer/process inputs at the real aggregation boundary,
 without an implication that could discard rejected cases. -/
-private def aggregationSample (p : FrenThirDesugar.Program) (command : Array String)
+private def aggregationSample (p : FrenWalking.Program) (command : Array String)
     (run : ModelRun) (n : Nat) : Bool := Id.run do
   if (summarize p command run).verdict != .verified || run.results.size < 2 then return false
   let i := n % run.results.size

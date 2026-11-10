@@ -42,8 +42,8 @@ impl right_demand: right_demand for (op : spec.evaluator.BooleanOp) (left? : Boo
 #check FrenEval.walk_strict_failure
 #check FrenEval.shortCircuit_strict
 
--- These expectations test actual traversal, beyond the primitive impl and the
--- same-interpreter identity theorem of desugaring. Values come from Language.
+-- These expectations test actual traversal, beyond the primitive impl.
+-- Values come from Language.
 private def source := "mod demand\n\
   fn unused(dummy: Int): Int := let x := 1 div 0 in 0\n\
   fn used(dummy: Int): Int := let x := 1 div 0 in x\n\

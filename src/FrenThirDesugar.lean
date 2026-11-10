@@ -1,56 +1,89 @@
 module
 
-public import FrenWalking
+public import FrenModule.Core
+
+/-! THIR → desugared THIR, over the THIR module alone.
+
+The input is the type checker's output, `FrenModule.Core.Thir`; the pass reads
+no source text, syntax tree or resolver table, and runs no other pass. It is a
+fold of each body (`Expr.fold step`) that drops the forms the `Surface` gate
+marks: today, written parentheses. A parenthesised expression becomes its
+body, with the body's origin and annotation, so the parenthesis's own origin
+is the only thing removed. Every other node is rebuilt unchanged with its
+origin and type. The output phase cannot hold a surface form at all
+(`no_surface`), so that invariant needs no check. Items are independent: an
+item's output depends on that item only. -/
 
 public section
 namespace FrenThirDesugar
-open FrenModule FrenHirToThir
+open FrenExpr FrenModule.Core
 
-/-- A walking program admitted by the actual producer, including both walking
-validators. The whole typed value is retained, not reconstructed. -/
-structure Program where
-  input : Resolved
-  typed : Typed
-  accepted : checkWalking input = .ok typed
+/-- A module of desugared THIR expressions. -/
+abbrev Dthir := Module (Expr .dthir)
 
-/-- The current walking language has no sugar. -/
-@[expose] def desugar (p : Program) : Program := p
+/-- The output phase has no surface form. -/
+theorem no_surface : ¬ Phase.Surface .dthir := by decide
 
-/-- Admission failure is returned before the identity stage can run. -/
-def fromResolved (input : Resolved) : Except StaticFailure Program :=
-  match h : checkWalking input with
-  | .error d => .error d
-  | .ok typed => .ok (desugar ⟨input, typed, h⟩)
+/-- One layer: a parenthesis gives its (already desugared) body; any other
+node is the same node over the desugared children. -/
+@[expose] def step (o : OriginId) (ty : Ann .thir) : ExprF .thir (Expr .dthir) → Expr .dthir
+  | .bool v => ⟨o, ty, .bool v⟩
+  | .int v => ⟨o, ty, .int v⟩
+  | .var i => ⟨o, ty, .var i⟩
+  | .item g _ => absurd g (by decide)
+  | .ctor _ id => ⟨o, ty, .ctor (by decide) id⟩
+  | .apply g _ _ => absurd g (by decide)
+  | .call _ fn args => ⟨o, ty, .call (by decide) fn args⟩
+  | .unary op e => ⟨o, ty, .unary op e⟩
+  | .binary op l r => ⟨o, ty, .binary op l r⟩
+  | .ite c y n => ⟨o, ty, .ite c y n⟩
+  | .letE b v e => ⟨o, ty, .letE b v e⟩
+  | .matchE s arms => ⟨o, ty, .matchE s arms⟩
+  | .paren _ e => e
 
-/-- Parse and resolve before the same admitted boundary. -/
-def fromSource (file : FrenSource.FileId) (source : String) : Except StaticFailure Program := do
-  let doc ← (FrenParse.parseFile file source).mapError (fun e =>
-    .typing ⟨none, "expected " ++ e.diagnostic.expected, e.diagnostic.span⟩)
-  let resolved ← (FrenAstToHir.resolve doc).mapError StaticFailure.typing
-  fromResolved resolved
+/-- Desugar one expression (a fold). -/
+@[expose] def desugarExpr : Expr .thir → Expr .dthir := Expr.fold step
 
-theorem identity (p : Program) : desugar p = p := rfl
+/-- Desugar one item: its bodies only. Identities, signatures, member kinds
+and labels, and the origin table are kept. -/
+@[expose] def desugarItem : Item (Expr .thir) → Item (Expr .dthir)
+  | .enum e os => .enum e os
+  | .function f os => .function {f with body := desugarExpr f.body} os
+  | .check c os =>
+    .check {c with members := c.members.map fun m => {m with body := desugarExpr m.body}} os
 
-theorem retains (p : Program) : (desugar p).typed = p.typed := rfl
+/-- Desugar a module, item by item in declaration order. The pass is total:
+it has no error of its own. -/
+@[expose] def desugar (m : Thir) : Dthir := ⟨m.id, m.items.map desugarItem⟩
 
-theorem static (p : Program) :
-    check p.input = .ok (desugar p).typed ∧ WalkingCoverage (desugar p).typed ∧
-      WalkingNonrecursive (desugar p).typed :=
-  (walking_success p.input p.typed).1 p.accepted
+/-- The pass's defining equation, by which it is the unique such function
+(`Expr.fold_unique`). -/
+theorem desugarExpr_mk (o : OriginId) (ty : Ann .thir) (n : ExprF .thir (Expr .thir)) :
+    desugarExpr ⟨o, ty, n⟩ = step o ty (n.map desugarExpr) := Expr.fold_mk step o ty n
 
-theorem resolved_retained (p : Program) : (desugar p).typed.resolved = p.input ∧ Admitted p.input :=
-  walking_retains p.input p.typed p.accepted
+/-- A parenthesised expression desugars to what its body desugars to. -/
+theorem desugarExpr_paren (o : OriginId) (ty : Ann .thir) (g : Phase.Surface .thir) (e : Expr .thir) :
+    desugarExpr ⟨o, ty, .paren g e⟩ = desugarExpr e := by
+  rw [desugarExpr_mk]; rfl
 
-theorem rejected (input : Resolved) (d : StaticFailure) (h : checkWalking input = .error d) :
-    fromResolved input = .error d := by
-  unfold fromResolved
-  split <;> simp_all
+/-- Any node but a parenthesis keeps its origin and its type. -/
+theorem desugarExpr_keeps (o : OriginId) (ty : Ann .thir) (n : ExprF .thir (Expr .thir))
+    (h : ∀ g e, n ≠ .paren g e) :
+    (desugarExpr ⟨o, ty, n⟩).origin = o ∧ (desugarExpr ⟨o, ty, n⟩).ann = ty := by
+  rw [desugarExpr_mk]
+  cases n with
+  | item g _ => exact absurd g (by decide)
+  | apply g _ _ => exact absurd g (by decide)
+  | paren g e => exact absurd rfl (h g e)
+  | _ => exact ⟨rfl, rfl⟩
 
-theorem admitted (p : Program) : checkWalking (desugar p).input = .ok (desugar p).typed :=
-  p.accepted
+/-- Items are desugared one for one, in order, each from itself alone. -/
+theorem desugar_items (m : Thir) : (desugar m).items = m.items.map desugarItem := rfl
 
-theorem deterministic (input : Resolved) (a b : Program)
-    (ha : fromResolved input = .ok a) (hb : fromResolved input = .ok b) : a = b :=
-  Except.ok.inj (ha.symm.trans hb)
+theorem desugarItem_id (i : Item (Expr .thir)) : (desugarItem i).id = i.id := by
+  cases i <;> rfl
+
+theorem desugarItem_origins (i : Item (Expr .thir)) : (desugarItem i).origins = i.origins := by
+  cases i <;> rfl
 
 end FrenThirDesugar

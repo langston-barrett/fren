@@ -326,8 +326,8 @@ open.
 
 Continue the same correction objective with these separate chapter units:
 
-1. **Desugaring extensions** (`SCdesugar`, queued edit 1012): the core identity
-   relation and actual API correspondence are specified below. Each additional
+1. **Desugaring extensions** (`SCdesugar`, queued edit 1012): parenthesis
+   removal and its correspondence with the actual pass are specified below. Each additional
    sugar still needs Language semantics, its own transformation rule, typing
    and scoped-obligation/value preservation. No additional sugar is admitted.
 2. **MIR extensions** (`SCmir`, 1018): the core formal chapter and conditional
@@ -688,45 +688,39 @@ this unit uses that supplied record while network access is paused.
 
 ## Desugaring contracts and proof boundary
 
-`Spec/Compiler/Desugaring.md` displays the exact compiled definitions in its
-wrapper: `Program`, `Desugars`, `Produces`, `Rejects`, `Retains`, `Guard`,
-`ScopedChild`, `ScopedAt`, `DomainSite`, `Members`, `StaticPreservation`,
-`Evaluator`, `InterpretationPreservation`, `ObligationPreservation` and
-`PassContract`. These use actual production IR and the shared THIR judgments;
-there is no copied executable compiler. Recursive source/typed carriers and
-proof-carrying admission are stated in Lean because the current Fren subset
-cannot quantify over those actual recursive objects. The existing Fren
-example checks its arithmetic/check claims separately. It is not evidence
-for the Lean pass contracts.
+`FrenThirDesugar.desugar` takes the THIR module and returns the desugared
+THIR module. It removes parentheses and nothing else, and imports only the
+shared expression and module libraries; the `layering` test forbids it any
+pass, the parser and the syntax tree. The wrapper of
+`Spec/Compiler/Desugaring.md` proves, for every input, that the pass
+satisfies the layer equation `Desugars`, that it is the only function that
+does, that no output node is a parenthesis, and that the module keeps its
+identity, item order, item identities and origin tables. These are universal
+Lean proofs.
 
-The wrapper proves the actual `desugar` implements the specified relation,
-the complete identity pass contract, exact resolved success and failure,
-the type/coverage/non-recursion admission factorization, failure exclusion,
-source-result projection, and exact output admission/retention/static facts.
-`observation` transfers any predicate or interpretation on the whole retained
-resolved/typed pair. `ScopedChild` and its closure project to the shared THIR
-context relations. These are universal Lean proofs, not Plausible samples.
-The admitted identity transfers properties without proving them true initially.
+`FrenThirDesugarTests` holds Plausible properties over generated inputs:
+well-typed modules from `FrenGen.Thir`, with zero to two parentheses added
+around every node by `FrenGen.parens`, and the same modules with one injected
+fault. They check that the output is the input with only its parentheses
+removed, against an oracle on the printed form; that typing the
+parenthesis-free erasure of the input gives the output; that added
+parentheses do not change the output's bodies; that the node count falls by
+one for each parenthesis and scoping is unchanged; and, as a check of the
+generator, that the input with added parentheses is well typed. This is
+bounded evidence. No theorem yet states that desugaring preserves the typing
+judgment or evaluation; the evaluator still reads the walking program.
 
-`DomainSite` states a structural source-obligation inventory over the actual
-AST. It includes unused let values and both ordinary Boolean operands;
-branch guards retain the context of their subject across later binders.
-It records candidate division/remainder sites, not discharged nonzero-divisor
-proofs or a complete verification engine. Ordered `Members` observations keep
-all assumptions and expectations of a canonical block, including assumptions
-written after goals. Full retention separately covers empty blocks and all
-source/origin data. Interpreter equality includes all depths, requests and
-argument arrays, including negative cases. Neither it nor the generic
-observation law proves declarative verification soundness.
-
-The wrapper's structural positive/negative controls distinguish explicit
-branches, unguarded ordinary operands, unused let definitions and guard
-contexts across binders. Its actual-source control retains bodies, ordered
-members, signatures, references and file origins, and rejects type, coverage,
-recursion, parse and unsupported-syntax inputs. The existing actual-code
-`FrenThirDesugarTests` Plausible and finite tests remain separate bounded
-evidence; they do not prove a universal recursive bridge. Exact executions
-and deliberate failing mutations are recorded in the external check receipts.
+The same wrapper keeps the walking program's definitions, which MIR
+construction reads: `Program`, `Produces`, `Rejects`, `Guard`, `ScopedChild`,
+`ScopedAt`, `DomainSite`, `Members` and `Evaluator`. It proves exact resolved
+success and failure, the type/coverage/non-recursion admission factorization,
+failure exclusion, source-result projection and the output's
+admission/retention/static facts. `ScopedChild` and its closure project to the
+shared THIR context relations. `DomainSite` records candidate
+division/remainder sites, including unused let values and both ordinary
+Boolean operands; it does not discharge them. The walking program is the
+legacy checker's boundary, not an output of desugaring;
+`docs/fren2-walking-removal.md` plans its removal.
 
 - [ ] Prove `TypePassContract`, `CoverageContract` and `NonrecursionContract`
   for actual THIR production. Identity's static transfer does not discharge
@@ -784,23 +778,22 @@ or lazy-demand wording is superseded by the declarative rules above.
 
 ## Evidence still needed
 
-`FrenThirDesugar.Program` carries the actual successful `checkWalking`
-result as evidence. `desugar` returns that program unchanged. The Lean
-`identity`, `static`, `admitted`, `rejected` and `deterministic` theorems
-state properties of this stage. The test-only `FrenThirDesugarTests.evaluation`
-theorem equates actual `FrenEval.evaluate` calls at the same operational depth.
-Finite property tests exercise actual admitted, rejected and partial inputs;
-the checked Fren1 example does not prove these properties.
+`FrenThirDesugar.desugar` maps the THIR module to the desugared THIR module
+by removing parentheses. The wrapper proves the pass's defining equation and
+its uniqueness; generated-input property tests check its whole-module
+consequences. `FrenWalking.Program` separately carries the actual successful
+`checkWalking` result as evidence for the later passes, with the `static`,
+`rejected` and `deterministic` theorems.
 
-- [x] Implement the identity on admitted walking typed data, with producer
-  evidence and failure at the actual admission boundary.
-- [x] Establish identity-specific admission, static and evaluator correspondence
-  and test actual producer inputs, including failure and partial outcomes.
-- [ ] Establish universal traversal and checker soundness beyond these identity
-  laws and finite tests.
+- [x] Implement desugaring over the THIR module alone, with no source front
+  end, and forbid the dependency in the `layering` test.
+- [x] Test it on generated well-typed modules and on faulted ones.
+- [ ] Prove that desugaring preserves the typing judgment and evaluation, once
+  both are stated over the shared expression representation.
+- [ ] Move MIR construction and the later passes to the desugared module, then
+  remove the walking program (`docs/fren2-walking-removal.md`).
 - [ ] Specify and implement each future sugared form before admitting it, and
   establish its typing and meaning preservation, including table disjointness.
-- [ ] Build the MIR path and establish assumption-to-goal preservation.
 - [ ] Restate recursive correspondence in Fren when it can express the actual
   recursive syntax and judgments, without copying the IR or pass into Fren.
 
@@ -808,9 +801,9 @@ the checked Fren1 example does not prove these properties.
 
 ## Implementation evidence and remaining obligations
 
-`FrenThirToMir.produce` consumes `FrenThirDesugar.Program`, whose equality
+`FrenThirToMir.produce` consumes `FrenWalking.Program`, whose equality
 witness certifies actual walking admission. `fromSource` uses that same
-parser, resolver and checked desugaring boundary. Rejected sources retain
+parser, resolver and walking admission boundary. Rejected sources retain
 their admission diagnostics. Internal missing-table failures are explicit;
 construction never silently omits a declaration after such a failure.
 

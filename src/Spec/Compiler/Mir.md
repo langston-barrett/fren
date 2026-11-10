@@ -9,7 +9,7 @@ functions, global checks and the expressions in the source grammar.
 
 ## 1. Semantic objects and admission
 
-A program `p : FrenThirDesugar.Program` contains the resolved input, typed
+A program `p : FrenWalking.Program` contains the resolved input, typed
 output and evidence `checkWalking p.input = .ok p.typed`. A theory contains
 `source : Typed`, ordered `declarations` and ordered `requests`. Its
 declarations are enumerations, signature/body definitions and expectation
@@ -180,7 +180,7 @@ The following relations are compiled verbatim in the
 and the scoped desugaring relations, without a second executable compiler.
 
 ```lean
-abbrev Program := FrenThirDesugar.Program
+abbrev Program := FrenWalking.Program
 
 def Produces (p : Program) (t : Theory) : Prop := FrenThirToMir.produce p = .ok t
 

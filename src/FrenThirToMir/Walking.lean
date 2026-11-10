@@ -1,6 +1,6 @@
 module
 
-public import FrenThirDesugar
+public import FrenWalking
 public import FrenMir
 
 public section
@@ -34,7 +34,7 @@ private def declaration (t : Typed) (decl : Decl) : Result (Option Declaration) 
 
 /-- The sole public conversion input carries equality to actual checkWalking.
 No execution, matching transformation or solver interpretation is performed. -/
-def produce (p : FrenThirDesugar.Program) : Result Theory := do
+def produce (p : FrenWalking.Program) : Result Theory := do
   let .declarations decls := p.typed.resolved.document.root
     | throw (FrenHirToThir.failure p.input.scope.name.span "MIR expected admitted declarations")
   let mut declarations := #[]
@@ -47,10 +47,10 @@ def produce (p : FrenThirDesugar.Program) : Result Theory := do
 /-- Admission failures precede conversion, with their original diagnostic. -/
 def fromSource (file : FrenSource.FileId) (source : String) :
     Except FrenHirToThir.StaticFailure Theory := do
-  let p ← FrenThirDesugar.fromSource file source
+  let p ← FrenWalking.fromSource file source
   (produce p).mapError FrenHirToThir.StaticFailure.typing
 
-theorem retains (p : FrenThirDesugar.Program) (out : Theory) (h : produce p = .ok out) :
+theorem retains (p : FrenWalking.Program) (out : Theory) (h : produce p = .ok out) :
     out.source = p.typed := by
   unfold produce at h
   split at h
@@ -63,7 +63,7 @@ theorem retains (p : FrenThirDesugar.Program) (out : Theory) (h : produce p = .o
 
 /-- The real output requests come only from retained blocks, in declaration
 order. Together with request_context this excludes foreign hypotheses. -/
-theorem requests_from_blocks (p : FrenThirDesugar.Program) (out : Theory)
+theorem requests_from_blocks (p : FrenWalking.Program) (out : Theory)
     (h : produce p = .ok out) :
     out.requests = out.declarations.flatMap (fun d =>
       match d with | .block b => b.requests | _ => #[]) := by
@@ -76,7 +76,7 @@ theorem requests_from_blocks (p : FrenThirDesugar.Program) (out : Theory)
       rfl
   · contradiction
 
-theorem request_from_block (p : FrenThirDesugar.Program) (out : Theory)
+theorem request_from_block (p : FrenWalking.Program) (out : Theory)
     (h : produce p = .ok out) (r : CheckRequest) (hr : r ∈ out.requests) :
     ∃ b, Declaration.block b ∈ out.declarations ∧ r ∈ b.requests := by
   rw [requests_from_blocks p out h] at hr
@@ -86,17 +86,17 @@ theorem request_from_block (p : FrenThirDesugar.Program) (out : Theory)
   | function f => simp at hr
   | block b => exact ⟨b, hd, hr⟩
 
-theorem admission (p : FrenThirDesugar.Program) (out : Theory) (h : produce p = .ok out) :
+theorem admission (p : FrenWalking.Program) (out : Theory) (h : produce p = .ok out) :
     FrenHirToThir.checkWalking p.input = .ok out.source := by
   rw [retains p out h]
   exact p.accepted
 
-theorem deterministic (p : FrenThirDesugar.Program) (a b : Theory)
+theorem deterministic (p : FrenWalking.Program) (a b : Theory)
     (ha : produce p = .ok a) (hb : produce p = .ok b) : a = b :=
   Except.ok.inj (ha.symm.trans hb)
 
 theorem rejected (file : FrenSource.FileId) (source : String) (d : FrenHirToThir.StaticFailure)
-    (h : FrenThirDesugar.fromSource file source = .error d) :
+    (h : FrenWalking.fromSource file source = .error d) :
     fromSource file source = .error d := by simp [fromSource, h, Bind.bind, Except.bind]
 
 end FrenThirToMir

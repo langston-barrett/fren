@@ -58,7 +58,7 @@ to this single-file invocation; byte offsets refer to the unchanged text. -/
 def checkText (text : String) (c : Config := {}) : IO Result := do
   unless c.valid do return inputFailure "invalid bounded configuration"
   if text.utf8ByteSize > 1048576 then return inputFailure "source exceeds 1048576 bytes"
-  match FrenThirDesugar.fromSource ⟨0⟩ text with
+  match FrenWalking.fromSource ⟨0⟩ text with
   | .error e =>
     let d := staticDiagnostic e
     return inputFailure d.headline (some d)

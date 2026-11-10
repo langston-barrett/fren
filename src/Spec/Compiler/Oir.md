@@ -232,7 +232,7 @@ The following block is compiled verbatim by the [chapter wrapper](Oir.lean).
 It defines relations over production objects; none is a new runtime pass.
 
 ```lean
-abbrev Input := FrenThirDesugar.Program
+abbrev Input := FrenWalking.Program
 
 def Produces (p : Input) (out : FrenOir.Program) : Prop :=
   FrenLirToOir.produce p = .ok out

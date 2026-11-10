@@ -165,8 +165,8 @@ or report unresolved predicates. The current raw `FrenEval` result alone
 performs no such discharge; LIR now retains this information separately.
 Conditions proved by verification may be erased for value evaluation.
 
-The identity [desugaring stage](Desugaring.md) already preserves these
-raw outcomes. Each transformation must establish its own value
+The evaluator reads the walking program, not the output of
+[desugaring](Desugaring.md). Each transformation must establish its own value
 correspondence under the required well-definedness premises, independently
 of completeness of its retained source verification information.
 

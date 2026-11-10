@@ -122,13 +122,13 @@ private def rejectionCases : IO Unit := do
     "mod skeleton\nfn f(x: Int): Int := absent", "mod skeleton\nfn f(x: Int): Int := f(x)",
     "mod skeleton\nenum E { A, B }\nfn f(e: E): Int := match e { E::A => 0 }"]
   for source in bad do
-    let .error original := FrenThirDesugar.fromSource ⟨101⟩ source
+    let .error original := FrenWalking.fromSource ⟨101⟩ source
       | throw (IO.userError "invalid fixture admitted")
     let .error actual := FrenThirToMir.fromSource ⟨101⟩ source
       | throw (IO.userError "MIR admitted invalid source")
     require (reprStr actual == reprStr original) "admission diagnostic changed"
   let c ← load s1
-  require (!(FrenThirDesugar.fromResolved {c.admitted.input with references := #[]}).isOk) "edited resolution admitted"
+  require (!(FrenWalking.fromResolved {c.admitted.input with references := #[]}).isOk) "edited resolution admitted"
 
 def runCases : IO Unit := do
   s1Cases

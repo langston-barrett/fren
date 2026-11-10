@@ -13,7 +13,7 @@ open FrenModule FrenAst FrenLir FrenOirToSmt
 deriving instance DecidableEq for Outcome
 
 -- reference begin
-abbrev Input := FrenThirDesugar.Program
+abbrev Input := FrenWalking.Program
 
 def Produces (p : Input) (out : FrenOirToSmt.Program) : Prop := produce p = .ok out
 
@@ -468,7 +468,7 @@ theorem flipped_goal_model (p : FrenOir.Program) :
 #eval show IO Unit from do
   let source := "mod smt_contracts\nfn fixed(x: Int): Bool := true\n" ++
     "expect c(x: Int) { expect bad: false assume later: true }\n"
-  let .ok admitted := FrenThirDesugar.fromSource ⟨215⟩ source
+  let .ok admitted := FrenWalking.fromSource ⟨215⟩ source
     | throw (IO.userError "SMT witness admission failed")
   let .ok out := produce admitted | throw (IO.userError "SMT witness production failed")
   unless out.oir.definitions.size == 1 && out.queries.size == out.oir.questions.size do

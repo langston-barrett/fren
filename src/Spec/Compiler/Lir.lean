@@ -11,7 +11,7 @@ namespace Spec.Compiler.Lir
 open FrenModule FrenAst FrenLir
 
 -- reference begin
-abbrev Input := FrenThirDesugar.Program
+abbrev Input := FrenWalking.Program
 
 def Produces (p : Input) (out : Program) : Prop := FrenFlatToLir.produce p = .ok out
 
@@ -280,16 +280,16 @@ theorem failure_excludes_success (p : Input) (d : FrenDiag.Diagnostic) (h : Reje
 
 theorem entry_success (file : FrenSource.FileId) (source : String) (out : Program) :
     FrenFlatToLir.fromSource file source = .ok out ↔
-      ∃ p, FrenThirDesugar.fromSource file source = .ok p ∧ Produces p out := by
+      ∃ p, FrenWalking.fromSource file source = .ok p ∧ Produces p out := by
   unfold FrenFlatToLir.fromSource
-  cases hp : FrenThirDesugar.fromSource file source with
+  cases hp : FrenWalking.fromSource file source with
   | error d => simp [Bind.bind, Except.bind]
   | ok p =>
     simp only [Bind.bind, Except.bind, Except.mapError, Produces]
     cases hc : FrenFlatToLir.produce p <;> simp [hc]
 
 theorem entry_failure (file : FrenSource.FileId) (source : String) (d : FrenHirToThir.StaticFailure)
-    (h : FrenThirDesugar.fromSource file source = .error d) :
+    (h : FrenWalking.fromSource file source = .error d) :
     FrenFlatToLir.fromSource file source = .error d := FrenFlatToLir.rejected file source d h
 
 theorem ordinary_checks (op : BinaryOp) (a b : Lowered) (hd : op ≠ .div) (hm : op ≠ .rem) :
@@ -477,7 +477,7 @@ example : ¬ Holds symbols zero env (.both .empty (.check (.bool false))) := by
 #eval show IO Unit from do
   let source := "mod lir_contracts\nfn fixed(x: Int): Bool := true\n" ++
     "expect c(x: Int) { expect false_goal: false assume later: true }\nexpect empty() {}\n"
-  let .ok p := FrenThirDesugar.fromSource ⟨211⟩ source
+  let .ok p := FrenWalking.fromSource ⟨211⟩ source
     | throw (IO.userError "LIR witness admission failed")
   let .ok out := FrenFlatToLir.produce p | throw (IO.userError "LIR witness lowering failed")
   unless out.wellFormed && out.mir.source == p.typed && out.requests.size == 3 do
@@ -511,7 +511,7 @@ example : ¬ Holds symbols zero env (.both .empty (.check (.bool false))) := by
     if changed.wellFormed then throw (IO.userError "LIR retention mutation admitted")
   for text in ["mod bad\nfn f(x: Int): Int := f(x)",
       "mod bad\nenum E { A }\nfn f(e: E): Bool := match e { E::A => true, E::A => false }"] do
-    let .error rejected := FrenThirDesugar.fromSource ⟨211⟩ text
+    let .error rejected := FrenWalking.fromSource ⟨211⟩ text
       | throw (IO.userError "unsupported witness admitted")
     let .error actual := FrenFlatToLir.fromSource ⟨211⟩ text
       | throw (IO.userError "rejected witness lowered")

@@ -61,12 +61,13 @@ def recovers (c : Case) : Bool :=
   | .ok out => exact out c.thir && exactHir out.eraseTypes c.hir
   | .error _ => false
 
-/-- A faulty case is rejected at the injected node with the injected reason;
+/-- A faulty case is rejected at the injected node with the injected reason,
+and with no other error;
 a case whose fault found no site is well typed and recovered. -/
 def rejects (c : Case) : Bool :=
   match c.expected with
   | some e => match typeModule c.hir with
-    | .error got => got == ⟨e.item, e.origin, e.outcome.reason⟩
+    | .error got => got == #[⟨e.item, e.origin, e.outcome.reason⟩]
     | .ok _ => false
   | none => recovers c
 
@@ -100,7 +101,7 @@ def shiftModule (k : Nat) (m : Module (Expr p)) : Module (Expr p) := ⟨m.id, m.
 def originBlind (k : Nat) (c : Case) : Bool :=
   match typeModule c.hir, typeModule (shiftModule k c.hir) with
   | .ok a, .ok b => exact (shiftModule k a) b
-  | .error a, .error b => b == {a with origin := a.origin + k}
+  | .error a, .error b => b == a.map fun e => {e with origin := e.origin + k}
   | _, _ => false
 
 /-- Generated input is well scoped exactly when no dangling local was injected. -/

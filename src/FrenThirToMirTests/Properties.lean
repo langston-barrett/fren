@@ -39,7 +39,7 @@ private def sample (file n : Nat) : Bool := Id.run do
       source ++ "\nfn bad(x: Int): Int := missing",
       source ++ "\nfn bad(x: Int): Int := ("] do
     if (FrenThirToMir.fromSource ⟨file⟩ text).isOk then return false
-  if (FrenThirDesugar.fromResolved {c.admitted.input with references := #[]}).isOk then return false
+  if (FrenWalking.fromResolved {c.admitted.input with references := #[]}).isOk then return false
   -- Generated actual partial input remains admitted and carries structured
   -- demand; undefined is not an admission failure or a Boolean false.
   let partialSource := "mod skeleton\nexpect partial(x: Int) { expect goal: x div 0 = 0 assume later: x <= 10 }"

@@ -57,7 +57,7 @@ private def nonanswer (q : FrenOir.Question) (r : Readback) : CheckResult :=
   | .error reason => row q .processFailure reason (some r)
   | _ => row q .invalidEvidence "unexpected answer" (some r)
 
-private def classifyReadback (p : FrenThirDesugar.Program) (out : Program)
+private def classifyReadback (p : FrenWalking.Program) (out : Program)
     (command : Array String) (run : ModelRun) (i : Nat) (q : Query) (r : Readback) : CheckResult := Id.run do
   let bad := fun reason => row q.question .invalidEvidence reason (some r)
   let answerKey := s!"{run.runId}/{i}/answer"
@@ -154,7 +154,7 @@ source inventory, checks exact source/ordered envelopes and physical bindings,
 and recomputes decoding and source confirmation. Editable receipts remain an IO
 trust boundary. Use check/checkSource for an end-to-end result, never to certify
 caller-supplied success flags. -/
-def summarize (p : FrenThirDesugar.Program) (command : Array String) (run : ModelRun) : Report := Id.run do
+def summarize (p : FrenWalking.Program) (command : Array String) (run : ModelRun) : Report := Id.run do
   let .ok out := produce p | return ⟨.inputFailure, "source production failed", #[], some run⟩
   let invalid (reason : String) : Report :=
     ⟨.inconclusive, reason, out.queries.map (fun q => row q.question .invalidEvidence reason), some run⟩
@@ -178,7 +178,7 @@ def summarize (p : FrenThirDesugar.Program) (command : Array String) (run : Mode
 
 /-- The real entry runs the admitted-source producer and bounded solver/model
 pipeline itself. It accepts neither raw answers nor caller success predicates. -/
-def check (p : FrenThirDesugar.Program) (limits : Limits := {})
+def check (p : FrenWalking.Program) (limits : Limits := {})
     (evaluationDepth : Nat := 10000) : IO Report := do
   try
     match ← solveModels p limits evaluationDepth with
@@ -189,7 +189,7 @@ def check (p : FrenThirDesugar.Program) (limits : Limits := {})
 /-- Parse, resolve, admit, produce and execute actual source text. -/
 def checkSource (file : FrenSource.FileId) (text : String) (limits : Limits := {})
     (evaluationDepth : Nat := 10000) : IO Report := do
-  match FrenThirDesugar.fromSource file text with
+  match FrenWalking.fromSource file text with
   | .error e => return ⟨.inputFailure, reprStr e, #[], none⟩
   | .ok p => check p limits evaluationDepth
 

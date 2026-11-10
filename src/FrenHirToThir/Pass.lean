@@ -162,28 +162,33 @@ def checkParams (item : FrenBase.ItemId) (params : Array Param) : Result Unit :=
 /-- Parameters extend the context in written order: the last is index zero. -/
 def paramContext (params : Array Param) : Ctx := params.toList.reverse.map (·.type)
 
-/-- Type a whole module: every signature first, in declaration order, then
-every body in declaration order (unused functions and every member included). -/
-def typeModule (m : Hir) : Result Thir := do
-  for item in m.items do
-    match item with
-    | .function f _ => checkParams f.id f.params
-    | .check c _ => checkParams c.id c.params
-    | .enum _ _ => pure ()
+/-- Type one item, stopping at its first error: its signature first, then its
+body, or its members in written order. -/
+def typeItem (signatures : Array (FrenBase.ItemId × Array Ty × Ty))
+    (ctorOwner : FrenBase.ItemId → Option FrenBase.ItemId) :
+    Item (Expr .hir) → Result (Item (Expr .thir))
+  | .enum e os => pure (.enum e os)
+  | .function f os => do
+    checkParams f.id f.params
+    let env : Env := ⟨f.id, signatures, ctorOwner⟩
+    let body ← typeBody env (paramContext f.params) f.result f.body
+    pure (.function {f with body} os)
+  | .check c os => do
+    checkParams c.id c.params
+    let env : Env := ⟨c.id, signatures, ctorOwner⟩
+    let members ← c.members.mapM fun mem => do
+      pure {mem with body := ← typeBody env (paramContext c.params) .bool mem.body}
+    pure (.check {c with members} os)
+
+/-- Type a whole module, each item on its own against every written
+signature (unused functions and every member included). An item stops at its
+first error and the other items are still typed: the result is the typed
+module, or the first error of each failing item, in declaration order. -/
+def typeModule (m : Hir) : Except (Array TypeError) Thir :=
   let signatures := m.functions.map fun f => (f.id, f.params.map (·.type), f.result)
-  let ctorOwner := m.ctorOwner
-  let items ← m.items.mapM fun
-    | .enum e os => pure (.enum e os)
-    | .function f os => do
-      let env : Env := ⟨f.id, signatures, ctorOwner⟩
-      let body ← typeBody env (paramContext f.params) f.result f.body
-      pure (.function {f with body} os)
-    | .check c os => do
-      let env : Env := ⟨c.id, signatures, ctorOwner⟩
-      let members ← c.members.mapM fun mem => do
-        pure {mem with body := ← typeBody env (paramContext c.params) .bool mem.body}
-      pure (.check {c with members} os)
-  pure ⟨m.id, items⟩
+  let results := m.items.map (typeItem signatures m.ctorOwner)
+  let errors := results.filterMap fun | .error e => some e | .ok _ => none
+  if errors.isEmpty then .ok ⟨m.id, results.filterMap (·.toOption)⟩ else .error errors
 
 /-- The span a type error blames, from the item's origin table. -/
 def TypeError.span (m : Module E) (e : TypeError) : Option FrenSource.Span := do

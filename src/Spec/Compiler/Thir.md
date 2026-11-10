@@ -165,8 +165,35 @@ operand types, Bool conditions and pattern ownership. It rejects empty
 matches without an inferred result. It checks every declaration and member,
 including unused functions and unreachable written branches. For fixed
 admitted input it returns deterministic typed data or diagnostics; no solver
-choice or guessed type is involved. Diagnostic recovery and multi-error
-aggregation are not required by this source domain.
+choice or guessed type is involved. The legacy checker described above
+stops at the first error in the module.
+
+## The typed module
+
+The separated type checker, `FrenHirToThir.Pass.typeModule`, takes the
+[HIR module](Hir.md) as its whole input and applies the same typing rules.
+Its successful result is the THIR module: the same items in declaration
+order, each function body and check member an expression whose every node
+carries its type and keeps its origin. Parentheses are still nodes. The THIR
+module is the whole input of [desugaring](Desugaring.md), which reads nothing
+else.
+
+**Proof obligations**
+
+r[thir.module.items]
+Each item is typed on its own, against the signatures and constructor owners
+of the whole module. Within one item the checker stops at the first error, in
+the order parameters, then the body or the members as written. An error in one
+item neither hides nor changes the result of another.
+
+r[thir.module.errors]
+The result is the THIR module exactly when no item fails. Otherwise it is a
+nonempty list holding the first error of each failing item, in declaration
+order, and no typed module. Each error names its item, the origin of the
+offending node and the reason.
+
+Coverage and non-recursion are not part of this result; the walking
+validators below decide them for the legacy checker's output.
 
 ## Type correctness, coverage and non-recursion
 

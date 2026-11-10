@@ -1,141 +1,164 @@
 module
 
 public import FrenThirDesugar
-public import FrenEval
-import Plausible
+public import FrenHirToThir
+public import FrenGen
+public import Plausible
+
+/-! Property tests of THIR desugaring on generated input of its own IR, under
+Plausible. An input is a generated THIR module, well typed by construction or
+carrying one injected fault, with parentheses then added around any of its
+nodes (`FrenGen.Thir.parens`). The pass is total, so no property has a premise
+and nothing is discarded; the census reports what the samples covered. -/
 
 public section
 namespace FrenThirDesugarTests
-open FrenThirDesugar FrenEval Plausible
+open FrenExpr FrenModule.Core FrenThirDesugar FrenGen.Thir Plausible
 open scoped Plausible.Decorations
+open Fren (Sexp)
 
-@[expose] def evaluator (p : FrenThirDesugar.Program) : FrenEval.Program := ⟨p.input, p.typed, p.accepted⟩
+/-- A generated module and the salt that places its added parentheses. -/
+structure Input where
+  case : Case
+  salt : Nat
 
-/-- The actual interpreter receives the same program, request, arguments and
-operational depth. This includes the complete failure or evaluation payload. -/
-theorem evaluation (p : FrenThirDesugar.Program) (r : Request) (v : Array Value) (depth : Nat) :
-    evaluate (evaluator (desugar p)) r v depth = evaluate (evaluator p) r v depth := rfl
+/-- The pass's input. -/
+def Input.thir (i : Input) : Thir := parens i.salt i.case.thir
 
-private def key (s : String) : FrenBase.ItemId := FrenBase.ItemId.root.named "skeleton" |>.named s
-private def light (s : String) : Value := .enum (key "Light") ((key "Light").named s)
-private def source : String := "pub mod skeleton\n\n\
-  pub enum Light { Red, Amber, Green }\n\
-  pub fn next(l: Light): Light := match l { Light::Red => Light::Green, Light::Green => Light::Amber, Light::Amber => Light::Red, }\n\
-  pub fn wait(l: Light, base: Int): Int := match l { Light::Red => base + 30, Light::Amber => base + 5, Light::Green => base, }\n\
-  fn partial(x: Int): Int := x div 0\n\
-  fn unused(x: Int): Int := if true then x else 1 div 0\n\
-  fn unusedLet(dummy: Int): Int := let x := 1 div 0 in 0\n\
-  fn usedLet(dummy: Int): Int := let x := 1 div 0 in x\n\
-  fn guarded(d: Int): Int := let x := 1 div d in if d != 0 then x else 0\n\
-  fn conjunction(b?: Bool): Bool := b? and (1 div 0 = 0)\n\
-  fn disjunction(b?: Bool): Bool := b? or (1 % 0 = 0)\n\
-  fn nested(dummy: Int): Int := let x := 1 div 0 in let y := x + 1 in 4\n\
-  fn nestedUsed(dummy: Int): Int := let x := 1 div 0 in let y := x + 1 in y\n\
-  fn shadow(dummy: Int): Int := let x := 1 div 0 in let x := 8 in x\n\
-  fn capture(x: Int): Int := let y := x + 1 in let x := 100 in y\n\
-  fn strictIff(b?: Bool): Bool := b? iff (1 div 0 = 0)\n\
-  fn strictEq(b?: Bool): Bool := b? = (1 div 0 = 0)\n\
-  fn strictNe(b?: Bool): Bool := b? != (1 div 0 = 0)\n\
-  fn first(x: Int, y: Int): Int := x\n\
-  fn argument(dummy: Int): Int := first(3, 1 div 0)\n\
-  expect demand(b?: Bool) { assume a: b? or (1 div 0 = 0) expect e: let x := 1 div 0 in b? }\n\
-  expect cycles(l: Light) { expect back: next(next(next(l))) = l }\n\
-  expect waits(l: Light, base: Int) { assume bounded: base <= 100 expect at_most: wait(l, base) <= 130 }\n\
-  expect wrong(l: Light) { expect never_red: next(l) != Light::Red }\n"
+instance : Repr Input where
+  reprPrec i _ := Fren.Sexp.pretty (i.thir.toSexp true)
 
-private def result (p : FrenThirDesugar.Program) (name : String) (member : Option String)
-    (args : Array Value) (depth : Nat) : Outcome :=
-  match evaluate (evaluator p) ⟨key name, member⟩ args depth with
-  | .ok e => e.outcome
-  | .error e => .error e
+/-- Plausible's own generator as the generator's source of choices. -/
+def gen (fault : Option Fault) : Gen Input := Gen.sized fun size => do
+  let pick (n : Nat) : Gen Nat := do
+    let k ← Gen.choose Nat 0 (n - 1) (by omega)
+    pure k.val
+  let salt ← Gen.choose Nat 0 1000000 (by decide)
+  return ⟨(← genCaseRetry pick size fault 8).1, salt.val⟩
 
-private def hasValue (o : Outcome) (v : Value) : Bool :=
-  match o with | .ok actual => actual == v | _ => false
-private def undefined (o : Outcome) : Bool :=
-  match o with | .error (.undefined ..) => true | _ => false
-private def invalid (o : Outcome) : Bool :=
-  match o with | .error (.invalid ..) => true | _ => false
-private def exhausted (o : Outcome) : Bool :=
-  match o with | .error (.exhausted ..) => true | _ => false
+structure WellTyped where
+  input : Input
 
-private def sample (n : Nat) (x : Int) : Bool := Id.run do
-  let .ok p := FrenThirDesugar.fromSource ⟨n⟩ source | return false
-  let .ok actual := FrenHirToThir.checkWalkingSource ⟨n⟩ source | return false
-  let q := desugar p
-  if actual != q.typed then return false
-  if q.typed != p.typed || q.typed.resolved.document.emit != source then return false
-  if !hasValue (result q "wait" none #[light "Red", .int x] 100) (.int (x + 30)) then return false
-  if !hasValue (result q "next" none #[light "Amber"] 100) (light "Red") then return false
-  if !hasValue (result q "wrong" (some "never_red") #[light "Amber"] 100) (.bool false) then return false
-  if !hasValue (result q "waits" (some "bounded") #[light "Red", .int x] 100) (.bool (x ≤ 100)) then return false
-  -- Independent Language outcomes, beyond the identity theorem above.
-  -- These exercise actual fromSource/desugar/evaluate, not a copied pass.
-  let definedDemand := #[("unusedLet", none, #[Value.int x], Value.int 0),
-    ("guarded", none, #[.int 0], .int 0), ("guarded", none, #[.int 1], .int 1),
-    ("conjunction", none, #[.bool false], .bool false),
-    ("disjunction", none, #[.bool true], .bool true),
-    ("nested", none, #[.int x], .int 4), ("shadow", none, #[.int x], .int 8),
-    ("capture", none, #[.int x], .int (x + 1)),
-    ("demand", some "a", #[.bool true], .bool true),
-    ("demand", some "e", #[.bool true], .bool true)]
-  for (name, member, args, expected) in definedDemand do
-    if !hasValue (result q name member args 100) expected then return false
-  let undefinedDemand := #[("usedLet", none, #[Value.int x]),
-    ("nestedUsed", none, #[.int x]), ("conjunction", none, #[.bool true]),
-    ("disjunction", none, #[.bool false]), ("strictIff", none, #[.bool false]),
-    ("strictIff", none, #[.bool true]), ("strictEq", none, #[.bool false]),
-    ("strictEq", none, #[.bool true]), ("strictNe", none, #[.bool false]),
-    ("strictNe", none, #[.bool true]), ("argument", none, #[.int x]),
-    ("demand", some "a", #[.bool false])]
-  for (name, member, args) in undefinedDemand do
-    if !undefined (result q name member args 100) then return false
-  if !hasValue (result q "demand" (some "e") #[.bool false] 100) (.bool false) then return false
-  for (label, kind) in [("a", FrenAst.MemberKind.assume), ("e", .expect)] do
-    let .ok e := evaluate (evaluator q) ⟨key "demand", some label⟩ #[.bool true] 100 | return false
-    if e.body.member.map (·.kind) != some kind ||
-        e.body.member.map (·.label.text) != some label ||
-        (e.body.expression.tokens.head?).map (·.span.file) != some ⟨n⟩ then return false
-  if !undefined (result q "partial" none #[.int x] 100) then return false
-  if !invalid (result q "wait" none #[.bool true] 100) then return false
-  if !exhausted (result q "wait" none #[light "Red", .int x] 0) then return false
-  let bad := #["mod bad\nfn f(x: Int): Int := y + 1", "mod bad\nenum Light { Red, Green }\nfn f(l: Light): Int := l + 1", source ++ "\nfn loop(x: Int): Int := loop(x)", "mod bad\nfn f(x: Int): Int := ("]
-  if bad.any (fun s => (FrenThirDesugar.fromSource ⟨n⟩ s).isOk) then return false
-  if (FrenThirDesugar.fromResolved {p.input with references := #[]}).isOk then return false
-  -- Independent controls distinguish omitted data from the retained value.
-  if ({p.typed with bodies := #[]} : FrenModule.Typed) == q.typed then return false
-  if ({p.typed with signatures := #[]} : FrenModule.Typed) == q.typed then return false
-  if ({p.typed with resolved := {p.input with references := #[]}} : FrenModule.Typed) == q.typed then return false
-  let .ok provenance := FrenThirDesugar.fromSource ⟨n + 1⟩ source | return false
-  if provenance.typed == q.typed then return false
-  let .ok members := FrenThirDesugar.fromSource ⟨n⟩ (source.replace "assume bounded:" "expect bounded:") | return false
-  if members.typed == q.typed then return false
-  let .ok noAssumption := FrenThirDesugar.fromSource ⟨n⟩ (source.replace "assume bounded: base <= 100 " "") | return false
-  if noAssumption.typed == q.typed then return false
-  let .ok noExpectation := FrenThirDesugar.fromSource ⟨n⟩ (source.replace "expect at_most: wait(l, base) <= 130" "") | return false
-  if noExpectation.typed == q.typed then return false
-  let .ok enumChange := FrenThirDesugar.fromSource ⟨n⟩ (source.replace "Amber" "Yellow") | return false
-  if enumChange.typed == q.typed || hasValue (result enumChange "next" none #[light "Amber"] 100) (light "Red") then return false
-  return true
+structure Faulty where
+  input : Input
 
-private def checkProperty (p : Prop)
+instance : Repr WellTyped := ⟨fun c n => reprPrec c.input n⟩
+instance : Repr Faulty := ⟨fun c n => reprPrec c.input n⟩
+instance : Shrinkable WellTyped := {}
+instance : Shrinkable Faulty := {}
+instance : Arbitrary WellTyped := ⟨(⟨·⟩) <$> gen none⟩
+instance : Arbitrary Faulty where
+  arbitrary := do
+    let k ← Gen.choose Nat 0 (Fault.all.length - 1) (by decide)
+    (⟨·⟩) <$> gen (Fault.all[k.val]?)
+
+/-- The printed form without its parentheses: each `(paren header.. body)`
+list is replaced by its body. This reads the printed tree only, not `ExprF`. -/
+partial def unparen : Sexp → Sexp
+  | .list items =>
+    let items := items.map unparen
+    if items[0]? == some (Sexp.symbol "paren") then items.back?.getD (.list items) else .list items
+  | s => s
+
+/-- The output is the input without its parentheses and is otherwise the same
+tree: every other node, with its origin, its type and its children in order,
+every signature, member and origin table. Faulty input included: the pass is
+total and does not depend on typing. -/
+def removesOnlyParens (i : Input) : Bool :=
+  (desugar i.thir).toSexp true == unparen (i.thir.toSexp true)
+
+/-- The same source with every parenthesis deleted, as HIR. -/
+def unparenHir : Expr .hir → Expr .hir :=
+  Expr.fold fun o a n => match n with
+    | .paren _ e => e
+    | n => ⟨o, a, n⟩
+
+def unparenModule (m : Hir) : Hir :=
+  ⟨m.id, m.items.map fun
+    | .enum e os => .enum e os
+    | .function f os => .function {f with body := unparenHir f.body} os
+    | .check c os =>
+      .check {c with members := c.members.map fun mem => {mem with body := unparenHir mem.body}} os⟩
+
+/-- Desugaring commutes with typing: the output is exactly what the type
+checker gives for the input's erasure with the parentheses deleted, node types
+and decisions included. So the output of well-typed input is well typed. -/
+def typedWithoutParens (i : Input) : Bool :=
+  match FrenHirToThir.Pass.typeModule (unparenModule i.thir.eraseTypes) with
+  | .ok typed => typed.toSexp true == (desugar i.thir).toSexp true
+  | .error _ => false
+
+/-- Where the parentheses were does not matter: the bodies are those of the
+module as generated, before any parenthesis was added, origins included. -/
+def blindToAdded (i : Input) : Bool :=
+  (desugar i.thir).bodies.map (·.toSexp true) == (desugar i.case.thir).bodies.map (·.toSexp true)
+
+/-- Each removed parenthesis removes one node, and scoping is unchanged
+(a parenthesis binds nothing). -/
+def countsAndScope (i : Input) : Bool :=
+  let input := i.thir
+  let output := desugar input
+  (output.bodies.map (·.size)).toList ==
+      (input.bodies.map fun e => e.size - parenNodes e).toList &&
+    output.scoped == input.scoped
+
+/-- Generator check, not the pass: adding parentheses keeps the module well
+typed: the type checker recovers it exactly from its erasure. -/
+def generatorSound (i : Input) : Bool :=
+  match FrenHirToThir.Pass.typeModule i.thir.eraseTypes with
+  | .ok typed => typed.toSexp true == i.thir.toSexp true
+  | .error _ => false
+
+private def property (label : String) (p : Prop)
     (decorated : Decorations.DecorationsOf p := by mk_decorations) [Testable decorated] : IO Unit := do
-  let report ← Testable.checkIO decorated {numInst := 100, maxSize := 35, randomSeed := some 20261112}
-  IO.println s!"desugaring Plausible: {report}"
+  let report ← Testable.checkIO decorated {numInst := 500, maxSize := 12, randomSeed := some 20261110}
+  IO.println s!"{label}: {report}"
   match report with
   | .success _ => pure ()
-  | _ => throw (IO.userError "desugaring property failed")
+  | _ => throw (IO.userError s!"THIR desugaring property failed: {label}")
 
+/-- What 200 seeded inputs covered: parentheses in all, those directly inside
+another, those at a body's root, and bodies with none. -/
+def census : IO Unit := do
+  let mut parens := 0
+  let mut nested := 0
+  let mut root := 0
+  let mut bare := 0
+  let mut bodies := 0
+  let mut nodes := 0
+  for seed in [:200] do
+    let input : Input := ⟨(seeded seed (seed % 13) none).1, seed * 7919⟩
+    for body in input.thir.bodies do
+      bodies := bodies + 1
+      nodes := nodes + body.size
+      let k := parenNodes body
+      parens := parens + k
+      if k == 0 then bare := bare + 1
+      if let .paren _ inner := body.node then
+        root := root + 1
+        if let .paren _ _ := inner.node then nested := nested + 1
+  unless parens > 0 && nested > 0 && root > 0 && bare > 0 do
+    throw (IO.userError s!"THIR desugaring census lacks a form: {parens} {nested} {root} {bare}")
+  IO.println s!"THIR desugaring census: 200 modules, {bodies} bodies, {nodes} nodes, {parens} parentheses \
+    ({root} at a body's root, {nested} of those doubled), {bare} bodies without any; discarded=0"
+
+/-- Properties over Plausible-generated modules of the pass's own input IR. -/
 def run : IO Unit := do
-  checkProperty <| ∀ (n : Nat) (x : Int), sample n x = true
-  for n in [:24] do
-    unless sample n (-(n : Int)) do throw (IO.userError s!"desugaring sample {n} failed")
-  IO.println "desugaring census: 24 admitted, 96 rejected source, 24 rejected edited resolved, 312 undefined (13/sample), 24 each invalid/exhausted, 264 independent demand-defined (11/sample) and each witness/provenance/member/assumption/expectation/enum control; discarded=0"
+  property "output is the input with only its parentheses removed (well-typed input)" <|
+    ∀ c : WellTyped, removesOnlyParens c.input = true
+  property "output is the input with only its parentheses removed (one injected fault)" <|
+    ∀ c : Faulty, removesOnlyParens c.input = true
+  property "desugaring commutes with typing: output is the typing of the parenthesis-free input" <|
+    ∀ c : WellTyped, typedWithoutParens c.input = true
+  property "added parentheses do not change the output's bodies" <|
+    ∀ c : Faulty, blindToAdded c.input = true
+  property "one node fewer for each parenthesis; scoping unchanged" <|
+    ∀ c : Faulty, countsAndScope c.input = true
+  property "generator check (not the pass): input with added parentheses is well typed" <|
+    ∀ c : WellTyped, generatorSound c.input = true
+  census
 
-#print axioms FrenThirDesugar.identity
-#print axioms FrenThirDesugar.static
-#print axioms FrenThirDesugar.admitted
-#print axioms FrenThirDesugar.rejected
-#print axioms FrenThirDesugar.deterministic
-#print axioms evaluation
+#print axioms FrenThirDesugar.desugarExpr_paren
+#print axioms FrenThirDesugar.desugarExpr_keeps
 
 end FrenThirDesugarTests

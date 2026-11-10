@@ -162,7 +162,7 @@ assignments, corresponding environments and actual model equations.
 recognition. Neither name is an axiom or an assertion that a proof exists.
 
 ```lean
-abbrev Input := FrenThirDesugar.Program
+abbrev Input := FrenWalking.Program
 
 def Produces (p : Input) (out : FrenOirToSmt.Program) : Prop := produce p = .ok out
 

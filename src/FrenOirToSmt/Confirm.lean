@@ -263,7 +263,7 @@ def confirmObservations (evaluator : FrenEval.Program) (q : FrenOir.Question)
 /-- This helper consumes the actual producer's output, not editable solver
 formulas. The public assignment entry below re-runs that producer. Successful
 confirmation is a concrete evaluation, never a universal verified verdict. -/
-private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index : Nat)
+private def confirmProduced (p : FrenWalking.Program) (out : Program) (index : Nat)
     (values : Array FrenEval.Value) (depth : Nat) : Confirmation := Id.run do
   let some entry := out.queries[index]? | return .unconfirmed "missing question"
   let q := entry.question
@@ -292,7 +292,7 @@ private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index
 
 /-- Low-level assignment control also binds to the original admitted source
 and exact ordered producer question. It cannot certify a forged OIR record. -/
-def confirmAssignment (p : FrenThirDesugar.Program) (index : Nat)
+def confirmAssignment (p : FrenWalking.Program) (index : Nat)
     (values : Array FrenEval.Value) (depth : Nat := 10000) : Confirmation :=
   match produce p with
   | .error _ => .unconfirmed "source production failed"
@@ -309,7 +309,7 @@ structure Readback where
 /-- Retain the original source witness alongside every unfiltered raw query,
 its first physical receipt and (when SAT) the second physical request/receipt. -/
 structure ModelRun where
-  source : FrenThirDesugar.Program
+  source : FrenWalking.Program
   program : Program
   results : Array Readback
   limits : Limits
@@ -325,7 +325,7 @@ error there. Resource, UTF-8, diagnostics and helper failures stay failures. -/
 
 /-- Each retrieval replays the exact producer script and same solver argv and
 limits. Only strict complete typed readback enters the source interpreter. -/
-def solveModels (p : FrenThirDesugar.Program) (limits : Limits := {})
+def solveModels (p : FrenWalking.Program) (limits : Limits := {})
     (evaluationDepth : Nat := 10000) :
     IO (Except InputFailure ModelRun) := do
   let evaluationDepth := min evaluationDepth 10000

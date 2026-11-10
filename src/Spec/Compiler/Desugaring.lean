@@ -2,6 +2,7 @@ import Fren.Impl
 import Fren.Literate
 import Spec.Compiler.Thir
 import FrenThirDesugar
+import FrenWalking
 import FrenEval
 
 open Fren.Lang
@@ -11,23 +12,59 @@ open Fren.Lang
 namespace Spec.Compiler.Desugaring
 open FrenModule FrenAst
 
--- reference begin
-/-- Input and output are the same actual evidence-carrying production type. -/
-abbrev Program := FrenThirDesugar.Program
+/-! ## The desugaring pass
 
-/-- The specified core transformation, independent of its implementation. -/
-def Desugars (input output : Program) : Prop := output = input
+`FrenThirDesugar.desugar` maps the THIR module to the desugared THIR module.
+The contract below is stated over the production expression type. -/
+
+/-- The layer equation that specifies the pass: a parenthesis is replaced by
+its desugared body, and every other node is rebuilt over its desugared
+children with its own origin and type. -/
+def Desugars (f : FrenExpr.Expr .thir → FrenExpr.Expr .dthir) : Prop :=
+  ∀ o ty n, f ⟨o, ty, n⟩ = FrenThirDesugar.step o ty (n.map f)
+
+/-- The production pass satisfies the specification. -/
+theorem desugar_sound : Desugars FrenThirDesugar.desugarExpr :=
+  FrenThirDesugar.desugarExpr_mk
+
+/-- The specification determines the pass: exactly one function satisfies it. -/
+theorem desugar_unique (f : FrenExpr.Expr .thir → FrenExpr.Expr .dthir) (h : Desugars f) :
+    f = FrenThirDesugar.desugarExpr :=
+  funext fun e => FrenExpr.Expr.fold_unique FrenThirDesugar.step f h e
+
+/-- The output phase admits no parenthesis, so none can remain. -/
+theorem output_has_no_paren (n : FrenExpr.ExprF .dthir (FrenExpr.Expr .dthir)) (g) (e) :
+    n ≠ .paren g e :=
+  fun _ => FrenThirDesugar.no_surface g
+
+/-- The module keeps its identity, its item count and order, and each item's
+identity and origin table. -/
+theorem module_shape (m : FrenModule.Core.Thir) :
+    (FrenThirDesugar.desugar m).id = m.id ∧
+    (FrenThirDesugar.desugar m).items.size = m.items.size ∧
+    ∀ i (h : i < m.items.size),
+      (FrenThirDesugar.desugar m).items[i]? = some (FrenThirDesugar.desugarItem m.items[i]) ∧
+      (FrenThirDesugar.desugarItem m.items[i]).id = m.items[i].id ∧
+      (FrenThirDesugar.desugarItem m.items[i]).origins = m.items[i].origins := by
+  refine ⟨rfl, by simp [FrenThirDesugar.desugar], fun i h => ⟨?_, ?_, ?_⟩⟩
+  · simp [FrenThirDesugar.desugar, h]
+  · exact FrenThirDesugar.desugarItem_id _
+  · exact FrenThirDesugar.desugarItem_origins _
+
+/-! ## The legacy walking program
+
+Later passes still take `FrenWalking.Program`. The definitions below state its
+admission boundary and the source obligations MIR construction reads. -/
+
+/-- The admitted walking program that later passes consume. -/
+abbrev Program := FrenWalking.Program
 
 /-- Graph of the actual resolved entrypoint, including admission. -/
 def Produces (input : Resolved) (output : Program) : Prop :=
-  FrenThirDesugar.fromResolved input = .ok output
+  FrenWalking.fromResolved input = .ok output
 
 def Rejects (input : Resolved) (failure : FrenHirToThir.StaticFailure) : Prop :=
   FrenHirToThir.checkWalking input = .error failure
-
-/-- Entire records, including token tape, origins, ordering and proof boundary. -/
-def Retains (input output : Program) : Prop :=
-  output.input = input.input ∧ output.typed = input.typed
 
 /-- Conditional scopes retain the lexical context in which their subject is read.
 A later let must not reinterpret a guard's local indices in its extended context. -/
@@ -74,33 +111,7 @@ def DomainSite (p : Program) (body : TypedBody) (ctx : TypeContext)
 def Members (p : Program) (owner : FrenBase.ItemId) (kind : MemberKind) : Array TypedBody :=
   p.typed.bodies.filter fun b => b.owner == owner && b.member.any (fun m => m.kind == kind)
 
-/-- Transfer shared static judgments in both directions; none is assumed proved. -/
-def StaticPreservation (p q : Program) : Prop :=
-  (Thir.BodyInventory p.input p.typed ↔ Thir.BodyInventory q.input q.typed) ∧
-  (Thir.BodyTyping p.input p.typed ↔ Thir.BodyTyping q.input q.typed) ∧
-  (Thir.OccurrenceTyping p.input p.typed ↔ Thir.OccurrenceTyping q.input q.typed) ∧
-  (Thir.MatchCoverage p.input p.typed ↔ Thir.MatchCoverage q.input q.typed) ∧
-  (Thir.Nonrecursive p.input p.typed ↔ Thir.Nonrecursive q.input q.typed)
-
 def Evaluator (p : Program) : FrenEval.Program := ⟨p.input, p.typed, p.accepted⟩
-
-/-- Equality includes selected body, values and both outer and inner failures. -/
-def InterpretationPreservation (p q : Program) : Prop :=
-  ∀ request values depth,
-    FrenEval.evaluate (Evaluator p) request values depth =
-      FrenEval.evaluate (Evaluator q) request values depth
-
-/-- A bijection by exact site identity, rather than equality of a demand trace. -/
-def ObligationPreservation (p q : Program) : Prop :=
-  (∀ body ctx guards left token op right,
-    DomainSite p body ctx guards left token op right ↔
-      DomainSite q body ctx guards left token op right) ∧
-  (∀ owner kind, Members p owner kind = Members q owner kind)
-
-def PassContract : Prop := ∀ p q, Desugars p q →
-  Retains p q ∧ StaticPreservation p q ∧
-    InterpretationPreservation p q ∧ ObligationPreservation p q
--- reference end
 
 /-- Every scoped edge has exactly the shared THIR child context. -/
 theorem scoped_child_context {r sigs ctx parent childCtx child guards}
@@ -128,22 +139,10 @@ theorem scoped_at_context {r sigs rootCtx root ctx expr guards}
   | root => exact .root
   | child _ edge ih => exact .child ih (scoped_child_context edge)
 
-/-- Universal producer law for the actual identity implementation. -/
-theorem desugar_iff (p q : Program) : FrenThirDesugar.desugar p = q ↔ Desugars p q := by
-  change p = q ↔ q = p
-  exact eq_comm
-
-theorem pass_contract : PassContract := by
-  intro p q h
-  cases h
-  exact ⟨⟨rfl, rfl⟩, ⟨Iff.rfl, Iff.rfl, Iff.rfl, Iff.rfl, Iff.rfl⟩,
-    (by intro request values depth; rfl),
-    ⟨(by intros; exact Iff.rfl), (by intros; rfl)⟩⟩
-
 /-- Exact success domain, including the original resolved input. -/
 theorem resolved_success (r : Resolved) (q : Program) :
     Produces r q ↔ q.input = r ∧ FrenHirToThir.checkWalking r = .ok q.typed := by
-  unfold Produces FrenThirDesugar.fromResolved FrenThirDesugar.desugar
+  unfold Produces FrenWalking.fromResolved
   split
   · rename_i d hd
     constructor
@@ -167,11 +166,11 @@ theorem entry_total (p : Program) : Produces p.input p :=
 
 theorem produced_unique (r : Resolved) (p q : Program)
     (hp : Produces r p) (hq : Produces r q) : p = q :=
-  FrenThirDesugar.deterministic r p q hp hq
+  FrenWalking.deterministic r p q hp hq
 
 theorem resolved_failure (r : Resolved) (d : FrenHirToThir.StaticFailure) :
-    FrenThirDesugar.fromResolved r = .error d ↔ Rejects r d := by
-  unfold FrenThirDesugar.fromResolved FrenThirDesugar.desugar Rejects
+    FrenWalking.fromResolved r = .error d ↔ Rejects r d := by
+  unfold FrenWalking.fromResolved Rejects
   split <;> simp_all
 
 /-- Success iff type production and both validators succeed, with no extra gate. -/
@@ -197,15 +196,15 @@ theorem failure_excludes_success (r : Resolved) (d : FrenHirToThir.StaticFailure
   contradiction
 
 theorem resolved_projection (r : Resolved) :
-    (FrenThirDesugar.fromResolved r).map (·.typed) = FrenHirToThir.checkWalking r := by
-  unfold FrenThirDesugar.fromResolved
-  split <;> simp_all [FrenThirDesugar.desugar, Except.map]
+    (FrenWalking.fromResolved r).map (·.typed) = FrenHirToThir.checkWalking r := by
+  unfold FrenWalking.fromResolved
+  split <;> simp_all [Except.map]
 
 /-- The source API has exactly the checked source pipeline's typed/error result. -/
 theorem source_projection (file : FrenSource.FileId) (source : String) :
-    (FrenThirDesugar.fromSource file source).map (·.typed) =
+    (FrenWalking.fromSource file source).map (·.typed) =
       FrenHirToThir.checkWalkingSource file source := by
-  unfold FrenThirDesugar.fromSource FrenHirToThir.checkWalkingSource FrenHirToThir.checkSource
+  unfold FrenWalking.fromSource FrenHirToThir.checkWalkingSource FrenHirToThir.checkSource
   cases hp : FrenParse.parseFile file source with
   | error e => rfl
   | ok doc =>
@@ -224,13 +223,6 @@ theorem source_projection (file : FrenSource.FileId) (source : String) :
         | ok u =>
           cases u
           rfl
-
-/-- Identity transfers any interpretation or static predicate over the full IR.
-This does not assert that a particular declarative interpretation is sound. -/
-theorem observation (p q : Program) (h : Desugars p q) {α : Sort _}
-    (observe : Resolved → Typed → α) : observe p.input p.typed = observe q.input q.typed := by
-  cases h
-  rfl
 
 /-- A concrete successful producer retains its exact admission/static evidence. -/
 theorem output_static (r : Resolved) (q : Program) (h : Produces r q) :
@@ -299,31 +291,30 @@ private def controls : Bool := Id.run do
   let source := "mod retained\nfn f(d: Int): Int := if d != 0 then 1 div d else 0\n" ++
     "fn unused(d: Int): Int := let x := 1 div 0 in d\n" ++
     "expect block(d: Int) { expect goal: f(d) = 0 assume later: d = 0 }\n"
-  let .ok p := FrenThirDesugar.fromSource ⟨73⟩ source | return false
-  let q := FrenThirDesugar.desugar p
+  let .ok p := FrenWalking.fromSource ⟨73⟩ source | return false
   let owner := FrenBase.ItemId.root.named "retained" |>.named "block"
-  if q.typed != p.typed || q.input != p.input then return false
-  if q.typed.bodies.size != 4 || q.typed.resolved.document.emit != source then return false
-  let assumptions := Members q owner .assume
-  let goals := Members q owner .expect
+  if p.typed.bodies.size != 4 || p.typed.resolved.document.emit != source then return false
+  let assumptions := Members p owner .assume
+  let goals := Members p owner .expect
   if assumptions.size != 1 || goals.size != 1 then return false
   if (assumptions[0]?.bind (·.member)).map (·.label.text) != some "later" then return false
   if (goals[0]?.bind (·.member)).map (·.label.text) != some "goal" then return false
   -- Whole-record equality distinguishes dropped bodies, signatures and resolution.
-  if q.typed == {p.typed with bodies := #[]} then return false
-  if q.typed == {p.typed with signatures := #[]} then return false
-  if q.input == {p.input with references := #[]} then return false
-  let .ok otherOrigin := FrenThirDesugar.fromSource ⟨74⟩ source | return false
-  if q.typed == otherOrigin.typed then return false
+  if p.typed == {p.typed with bodies := #[]} then return false
+  if p.typed == {p.typed with signatures := #[]} then return false
+  if p.input == {p.input with references := #[]} then return false
+  let .ok otherOrigin := FrenWalking.fromSource ⟨74⟩ source | return false
+  if p.typed == otherOrigin.typed then return false
   let rejected := #["mod bad\nfn f(x: Int): Int := true",
     "mod bad\nenum E { A, B }\nfn f(x: E): Int := match x { E::A => 1, }",
     "mod bad\nfn f(x: Int): Int := f(x)", "mod bad\nfn f(x: Int): Int := (",
     "mod bad\nfn f(x: Int): Int := x unless true"]
-  return rejected.all fun s => !(FrenThirDesugar.fromSource ⟨73⟩ s).isOk
+  return rejected.all fun s => !(FrenWalking.fromSource ⟨73⟩ s).isOk
 
 #guard controls
 
-#print axioms pass_contract
+#print axioms desugar_unique
+#print axioms module_shape
 #print axioms resolved_success
 #print axioms source_projection
 #print axioms admission_domain

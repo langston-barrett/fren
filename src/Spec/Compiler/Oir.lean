@@ -11,7 +11,7 @@ namespace Spec.Compiler.Oir
 open FrenModule FrenAst FrenLir FrenOir
 
 -- reference begin
-abbrev Input := FrenThirDesugar.Program
+abbrev Input := FrenWalking.Program
 
 def Produces (p : Input) (out : FrenOir.Program) : Prop :=
   FrenLirToOir.produce p = .ok out
@@ -274,9 +274,9 @@ theorem failure_excludes_success (p : Input) (failure : FrenLirToOir.Failure) (h
 
 theorem entry_success (file : FrenSource.FileId) (source : String) (out : FrenOir.Program) :
     FrenLirToOir.fromSource file source = .ok out ↔
-      ∃ p, FrenThirDesugar.fromSource file source = .ok p ∧ Produces p out := by
+      ∃ p, FrenWalking.fromSource file source = .ok p ∧ Produces p out := by
   unfold FrenLirToOir.fromSource
-  cases hp : FrenThirDesugar.fromSource file source with
+  cases hp : FrenWalking.fromSource file source with
   | error d => simp [Bind.bind, Except.bind, Except.mapError]
   | ok p =>
     simp only [Bind.bind, Except.bind, Except.mapError, Produces]
@@ -511,7 +511,7 @@ theorem request_to_source (lirContract : Lir.RequestContract) (oirContract : Req
   let source := "mod oir_contracts\nfn unused(d: Int): Int := let x := 1 div d in 0\n" ++
     "fn guarded(d: Int): Int := if d != 0 then 1 div d else 0\n" ++
     "expect c(n: Int, d: Int) { expect wrong: n div d = 0 assume later: d != 0 }\n"
-  let .ok admitted := FrenThirDesugar.fromSource ⟨213⟩ source
+  let .ok admitted := FrenWalking.fromSource ⟨213⟩ source
     | throw (IO.userError "nonempty OIR witness admission failed")
   let .ok out := FrenLirToOir.produce admitted
     | throw (IO.userError "nonempty OIR witness generation failed")

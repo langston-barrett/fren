@@ -102,7 +102,7 @@ private def request (t : Typed) (r : FrenMir.CheckRequest) : Result CheckRequest
 
 /-- There is no public unchecked Typed/Theory entry. MIR is produced here from
 its actual admission witness, so edited theories cannot bypass the boundary. -/
-def produce (p : FrenThirDesugar.Program) : Result Program := do
+def produce (p : FrenWalking.Program) : Result Program := do
   let mir ← FrenThirToMir.produce p
   let declarations ← mir.declarations.mapM (declaration mir.source)
   let requests ← mir.requests.mapM (request mir.source)
@@ -112,14 +112,14 @@ def produce (p : FrenThirDesugar.Program) : Result Program := do
 
 def fromSource (file : FrenSource.FileId) (source : String) :
     Except FrenHirToThir.StaticFailure Program := do
-  let p ← FrenThirDesugar.fromSource file source
+  let p ← FrenWalking.fromSource file source
   (produce p).mapError FrenHirToThir.StaticFailure.typing
 
-theorem deterministic (p : FrenThirDesugar.Program) (a b : Program)
+theorem deterministic (p : FrenWalking.Program) (a b : Program)
     (ha : produce p = .ok a) (hb : produce p = .ok b) : a = b :=
   Except.ok.inj (ha.symm.trans hb)
 
-theorem retains_mir (p : FrenThirDesugar.Program) (out : Program) (h : produce p = .ok out) :
+theorem retains_mir (p : FrenWalking.Program) (out : Program) (h : produce p = .ok out) :
     FrenThirToMir.produce p = .ok out.mir := by
   unfold produce at h
   simp only [Bind.bind, Except.bind] at h
@@ -135,7 +135,7 @@ theorem retains_mir (p : FrenThirDesugar.Program) (out : Program) (h : produce p
           exact hm
         · contradiction
 
-theorem wellFormed (p : FrenThirDesugar.Program) (out : Program) (h : produce p = .ok out) :
+theorem wellFormed (p : FrenWalking.Program) (out : Program) (h : produce p = .ok out) :
     out.wellFormed = true := by
   unfold produce at h
   simp only [Bind.bind, Except.bind] at h
@@ -151,28 +151,28 @@ theorem wellFormed (p : FrenThirDesugar.Program) (out : Program) (h : produce p 
           exact good
         · contradiction
 
-theorem admission (p : FrenThirDesugar.Program) (out : Program) (h : produce p = .ok out) :
+theorem admission (p : FrenWalking.Program) (out : Program) (h : produce p = .ok out) :
     FrenHirToThir.checkWalking p.input = .ok out.mir.source :=
   FrenThirToMir.admission p out.mir (retains_mir p out h)
 
-theorem retains_source (p : FrenThirDesugar.Program) (out : Program) (h : produce p = .ok out) :
+theorem retains_source (p : FrenWalking.Program) (out : Program) (h : produce p = .ok out) :
     out.mir.source = p.typed :=
   FrenThirToMir.retains p out.mir (retains_mir p out h)
 
-theorem declaration_retention_check (p : FrenThirDesugar.Program) (out : Program) (h : produce p = .ok out) :
+theorem declaration_retention_check (p : FrenWalking.Program) (out : Program) (h : produce p = .ok out) :
     (out.declarations.map Declaration.source == out.mir.declarations) = true := by
   have hw := wellFormed p out h
   simp only [Program.wellFormed, Bool.and_eq_true_iff] at hw
   exact hw.1.1.1
 
-theorem request_retention_check (p : FrenThirDesugar.Program) (out : Program) (h : produce p = .ok out) :
+theorem request_retention_check (p : FrenWalking.Program) (out : Program) (h : produce p = .ok out) :
     (out.requests.map CheckRequest.source == out.mir.requests) = true := by
   have hw := wellFormed p out h
   simp only [Program.wellFormed, Bool.and_eq_true_iff] at hw
   exact hw.1.2
 
 theorem rejected (file : FrenSource.FileId) (source : String) (d : FrenHirToThir.StaticFailure)
-    (h : FrenThirDesugar.fromSource file source = .error d) : fromSource file source = .error d := by
+    (h : FrenWalking.fromSource file source = .error d) : fromSource file source = .error d := by
   simp [fromSource, h, Bind.bind, Except.bind]
 
 end FrenFlatToLir

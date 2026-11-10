@@ -16,7 +16,7 @@ private def generated (k : Nat) : String :=
 private def sample (file n : Nat) : Bool := Id.run do
   let k := n % 17
   let text := generated k
-  let .ok p := FrenThirDesugar.fromSource ⟨file⟩ text | return false
+  let .ok p := FrenWalking.fromSource ⟨file⟩ text | return false
   let .ok out := produce p | return false
   if out.oir.lir.mir.source != p.typed || out.queries.size != out.oir.questions.size ||
       out.queries.any (fun q => !q.script.isOk) then return false

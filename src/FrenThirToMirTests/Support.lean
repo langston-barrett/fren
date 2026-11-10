@@ -15,12 +15,12 @@ def key (s : String) : FrenBase.ItemId := FrenBase.ItemId.root.named "skeleton" 
 def light (s : String) : FrenEval.Value := .enum (key "Light") ((key "Light").named s)
 
 structure Compiled where
-  admitted : FrenThirDesugar.Program
+  admitted : FrenWalking.Program
   theory : Theory
   produced : FrenThirToMir.produce admitted = .ok theory
 
 def compile (file : Nat) (source : String) : Except String Compiled := do
-  let p ← (FrenThirDesugar.fromSource ⟨file⟩ source).mapError (fun e => s!"admission: {repr e}")
+  let p ← (FrenWalking.fromSource ⟨file⟩ source).mapError (fun e => s!"admission: {repr e}")
   match h : FrenThirToMir.produce p with
   | .error e => .error s!"producer: {repr e}"
   | .ok t => .ok ⟨p, t, h⟩

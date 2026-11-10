@@ -21,7 +21,7 @@ expect safe(n: Int) {
 
 The command reads one UTF-8 file, preserves its bytes and line endings, and
 uses the actual Fren2 parser, resolver, walking typechecker and validators,
-identity desugaring, logical passes, SMT producer, bounded solver transport,
+logical passes, SMT producer, bounded solver transport,
 model decoder and source confirmation. `FrenCli2.checkText` and `checkFile`
 provide the same reusable library entry. This supports the current admitted
 walking language only; it adds no syntax, imports or declaration semantics.

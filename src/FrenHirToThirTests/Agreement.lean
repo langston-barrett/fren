@@ -44,10 +44,11 @@ def agreement (c : Case) (file : Nat) : Except String Agreed := do
     let theirs := legacy.bodies.toList.map legacyTypes
     unless ours == theirs do throw s!"node types differ\n{source}"
     return .accepted
-  | .error d, .error e =>
+  | .error d, .error #[e] =>
     unless d.code == e.code && some d.span == e.span lowered do
       throw s!"different errors: legacy {repr d}, core {repr e} at {repr (e.span lowered)}\n{source}"
     return .rejected
+  | .error d, .error es => throw s!"one legacy error {repr d}, core {repr es}\n{source}"
   | .ok _, .error e => throw s!"only the separated pass rejects: {repr e}\n{source}"
   | .error d, .ok _ => throw s!"only the legacy checker rejects: {repr d}\n{source}"
 

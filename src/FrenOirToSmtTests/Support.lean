@@ -9,8 +9,8 @@ open FrenOirToSmt
 def require (b : Bool) (message : String) : IO Unit :=
   unless b do throw (IO.userError message)
 
-def load (text : String) : IO FrenThirDesugar.Program :=
-  match FrenThirDesugar.fromSource ⟨811⟩ text with
+def load (text : String) : IO FrenWalking.Program :=
+  match FrenWalking.fromSource ⟨811⟩ text with
   | .ok p => pure p
   | .error e => throw (IO.userError (reprStr e))
 

@@ -27,9 +27,11 @@ private def allowed : List (String × List String) :=
    -- composes passes, so that FrenHirToThir itself imports none.
    ("FrenWalking", base ++ ["FrenAst", "FrenModule", "FrenExpr", "FrenParse", "FrenAstToHir",
      "FrenHirToThir"]),
-   ("FrenThirDesugar", base ++ ["FrenModule", "FrenExpr", "FrenWalking"]),
-   -- This walking producer consumes the actual checked desugaring witness.
-   ("FrenThirToMir", base ++ ["FrenModule", "FrenExpr", "FrenMir", "FrenThirDesugar"]),
+   -- Desugaring reads the THIR module and nothing else: no pass, and so no
+   -- parser, resolver, type checker or walking adapter.
+   ("FrenThirDesugar", base ++ ["FrenModule", "FrenExpr"]),
+   -- This walking producer consumes the walking adapter's admitted program.
+   ("FrenThirToMir", base ++ ["FrenModule", "FrenExpr", "FrenMir", "FrenWalking"]),
    ("FrenMirToMono", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
    ("FrenMonoToFo", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
    ("FrenFoToFlat", base ++ ["FrenModule", "FrenExpr", "FrenMir"]),
@@ -100,7 +102,9 @@ private def permits (owner imported : String) : Bool := Id.run do
   if owner == "FrenTextDemoTests" then return imported == "FrenTextDemo"
   if owner == "Fren2TestMain" then return (roots ++ tests ++ ["FrenTextDemo"]).contains imported
   if owner == "Fren2FakeSolver" then return imported == "FrenOirToSmt"
-  if owner == "FrenThirDesugarTests" && imported == "FrenEval" then return true
+  -- The desugaring tests use the type checker as an oracle: typing the input
+  -- without its parentheses must give the pass's output.
+  if owner == "FrenThirDesugarTests" && imported == "FrenHirToThir" then return true
   if let some original := owner.dropSuffix? "Tests" then
     let original := original.toString
     if !roots.contains original then return false
@@ -123,7 +127,20 @@ private def permits (owner imported : String) : Bool := Id.run do
 #guard permits "FrenAst" "FrenSexp"
 #guard !permits "Fren2TestMain" "FrenCore"
 #guard !permits "FrenBaseTests" "Fren"
-#guard permits "FrenThirToMir" "FrenThirDesugar"
+#guard permits "FrenThirToMir" "FrenWalking"
+#guard !permits "FrenThirToMir" "FrenThirDesugar"
+-- THIR desugaring imports its IRs and no pass, directly or through what it
+-- may import: in particular not the source front end or the walking adapter.
+#guard permits "FrenThirDesugar" "FrenModule"
+#guard !permits "FrenThirDesugar" "FrenWalking"
+#guard !permits "FrenThirDesugar" "FrenHirToThir"
+#guard !permits "FrenThirDesugar" "FrenAstToHir"
+#guard !permits "FrenThirDesugar" "FrenParse"
+#guard !permits "FrenThirDesugar" "FrenAst"
+#guard (reach "FrenThirDesugar").all (!passes.contains ·)
+#guard !permits "FrenThirDesugarTests" "FrenWalking"
+#guard !permits "FrenThirDesugarTests" "FrenParse"
+#guard !permits "FrenThirDesugarTests" "FrenEval"
 #guard !permits "FrenThirToMir" "FrenEval"
 #guard !permits "FrenMir" "FrenThirDesugar"
 #guard !permits "FrenMir" "FrenEval"

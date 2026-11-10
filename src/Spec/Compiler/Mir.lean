@@ -11,7 +11,7 @@ namespace Spec.Compiler.Mir
 open FrenModule FrenAst FrenMir
 
 -- reference begin
-abbrev Program := FrenThirDesugar.Program
+abbrev Program := FrenWalking.Program
 
 def Produces (p : Program) (t : Theory) : Prop := FrenThirToMir.produce p = .ok t
 
@@ -280,9 +280,9 @@ theorem produced_retains (p : Program) (t : Theory) (h : Produces p t) :
 /-- Exact source success domain: admission followed by actual successful construction. -/
 theorem entry_success (file : FrenSource.FileId) (source : String) (t : Theory) :
     FrenThirToMir.fromSource file source = .ok t ↔
-      ∃ p, FrenThirDesugar.fromSource file source = .ok p ∧ Produces p t := by
+      ∃ p, FrenWalking.fromSource file source = .ok p ∧ Produces p t := by
   unfold FrenThirToMir.fromSource
-  cases hp : FrenThirDesugar.fromSource file source with
+  cases hp : FrenWalking.fromSource file source with
   | error d => simp [Bind.bind, Except.bind]
   | ok p =>
     simp only [Bind.bind, Except.bind, Except.mapError, Produces]
@@ -312,7 +312,7 @@ theorem failed_not_produced (p : Program) (d : FrenDiag.Diagnostic) (h : Rejects
   contradiction
 
 theorem entry_failure (file : FrenSource.FileId) (source : String)
-    (d : FrenHirToThir.StaticFailure) (h : FrenThirDesugar.fromSource file source = .error d) :
+    (d : FrenHirToThir.StaticFailure) (h : FrenWalking.fromSource file source = .error d) :
     FrenThirToMir.fromSource file source = .error d := FrenThirToMir.rejected file source d h
 
 /-- Every actual request's hypotheses and context come from its own complete block. -/
@@ -496,7 +496,7 @@ private theorem raw_duplicate_values
   let source := "mod covered\nenum E { A }\n" ++
     "fn f(e: E): Bool := match e { E::A => false }\n" ++
     "expect c(e: E) { expect g: match e { E::A => false } }\n"
-  let .ok p := FrenThirDesugar.fromSource ⟨191⟩ source
+  let .ok p := FrenWalking.fromSource ⟨191⟩ source
     | throw (IO.userError "covered enum-match source rejected")
   let .ok t := FrenThirToMir.produce p | throw (IO.userError "covered enum MIR rejected")
   unless p.typed.bodies.size == 2 && p.typed.bodies.all (fun b => falseMatch b.expression) do
@@ -530,7 +530,7 @@ private theorem raw_duplicate_values
     throw (IO.userError "enum goal is not a defined false validity request")
   let duplicateSource := source.replace "E::A => false" "E::A => false, E::A => true"
   let .error (.validation (.coverage _ actualOwner missing repeated)) :=
-      FrenThirDesugar.fromSource ⟨191⟩ duplicateSource
+      FrenWalking.fromSource ⟨191⟩ duplicateSource
     | throw (IO.userError "duplicate arms did not reach coverage validation")
   unless actualOwner == owner && missing.isEmpty && repeated == #[ctor] do
     throw (IO.userError "wrong duplicate-arm coverage diagnostic")
@@ -545,7 +545,7 @@ private theorem raw_duplicate_values
     "fn guarded(d: Int): Int := if d != 0 then 1 div d else 0\n" ++
     "expect owned(x: Int, b?: Bool) { expect first: b? assume early: x >= 0 " ++
     "expect second: x <= 10 assume later: x <= 5 }\nexpect empty() {}\n"
-  let .ok p := FrenThirDesugar.fromSource ⟨91⟩ source
+  let .ok p := FrenWalking.fromSource ⟨91⟩ source
     | throw (IO.userError "MIR contract source was rejected")
   let .ok t := FrenThirToMir.produce p | throw (IO.userError "MIR contract producer failed")
   let some (Declaration.block b) := t.declarations[3]? | throw (IO.userError "owned block missing")

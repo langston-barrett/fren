@@ -62,12 +62,12 @@ def observe : Nat → Symbols → Slots → Term → Option Value
     | .at _ term => visit term
 
 structure Compiled where
-  admitted : FrenThirDesugar.Program
+  admitted : FrenWalking.Program
   program : FrenLir.Program
   produced : FrenFlatToLir.produce admitted = .ok program
 
 def compile (file : Nat) (source : String) : Except String Compiled := do
-  let p ← (FrenThirDesugar.fromSource ⟨file⟩ source).mapError reprStr
+  let p ← (FrenWalking.fromSource ⟨file⟩ source).mapError reprStr
   match h : FrenFlatToLir.produce p with
   | .error d => .error (reprStr d)
   | .ok out => .ok ⟨p, out, h⟩
