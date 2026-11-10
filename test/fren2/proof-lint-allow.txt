@@ -233,5 +233,3 @@ unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.[Adequacy].layers_pa
 unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.[Adequacy].layers_paired_zip: simp [layers_paired?, fren_spec] at h #9
 unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.[Adequacy].layers_paired_zip: simp [layers_paired?, fren_spec] at h #10
 unsqueezed src/Spec/Language/Types.lean:derives?: simp [fren_spec] at hr
-unsqueezed src/Spec/Support/Core.lean:Spec.Tables.instance@17c3abb7: simp [mapF, mapS_id]
-unsqueezed src/Spec/Support/Core.lean:Spec.Tables.instance@17c3abb7: simp [mapF, mapS_mapS, mapArm]

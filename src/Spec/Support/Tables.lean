@@ -26,6 +26,24 @@ one-layer rule `R`, and proves that the two readings agree:
 
 A chapter instantiates `Layer` for its functor, gives a `View` of its rows
 and shows that its table check is `Valid`.
+
+## Simp-normal forms
+
+* Maps fuse into one map and the identity map vanishes: `Layer.map_map` and
+  `Layer.map_id` are simp lemmas, left to right. A proof never rewrites a
+  map apart again.
+* `children` moves inward past a map: `Layer.children_map` is a simp lemma,
+  so membership in the children of a mapped layer is `List.mem_map`.
+  `forall_mem_children_map` is the same step for a statement about every
+  child, the form in which `Justified`, `Unfolds` and `Derives` state their
+  premises.
+* A lookup of the last row is that row (`lookup_last`). `lookup_extend`
+  introduces an `if`, so it is not a simp lemma: use `lookup_last` or
+  `lookup_earlier`.
+* `Unfolds.intro`, `Derives.intro` and `Mapped.intro` build a node from a
+  layer of any child type and the functions that read a child's position,
+  term and conclusion. Use them rather than the constructors, whose layers
+  of pairs need a rewrite by `Layer.map_map` on both sides.
 -/
 
 open Fren.Lang
@@ -51,6 +69,8 @@ class Layer (F : Type → Type) where
 
 open Layer
 
+attribute [simp] Layer.map_id Layer.map_map Layer.children_map
+
 /-- How a chapter's rows are read: a row's form, whose children are
 positions, and its conclusion. -/
 structure View (ρ : Type) (F : Type → Type) (J : Type) where
@@ -64,10 +84,27 @@ theorem mem_map_of_mem {α β : Type} (f : α → β) {l : F α} {c : α} (h : c
     f c ∈ children (map f l) := by
   rw [children_map]; exact List.mem_map.2 ⟨c, h, rfl⟩
 
+/-- A statement about every child of a mapped layer is one about every child
+of the layer. -/
+theorem forall_mem_children_map {α β : Type} (f : α → β) (l : F α) (P : β → Prop) :
+    (∀ c ∈ children (map f l), P c) ↔ ∀ c ∈ children l, P (f c) := by
+  rw [children_map]; exact List.forall_mem_map
+
+/-- The two ways a conditional proposition holds. Generated definitions that
+match on several values are chains of conditionals: taking one apart with
+this costs far less than `split`, or than `simp` over every pair of
+constructors. -/
+theorem ite_cases {c t e : Prop} [Decidable c] (h : if c then t else e) : c ∧ t ∨ ¬c ∧ e :=
+  if hc : c then .inl ⟨hc, (if_pos hc).mp h⟩ else .inr ⟨hc, (if_neg hc).mp h⟩
+
 theorem lookup_extend (earlier : Snoc ρ) (x : ρ) (p : Int) :
     lookup ρ (Snoc.Extend earlier x) p
       = if p = length ρ earlier then some x else lookup ρ earlier p := by
   simp only [lookup]
+
+@[simp] theorem lookup_last (earlier : Snoc ρ) (x : ρ) :
+    lookup ρ (Snoc.Extend earlier x) (length ρ earlier) = some x := by
+  rw [lookup_extend, if_pos rfl]
 
 theorem lookup_earlier (earlier : Snoc ρ) (x : ρ) (p : Int) (h : p < length ρ earlier) :
     lookup ρ (Snoc.Extend earlier x) p = lookup ρ earlier p := by
@@ -129,8 +166,7 @@ theorem valid_extend (V : View ρ F J) (R : F J → J → Prop) (earlier : Snoc 
     · have hlt := lookup_lt hl
       refine Justified.restrict (Int.le_of_lt hlt) (h p r ?_)
       rw [lookup_earlier _ _ _ hlt]; exact hl
-    · refine Justified.restrict (Int.le_refl _) (h _ x ?_)
-      rw [lookup_extend, if_pos rfl]
+    · exact Justified.restrict (Int.le_refl _) (h _ x (lookup_last earlier x))
   · intro ⟨hv, hj⟩ p r hl
     rw [lookup_extend] at hl
     split at hl
@@ -166,6 +202,25 @@ inductive Derives (con : F T → T) (R : F J → J → Prop) : T → J → Prop
   | node (a : F (T × J)) (j : J) :
       (∀ c ∈ children a, Derives con R c.1 c.2) → R (map Prod.snd a) j →
       Derives con R (con (map Prod.fst a)) j
+
+/-- A node of `Unfolds` from a layer of any child type: `pos` reads a child's
+position and `tm` the term that it unfolds to. -/
+theorem Unfolds.intro {α : Type} {V : View ρ F J} {con : F T → T} {rows : Snoc ρ} (p : Int)
+    (r : ρ) (a : F α) (pos : α → Int) (tm : α → T) (hl : lookup ρ rows p = some r)
+    (hf : map pos a = V.form r) (hc : ∀ c ∈ children a, Unfolds V con rows (pos c) (tm c)) :
+    Unfolds V con rows p (con (map tm a)) := by
+  have h := Unfolds.node (V := V) (con := con) p r (map (fun c => (pos c, tm c)) a) hl
+    ((map_map _ _ a).trans hf) ((forall_mem_children_map _ a _).2 hc)
+  rwa [map_map] at h
+
+/-- A node of `Derives` from a layer of any child type: `tm` reads a child's
+term and `concl` its conclusion. -/
+theorem Derives.intro {α : Type} {con : F T → T} {R : F J → J → Prop} (a : F α) (tm : α → T)
+    (concl : α → J) (j : J) (hc : ∀ c ∈ children a, Derives con R (tm c) (concl c))
+    (hr : R (map concl a) j) : Derives con R (con (map tm a)) j := by
+  have h := Derives.node (con := con) (R := R) (map (fun c => (tm c, concl c)) a) j
+    ((forall_mem_children_map _ a _).2 hc) (by rw [map_map]; exact hr)
+  rwa [map_map] at h
 
 theorem Unfolds.mono {V : View ρ F J} {con : F T → T} {rows rows' : Snoc ρ} {p : Int} {t : T}
     (he : Extends rows' rows) (h : Unfolds V con rows p t) : Unfolds V con rows' p t := by
@@ -223,10 +278,7 @@ theorem Unfolds.unique {V : View ρ F J} {con : F T → T} {rows : Snoc ρ} {p :
   refine ⟨map (fun i => (i, i)) (V.form r), ?_, ?_, ?_⟩
   · rw [map_map]; exact map_id _
   · rw [map_map]; exact map_id _
-  · intro c hc
-    rw [children_map] at hc
-    obtain ⟨i, _, rfl⟩ := List.mem_map.1 hc
-    rfl
+  · exact (forall_mem_children_map _ _ _).2 fun _ _ => rfl
 
 theorem Derives.mono {con : F T → T} {R R' : F J → J → Prop} {t : T} {j : J}
     (hr : ∀ l j, R l j → R' l j) (h : Derives con R t j) : Derives con R' t j := by
@@ -259,18 +311,13 @@ theorem Derives.unique {con : F T → T} {R : F J → J → Prop}
     generalize ht : con (map Prod.fst a) = t at h'
     cases h' with
     | node a' _ hc' hra' =>
-      obtain ⟨z, hza, hza', hz⟩ := zip Prod.fst Prod.fst a a' (inj _ _ ht)
-      refine det (map (fun c : (T × J) × (T × J) => (c.1.2, c.2.2)) z) j j' ?_ ?_ ?_ hk
-      · intro c hc
-        rw [children_map] at hc
-        obtain ⟨c0, hc0, rfl⟩ := List.mem_map.1 hc
-        have h1 : c0.1 ∈ children a := by rw [← hza]; exact mem_map_of_mem _ hc0
-        have h2 : c0.2 ∈ children a' := by rw [← hza']; exact mem_map_of_mem _ hc0
-        refine ih c0.1 h1 c0.2.2 ?_
-        have := hc' c0.2 h2
-        rw [← hz c0 hc0] at this; exact this
-      · rw [← hza, map_map] at hra; rw [map_map]; exact hra
-      · rw [← hza', map_map] at hra'; rw [map_map]; exact hra'
+      obtain ⟨z, rfl, rfl, hz⟩ := zip Prod.fst Prod.fst a a' (inj _ _ ht)
+      refine det (map (fun c : (T × J) × (T × J) => (c.1.2, c.2.2)) z) j j' ?_
+        (by simpa using hra) (by simpa using hra') hk
+      rw [forall_mem_children_map]
+      intro c hc
+      refine ih c.1 (mem_map_of_mem _ hc) c.2.2 ?_
+      rw [hz c hc]; exact hc' c.2 (mem_map_of_mem _ hc)
 
 /-- Soundness of tables: every row of a valid table unfolds to a term, and
 that term has an inductive derivation of the row's conclusion. -/
@@ -298,23 +345,8 @@ theorem Valid.derives [Nonempty T] {V : View ρ F J} {R : F J → J → Prop} (c
       obtain ⟨t, ht⟩ := ih c.1 r' (by omega) hl'
       rw [hcl] at ht
       exact Classical.epsilon_spec (p := fun t => Unfolds V con rows c.1 t ∧ Derives con R t c.2) ⟨t, ht⟩
-    refine ⟨con (map tm a), ?_, ?_⟩
-    · have h := Unfolds.node (V := V) (con := con) p r (map (fun c => (c.1, tm c)) a) hl
-        (by rw [map_map]; exact hf)
-        (by
-          intro c hcm
-          rw [children_map] at hcm
-          obtain ⟨c0, h0, rfl⟩ := List.mem_map.1 hcm
-          exact (htm c0 h0).1)
-      rw [map_map] at h; exact h
-    · have h := Derives.node (con := con) (R := R) (map (fun c => (tm c, c.2)) a) (V.concl r)
-        (by
-          intro c hcm
-          rw [children_map] at hcm
-          obtain ⟨c0, h0, rfl⟩ := List.mem_map.1 hcm
-          exact (htm c0 h0).2)
-        (by rw [map_map]; exact hra)
-      rw [map_map] at h; exact h
+    exact ⟨con (map tm a), .intro p r a Prod.fst tm hl hf fun c hcm => (htm c hcm).1,
+      .intro a tm Prod.snd _ (fun c hcm => (htm c hcm).2) hra⟩
 
 /-- A table can be extended so that each of finitely many derivable
 judgments has a row. -/
@@ -333,7 +365,7 @@ theorem tables_of_list {V : View ρ F J} {R : F J → J → Prop} {con : F T →
     obtain ⟨rows2, r, he2, hv2, hcl, hu⟩ := ih c List.mem_cons_self rows1 hv1
     refine ⟨Snoc.Extend rows2 r, he2.trans he1, hv2, fun c' hc' => ?_⟩
     rcases List.mem_cons.1 hc' with rfl | hc'
-    · exact ⟨length ρ rows2, r, by rw [lookup_extend, if_pos rfl], hcl, hu⟩
+    · exact ⟨length ρ rows2, r, lookup_last rows2 r, hcl, hu⟩
     · obtain ⟨p, r', hl, hcl', hu'⟩ := h1 c' hc'
       exact ⟨p, r', he2 _ _ hl, hcl', hu'.mono he2⟩
 
@@ -358,25 +390,15 @@ theorem Derives.table {V : View ρ F J} {R : F J → J → Prop} {con : F T → 
         ∃ r, lookup ρ rows' p = some r ∧ V.concl r = c.2 ∧ Unfolds V con rows' p c.1) (hcs c hc)
     have hx := Extends.extend rows' (mk (map idx a) j)
     refine ⟨rows', mk (map idx a) j, hx.trans he, ?_, hconcl _ _, ?_⟩
-    · rw [valid_extend]
-      refine ⟨hv', map (fun c => (idx c, c.2)) a, ?_, ?_, ?_⟩
-      · rw [map_map, hform]
-      · rw [map_map, hconcl]; exact hra
-      · intro c hc
-        rw [children_map] at hc
-        obtain ⟨c0, h0, rfl⟩ := List.mem_map.1 hc
-        obtain ⟨r, hl, hcl, _⟩ := hidx c0 h0
-        exact ⟨lookup_lt hl, r, hl, hcl⟩
-    · have h := Unfolds.node (V := V) (con := con) (rows := Snoc.Extend rows' (mk (map idx a) j))
-        (length ρ rows') (mk (map idx a) j) (map (fun c => (idx c, c.1)) a)
-        (by rw [lookup_extend, if_pos rfl]) (by rw [map_map, hform])
-        (by
-          intro c hc
-          rw [children_map] at hc
-          obtain ⟨c0, h0, rfl⟩ := List.mem_map.1 hc
-          obtain ⟨_, _, _, hu⟩ := hidx c0 h0
-          exact hu.mono hx)
-      rw [map_map] at h; exact h
+    · refine (valid_extend V R rows' _).2 ⟨hv', map (fun c => (idx c, c.2)) a, by simp [hform],
+        by simpa [hconcl] using hra, ?_⟩
+      rw [forall_mem_children_map]
+      intro c hc
+      obtain ⟨r, hl, hcl, _⟩ := hidx c hc
+      exact ⟨lookup_lt hl, r, hl, hcl⟩
+    · exact .intro _ _ a idx Prod.fst (lookup_last rows' _) (hform _ _).symm fun c hc =>
+        let ⟨_, _, _, hu⟩ := hidx c hc
+        hu.mono hx
 
 /-- `Mapped σ con t t'`: `t'` is `t` with the layer map `σ` applied at every
 node. -/
@@ -384,6 +406,15 @@ inductive Mapped (σ : (α : Type) → F α → F α) (con : F T → T) : T → 
   | node (z : F (T × T)) :
       (∀ c ∈ children z, Mapped σ con c.1 c.2) →
       Mapped σ con (con (map Prod.fst z)) (con (σ _ (map Prod.snd z)))
+
+/-- A node of `Mapped` from a layer of any child type: `tm` reads a child's
+term and `tm'` its mapped term. -/
+theorem Mapped.intro {α : Type} {σ : (α : Type) → F α → F α} {con : F T → T} (z : F α)
+    (tm tm' : α → T) (hc : ∀ c ∈ children z, Mapped σ con (tm c) (tm' c)) :
+    Mapped σ con (con (map tm z)) (con (σ _ (map tm' z))) := by
+  have h := Mapped.node (σ := σ) (con := con) (map (fun c => (tm c, tm' c)) z)
+    ((forall_mem_children_map _ z _).2 hc)
+  rwa [map_map, map_map] at h
 
 /-- A table whose rows are another's with their forms mapped by a natural
 `σ` that adds no children unfolds, position by position, to the mapped
@@ -406,23 +437,10 @@ theorem Unfolds.mapped [Nonempty T] {V : View ρ F J} {V' : View ρ' F J'} {con 
         Unfolds V' con rows' c.1 (tm c) ∧ Mapped σ con c.2 (tm c) := fun c hcm =>
       Classical.epsilon_spec
         (p := fun t' => Unfolds V' con rows' c.1 t' ∧ Mapped σ con c.2 t') (ih c hcm)
-    refine ⟨con (σ _ (map tm a)), ?_, ?_⟩
-    · have h := Unfolds.node (V := V') (con := con) p r' (σ _ (map (fun c => (c.1, tm c)) a)) hl'
-        (by rw [natural, map_map, hf', ← hf])
-        (by
-          intro c hcm
-          have hcm' := within _ c hcm
-          rw [children_map] at hcm'
-          obtain ⟨c0, h0, rfl⟩ := List.mem_map.1 hcm'
-          exact (htm c0 h0).1)
-      rw [natural, map_map] at h; exact h
-    · have h := Mapped.node (σ := σ) (con := con) (map (fun c => (c.2, tm c)) a)
-        (by
-          intro c hcm
-          rw [children_map] at hcm
-          obtain ⟨c0, h0, rfl⟩ := List.mem_map.1 hcm
-          exact (htm c0 h0).2)
-      rw [map_map, map_map] at h; exact h
+    refine ⟨con (σ _ (map tm a)), ?_, .intro a Prod.snd tm fun c hcm => (htm c hcm).2⟩
+    rw [← natural]
+    exact .intro p r' (σ _ a) Prod.fst tm hl' (by rw [natural, hf', hf]) fun c hcm =>
+      (htm c (within _ c hcm)).1
 
 end
 end Spec.Tables
