@@ -5,6 +5,8 @@ import FrenWalking
 import FrenBase.Binding
 import FrenExpr
 import Spec.Language.Types
+import Spec.Language.Patterns
+import FrenHirToThir.Coverage
 
 open Fren.Lang
 
@@ -1562,6 +1564,134 @@ theorem body_checked (ι : Fren.Seq String → FrenBase.ItemId) (hι : Function.
   · simp [h, produced, verdict, hs]
 
 end Algorithmic
+
+section CoverageCorrespondence
+
+open spec.types spec.patterns Spec.Language.Patterns
+
+def ofList {α : Type} (l : List α) : Snoc α := l.foldl .Extend .Empty
+
+theorem uncovered_toList {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
+    toList (uncovered _ cs arms) =
+      (toList cs).filter (fun c => decide (c ∉ (toList arms).map (·.constructor))) := by
+  induction cs with
+  | Empty => simp [uncovered, toList]
+  | Extend earlier last ih =>
+    have hp := occurrences_pos_iff arms last
+    have hn := occurrences_nonneg arms last
+    simp only [uncovered, toList, List.filter_append, ← ih]
+    by_cases h : occurrences _ arms last = 0
+    · have : ∀ x ∈ toList arms, ¬ x.constructor = last := fun x hx hc => by
+        have := hp.2 (List.mem_map.2 ⟨x, hx, hc⟩); omega
+      simp [h, toList, List.filter_cons]
+      exact this
+    · have : ∃ x ∈ toList arms, x.constructor = last := List.mem_map.1 (hp.1 (by omega))
+      simp [h, List.filter_cons]
+      exact this
+
+theorem production_missing_eq {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
+    (@FrenHirToThir.coverage (Fren.Seq String) ⟨fun x y => decide (x = y)⟩ (toList cs).toArray
+      ((toList arms).map (·.constructor)).toArray).1.toList = toList (uncovered _ cs arms) := by
+  rw [uncovered_toList]
+  simp [FrenHirToThir.coverage]
+  apply List.filter_congr
+  intro c _
+  by_cases h : c ∈ (toList arms).map (·.constructor) <;> simp_all
+
+theorem repeats_fold {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) :
+    ((toList arms).map (·.constructor)).foldl
+      (fun (acc : List (Fren.Seq String) × List (Fren.Seq String)) t =>
+        (acc.1 ++ [t], if acc.1.contains t then acc.2 ++ [t] else acc.2)) ([], []) =
+      ((toList arms).map (·.constructor), toList (repeats _ arms)) := by
+  induction arms with
+  | Empty => simp [toList, repeats]
+  | Extend earlier last ih =>
+    have hp := occurrences_pos_iff earlier last.constructor
+    have hn := occurrences_nonneg earlier last.constructor
+    simp only [toList, List.map_append, List.foldl_append, ih, List.map_cons, List.map_nil,
+      List.foldl_cons, List.foldl_nil, repeats]
+    by_cases h : 0 < occurrences _ earlier last.constructor
+    · have hm := hp.1 h
+      simp [h, hm, toList]
+    · have hm : last.constructor ∉ (toList earlier).map (·.constructor) := fun m => h (hp.2 m)
+      simp [h, hm]
+
+theorem fold_arrays (ts : List (Fren.Seq String)) (s r : Array (Fren.Seq String)) :
+    (ts.foldl (fun (x : Array (Fren.Seq String) × Array (Fren.Seq String)) t =>
+        (x.fst.push t, if x.fst.contains t = true then x.snd.push t else x.snd)) (s, r)).2.toList =
+    (ts.foldl (fun (acc : List (Fren.Seq String) × List (Fren.Seq String)) t =>
+        (acc.1 ++ [t], if acc.1.contains t then acc.2 ++ [t] else acc.2)) (s.toList, r.toList)).2 := by
+  induction ts generalizing s r with
+  | nil => simp
+  | cons t ts ih =>
+    simp only [List.foldl_cons]
+    have := ih (s.push t) (if s.contains t = true then r.push t else r)
+    rw [this]
+    by_cases h : s.contains t = true
+    · have hm : t ∈ s := by simpa using h
+      simp [hm]
+    · have hm : t ∉ s := by simpa using h
+      simp [hm]
+
+theorem production_repeated_eq {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
+    (@FrenHirToThir.coverage (Fren.Seq String) ⟨fun x y => decide (x = y)⟩ (toList cs).toArray
+      ((toList arms).map (·.constructor)).toArray).2.toList = toList (repeats _ arms) := by
+  have := repeats_fold arms
+  simp only [FrenHirToThir.coverage]
+  rw [← Array.foldl_toList, List.toList_toArray, fold_arrays]
+  have h2 := congrArg Prod.snd this
+  simpa using h2
+
+theorem ofList_toList {α : Type} (s : Snoc α) : ofList (toList s) = s := by
+  induction s with
+  | Empty => rfl
+  | Extend earlier last ih =>
+    simp only [ofList] at ih
+    simp only [toList, ofList, List.foldl_append, ih, List.foldl_cons, List.foldl_nil]
+
+/-- The production check, read through the adapters: the inventory and the written
+patterns go in as arrays and the two lists come back as snoc sequences. -/
+def productionCoverage {E : Type} (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
+    Array (Fren.Seq String) × Array (Fren.Seq String) :=
+  @FrenHirToThir.coverage (Fren.Seq String) ⟨fun x y => decide (x = y)⟩ (toList cs).toArray
+    ((toList arms).map (·.constructor)).toArray
+
+interp production_missing := fun cs arms => ofList (productionCoverage cs arms).1.toList
+interp production_repeated := fun arms => ofList (productionCoverage Snoc.Empty arms).2.toList
+
+open spec.thir in
+impl coverage_lists_proof: coverage_lists for (constructors : Snoc (Fren.Seq String))
+    (arms : Snoc (ArmF Typing)) {
+  constructors := constructors, arms := arms, holds? := true
+} by
+  intro constructors arms _
+  simp only [coverage_lists.ensures, coverage_lists.ensure.output, coverage_lists.ensure.missing,
+    coverage_lists.ensure.repeated, production_missing, production_repeated]
+  refine ⟨trivial, ?_, ?_⟩
+  · have := production_missing_eq constructors arms
+    simp only [productionCoverage, this, ofList_toList]
+  · have := production_repeated_eq Snoc.Empty arms
+    simp only [productionCoverage, this, ofList_toList]
+
+/-- The arm that a constructor selects, as the evaluator and confirmation compute it. -/
+def pickArm {E : Type} (arms : Snoc (ArmF E)) (c : Fren.Seq String) : Option (ArmF E) :=
+  @FrenHirToThir.selectArm (Fren.Seq String) (ArmF E) ⟨fun x y => decide (x = y)⟩
+    (toList arms).toArray (fun a => some a.constructor) c
+
+theorem pickArm_eq_select {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) (c : Fren.Seq String) :
+    pickArm arms c = select _ arms c := by
+  induction arms with
+  | Empty => simp [pickArm, FrenHirToThir.selectArm, toList, select]
+  | Extend earlier last ih =>
+    have ih' := ih
+    simp only [pickArm, FrenHirToThir.selectArm, List.find?_toArray] at ih' ⊢
+    simp only [toList, List.find?_append, select, ← ih']
+    cases hf : (toList earlier).find? (fun a => some a.constructor == some c) with
+    | some f => simp
+    | none =>
+      by_cases h : last.constructor = c <;> simp [h]
+
+end CoverageCorrespondence
 
 end Spec.Compiler.Thir
 

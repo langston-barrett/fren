@@ -1,6 +1,7 @@
 import Fren.Impl
 import Fren.Literate
 import FrenEval
+import Spec.Compiler.Thir
 
 open Fren.Lang
 
@@ -66,4 +67,19 @@ private def source := "mod demand\n\
       let .error (.undefined ..) := e.outcome | return false
     return true
 
+open spec.evaluator in
+interp evaluator_pick := fun arms c => Spec.Compiler.Thir.pickArm arms c
+
+open spec.evaluator in
+impl evaluator_selection_proof: evaluator_selection for
+    (arms : spec.types.Snoc (spec.types.ArmF spec.types.Typing)) (constructor : Fren.Seq String) {
+  arms := arms, constructor := constructor, holds? := true
+} by
+  intro arms constructor _
+  simp only [evaluator_selection.ensures, evaluator_selection.ensure.output,
+    evaluator_selection.ensure.agrees, evaluator_pick]
+  exact ⟨trivial, Spec.Compiler.Thir.pickArm_eq_select arms constructor⟩
+
 end Spec.Compiler.Evaluator
+
+#fren_check evaluator_selection

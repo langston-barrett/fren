@@ -189,3 +189,28 @@ of completeness of its retained source verification information.
 
 Implementation correspondence and proof coverage are recorded in the
 [development coverage document](../../../docs/fren2-specification-coverage.md).
+
+## Arm selection
+
+A match evaluates the arm that its scrutinee's constructor selects, which is
+the arm that [`select`](../Language/Patterns.md#r-patterns.matching.select)
+names. The evaluator's walk selects it with `FrenHirToThir.selectArm`, the
+function that confirmation also calls, and the Thir wrapper proves that
+function equal to `select`.
+
+r[evaluator.selection.arm] spec::evaluator::evaluator_selection::agrees
+The arm that the evaluator selects for a constructor is the arm `select`
+names for it.
+
+```fren
+use spec::types::{ArmF, ItemId, Snoc, Typing}
+use spec::patterns::select
+
+pub fn evaluator_pick(Snoc<ArmF<Typing>>, ItemId): Option<ArmF<Typing>>
+
+set_option fren.evidence "random" in
+pub proc evaluator_selection(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (holds?) {
+    ensure output: holds?
+    ensure agrees: evaluator_pick(arms, constructor) = select(arms, constructor)
+}
+```

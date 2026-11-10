@@ -59,6 +59,8 @@ and body inventory, admission and exact retained resolved input.
 r[thir.contract.coverage]
 On actual successful type-only output, coverage validation holds exactly
 when every constructor of the scrutinee owner occurs once in each match.
+The [coverage correspondence](#coverage-correspondence) proves the part that
+decides it, the two lists that a rejected match reports.
 
 r[thir.contract.nonrecursion]
 On actual successful type-only output, non-recursion validation holds exactly
@@ -96,8 +98,8 @@ source body has exactly one entry, remains unproved, and so does
 and actual inference law for integer addition with literal operands, for all
 inputs, tokens and contexts. Its raw-output mutation controls check a proved
 necessary projection of that relation. These laws and controls do not prove
-the universal contract. `CoverageContract` and `NonrecursionContract` also
-remain unproved; the correspondence obligations are retained in
+the universal contract. `CoverageContract` and `NonrecursionContract` remain
+unproved, apart from the lists of [coverage correspondence](#coverage-correspondence); the correspondence obligations are retained in
 [development coverage](../../../docs/fren2-specification-coverage.md).
 
 ## Input admission
@@ -293,7 +295,8 @@ references. `StaticFailure.typing` retains existing diagnostics, including
 catalogue codes: coverage includes the owner, missing and repeated IDs; a
 cycle includes a closed canonical function path. Missing cases point at the
 match keyword, repetitions at the first repeated pattern, and cycles at the
-closing call's callee. Metadata failures also carry the actual source span.
+closing call's callee. These are the positions of today's checker; the Language
+chapter on [patterns](../Language/Patterns.md) does not state them. Metadata failures also carry the actual source span.
 These validation failures are structured data; they have no new catalogue codes.
 
 ## Examples
@@ -1918,3 +1921,40 @@ of this section is open. No theorem yet states any of the following.
 Erasing the types of the traversal's output gives back its input, as
 `thir.result.preservation` requires; the generated cases of the checker's
 tests check this on every accepted case.
+
+## Coverage correspondence
+
+The [patterns chapter](../Language/Patterns.md) defines `uncovered` and
+`repeats`. The production function `FrenHirToThir.coverage` computes the same
+two lists from an inventory and the arms' targets, and `validateCoverage`
+derives the repeated-arm error span from its `repeated` list. The inventory's
+choice from the scope, the extraction of the arms' targets and the verdict are
+not bound here, and the binding is at the specification's own identities with
+decidable equality; its agreement at the compiler's item identities needs
+their equality to be lawful, which is not proved, and the match's whole
+`CoverageContract` stays open.
+
+r[thir.coverage.lists] spec::thir::coverage_lists::{missing, repeated}
+The missing constructors that production reports are `uncovered`, and its
+repeated targets are `repeats`.
+
+```fren
+use spec::types::{ArmF, ItemId, Snoc, Typing}
+use spec::patterns::{repeats, uncovered}
+
+pub fn production_missing(Snoc<ItemId>, Snoc<ArmF<Typing>>): Snoc<ItemId>
+
+pub fn production_repeated(Snoc<ArmF<Typing>>): Snoc<ItemId>
+
+set_option fren.evidence "random" in
+pub proc coverage_lists(constructors: Snoc<ItemId>, arms: Snoc<ArmF<Typing>>): (holds?) {
+    ensure output: holds?
+    ensure missing: production_missing(constructors, arms) = uncovered(constructors, arms)
+    ensure repeated: production_repeated(arms) = repeats(arms)
+}
+```
+
+Both the [evaluator](Evaluator.md#arm-selection) and
+[confirmation](Smt.md#9-arm-selection-in-confirmation) select an arm through
+`FrenHirToThir.selectArm`, which this wrapper proves equal to the patterns
+chapter's `select` for the specification's identities.

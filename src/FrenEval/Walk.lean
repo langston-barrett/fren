@@ -111,11 +111,10 @@ def walk : Nat → Typed → TypedBody → Environment → Expr → Outcome
     | .matchE _ scrutinee _ arms _ =>
       let .enum _ ctor ← visit env scrutinee
         | throw (.unsupported span "non-enum scrutinee")
-      for (pattern, _, arm, _) in arms do
-        let some ref := t.resolved.referenceAt pattern.head.slice
-          | throw (.unsupported pattern.head.span "missing resolved pattern")
-        if ref.role == .pattern && ref.target == .item ctor then return ← visit env arm
-      throw (.unsupported span "no arm for canonical constructor")
+      let some (_, _, arm, _) := FrenHirToThir.selectArm arms
+          (fun (pattern, _, _, _) => FrenHirToThir.patternConstructor t.resolved pattern) ctor
+        | throw (.unsupported span "no arm for canonical constructor")
+      visit env arm
     | .call callee _ args _ _ =>
       -- A callable occurrence supplies a signature, never an evaluated Value.
       let some (.callable sig) := FrenHirToThir.occurrenceType body callee

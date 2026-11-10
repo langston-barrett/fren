@@ -741,3 +741,25 @@ This distinguishes a real counterexample search from its polarity mutant
 without asking a solver. A separate admitted definition and later assumption
 exercise actual declaration and parameter order. These witnesses establish
 instances, not the universal preservation or trust obligations.
+
+## 9. Arm selection in confirmation
+
+Confirmation of a match selects the arm of a constructor with
+`FrenHirToThir.selectArm`, the function that the evaluator also calls.
+
+r[smt.selection.arm] smt_primitives::confirmation_selection::agrees
+The arm that confirmation selects for a constructor is the arm that
+[`select`](../Language/Patterns.md#r-patterns.matching.select) names for it.
+
+```fren
+use spec::types::{ArmF, ItemId, Snoc, Typing}
+use spec::patterns::select
+
+pub fn confirmation_pick(Snoc<ArmF<Typing>>, ItemId): Option<ArmF<Typing>>
+
+set_option fren.evidence "random" in
+pub proc confirmation_selection(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (holds?) {
+    ensure output: holds?
+    ensure agrees: confirmation_pick(arms, constructor) = select(arms, constructor)
+}
+```

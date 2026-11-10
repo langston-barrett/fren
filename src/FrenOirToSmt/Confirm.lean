@@ -37,9 +37,8 @@ budgeted confirmation evaluator. The caller supplies recursive visits and calls.
     letVisit (← visit a) rest
   | .matchE _ s _ arms _ =>
     let .enum _ ctor ← visit s | throw "non-enum scrutinee"
-    let some (_, _, arm, _) := arms.find? (fun (pattern, _, _, _) =>
-        (t.resolved.referenceAt pattern.head.slice).any (fun ref =>
-          ref.role == .pattern && ref.target == .item ctor))
+    let some (_, _, arm, _) := FrenHirToThir.selectArm arms
+        (fun (pattern, _, _, _) => FrenHirToThir.patternConstructor t.resolved pattern) ctor
       | throw "no arm for canonical constructor"
     visit arm
   | .call callee _ args _ _ =>
@@ -189,9 +188,8 @@ private def siteEnvironment : Nat → FrenModule.Typed → FrenModule.TypedBody 
       if has a then visit env target a
       else
         let .enum _ ctor ← eval a | throw (some "source match guard is not an enum")
-        let some (_, _, selected, _) := arms.find? (fun (pattern, _, _, _) =>
-          (t.resolved.referenceAt pattern.head.slice).any (fun ref =>
-            ref.role == .pattern && ref.target == .item ctor))
+        let some (_, _, selected, _) := FrenHirToThir.selectArm arms
+            (fun (pattern, _, _, _) => FrenHirToThir.patternConstructor t.resolved pattern) ctor
           | throw (some "source match arm missing")
         unless has selected do throw none
         visit env target selected

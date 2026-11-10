@@ -1835,24 +1835,34 @@ checks that each rule of the three chapters links the Fren items after it:
 ## Patterns and matching: src/Spec/Language/Patterns.md
 
 The chapter reuses the Core's identities, `Snoc`, `Symb` and `ArmF`. Its
-wrapper proves in Lean, over every arm sequence (every typed one, where a premise says so), that selection takes the
-first written arm for a constructor, agrees with the arm at the first index,
-and is unaffected by the order of arms when a constructor has one; that the
-coverage check is exactly "every constructor selects an arm and no arm is
-repeated", that covering arms select an arm for every constructor of the
-enumeration, and that the selected arm keeps the match's body type and
-pattern type. `check_coverage` is bound to the production
-`FrenHirToThir.coverage`, which `validateCoverage` calls, through adapters
-between snoc sequences and arrays. The worked examples are evaluated with
+wrapper proves in Lean, over every arm sequence (every typed one, where a
+premise says so), that selection takes the first written arm for a
+constructor, agrees with the arm at the first index, and is unaffected by the
+order of arms when a constructor has one. Reachability is defined through
+`first_index`; the wrapper proves it equivalent to "no arm is repeated", that
+covering arms select an arm for every constructor of the enumeration
+(including the empty one), and that the selected arm keeps the match's body
+type and pattern type. Admission is lifted from one match to layered rows and
+programs. The production correspondence lives in the Compiler chapters:
+`thir.coverage.lists` binds `FrenHirToThir.coverage` to `uncovered` and
+`repeats`, and the evaluator and confirmation arm selections are bound
+through the shared `selectArm`. The worked examples are evaluated with
 `decide`.
 
 - [x] Bind the production coverage computation (missing and repeated
   constructors) to the specification's `uncovered` and `repeats`.
 - [x] Prove selection, exhaustiveness, characterization and typing of the
   selected arm for all arm sequences.
-- [ ] Bind the evaluator and strict-confirmation arm loops (inline) and the
-  lowering branches (last arm as fallback) to `select`; no function exists
-  for a proof to bind (the one `trusted` open property of the chapter).
+- [x] Bind the evaluator and strict-confirmation arm selection to `select`
+  through the shared `FrenHirToThir.selectArm`.
+- [ ] Bind the lowering guard chain (last arm as fallback) to `select`; it
+  shares no extracted function (the one `trusted` open claim,
+  `match.lowering.selection`).
+- [ ] Prove the coverage-list binding at the compiler's item identities
+  (lawful equality); it is proved at the specification's own identities.
+- [ ] State the diagnostic positions (missing constructor at the `match`
+  keyword, repeated arm at its first repeated pattern) in the Language
+  chapter; only the Thir chapter mentions them.
 - [ ] Give `WalkingFailure.coverage` a catalogue code and specify its
   rendering; the chapter specifies the diagnostic's content only.
 - [ ] Restate selection once patterns can bind payloads or nest; Fren2

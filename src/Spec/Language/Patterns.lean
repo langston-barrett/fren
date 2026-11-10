@@ -2,7 +2,6 @@ import Fren.Impl
 import Fren.Literate
 import Fren.Trace
 import Spec.Language.Types
-import FrenHirToThir.Coverage
 
 open Fren.Lang
 
@@ -72,23 +71,12 @@ theorem select_earlier {E : Type} [Inhabited E] (earlier : Snoc (ArmF E)) (last 
   obtain ⟨f, hf⟩ := select_complete earlier c h
   simp [select, hf]
 
-/-! ## Production coverage -/
+/-! ## Lists -/
 
 /-- Oldest first, the order of the source. -/
 def toList {α : Type} : Snoc α → List α
   | .Empty => []
   | .Extend earlier last => toList earlier ++ [last]
-
-def ofList {α : Type} (l : List α) : Snoc α := l.foldl .Extend .Empty
-
-theorem toList_foldl {α : Type} (l : List α) (s : Snoc α) :
-    toList (l.foldl .Extend s) = toList s ++ l := by
-  induction l generalizing s with
-  | nil => simp
-  | cons a l ih => simp [List.foldl, ih, toList]
-
-theorem toList_ofList {α : Type} (l : List α) : toList (ofList l) = l := by
-  simp [ofList, toList_foldl, toList]
 
 theorem occurrences_pos_iff {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) (c : Fren.Seq String) :
     0 < occurrences _ arms c ↔ c ∈ (toList arms).map (·.constructor) := by
@@ -102,84 +90,6 @@ theorem occurrences_pos_iff {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) (c :
     · simp [h]; omega
     · simp [h]
       intro e; exact absurd e.symm h
-
-theorem uncovered_toList {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
-    toList (uncovered _ cs arms) =
-      (toList cs).filter (fun c => decide (c ∉ (toList arms).map (·.constructor))) := by
-  induction cs with
-  | Empty => simp [uncovered, toList]
-  | Extend earlier last ih =>
-    have hp := occurrences_pos_iff arms last
-    have hn := occurrences_nonneg arms last
-    simp only [uncovered, toList, List.filter_append, ← ih]
-    by_cases h : occurrences _ arms last = 0
-    · have : ∀ x ∈ toList arms, ¬ x.constructor = last := fun x hx hc => by
-        have := hp.2 (List.mem_map.2 ⟨x, hx, hc⟩); omega
-      simp [h, toList, List.filter_cons]
-      exact this
-    · have : ∃ x ∈ toList arms, x.constructor = last := List.mem_map.1 (hp.1 (by omega))
-      simp [h, List.filter_cons]
-      exact this
-
-theorem production_missing_eq {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
-    (@FrenHirToThir.coverage (Fren.Seq String) ⟨fun x y => decide (x = y)⟩ (toList cs).toArray
-      ((toList arms).map (·.constructor)).toArray).1.toList = toList (uncovered _ cs arms) := by
-  rw [uncovered_toList]
-  simp [FrenHirToThir.coverage]
-  apply List.filter_congr
-  intro c _
-  by_cases h : c ∈ (toList arms).map (·.constructor) <;> simp_all
-
-theorem repeats_fold {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) :
-    ((toList arms).map (·.constructor)).foldl
-      (fun (acc : List (Fren.Seq String) × List (Fren.Seq String)) t =>
-        (acc.1 ++ [t], if acc.1.contains t then acc.2 ++ [t] else acc.2)) ([], []) =
-      ((toList arms).map (·.constructor), toList (repeats _ arms)) := by
-  induction arms with
-  | Empty => simp [toList, repeats]
-  | Extend earlier last ih =>
-    have hp := occurrences_pos_iff earlier last.constructor
-    have hn := occurrences_nonneg earlier last.constructor
-    simp only [toList, List.map_append, List.foldl_append, ih, List.map_cons, List.map_nil,
-      List.foldl_cons, List.foldl_nil, repeats]
-    by_cases h : 0 < occurrences _ earlier last.constructor
-    · have hm := hp.1 h
-      simp [h, hm, toList]
-    · have hm : last.constructor ∉ (toList earlier).map (·.constructor) := fun m => h (hp.2 m)
-      simp [h, hm]
-
-theorem fold_arrays (ts : List (Fren.Seq String)) (s r : Array (Fren.Seq String)) :
-    (ts.foldl (fun (x : Array (Fren.Seq String) × Array (Fren.Seq String)) t =>
-        (x.fst.push t, if x.fst.contains t = true then x.snd.push t else x.snd)) (s, r)).2.toList =
-    (ts.foldl (fun (acc : List (Fren.Seq String) × List (Fren.Seq String)) t =>
-        (acc.1 ++ [t], if acc.1.contains t then acc.2 ++ [t] else acc.2)) (s.toList, r.toList)).2 := by
-  induction ts generalizing s r with
-  | nil => simp
-  | cons t ts ih =>
-    simp only [List.foldl_cons]
-    have := ih (s.push t) (if s.contains t = true then r.push t else r)
-    rw [this]
-    by_cases h : s.contains t = true
-    · have hm : t ∈ s := by simpa using h
-      simp [hm]
-    · have hm : t ∉ s := by simpa using h
-      simp [hm]
-
-theorem production_repeated_eq {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
-    (@FrenHirToThir.coverage (Fren.Seq String) ⟨fun x y => decide (x = y)⟩ (toList cs).toArray
-      ((toList arms).map (·.constructor)).toArray).2.toList = toList (repeats _ arms) := by
-  have := repeats_fold arms
-  simp only [FrenHirToThir.coverage]
-  rw [← Array.foldl_toList, List.toList_toArray, fold_arrays]
-  have h2 := congrArg Prod.snd this
-  simpa using h2
-
-theorem ofList_toList {α : Type} (s : Snoc α) : ofList (toList s) = s := by
-  induction s with
-  | Empty => rfl
-  | Extend earlier last ih =>
-    simp only [ofList] at ih
-    simp only [toList, ofList, List.foldl_append, ih, List.foldl_cons, List.foldl_nil]
 
 /-! ## Laws bound to their procedures -/
 
@@ -203,31 +113,6 @@ impl selection_laws_proof: selection_laws for (arms earlier : Snoc (ArmF Typing)
   · intro h; exact select_earlier earlier last constructor h
 
 
-/-- The production check, read through the adapters: the inventory and the written
-patterns go in as arrays and the two lists come back as snoc sequences. -/
-def productionCoverage {E : Type} (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
-    Array (Fren.Seq String) × Array (Fren.Seq String) :=
-  @FrenHirToThir.coverage (Fren.Seq String) ⟨fun x y => decide (x = y)⟩ (toList cs).toArray
-    ((toList arms).map (·.constructor)).toArray
-
-interp production_missing := fun cs arms => ofList (productionCoverage cs arms).1.toList
-interp production_repeated := fun arms => ofList (productionCoverage Snoc.Empty arms).2.toList
-
-open spec.patterns in
-impl check_coverage_proof: check_coverage for (constructors : Snoc (Fren.Seq String))
-    (arms : Snoc (ArmF Typing)) {
-  constructors := constructors, arms := arms, holds? := true
-} by
-  intro constructors arms _
-  simp only [check_coverage.ensures, check_coverage.ensure.output, check_coverage.ensure.missing,
-    check_coverage.ensure.repeated, production_missing, production_repeated]
-  refine ⟨trivial, ?_, ?_⟩
-  · have := production_missing_eq constructors arms
-    simp only [productionCoverage, this, ofList_toList]
-  · have := production_repeated_eq Snoc.Empty arms
-    simp only [productionCoverage, this, ofList_toList]
-
-
 /-! ## Written order -/
 
 theorem first_index_bound {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) (c : Fren.Seq String)
@@ -245,76 +130,75 @@ theorem first_index_bound {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) (c : F
       · have := Option.some.inj h; subst this; omega
       · simp at h
 
-theorem lookup_some {α : Type} [Inhabited α] (xs : Snoc α) (level : Int) (h0 : 0 ≤ level)
-    (h1 : level < length _ xs) : ∃ x, lookup _ xs level = some x := by
-  induction xs with
-  | Empty => simp [length] at h1; omega
-  | Extend earlier last ih =>
-    simp only [length] at h1
-    simp only [lookup]
-    split
-    · exact ⟨_, rfl⟩
-    · rename_i ne; exact ih (by omega)
-
-theorem select_position_eq {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) (c : Fren.Seq String) :
-    select _ arms c = match first_index _ arms c with
-      | some i => lookup _ arms i
-      | none => none := by
+theorem first_index_none_iff {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) (c : Fren.Seq String) :
+    first_index _ arms c = none ↔ occurrences _ arms c = 0 := by
   induction arms with
-  | Empty => simp [select, first_index]
+  | Empty => simp [first_index, occurrences]
   | Extend earlier last ih =>
-    simp only [select, first_index]
+    have hn := occurrences_nonneg earlier c
+    simp only [first_index, occurrences]
     cases hs : first_index _ earlier c with
     | some j =>
-      rw [hs] at ih; simp only at ih
-      have hb := first_index_bound earlier c j hs
-      obtain ⟨x, hx⟩ := lookup_some earlier j hb.1 hb.2
-      have hl : lookup _ (Snoc.Extend earlier last) j = some x := by
-        simp only [lookup]; rw [if_neg (by omega)]; exact hx
-      rw [hx] at ih
-      simp only [ih, hl]
+      rw [hs] at ih
+      have : occurrences _ earlier c ≠ 0 := fun h => by simp [h] at ih
+      simp only [reduceCtorEq, false_iff]
+      split <;> omega
     | none =>
-      rw [hs] at ih; simp only at ih
-      simp only [ih]
-      by_cases h : last.constructor = c <;> simp [h, lookup]
+      rw [hs] at ih
+      have h0 : occurrences _ earlier c = 0 := ih.1 rfl
+      simp only
+      by_cases h : last.constructor = c <;> simp [h, h0]
 
-/-! ## Unique arms -/
+theorem first_index_last {E : Type} [Inhabited E] (earlier : Snoc (ArmF E)) (last : ArmF E) :
+    first_index _ (Snoc.Extend earlier last) last.constructor = some (length _ earlier) ↔
+      occurrences _ earlier last.constructor = 0 := by
+  have hn := occurrences_nonneg earlier last.constructor
+  cases hs : first_index _ earlier last.constructor with
+  | some j =>
+    have hb := first_index_bound earlier last.constructor j hs
+    have hne : occurrences _ earlier last.constructor ≠ 0 := fun h => by
+      have := (first_index_none_iff earlier last.constructor).2 h
+      rw [hs] at this; simp at this
+    simp [first_index, hs]
+    omega
+  | none =>
+    have h0 := (first_index_none_iff earlier last.constructor).1 hs
+    simp [first_index, hs, h0]
 
-theorem has_arm_occ {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) (arm : ArmF E)
-    (h : has_arm? _ arms arm = true) : 0 < occurrences _ arms arm.constructor := by
+theorem reachable_iff {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) :
+    reachable? _ arms = true ↔ repeats _ arms = Snoc.Empty := by
   induction arms with
-  | Empty => simp [has_arm?] at h
+  | Empty => simp [reachable?, repeats]
   | Extend earlier last ih =>
-    have := occurrences_nonneg earlier arm.constructor
-    simp only [has_arm?, decide_eq_true_eq] at h
-    simp only [occurrences]
-    rcases h with h | h
-    · subst h; simp; omega
-    · have := ih (by simpa using h); split <;> omega
+    have hn := occurrences_nonneg earlier last.constructor
+    have hl := first_index_last earlier last
+    simp only [reachable?, repeats, decide_eq_true_eq]
+    by_cases h : 0 < occurrences _ earlier last.constructor
+    · have hne : ¬ occurrences _ earlier last.constructor = 0 := by omega
+      simp only [if_pos h]
+      constructor
+      · rintro ⟨h1, _⟩; exact absurd (hl.1 h1) hne
+      · intro hh; cases hh
+    · have h0 : occurrences _ earlier last.constructor = 0 := by omega
+      simp only [if_neg h]
+      constructor
+      · rintro ⟨_, h2⟩; exact ih.1 h2
+      · intro h2; exact ⟨hl.2 h0, ih.2 h2⟩
 
-theorem arm_unique {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) (arm : ArmF E)
-    (h : has_arm? _ arms arm = true) (one : occurrences _ arms arm.constructor = 1) :
-    select _ arms arm.constructor = some arm := by
-  induction arms with
-  | Empty => simp [has_arm?] at h
-  | Extend earlier last ih =>
-    have hn := occurrences_nonneg earlier arm.constructor
-    simp only [has_arm?, decide_eq_true_eq] at h
-    simp only [occurrences] at one
-    rcases h with h | h
-    · subst h
-      have h0 : occurrences _ earlier last.constructor = 0 := by simp at one; omega
-      cases hs : select _ earlier last.constructor with
-      | some f => have := select_sound earlier _ f hs; omega
-      | none => simp [select, hs]
-    · have hpos := has_arm_occ earlier arm (by simpa using h)
-      have h1 : occurrences _ earlier arm.constructor = 1 := by
-        by_cases e : last.constructor = arm.constructor
-        · simp [e] at one; omega
-        · simpa [e] using one
-      rw [select_earlier earlier last _ hpos]
-      exact ih (by simpa using h) h1
-
+theorem select_swap {E : Type} [Inhabited E] (earlier : Snoc (ArmF E)) (a b : ArmF E)
+    (c : Fren.Seq String) (h : a.constructor ≠ b.constructor) :
+    select _ (Snoc.Extend (Snoc.Extend earlier a) b) c =
+      select _ (Snoc.Extend (Snoc.Extend earlier b) a) c := by
+  simp only [select]
+  cases hs : select _ earlier c with
+  | some f => simp
+  | none =>
+    simp only
+    by_cases ha : a.constructor = c <;> by_cases hb : b.constructor = c
+    · exact absurd (ha.trans hb.symm) h
+    · simp [ha, hb]
+    · simp [ha, hb]
+    · simp [ha, hb]
 /-! ## Coverage and the inventory -/
 
 theorem member_iff (cs : Snoc (Fren.Seq String)) (c : Fren.Seq String) :
@@ -527,32 +411,25 @@ theorem covered_unfold {E : Type} [Inhabited E] (symb : Snoc Entry) (owner : Fre
   simp
 
 open spec.patterns in
-impl select_position_proof: select_position for (arms : Snoc (ArmF Typing))
+impl arm_order_proof: arm_order for (earlier : Snoc (ArmF Typing)) (first second : ArmF Typing)
     (constructor : Fren.Seq String) {
-  arms := arms, constructor := constructor, holds? := true
+  earlier := earlier, first := first, second := second, constructor := constructor,
+  holds? := true
 } by
-  intro arms constructor _
-  simp only [select_position.ensures, select_position.ensure.output, select_position.ensure.first]
-  refine ⟨trivial, ?_⟩
-  rw [select_position_eq]
-  cases hf : first_index _ arms constructor with
-  | none => simp
-  | some v =>
-    simp only
-    have e : Fren.Prelude.Option.some.x0 (some v) = v := rfl
-    rw [e]
-    simp
-
-open spec.patterns in
-impl arm_order_proof: arm_order for (arms : Snoc (ArmF Typing)) (arm : ArmF Typing) {
-  arms := arms, arm := arm, holds? := true
-} by
-  intro arms arm _
-  simp only [arm_order.ensures, arm_order.ensure.output, arm_order.ensure.unique]
+  intro earlier first second constructor _
+  simp only [arm_order.ensures, arm_order.ensure.output, arm_order.ensure.swap]
   refine ⟨trivial, ?_⟩
   intro h
-  exact arm_unique arms arm h.1 h.2
+  exact select_swap earlier first second constructor h
 
+open spec.patterns in
+impl reachability_proof: reachability for (arms : Snoc (ArmF Typing)) {
+  arms := arms, holds? := true
+} by
+  intro arms _
+  simp only [reachability.ensures, reachability.ensure.output, reachability.ensure.agrees]
+  refine ⟨trivial, ?_⟩
+  rw [← reachable_iff]
 open spec.patterns in
 impl coverage_characterized_proof: coverage_characterized for (symb : Snoc Entry)
     (owner : Fren.Seq String) (constructors : Snoc (Fren.Seq String))
@@ -566,7 +443,7 @@ impl coverage_characterized_proof: coverage_characterized for (symb : Snoc Entry
   refine ⟨trivial, ?_, ?_, ?_⟩
   · intro h; exact listed_of symb h.1.1 arms owner constructors h.1.2 h.2
   · intro h
-    rw [covered_unfold symb owner constructors arms h.2]
+    rw [covered_unfold symb owner constructors arms h.2, reachable_iff]
     exact covered_iff constructors arms h.1
   · intro h
     rw [covered_unfold symb owner constructors arms h.2, covered_iff constructors arms h.1,
@@ -583,20 +460,6 @@ theorem covered_selects (symb : Snoc Entry) (hb : symb_ok? symb = true) (owner :
   exact select_complete arms c (by omega)
 
 open spec.patterns in
-impl exhaustive_selection_proof: exhaustive_selection for (symb : Snoc Entry)
-    (owner : Fren.Seq String) (arms : Snoc (ArmF Typing)) (constructor : Fren.Seq String) {
-  symb := symb, owner := owner, arms := arms, constructor := constructor, holds? := true
-} by
-  intro symb owner arms constructor _
-  simp only [exhaustive_selection.ensures, exhaustive_selection.ensure.output,
-    exhaustive_selection.ensure.selects]
-  refine ⟨trivial, ?_⟩
-  intro h
-  obtain ⟨f, hf⟩ := covered_selects symb h.1.1 owner arms constructor h.1.2
-    (by simpa only [pattern_rule?, decide_eq_true_eq] using h.2)
-  rw [hf]; rfl
-
-open spec.patterns in
 impl selection_typed_proof: selection_typed for (symb : Snoc Entry) (arms : Snoc (ArmF Typing))
     (owner : Fren.Seq String) (constructor : Fren.Seq String) (ctx : Snoc Ty) (ty : Ty)
     (found : ArmF Typing) {
@@ -610,23 +473,24 @@ impl selection_typed_proof: selection_typed for (symb : Snoc Entry) (arms : Snoc
   · intro h
     exact (arm_bodies_iff arms ctx ty).1 h.1 found (select_mem arms constructor found h.2)
   · intro h
-    simpa only [pattern_rule?, decide_eq_true_eq] using
+    simpa only [decide_eq_true_eq] using
       (arm_patterns_iff symb arms owner).1 h.1 found (select_mem arms constructor found h.2)
 
 open spec.patterns in
-impl match_progress_proof: match_progress for (symb : Snoc Entry) (ctx : Snoc Ty)
+impl admitted_selects_typed_proof: admitted_selects_typed for (symb : Snoc Entry) (ctx : Snoc Ty)
     (scrutinee : Typing) (arms : Snoc (ArmF Typing)) (ty : Ty) (owner : Fren.Seq String)
     (constructor : Fren.Seq String) {
   symb := symb, ctx := ctx, scrutinee := scrutinee, arms := arms, ty := ty, owner := owner,
   constructor := constructor, holds? := true
 } by
   intro symb ctx scrutinee arms ty owner constructor _
-  simp only [match_progress.ensures, match_progress.ensure.output, match_progress.ensure.selected]
+  simp only [admitted_selects_typed.ensures, admitted_selects_typed.ensure.output,
+    admitted_selects_typed.ensure.selected]
   refine ⟨trivial, ?_⟩
   intro h
   obtain ⟨⟨⟨hb, hm⟩, hs⟩, hp⟩ := h
   have hp' : entry symb constructor = some (.Constructor owner) := by
-    simpa only [pattern_rule?, decide_eq_true_eq] using hp
+    simpa only [decide_eq_true_eq] using hp
   simp only [match_admitted?, match_rule?, hs, decide_eq_true_eq] at hm
   have hc : covered? _ symb owner arms = true := by
     first | exact hm.2 | simpa [covered?] using hm.2
@@ -634,6 +498,70 @@ impl match_progress_proof: match_progress for (symb : Snoc Entry) (ctx : Snoc Ty
   have hbod := (arm_bodies_iff arms ctx ty).1 hm.1.1.2 f (select_mem arms constructor f hf)
   have e : Fren.Prelude.Option.some.x0 (some f) = f := rfl
   simp [selected_typed?, hf, e, hbod]
+
+open spec.patterns in
+impl empty_enumeration_proof: empty_enumeration for (symb : Snoc Entry) (ctx : Snoc Ty)
+    (scrutinee : Typing) (arms : Snoc (ArmF Typing)) (ty : Ty) (owner : Fren.Seq String) {
+  symb := symb, ctx := ctx, scrutinee := scrutinee, arms := arms, ty := ty, owner := owner,
+  holds? := true
+} by
+  intro symb ctx scrutinee arms ty owner _
+  simp only [empty_enumeration.ensures, empty_enumeration.ensure.output,
+    empty_enumeration.ensure.unadmitted]
+  refine ⟨trivial, ?_⟩
+  rintro ⟨⟨hb, he⟩, hs⟩ hadm
+  simp only [match_admitted?, match_rule?, hs, decide_eq_true_eq] at hadm
+  obtain ⟨⟨⟨⟨_, hne⟩, _⟩, hp⟩, _⟩ := hadm
+  cases arms with
+  | Empty => exact (hne rfl).elim
+  | Extend earlier last =>
+    have h1 := (arm_patterns_iff symb _ owner).1 hp last (by simp [toList])
+    obtain ⟨cs', he', hm⟩ := ctor_member symb symb
+      (by simpa only [symb_ok?, decide_eq_true_eq] using hb) last.constructor owner h1
+    rw [he] at he'
+    have := ItemKind.Enumeration.inj (Option.some.inj he')
+    subst this
+    simp [member?, fren_spec] at hm
+
+open spec.patterns in
+impl table_admission_proof: table_admission for (symb : Snoc Entry) (earlier : Snoc Row) (row : Row)
+    (scrutinee : Typing) (arms : Snoc (ArmF Typing)) {
+  symb := symb, earlier := earlier, row := row, scrutinee := scrutinee, arms := arms,
+  holds? := true
+} by
+  intro symb earlier row scrutinee arms _
+  simp only [table_admission.ensures, table_admission.ensure.output, table_admission.ensure.newest,
+    table_admission.ensure.rest]
+  refine ⟨trivial, ?_, ?_⟩
+  · rintro ⟨h, ha⟩
+    simp only [rows_admitted?, decide_eq_true_eq, ha, layer_admitted?] at h
+    simpa only [match_admitted?, match_rule?, decide_eq_true_eq] using h.2
+  · intro h
+    simp only [rows_admitted?, decide_eq_true_eq] at h
+    exact h.1
+
+open spec.patterns in
+impl program_admission_proof: program_admission for (symb : Snoc Entry) (earlier : Snoc Decl)
+    (item : Fren.Seq String) (body : Snoc Row) {
+  symb := symb, earlier := earlier, item := item, body := body, holds? := true
+} by
+  intro symb earlier item body _
+  simp only [program_admission.ensures, program_admission.ensure.output,
+    program_admission.ensure.typed, program_admission.ensure.bodies]
+  refine ⟨trivial, ?_, ?_⟩
+  · intro h
+    simp only [prog_admitted?, decide_eq_true_eq] at h
+    simpa only [prog_ok?, decide_eq_true_eq] using h.1
+  · intro h
+    simp only [prog_admitted?, decls_admitted?, decl_admitted?, decide_eq_true_eq] at h
+    exact h.2.1.2
+
+open spec.patterns in
+impl nested_examples_proof: nested_examples { holds? := true } by
+  intro _
+  simp only [nested_examples.ensures, nested_examples.ensure.output, nested_examples.ensure.valid]
+  refine ⟨trivial, ?_⟩
+  decide
 
 /-! ## Worked examples -/
 

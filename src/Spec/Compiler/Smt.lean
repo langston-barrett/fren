@@ -2,6 +2,7 @@ import Fren.Impl
 import Fren.Literate
 import Spec.Compiler.Oir
 import FrenOirToSmt
+import Spec.Compiler.Thir
 
 open Fren.Lang
 
@@ -569,4 +570,19 @@ theorem flipped_goal_model (p : FrenOir.Program) :
 #print axioms parameter_domain_total
 #print axioms flipped_goal_model
 
+open smt_primitives in
+interp confirmation_pick := fun arms c => Spec.Compiler.Thir.pickArm arms c
+
+open smt_primitives in
+impl confirmation_selection_proof: confirmation_selection for
+    (arms : spec.types.Snoc (spec.types.ArmF spec.types.Typing)) (constructor : Fren.Seq String) {
+  arms := arms, constructor := constructor, holds? := true
+} by
+  intro arms constructor _
+  simp only [confirmation_selection.ensures, confirmation_selection.ensure.output,
+    confirmation_selection.ensure.agrees, smt_primitives.confirmation_pick]
+  exact ⟨trivial, Spec.Compiler.Thir.pickArm_eq_select arms constructor⟩
+
 end Spec.Compiler.Smt
+
+#fren_check confirmation_selection
