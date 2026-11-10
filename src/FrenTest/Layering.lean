@@ -74,18 +74,20 @@ private def tests : List String := roots.map (· ++ "Tests")
 private def owners : List String := roots ++ tests ++
   ["FrenTextTests", "FrenTextTestsTests", "FrenTextDemo", "FrenTextDemoTests",
    "Fren2TestMain", "Fren2FakeSolver", "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing",
-   "FrenTest.Fren2Mir", "FrenTest.Fren2Lir"]
+   "FrenTest.Fren2Mir", "FrenTest.Fren2Lir", "FrenTest.ProofLint"]
 
 private def testOnly (owner : String) : Bool :=
   tests.contains owner || ["FrenTextTestsTests", "FrenTextDemoTests", "Fren2TestMain", "Fren2FakeSolver",
     "FrenTest.Layering", "FrenTest.Fren2Resolver", "FrenTest.Fren2Typing",
-    "FrenTest.Fren2Mir", "FrenTest.Fren2Lir"].contains owner
+    "FrenTest.Fren2Mir", "FrenTest.Fren2Lir", "FrenTest.ProofLint"].contains owner
 
 private def permits (owner imported : String) : Bool := Id.run do
   if ["Lean", "Std", "Init"].contains imported then return true
   if owner == imported then return true
   if owner == "FrenOirToSmtTests" && imported == "Plausible" then return true
   if owner == "FrenLirToOirTests" && ["FrenFlatToLirTests", "Plausible"].contains imported then return true
+  -- The proof linters read this inventory and import their own modules.
+  if owner == "FrenTest.ProofLint" then return imported == "FrenTest"
   if owner == "FrenTest.Fren2Lir" then return imported == "FrenFlatToLirTests"
   if owner == "FrenFlatToLirTests" && ["Plausible", "FrenEval"].contains imported then return true
   if owner == "FrenTest.Fren2Mir" then return imported == "FrenThirToMirTests"
@@ -170,6 +172,8 @@ private def permits (owner imported : String) : Bool := Id.run do
 #guard permits "FrenFlatToLir" "FrenThirToMir"
 #guard !permits "FrenFlatToLir" "FrenEval"
 #guard !permits "FrenLirEval" "FrenHirToThir"
+#guard permits "FrenTest.ProofLint" "FrenTest"
+#guard !permits "FrenTest.ProofLint" "FrenBase"
 #guard permits "Fren2FakeSolver" "FrenOirToSmt"
 #guard !permits "Fren2FakeSolver" "FrenCli2"
 
@@ -259,6 +263,14 @@ private def files (root : String) : IO (Array System.FilePath) := do
   if ← path.isDir then
     result := result ++ (← path.walkDir).filter (·.extension == some "lean")
   return result
+
+/-- Every physical file of the Fren2 inventory with its owner, for the other
+jobs that read the same files, such as the proof linters. -/
+def inventory : IO (Array (String × System.FilePath)) := do
+  let mut found := #[]
+  for owner in owners do
+    for path in ← files owner do found := found.push (owner, path)
+  return found
 
 /-- Fren2's test inputs and harnesses: each directory directly under `test/`
 whose name starts with `Fren` or `fren2`. Fren1's are lowercase (`cli`,

@@ -1,0 +1,9 @@
+# Findings of the proof linters (src/FrenTest/ProofLint.lean) that predate them.
+# Each line is `linter key [count]`: a lemma's name for simpNF and simpLoop, a
+# file and its number of findings for unsqueezed. The job fails on a finding
+# that is not listed and on an entry that permits more than it finds, so this
+# list only shrinks. Fix a new finding instead of listing it.
+unsqueezed src/FrenAstToHir/Resolve.lean 1
+unsqueezed src/FrenBase/Identity.lean 4
+unsqueezed src/FrenExpr/Core.lean 1
+unsqueezed src/FrenOirToSmt/Confirm.lean 2
