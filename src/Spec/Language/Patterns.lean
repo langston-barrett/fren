@@ -11,7 +11,7 @@ open Fren.Lang
 
 namespace Spec.Language.Patterns
 
-open spec.types spec.patterns
+open spec.surface spec.names spec.types spec.patterns
 
 /-! ## Selection -/
 

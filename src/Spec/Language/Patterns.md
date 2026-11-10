@@ -3,10 +3,10 @@
 A match selects one of its arms by the constructor of the value it matches.
 This chapter defines the patterns of the Core, how an arm is selected, and the
 static check that a match has an arm for every constructor of its
-enumeration and no arm that can never be selected. [Core typing](Types.md)
-supplies identities, types and the typing of a match;
-[resolution](NamesAndScope.md) turns a written pattern into a constructor
-identity; the [syntax](../Compiler/AstAndParsing.md#source-forms) admits only
+enumeration and no arm that can never be selected.
+[Resolution](NamesAndScope.md) supplies identities, types and the Core's
+forms, and turns a written pattern into a constructor identity;
+[Core typing](Types.md) supplies the typing of a match; the [syntax](../Compiler/AstAndParsing.md#source-forms) admits only
 patterns that name a variant. A later compiler chapter owns the translation
 of a match into decision code. The [THIR](../Compiler/Thir.md#coverage-correspondence),
 [evaluator](../Compiler/Evaluator.md#arm-selection),
@@ -61,7 +61,7 @@ A pattern is a constructor: the identity that resolution gives to a written
 qualified variant path. A pattern binds no local and takes no payload, and
 the grammar has no wildcard, literal, alternative or nested pattern, so
 that a written pattern and its constructor identity are the same thing. The
-[arm form](Types.md#r-types.expression.syntax) of the Core, `ArmF`, pairs a
+[arm form](NamesAndScope.md#r-names.core.syntax) of the Core, `ArmF`, pairs a
 pattern with a body.
 
 ```text
@@ -73,32 +73,24 @@ pattern with a body.
 pub mod spec
 pub mod spec::patterns
 
+use spec::names::{ArmF, CoreF, Ctx, ItemId, ItemKind, Symb, Ty, entry, length, member?, symb_ok?}
+
+use spec::surface::Snoc
+
 use spec::types::{
-    ArmF,
     Decl,
-    Ctx,
-    ExprF,
-    ItemId,
-    ItemKind,
     Row,
-    Snoc,
-    Symb,
-    Ty,
     Typing,
     annotate,
     arm_bodies?,
     arm_patterns?,
     decl_ok?,
     derivation?,
-    entry,
-    length,
     match_rule?,
-    member?,
     prog_ok?,
-    symb_ok?,
 }
 
-use spec::types::Snoc::{Empty, Extend}
+use spec::surface::Snoc::{Empty, Extend}
 
 pub type Pattern := ItemId
 ```
@@ -466,8 +458,8 @@ when some valid table for it is admitted.
 ```
 
 ```fren
-pub fn layer_admitted?(symb: Symb, ctx: Ctx, form: ExprF<Typing>, ty: Ty) := match form {
-    ExprF::Match(scrutinee, arms) => match_admitted?(symb, ctx, scrutinee, arms, ty),
+pub fn layer_admitted?(symb: Symb, ctx: Ctx, form: CoreF<Typing>, ty: Ty) := match form {
+    CoreF::Match(scrutinee, arms) => match_admitted?(symb, ctx, scrutinee, arms, ty),
     _ => true,
 }
 
@@ -494,7 +486,7 @@ pub proc table_admission(
 ): (holds?) {
     ensure output: holds?
     ensure newest: when rows_admitted?(symb, Extend(earlier, row))
-        and annotate(earlier, row.form) = Option::Some(ExprF::Match(scrutinee, arms)),
+        and annotate(earlier, row.form) = Option::Some(CoreF::Match(scrutinee, arms)),
         match_admitted?(symb, row.ctx, scrutinee, arms, row.ty)
     ensure rest: when rows_admitted?(symb, Extend(earlier, row)),
         rows_admitted?(symb, earlier)
@@ -565,7 +557,9 @@ The procedure `pattern_examples` states each of these. The last example is
 also not typed, because the match rule needs an arm, so it is not admitted.
 
 ```fren
-use spec::types::{LIGHT, LIGHT_GREEN, LIGHT_RED, SIGNAL_RED, SYMB, one, three, two}
+use spec::names::{LIGHT, LIGHT_GREEN, LIGHT_RED, one, three, two}
+
+use spec::types::{SIGNAL_RED, SYMB}
 
 pub const INT: Typing := Typing { ctx := Empty, ty := Ty::Integer }
 
@@ -636,16 +630,20 @@ need coverage, but it is not admitted; with both arms it is admitted.
 | 4 | `row 3 + row 3` | `·` | Int |
 
 ```fren
-use spec::types::{BinaryOp, four, row}
+use spec::names::four
+
+use spec::surface::BinaryOp
+
+use spec::types::row
 
 pub fn sum_table(arms: Snoc<ArmF<Int>>): Snoc<Row> := Extend(
     four(
-        row(ExprF::Constructor(LIGHT_RED), Empty, Ty::Nominal(LIGHT)),
-        row(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
-        row(ExprF::IntegerLiteral(2), Empty, Ty::Integer),
-        row(ExprF::Match(0, arms), Empty, Ty::Integer)
+        row(CoreF::Constructor(LIGHT_RED), Empty, Ty::Nominal(LIGHT)),
+        row(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+        row(CoreF::IntegerLiteral(2), Empty, Ty::Integer),
+        row(CoreF::Match(0, arms), Empty, Ty::Integer)
     ),
-    row(ExprF::Binary(BinaryOp::Add, 3, 3), Empty, Ty::Integer)
+    row(CoreF::Binary(BinaryOp::Add, 3, 3), Empty, Ty::Integer)
 )
 
 pub const BOTH_POSITIONS: Snoc<ArmF<Int>> := two(

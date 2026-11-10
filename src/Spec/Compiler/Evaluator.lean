@@ -72,7 +72,7 @@ interp evaluator_pick := fun arms c => Spec.Compiler.Thir.pickArm arms c
 
 open spec.evaluator in
 impl evaluator_selection_proof: evaluator_selection for
-    (arms : spec.types.Snoc (spec.types.ArmF spec.types.Typing)) (constructor : Fren.Seq String) {
+    (arms : spec.surface.Snoc (spec.names.ArmF spec.types.Typing)) (constructor : Fren.Seq String) {
   arms := arms, constructor := constructor, holds? := true
 } by
   intro arms constructor _

@@ -16,7 +16,9 @@ The arm that the lowered guard chain runs for a constructor is the arm
 ```fren
 pub mod spec::lowering
 
-use spec::types::{ArmF, ItemId, Snoc, Typing}
+use spec::names::{ArmF, ItemId}
+use spec::surface::Snoc
+use spec::types::Typing
 use spec::patterns::select
 
 pub fn lowering_pick(Snoc<ArmF<Typing>>, ItemId): Option<ArmF<Typing>>

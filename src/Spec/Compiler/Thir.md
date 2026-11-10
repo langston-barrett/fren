@@ -451,6 +451,45 @@ pub proc binary(op: BinaryTag, left: ValueKind, right: ValueKind, left_id: Int, 
 }
 ```
 
+## Coverage correspondence
+
+The [patterns chapter](../Language/Patterns.md) defines `uncovered` and
+`repeats`. The production function `FrenHirToThir.coverage` computes the same
+two lists from an inventory and the arms' targets, and `validateCoverage`
+derives the repeated-arm error span from its `repeated` list. The inventory's
+choice from the scope, the extraction of the arms' targets and the verdict are
+not bound here, and the binding is at the specification's own identities with
+decidable equality; its agreement at the compiler's item identities needs
+their equality to be lawful, which is not proved, and the match's whole
+`CoverageContract` stays open.
+
+r[thir.coverage.lists] spec::thir::coverage_lists::{missing, repeated}
+The missing constructors that production reports are `uncovered`, and its
+repeated targets are `repeats`.
+
+```fren
+use spec::names::{ArmF, ItemId}
+use spec::surface::Snoc
+use spec::types::Typing
+use spec::patterns::{repeats, uncovered}
+
+pub fn production_missing(Snoc<ItemId>, Snoc<ArmF<Typing>>): Snoc<ItemId>
+
+pub fn production_repeated(Snoc<ArmF<Typing>>): Snoc<ItemId>
+
+set_option fren.evidence "random" in
+pub proc coverage_lists(constructors: Snoc<ItemId>, arms: Snoc<ArmF<Typing>>): (holds?) {
+    ensure output: holds?
+    ensure missing: production_missing(constructors, arms) = uncovered(constructors, arms)
+    ensure repeated: production_repeated(arms) = repeats(arms)
+}
+```
+
+Both the [evaluator](Evaluator.md#arm-selection) and
+[confirmation](Smt.md#9-arm-selection-in-confirmation) select an arm through
+`FrenHirToThir.selectArm`, which this wrapper proves equal to the patterns
+chapter's `select` for the specification's identities.
+
 ## Algorithmic typing
 
 The Core's typing rules are declarative: `Σ; Γ ⊢ e : τ` says which types an
@@ -1921,40 +1960,3 @@ of this section is open. No theorem yet states any of the following.
 Erasing the types of the traversal's output gives back its input, as
 `thir.result.preservation` requires; the generated cases of the checker's
 tests check this on every accepted case.
-
-## Coverage correspondence
-
-The [patterns chapter](../Language/Patterns.md) defines `uncovered` and
-`repeats`. The production function `FrenHirToThir.coverage` computes the same
-two lists from an inventory and the arms' targets, and `validateCoverage`
-derives the repeated-arm error span from its `repeated` list. The inventory's
-choice from the scope, the extraction of the arms' targets and the verdict are
-not bound here, and the binding is at the specification's own identities with
-decidable equality; its agreement at the compiler's item identities needs
-their equality to be lawful, which is not proved, and the match's whole
-`CoverageContract` stays open.
-
-r[thir.coverage.lists] spec::thir::coverage_lists::{missing, repeated}
-The missing constructors that production reports are `uncovered`, and its
-repeated targets are `repeats`.
-
-```fren
-use spec::types::{ArmF, ItemId, Snoc, Typing}
-use spec::patterns::{repeats, uncovered}
-
-pub fn production_missing(Snoc<ItemId>, Snoc<ArmF<Typing>>): Snoc<ItemId>
-
-pub fn production_repeated(Snoc<ArmF<Typing>>): Snoc<ItemId>
-
-set_option fren.evidence "random" in
-pub proc coverage_lists(constructors: Snoc<ItemId>, arms: Snoc<ArmF<Typing>>): (holds?) {
-    ensure output: holds?
-    ensure missing: production_missing(constructors, arms) = uncovered(constructors, arms)
-    ensure repeated: production_repeated(arms) = repeats(arms)
-}
-```
-
-Both the [evaluator](Evaluator.md#arm-selection) and
-[confirmation](Smt.md#9-arm-selection-in-confirmation) select an arm through
-`FrenHirToThir.selectArm`, which this wrapper proves equal to the patterns
-chapter's `select` for the specification's identities.

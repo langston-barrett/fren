@@ -1567,7 +1567,7 @@ end Algorithmic
 
 section CoverageCorrespondence
 
-open spec.types spec.patterns Spec.Language.Patterns
+open spec.surface spec.names spec.types spec.patterns Spec.Language.Patterns
 
 def ofList {α : Type} (l : List α) : Snoc α := l.foldl .Extend .Empty
 
@@ -1656,11 +1656,11 @@ def productionCoverage {E : Type} (cs : Snoc (Fren.Seq String)) (arms : Snoc (Ar
   @FrenHirToThir.coverage (Fren.Seq String) ⟨fun x y => decide (x = y)⟩ (toList cs).toArray
     ((toList arms).map (·.constructor)).toArray
 
-interp production_missing := fun cs arms => ofList (productionCoverage cs arms).1.toList
-interp production_repeated := fun arms => ofList (productionCoverage Snoc.Empty arms).2.toList
+interp thir::production_missing := fun cs arms => ofList (productionCoverage cs arms).1.toList
+interp thir::production_repeated := fun arms => ofList (productionCoverage Snoc.Empty arms).2.toList
 
 open spec.thir in
-impl coverage_lists_proof: coverage_lists for (constructors : Snoc (Fren.Seq String))
+impl coverage_lists_proof: thir::coverage_lists for (constructors : Snoc (Fren.Seq String))
     (arms : Snoc (ArmF Typing)) {
   constructors := constructors, arms := arms, holds? := true
 } by

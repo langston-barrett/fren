@@ -575,7 +575,7 @@ interp confirmation_pick := fun arms c => Spec.Compiler.Thir.pickArm arms c
 
 open smt_primitives in
 impl confirmation_selection_proof: confirmation_selection for
-    (arms : spec.types.Snoc (spec.types.ArmF spec.types.Typing)) (constructor : Fren.Seq String) {
+    (arms : spec.surface.Snoc (spec.names.ArmF spec.types.Typing)) (constructor : Fren.Seq String) {
   arms := arms, constructor := constructor, holds? := true
 } by
   intro arms constructor _
