@@ -235,9 +235,13 @@ A function f denotes the function that maps each argument tuple v̄ of its
 [domain](#r-denotation.domain) to the denotation of f's body at that
 tuple. It has no value at any other tuple. The equation is a definition by
 recursion on
-[call order](StaticSemantics.md#r-statics.call-order.instances), with the
-decreasing parameters under which f's group is
+[call order](StaticSemantics.md#r-statics.call-order.instances). Where f
+is recursive, the order is taken with the decreasing parameters under
+which f's group is
 [structurally recursive](StaticSemantics.md#r-statics.termination.structural).
+Where f is in no recursive group, it has no decreasing parameter and the
+recursion uses only the first case of call order, in which f reaches the
+callee and the callee does not reach f.
 
 r[denotation.program]
 The denotation of a program gives each of its functions that
