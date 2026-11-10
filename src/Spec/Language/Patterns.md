@@ -2,8 +2,8 @@
 
 A match selects one of its arms by the constructor of the value it matches.
 This chapter defines the patterns of the Core, how an arm is selected, and the
-static check that a match has an arm for every constructor of its
-enumeration and no arm that can never be selected.
+static checks that a match has an arm for every constructor of its
+enumeration and no arm written twice for one constructor.
 [Resolution](NamesAndScope.md) supplies identities, types and the Core's
 forms, and turns a written pattern into a constructor identity;
 [Core typing](Types.md) supplies the typing of a match; the [syntax](../Compiler/AstAndParsing.md#source-forms) admits only
@@ -22,16 +22,20 @@ The chapter's judgments, and the Fren definitions that state them:
 | --- | --- | --- |
 | `Σ ⊢ c pat a` | the pattern c is a constructor of the enumeration a | `entry` (checked by `arm_patterns?`) |
 | `arms ▷ c ⇒ e` | the arms select the arm with body e for constructor c | `select` |
-| `Σ ⊢ arms cover a` | every constructor of a has exactly one arm | `covered?` |
-| `arms reachable` | every arm is the first written for its pattern | `reachable?` |
-| `Σ; Γ ⊢ match s { arms } : τ admitted` | the match is typed and its arms cover | `match_admitted?` |
+| `Σ ⊢ arms cover a` | every constructor of a has at least one arm | `covered?` |
+| `arms reachable` | no arm repeats the pattern of an earlier arm | `reachable?` |
+| `Σ; Γ ⊢ match s { arms } : τ admitted` | the match is typed, its arms cover and none is repeated | `match_admitted?` |
 | `Σ; Γ ⊢ e : τ admitted` | e is typed and every match in it is admitted | `derivation_admitted?` |
 | `⊢ (Σ, ds) admitted` | the program is typed and every match in it is admitted | `prog_admitted?` |
 
-In outline, a match on a constructor c takes the first arm written for c. The
-check on a match is that every constructor of the scrutinee's enumeration is
-the pattern of exactly one arm, once the typing rules have admitted the
-patterns of the arms:
+In outline, a match on a constructor c takes the first arm written for c. A
+match has two checks, once the typing rules have admitted the patterns of
+the arms: every constructor of the scrutinee's enumeration is the pattern of
+at least one arm, which is the
+[coverage of the static semantics](StaticSemantics.md#r-statics.definedness.coverage),
+and no arm repeats the pattern of an earlier arm, which is an error of its
+own. Together they say that every constructor is the pattern of exactly one
+arm:
 
 ```text
   select     : Arms × Item → Option Arm
@@ -41,12 +45,12 @@ patterns of the arms:
   select(arms, c) = the first arm with pattern c, if there is one
   reachable?(arms)  iff  no arm has the pattern of an earlier arm
   covered?(Σ, a, arms)  iff  every constructor of a selects an arm
-                             and reachable?(arms)
+  admitted               iff  typed, covered?(Σ, a, arms) and reachable?(arms)
 ```
 
 The laws are the properties [determinism of selection](#r-patterns.matching.selection-laws),
 [order independence](#r-patterns.matching.order-free),
-[soundness and completeness of the check](#r-patterns.coverage.characterized),
+[soundness and completeness of the checks](#r-patterns.coverage.characterized),
 [typing of the selected arm](#r-patterns.matching.preservation),
 [selection by an admitted match](#r-patterns.matching.admitted-selects) and
 [admission of a nested match](#r-patterns.admission.layer). Coverage is
@@ -144,6 +148,15 @@ exactly when some arm is written for the value's constructor, and that arm has
 the constructor as its pattern. An earlier arm for the constructor wins over a
 later one.
 
+The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection)
+selects the arm written last when several arms have the constructor, where
+`select` takes the first. The two differ only on a match with a
+[repeated arm](#r-patterns.coverage.repeated), which is a static error, so
+they select the same arm in every admitted match, where each constructor has
+exactly one arm. Which of the two a rejected match would run is not
+significant, and bringing the evaluators and the dynamic semantics to one
+choice is left to the unit that aligns the evaluators.
+
 ```fren
 set_option fren.evidence "random" in
 pub proc selection_laws(
@@ -185,16 +198,19 @@ pub proc arm_order(
 
 ## Coverage
 
-r[patterns.coverage.covered] spec::patterns::{inventory, exact_cover?, covered?}
+r[patterns.coverage.covered] spec::patterns::{inventory, each_covered?, covered?}
 Arms *cover* an enumeration when each constructor that Σ lists for it is the
-pattern of exactly one arm. A constructor with no arm is *missing*. A
-constructor with several arms is *repeated*. The *inventory* of an owner is
-the constructors that Σ lists for it, and an owner that Σ does not bind as an
-enumeration has none and is not covered.
+pattern of at least one arm, as the
+[static semantics](StaticSemantics.md#r-statics.definedness.coverage)
+defines coverage. A constructor with no arm is *missing*. A constructor with
+several arms is *repeated*, which coverage allows and a
+[separate rule](#r-patterns.coverage.repeated) rejects. The *inventory* of
+an owner is the constructors that Σ lists for it, and an owner that Σ does
+not bind as an enumeration has none and is not covered.
 
 ```text
   Σ(a) = enumeration listing c₀, …, cₙ
-  occurrences(arms, cₖ) = 1   (each k)
+  occurrences(arms, cₖ) ≥ 1   (each k)
   ────────────────────────────────────
   Σ ⊢ arms cover a
 ```
@@ -205,20 +221,20 @@ pub fn inventory(symb: Symb, owner: ItemId): Snoc<ItemId> := match entry(symb, o
     _ => Empty,
 }
 
-pub fn exact_cover?<E>(constructors: Snoc<ItemId>, arms: Snoc<ArmF<E>>) := match constructors {
+pub fn each_covered?<E>(constructors: Snoc<ItemId>, arms: Snoc<ArmF<E>>) := match constructors {
     Empty => true,
     Extend(earlier, constructor) =>
-        occurrences(arms, constructor) = 1 and exact_cover?(earlier, arms),
+        occurrences(arms, constructor) > 0 and each_covered?(earlier, arms),
 }
 
 pub fn covered?<E>(symb: Symb, owner: ItemId, arms: Snoc<ArmF<E>>) := match entry(symb, owner) {
-    Option::Some(ItemKind::Enumeration(constructors)) => exact_cover?(constructors, arms),
+    Option::Some(ItemKind::Enumeration(constructors)) => each_covered?(constructors, arms),
     _ => false,
 }
 ```
 
 r[patterns.coverage.checker] spec::patterns::{uncovered, repeats}
-The check computes the two lists that a rejected match reports. `uncovered`
+The checks compute the two lists that a rejected match reports. `uncovered`
 lists the inventory's constructors that no arm names, in inventory order.
 `repeats` lists the pattern of each arm that an earlier arm already names, in
 written order.
@@ -281,25 +297,34 @@ pub proc reachability(arms: Snoc<ArmF<Typing>>): (holds?) {
 }
 ```
 
+r[patterns.coverage.repeated]
+A match with a repeated arm is rejected: an arm that is not reachable is a
+static error, whether or not the arms cover the scrutinee's enumeration.
+This error is separate from coverage, which a match with a repeated arm can
+still meet. The static semantics states no such rule yet, so this chapter
+states it, as a premise of [admission](#r-patterns.coverage.admitted).
+
 r[patterns.coverage.diagnostic]
 A match that does not cover its scrutinee's enumeration is rejected with an
-error that names the enumeration, the missing constructors in declaration
-order (`uncovered`) and the repeated patterns in written order (`repeats`).
+error that names the enumeration and the missing constructors in declaration
+order (`uncovered`), and a match with a repeated arm is rejected with an
+error for the repeated patterns in written order (`repeats`).
 A match on a type that is not an enumeration has no coverage error here: its
 owner has no constructors to cover, and the typing rules reject it. The error
 has no catalogue code yet, and its rendering and its source position are not
 specified here; the [THIR chapter](../Compiler/Thir.md#coverage-correspondence)
-relates today's check to the two lists.
+relates today's checks to the two lists.
 
 r[patterns.coverage.admitted] spec::patterns::match_admitted?
-A match is admitted when it is typed by the [match rule](Types.md#r-types.expression.match)
-and its arms cover the scrutinee's enumeration. Typing does not depend on
-coverage, as [stated for typing](Types.md#r-types.judgment.coverage-separate),
+A match is admitted when it is typed by the [match rule](Types.md#r-types.expression.match),
+its arms cover the scrutinee's enumeration, and none of its arms is repeated.
+Typing depends on neither check, as
+[stated for typing](Types.md#r-types.judgment.coverage-separate),
 so an unadmitted match can still be typed.
 
 ```text
-  Σ; Γ ⊢ match s { arms } : τ   Σ; Γ ⊢ s : Nominal(a)   Σ ⊢ arms cover a
-  ─────────────────────────────────────────────────────────────────────
+  Σ; Γ ⊢ match s { arms } : τ   Σ; Γ ⊢ s : Nominal(a)   Σ ⊢ arms cover a   arms reachable
+  ──────────────────────────────────────────────────────────────────────────────────────
   Σ; Γ ⊢ match s { arms } : τ admitted
 ```
 
@@ -310,16 +335,19 @@ pub fn match_admitted?(symb: Symb, ctx: Ctx, scrutinee: Typing, arms: Snoc<ArmF<
         Ty::Nominal(owner) => covered?(symb, owner, arms),
         _ => false,
     }
+    and reachable?(arms)
 ```
 
-r[patterns.coverage.characterized] spec::patterns::{inventory_selected?, targets_listed?, coverage_characterized::{listed, characterized, agrees}}
-The check is sound and complete for the statement that a match selects an
-arm for every constructor and has no unreachable arm. Take a well-formed Σ,
-an enumeration with constructors c₀, …, cₙ, and arms whose patterns are all
-constructors of the enumeration, as typing guarantees. The arms cover the
-enumeration exactly when each cₖ selects an arm and every arm is reachable,
-which is exactly when `uncovered` and `repeats` are both empty. Since
-`covered?` is a function, coverage is decidable.
+r[patterns.coverage.characterized] spec::patterns::{inventory_selected?, targets_listed?, exactly_once?, coverage_characterized::{listed, characterized, agrees, once}}
+The checks are sound and complete for the statement that a match selects an
+arm for every constructor and has no unreachable arm. Take a well-formed Σ
+and an enumeration with constructors c₀, …, cₙ. The arms cover the
+enumeration exactly when each cₖ selects an arm. They cover it with every
+arm reachable exactly when `uncovered` and `repeats` are both empty. When
+the patterns of the arms are all constructors of the enumeration, as typing
+guarantees, that is exactly when each cₖ is the pattern of exactly one arm,
+which `exactly_once?` states. Since `covered?` and `reachable?` are
+functions, both checks are decidable.
 
 ```fren
 pub fn inventory_selected?<E>(constructors: Snoc<ItemId>, arms: Snoc<ArmF<E>>) :=
@@ -336,6 +364,12 @@ pub fn targets_listed?<E>(constructors: Snoc<ItemId>, arms: Snoc<ArmF<E>>) := ma
         member?(constructors, arm.constructor) and targets_listed?(constructors, earlier),
 }
 
+pub fn exactly_once?<E>(constructors: Snoc<ItemId>, arms: Snoc<ArmF<E>>) := match constructors {
+    Empty => true,
+    Extend(earlier, constructor) =>
+        occurrences(arms, constructor) = 1 and exactly_once?(earlier, arms),
+}
+
 set_option fren.evidence "random" in
 pub proc coverage_characterized(
     symb: Symb,
@@ -347,14 +381,14 @@ pub proc coverage_characterized(
     ensure listed: when symb_ok?(symb) and arm_patterns?(symb, arms, owner)
         and entry(symb, owner) = Option::Some(ItemKind::Enumeration(constructors)),
         targets_listed?(constructors, arms)
-    ensure characterized: when targets_listed?(constructors, arms)
-        and entry(symb, owner) = Option::Some(ItemKind::Enumeration(constructors)),
-        covered?(symb, owner, arms)
-        iff inventory_selected?(constructors, arms) and reachable?(arms)
-    ensure agrees: when targets_listed?(constructors, arms)
-        and entry(symb, owner) = Option::Some(ItemKind::Enumeration(constructors)),
-        covered?(symb, owner, arms)
+    ensure characterized: when entry(symb, owner) = Option::Some(ItemKind::Enumeration(constructors)),
+        covered?(symb, owner, arms) iff inventory_selected?(constructors, arms)
+    ensure agrees: when entry(symb, owner) = Option::Some(ItemKind::Enumeration(constructors)),
+        covered?(symb, owner, arms) and reachable?(arms)
         iff uncovered(constructors, arms) = Empty and repeats(arms) = Empty
+    ensure once: when targets_listed?(constructors, arms)
+        and entry(symb, owner) = Option::Some(ItemKind::Enumeration(constructors)),
+        covered?(symb, owner, arms) and reachable?(arms) iff exactly_once?(constructors, arms)
 }
 ```
 
@@ -548,7 +582,7 @@ the empty context.
 ```text
   Σ; · ⊢ match s { Red ⇒ 1 | Green ⇒ 2 } : Int admitted      Red ▷ Red ⇒ 1
   Σ ⊬ Red ⇒ 1 cover M::Light                                 missing: Green; Green ▷ none
-  Σ ⊬ Red ⇒ 1 | Red ⇒ 2 | Green ⇒ 3 cover M::Light           repeated: Red; Red ▷ Red ⇒ 1
+  Σ ⊢ Red ⇒ 1 | Red ⇒ 2 | Green ⇒ 3 cover M::Light           not admitted: repeated: Red; Red ▷ Red ⇒ 1
   Σ ⊬ Signal::Red ⇒ 1 | Green ⇒ 2 : arms of M::Light         Signal::Red is no pattern of M::Light
   Σ ⊬ (no arms) cover M::Light                               missing: Red, Green
 ```
@@ -596,9 +630,11 @@ pub proc pattern_examples(): (holds?) {
         and not covered?(SYMB, LIGHT, MISSING_ARMS)
         and uncovered(inventory(SYMB, LIGHT), MISSING_ARMS) = one(LIGHT_GREEN)
         and select(MISSING_ARMS, LIGHT_GREEN) = Option::None
-        and not covered?(SYMB, LIGHT, REPEATED_ARMS)
+        and covered?(SYMB, LIGHT, REPEATED_ARMS)
         and repeats(REPEATED_ARMS) = one(LIGHT_RED)
         and not reachable?(REPEATED_ARMS)
+        and match_rule?(SYMB, Empty, SCRUTINEE, REPEATED_ARMS, Ty::Integer)
+        and not match_admitted?(SYMB, Empty, SCRUTINEE, REPEATED_ARMS, Ty::Integer)
         and select(REPEATED_ARMS, LIGHT_RED) = Option::Some(ArmF { constructor := LIGHT_RED, body := INT })
         and not arm_patterns?(SYMB, FOREIGN_ARMS, LIGHT)
         and not covered?(SYMB, LIGHT, FOREIGN_ARMS)
@@ -682,7 +718,7 @@ pub fn f(l: Light): Int := match l { Light::Red => 1 }  --~ error: non-exhaustiv
 ```
 
 ```fren example
---@ reference: patterns.coverage.checker
+--@ reference: patterns.coverage.repeated
 pub mod bad
 
 pub enum Light { Red, Green }

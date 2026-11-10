@@ -210,12 +210,25 @@ theorem member_iff (cs : Snoc (Fren.Seq String)) (c : Fren.Seq String) :
       decide_eq_true_eq]
     constructor <;> rintro (h | h) <;> simp [h]
 
-theorem exact_cover_iff {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
-    exact_cover? _ cs arms = true ↔ ∀ c ∈ toList cs, occurrences _ arms c = 1 := by
+theorem exactly_once_iff {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
+    exactly_once? _ cs arms = true ↔ ∀ c ∈ toList cs, occurrences _ arms c = 1 := by
   induction cs with
-  | Empty => simp [exact_cover?, toList]
+  | Empty => simp [exactly_once?, toList]
   | Extend earlier last ih =>
-    simp only [exact_cover?, toList, decide_eq_true_eq, ih, List.mem_append,
+    simp only [exactly_once?, toList, decide_eq_true_eq, ih, List.mem_append,
+      List.mem_singleton]
+    constructor
+    · rintro ⟨h1, h2⟩ c (h | h)
+      · exact h2 c h
+      · subst h; exact h1
+    · intro h; exact ⟨h _ (Or.inr rfl), fun c hc => h c (Or.inl hc)⟩
+
+theorem each_covered_iff {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E)) :
+    each_covered? _ cs arms = true ↔ ∀ c ∈ toList cs, 0 < occurrences _ arms c := by
+  induction cs with
+  | Empty => simp [each_covered?, toList]
+  | Extend earlier last ih =>
+    simp only [each_covered?, toList, decide_eq_true_eq, ih, List.mem_append,
       List.mem_singleton]
     constructor
     · rintro ⟨h1, h2⟩ c (h | h)
@@ -308,11 +321,11 @@ theorem targets_listed_iff {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)
       · subst h; exact h1
     · intro h; exact ⟨h _ (Or.inr rfl), fun a ha => h a (Or.inl ha)⟩
 
-theorem covered_iff {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E))
+theorem once_iff {E : Type} [Inhabited E] (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E))
     (listed : targets_listed? _ cs arms = true) :
-    exact_cover? _ cs arms = true ↔
-      inventory_selected? _ cs arms = true ∧ repeats _ arms = Snoc.Empty := by
-  rw [exact_cover_iff, inventory_selected_iff, repeats_empty_iff]
+    exactly_once? _ cs arms = true ↔
+      each_covered? _ cs arms = true ∧ repeats _ arms = Snoc.Empty := by
+  rw [exactly_once_iff, each_covered_iff, repeats_empty_iff]
   rw [targets_listed_iff] at listed
   constructor
   · intro h
@@ -406,7 +419,7 @@ theorem listed_of (symbols : Snoc Entry) (hb : symb_ok? symbols = true)
 theorem covered_unfold {E : Type} [Inhabited E] (symb : Snoc Entry) (owner : Fren.Seq String)
     (cs : Snoc (Fren.Seq String)) (arms : Snoc (ArmF E))
     (h : entry symb owner = some (.Enumeration cs)) :
-    covered? _ symb owner arms = exact_cover? _ cs arms := by
+    covered? _ symb owner arms = each_covered? _ cs arms := by
   simp only [covered?, h]
   simp
 
@@ -439,15 +452,21 @@ impl coverage_characterized_proof: coverage_characterized for (symb : Snoc Entry
   intro symb owner constructors arms _
   simp only [coverage_characterized.ensures, coverage_characterized.ensure.output,
     coverage_characterized.ensure.listed, coverage_characterized.ensure.characterized,
-    coverage_characterized.ensure.agrees]
-  refine ⟨trivial, ?_, ?_, ?_⟩
+    coverage_characterized.ensure.agrees, coverage_characterized.ensure.once]
+  refine ⟨trivial, ?_, ?_, ?_, ?_⟩
   · intro h; exact listed_of symb h.1.1 arms owner constructors h.1.2 h.2
   · intro h
-    rw [covered_unfold symb owner constructors arms h.2, reachable_iff]
-    exact covered_iff constructors arms h.1
+    have h' : entry symb owner = some (.Enumeration constructors) := by
+      simpa only [decide_eq_true_eq] using h
+    rw [covered_unfold symb owner constructors arms h', each_covered_iff, inventory_selected_iff]
   · intro h
-    rw [covered_unfold symb owner constructors arms h.2, covered_iff constructors arms h.1,
-      uncovered_empty_iff, inventory_selected_iff]
+    have h' : entry symb owner = some (.Enumeration constructors) := by
+      simpa only [decide_eq_true_eq] using h
+    rw [covered_unfold symb owner constructors arms h', each_covered_iff, reachable_iff,
+      uncovered_empty_iff]
+  · intro h
+    rw [covered_unfold symb owner constructors arms h.2, reachable_iff]
+    exact (once_iff constructors arms h.1).symm
 
 theorem covered_selects (symb : Snoc Entry) (hb : symb_ok? symb = true) (owner : Fren.Seq String)
     (arms : Snoc (ArmF Typing)) (c : Fren.Seq String)
@@ -456,8 +475,7 @@ theorem covered_selects (symb : Snoc Entry) (hb : symb_ok? symb = true) (owner :
   obtain ⟨cs', he', hm⟩ := ctor_member symb symb (by simpa only [symb_ok?, decide_eq_true_eq] using hb)
     c owner hp
   rw [covered_unfold symb owner cs' arms he'] at hc
-  have := (exact_cover_iff _ _).1 hc c ((member_iff _ _).1 hm)
-  exact select_complete arms c (by omega)
+  exact select_complete arms c ((each_covered_iff _ _).1 hc c ((member_iff _ _).1 hm))
 
 open spec.patterns in
 impl selection_typed_proof: selection_typed for (symb : Snoc Entry) (arms : Snoc (ArmF Typing))
@@ -493,9 +511,9 @@ impl admitted_selects_typed_proof: admitted_selects_typed for (symb : Snoc Entry
     simpa only [decide_eq_true_eq] using hp
   simp only [match_admitted?, match_rule?, hs, decide_eq_true_eq] at hm
   have hc : covered? _ symb owner arms = true := by
-    first | exact hm.2 | simpa [covered?] using hm.2
+    first | exact hm.1.2 | simpa [covered?] using hm.1.2
   obtain ⟨f, hf⟩ := covered_selects symb hb owner arms constructor hc hp'
-  have hbod := (arm_bodies_iff arms ctx ty).1 hm.1.1.2 f (select_mem arms constructor f hf)
+  have hbod := (arm_bodies_iff arms ctx ty).1 hm.1.1.1.2 f (select_mem arms constructor f hf)
   have e : Fren.Prelude.Option.some.x0 (some f) = f := rfl
   simp [selected_typed?, hf, e, hbod]
 
@@ -511,7 +529,7 @@ impl empty_enumeration_proof: empty_enumeration for (symb : Snoc Entry) (ctx : S
   refine ⟨trivial, ?_⟩
   rintro ⟨⟨hb, he⟩, hs⟩ hadm
   simp only [match_admitted?, match_rule?, hs, decide_eq_true_eq] at hadm
-  obtain ⟨⟨⟨⟨_, hne⟩, _⟩, hp⟩, _⟩ := hadm
+  obtain ⟨⟨⟨⟨⟨_, hne⟩, _⟩, hp⟩, _⟩, _⟩ := hadm
   cases arms with
   | Empty => exact (hne rfl).elim
   | Extend earlier last =>
