@@ -161,6 +161,9 @@ pub mod testing
   test shards and coverage job install and check it. A missing debugger
   fails the harness instead of skipping native-frame assertions. A negative
   environment regression checks that failure with an empty tool path.
+  The own-spec harness retries once when the debugger itself dies by signal;
+  a second debugger crash reports an environment failure. Observer-initiated
+  cleanup, incomplete cleanup and helper errors alone do not trigger that retry.
   Protected test children set `FREN_NATIVE_CORELESS=1`: the test driver's
   startup hook disables core files and, on Linux, dumpability after exec.
   The latter also prevents piped core collectors, which ignore a zero
