@@ -1987,7 +1987,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
                         return 125
                 entries = {os.path.join(os.path.dirname(os.path.realpath(__file__)), name)
                            for name in ("fren-build", "heavy-lean-build")}
-                if os.path.basename(command[0]) == "lake" and command[1:2] == ["test"]:
+                if os.path.basename(command[0]) == "lake" and entry.lake_test(command):
                     # The test driver runs its jobs in parallel, and a scope with
                     # members outside one launch chain is never migrated. Prepare
                     # the delegated compiler memory scope now, while this chain is

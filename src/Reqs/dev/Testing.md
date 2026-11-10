@@ -1640,6 +1640,11 @@ test driver runs its jobs in parallel in one scope, where no job's chain is alon
 while its launch chain is still alone, and the controlled builds that the jobs
 start reuse that scope without moving one another. If this preparation fails,
 the test run still starts, and its controlled builds fail before launch as above.
+The command is a test run when Lake would read `test` as its verb: after an
+elan toolchain selection and any leading Lake options, as in
+`lake -Kcoverage=RUNTIME test`, by the same reading of Lake's arguments that
+finds a build. An operand of an option, such as the `test` of `lake -K test env`,
+is not the verb, and neither is a request for help.
 
 The ordinary `scripts/heavy lake env lean FILE.lean` route uses the same selected
 source policy, observer and budget session as Lake builds. Leading Lake options

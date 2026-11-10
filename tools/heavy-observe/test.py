@@ -55,7 +55,6 @@ def main():
     # Preparation's foreign-member control must run before this job migrates.
     if "automaticIO" in selected: modules("negative")
     if "tmpState" in selected:
-        # Before this job's own builds prepare the scope, as a lone job's would.
         modules("nested")
         with tempfile.TemporaryDirectory(prefix="heavy-tmp-state-dispatch-", dir=HERE / "test-work") as dispatch:
             owned_run([sys.executable, "-I", str(HERE / "tmp_state_test.py")], directory=Path(dispatch),
