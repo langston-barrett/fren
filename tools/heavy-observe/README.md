@@ -497,8 +497,8 @@ available for the invocation. Requests are explicit operator
 configuration and matching entries take precedence over automatic estimates.
 Defaults are 1,300,000 KiB allowance, 100,000 KiB headroom, 600,000 KiB fallback and a
 600,000 ms admission wait, the longest a session accepts. Held reservations do
-not expire, so a shorter wait fails compilers queued behind one that runs
-longer than the wait. For ordinary Heavy dispatch the allowance is at most the smaller
+not expire, so a compiler fails when enough budget and its turn do not become
+free within the wait. For ordinary Heavy dispatch the allowance is at most the smaller
 of Heavy's launch-time memory cap and visible cgroup-v2 ancestor `memory.max`
 limits, minus 100,000 KiB for the outer monitor, and never above 1,300,000 KiB.
 An unreadable advertised hierarchy fails setup. This is a configuration ceiling,

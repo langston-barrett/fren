@@ -255,9 +255,9 @@ def outer_allowance(cap):
 
 
 # How long one compiler invocation waits for admission before it fails. A held
-# reservation does not expire, so a waiter outlasts ordinary compiles only if
-# this exceeds their duration: 30 s failed builds whose modules compile for
-# minutes. 600000 is the longest wait a budget session accepts.
+# reservation does not expire, so a waiter is admitted only if enough budget
+# and its turn become free within this wait: 30 s failed builds whose modules
+# compile for minutes. 600000 is the longest wait a budget session accepts.
 ADMISSION_WAIT_MS = '600000'
 
 

@@ -2461,19 +2461,19 @@ a running row. A successful check permits eligibility at that sample; it
 does not prevent preemption before the subsequent fork.
 
 The deadline is a fixed bound on one invocation's admission, counted from
-its entry to the gate. An invocation that reaches it must fail without
-starting its compiler and must report an admission timeout that names the
-wait in progress: the registry lock, the budget or its turn, or grant
-publication, together with the bound and, for a budget wait, the reserved,
-available and requested KiB. It must not report an expired deadline as an
-unexplained control error. The report follows the raw deadline decision,
-not the error number: an operating-system error may itself be a timeout,
-and such an error is not an expired deadline. A retry of the registry lock
-that no holder refused counts as a wait for budget. Since held reservations
-do not expire, a waiter can be admitted only if the bound exceeds the time
-the holders ahead of it run. The build entry point therefore defaults to
-600,000 ms, the longest bound a session accepts; a compiler queued for
-longer than that behind running holders still fails with this report.
+its entry to the gate. An invocation whose deadline check finds it expired
+must fail without starting its compiler and must report an admission
+timeout that names the wait in progress: the registry lock, the budget or
+its turn, or grant publication, together with the bound and, for a budget
+wait, the reserved, available and requested KiB. It must not report an
+expired deadline as an unexplained control error. The report follows the
+raw deadline decision, not the error number: an operating-system error may
+itself be a timeout, and such an error is not an expired deadline. A retry
+of the registry lock that no holder refused counts as a wait for budget.
+Held reservations do not expire, so a waiter is admitted only if enough
+budget and its turn become free before its deadline. The build entry point
+therefore defaults to 600,000 ms, the longest bound a session accepts; a
+compiler that waits longer than that still fails with this report.
 
 Before fork, the session and gated observer require SIGCHLD's raw handler
 to be SIG_DFL with no SA_NOCLDWAIT. They reject unsupported dispositions
