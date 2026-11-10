@@ -163,11 +163,13 @@ environment of the site: zero yields a concrete counterexample, and any other
 integer rejects the candidate. The site's `div` or `%` itself is never
 evaluated.
 
-Each term on the path, and the divisor, is evaluated twice, by the
-demand-driven interpreter and strictly, whether or not it mentions `div` or
-`%`. The two values must be equal. The strict evaluations draw on the budget
-that the hypotheses share. A term with no strict value, such as a let value
-`false and (1 div x = 1)` at `x = 0`, leaves the row unconfirmed.
+The terms that confirmation evaluates are the let values, conditions and
+scrutinees needed to reach the site, and then the divisor. Each of them is
+evaluated twice, by the demand-driven interpreter and strictly, whether or not
+it mentions `div` or `%`. The two values must be equal. The strict evaluations
+draw on the budget that the hypotheses share. An evaluated term with no strict
+value, such as a let value `false and (1 div x = 1)` at `x = 0`, leaves the
+row unconfirmed.
 
 ### What the static inventory still covers
 
