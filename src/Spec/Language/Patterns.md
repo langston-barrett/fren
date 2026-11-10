@@ -28,8 +28,11 @@ The chapter's judgments, and the Fren definitions that state them:
 | `Σ; Γ ⊢ e : τ admitted` | e is typed and every match in it is admitted | `derivation_admitted?` |
 | `⊢ (Σ, ds) admitted` | the program is typed and every match in it is admitted | `prog_admitted?` |
 
-In outline, a match on a constructor c takes the first arm written for c. A
-match has two checks, once the typing rules have admitted the patterns of
+In outline, `select` gives, for a constructor c, the first arm written for c.
+The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection) runs
+the last arm written for c, so the two [agree](#r-patterns.matching.dynamics)
+when no arm is repeated and disagree on a typed match with a repeated arm;
+that disagreement is open. A match has two checks, once the typing rules have admitted the patterns of
 the arms: every constructor of the scrutinee's enumeration is the pattern of
 at least one arm, which is the
 [coverage of the static semantics](StaticSemantics.md#r-statics.definedness.coverage),
@@ -116,9 +119,12 @@ properties take that typing as a hypothesis.
 
 r[patterns.matching.select] spec::patterns::{select, occurrences}
 The arms of a match are a snoc sequence in written order, so the newest entry
-is the last arm written. A value built with constructor c selects the first
-arm written for c, if there is one; `select` consults the earlier arms before
-the newest. `occurrences` counts the arms written for c.
+is the last arm written. For a constructor c, `select` gives the first arm
+written for c, if there is one: it consults the earlier arms before the
+newest. This is the selection of this chapter and of the production
+`FrenHirToThir.selectArm`; it is the selection of the
+[dynamic semantics](#r-patterns.matching.dynamics) only when no arm is
+repeated. `occurrences` counts the arms written for c.
 
 ```text
   arms = c₀ ⇒ e₀ | … | cₘ ⇒ eₘ     k least with cₖ = c
@@ -147,15 +153,6 @@ Selection is a function, so a value selects at most one arm. It selects an arm
 exactly when some arm is written for the value's constructor, and that arm has
 the constructor as its pattern. An earlier arm for the constructor wins over a
 later one.
-
-The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection)
-selects the arm written last when several arms have the constructor, where
-`select` takes the first. The two differ only on a match with a
-[repeated arm](#r-patterns.coverage.repeated), which is a static error, so
-they select the same arm in every admitted match, where each constructor has
-exactly one arm. Which of the two a rejected match would run is not
-significant, and bringing the evaluators and the dynamic semantics to one
-choice is left to the unit that aligns the evaluators.
 
 ```fren
 set_option fren.evidence "random" in
@@ -472,6 +469,62 @@ pub proc admitted_selects_typed(
         and scrutinee.ty = Ty::Nominal(owner)
         and entry(symb, constructor) = Option::Some(ItemKind::Constructor(owner)),
         selected_typed?(arms, constructor, ctx, ty)
+}
+```
+
+r[patterns.matching.dynamics] spec::patterns::{selected_value, dynamics_selection::{agrees, runs_last, selects_first}}
+The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection) is
+defined for every typed program, and it runs the arm written last when
+several arms have the scrutinee's constructor: its evaluator's `arm_value`
+consults the newest arm first. `select` takes the arm written first.
+`selected_value` is the value that the arm `select` gives would have, read
+from the same row values as `arm_value` reads.
+
+When no arm repeats the pattern of an earlier arm, the two agree: `arm_value`
+is `selected_value` for every constructor, whether or not an arm is written
+for it. When an arm is repeated they disagree. For two arms with the one
+constructor, `arm_value` is the value of the second arm's body and
+`selected_value` the value of the first's, and these differ whenever the
+bodies' values do. Such a match can be typed, since
+[typing ignores repeated arms](Types.md#r-types.judgment.coverage-separate),
+and the dynamic semantics gives it a value, so the disagreement is
+observable. This chapter [rejects](#r-patterns.coverage.repeated) the match,
+but the dynamic semantics does not use that check.
+
+The disagreement is open. `select`, and with it the production
+`FrenHirToThir.selectArm` that the evaluator and confirmation call, does not
+implement the dynamic semantics on a typed match with a repeated arm. This
+chapter does not change the dynamic semantics; bringing the two to one
+choice belongs to the unit that aligns the evaluators.
+
+```fren
+use spec::denotation::Value
+
+use spec::dynamics::{arm_value, value_at}
+
+use spec::types::Arm
+
+pub fn selected_value(prior: Snoc<Option<Value>>, arms: Snoc<Arm>, constructor: ItemId): Option<Value> :=
+    match select(arms, constructor) {
+        Option::Some(found) => value_at(prior, found.body),
+        Option::None => Option::None,
+    }
+
+set_option fren.evidence "random" in
+pub proc dynamics_selection(
+    prior: Snoc<Option<Value>>,
+    arms: Snoc<Arm>,
+    first: Arm,
+    second: Arm,
+    constructor: ItemId,
+): (holds?) {
+    ensure output: holds?
+    ensure agrees: when reachable?(arms),
+        arm_value(prior, arms, constructor) = selected_value(prior, arms, constructor)
+    ensure runs_last: when first.constructor = constructor and second.constructor = constructor,
+        arm_value(prior, Extend(Extend(Empty, first), second), constructor) = value_at(prior, second.body)
+    ensure selects_first: when first.constructor = constructor and second.constructor = constructor,
+        selected_value(prior, Extend(Extend(Empty, first), second), constructor) = value_at(prior, first.body)
 }
 ```
 

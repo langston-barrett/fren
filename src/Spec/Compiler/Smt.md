@@ -746,6 +746,11 @@ instances, not the universal preservation or trust obligations.
 
 Confirmation of a match selects the arm of a constructor with
 `FrenHirToThir.selectArm`, the function that the evaluator also calls.
+It takes the first arm written for the constructor, which is the arm of the
+[dynamic semantics](../Language/DynamicSemantics.md#r-dynamics.match.selection)
+only when
+[no arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics);
+the disagreement on a typed match with a repeated arm is open.
 
 r[smt.selection.arm] smt_primitives::confirmation_pick::agrees
 The arm that confirmation selects for a constructor is the arm that

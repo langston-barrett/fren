@@ -198,6 +198,14 @@ names. The evaluator's walk selects it with `FrenHirToThir.selectArm`, the
 function that confirmation also calls, and the Thir wrapper proves that
 function equal to `select`.
 
+`select` takes the first arm written for a constructor, where the
+[dynamic semantics](../Language/DynamicSemantics.md#r-dynamics.match.selection)
+takes the last. The two
+[agree when no arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics),
+so on a typed match with a repeated arm this evaluator does not run the arm
+that the dynamic semantics prescribes. That disagreement is open and belongs
+to the unit that aligns the evaluators.
+
 r[evaluator.selection.arm] spec::evaluator::evaluator_pick::agrees
 The arm that the evaluator selects for a constructor is the arm `select`
 names for it.
