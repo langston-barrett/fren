@@ -1134,6 +1134,11 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   /-- Each `+` where a `Nat` is expected, by file, which `fren mutate`
   does not make a `-` (`Reqs/Mutate`). -/
   natSums : Array (Nat × Span) := #[]
+  /-- Each quantifier over a sequence's elements that is in the decidable
+  core where `undecidable` is an error, by file, with the sequences of its
+  memberships: `fren mutate` makes no mutant that takes a membership from
+  its guard (`Reqs/Mutate`). -/
+  coreElems : Array (Nat × Span × Array Span) := #[]
   /-- The names of `let` and `where` definitions made so far, which number
   their SMT-LIB symbols. -/
   nLets : Nat := 0

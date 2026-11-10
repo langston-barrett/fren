@@ -286,6 +286,9 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
   -- The reports that its guard's memberships deferred, and its binders'.
   let spans := members.filterMap (·.map (·.span))
   let deferred := (← get).elemMembers.filter (spans.contains ·.1)
+  if inCore && (((← get).levels.get .undecidable).level.severity? == some .error) then
+    modify fun s => if s.coreElems.any (fun (f, sp, _) => f == s.file && sp == span) then s
+      else { s with coreElems := s.coreElems.push (s.file, span, spans) }
   modify fun s => { s with elemMembers := s.elemMembers.filter (!spans.contains ·.1) }
   unless inCore do
     modify fun s => { s with quantified := true }

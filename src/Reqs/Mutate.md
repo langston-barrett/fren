@@ -83,6 +83,21 @@ which would be a static error: `shift-integer` does not change a divisor
 is a constant that the value of such a constant names. A constant is told
 by its name alone, in any of the files.
 
+A [quantifier over a sequence's elements](Lang/ElementQuantifiers.md) keeps
+the memberships that put it in the [decidable core](Lang/Decidability.md),
+where leaving the core is a static error, that is, where `undecidable` is
+`deny` or `forbid`. Such a quantifier has no `swap-quantifier` mutant, since
+its guard is written for the quantifier that it is. Of an `and` that holds
+such a membership `x in e`, in an operand or as one, there is no
+`swap-and-or` mutant, and its only `drop-conjunct` mutants keep the operand
+that holds the membership. A `when` or `unless` whose condition holds the
+membership has no `drop-trigger` mutant, and neither it nor a trigger
+around it within the quantifier has a `negate-trigger` mutant. Every other
+place of the quantifier is changed as anywhere else: its body, the other
+conjuncts of its guard, and the triggers after the membership. Where
+`undecidable` is `allow` or `warn`, a quantifier is mutated like any
+other.
+
 The [patterns](Lang/Patterns.md) of `match` arms are not changed, so that
 every mutant's `match` stays exhaustive and every arm reachable, and only
 the top-level alternatives of a pattern test's pattern are dropped:

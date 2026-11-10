@@ -118,6 +118,11 @@ structure Src where
   toks : Array Token
   /-- Each `+` where a `Nat` is expected, which a `-` would make an `Int`. -/
   natSums : Array Span := #[]
+  /-- Each quantifier over a sequence's elements that is in the decidable
+  core where leaving it is an error, with the sequences of its memberships
+  (`Reqs/Lang/ElementQuantifiers`): a mutant that took a membership from
+  its guard would have that error. -/
+  coreElems : Array (Span × Array Span) := #[]
   /-- The spec's enumerations, in any of its files. -/
   enums : Enums := {}
   /-- The variants that the file's `use`s bring into scope by their own
@@ -427,8 +432,14 @@ partial def Src.chainBinds (s : Src) (c : Expr) : Bool :=
 
 /-- The edits of expression `e`. `inAndLeft` says that `e` is the left
 operand of an `and`, unparenthesized, where an `or` needs parentheses; an
-`or` whose left operand is an unparenthesized `or` parenthesizes it. -/
-partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bool := false) : Array Edit :=
+`or` whose left operand is an unparenthesized `or` parenthesizes it.
+`members` are the sequences of the memberships that keep the quantifier
+around `e` in the decidable core (`Src.coreElems`): the `and`s and `when`s
+that lead to one keep it as a conjunct of the guard. -/
+partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bool := false) (members : Array Span := #[]) :
+    Array Edit :=
+  -- Whether `sp` holds a membership of `members`.
+  let holds (sp : Span) : Bool := members.any fun m => sp.start ≤ m.start && m.stop ≤ sp.stop
   -- Not of a chain, a `when` or an `if` whose pattern tests bind names.
   let binding := match e with
     | .bin _ "and" .. => s.chainBinds e
@@ -461,7 +472,11 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
               #[{ origin := .swapAndOr, span := sp, after := s!"({text})", context := sp }]
             else #[{ origin := .swapAndOr, span := t.span, after := "or", context := sp }]
           | none => #[]
-        toOr ++ #[l, r].map fun k => { origin := .dropConjunct, span := sp, after := s.text (s.outer sp k.span), context := sp }
+        -- A membership stays a conjunct: an `or` would not require it, and
+        -- neither would the other operand alone.
+        (if holds sp then #[] else toOr) ++ #[(l, r), (r, l)].filterMap fun (k, other) =>
+          if holds other.span then none
+          else some { origin := .dropConjunct, span := sp, after := s.text (s.outer sp k.span), context := sp }
       else #[]
     | .chain sp es ops =>
       let outs := es.map (s.outer sp ·.span)
@@ -471,13 +486,19 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
       -- Without its first comparison, and without its last.
       swaps ++ #[{ start := outs[1]!.start, stop := sp.stop }, { start := sp.start, stop := outs[outs.size - 2]!.stop }].map fun k =>
         { origin := .dropConjunct, span := sp, after := s.text k, context := sp }
-    | .when sp negated _ body =>
+    | .when sp negated c body =>
       let kw := if negated then "unless" else "when"
-      #[{ origin := .negateTrigger, span := { start := sp.start, stop := sp.start + kw.length }, after := if negated then "when" else "unless",
-          context := sp },
-        { origin := .dropTrigger, span := sp, after := s.text (s.outer sp body.span), context := sp }]
-    -- `forall` and `exists` are both six letters long.
+      -- A trigger at or before a membership stays as it is, and one that
+      -- holds a membership stays.
+      (if holds sp then #[] else
+        #[{ origin := .negateTrigger, span := { start := sp.start, stop := sp.start + kw.length }, after := if negated then "when" else "unless",
+            context := sp }])
+      ++ (if holds c.span then #[] else
+        #[{ origin := .dropTrigger, span := sp, after := s.text (s.outer sp body.span), context := sp }])
+    -- `forall` and `exists` are both six letters long. A quantifier over a
+    -- sequence's elements stays the one that its guard is written for.
     | .quant sp all _ _ =>
+      if s.coreElems.any (·.1 == sp) then #[] else
       #[{ origin := .swapQuantifier, span := { start := sp.start, stop := sp.start + 6 }, after := if all then "exists" else "forall",
           context := sp }]
     -- In decimal, whatever the literal's radix.
@@ -576,12 +597,14 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
   here ++ (children e).flatMap id
 where
   children : Expr → Array (Array Edit)
-    | .when _ _ c b => #[edits s c, edits s b]
+    | .when _ _ c b => #[edits s c (members := members), edits s b (members := members)]
     | .block _ _ members => members.map fun (_, value) => edits s value
     | .ite _ c a b => #[edits s c, edits s a, edits s b]
     | .bin sp op l r =>
       -- `l` is unparenthesized when its span starts the `and`'s.
-      #[edits s l (op == "and" && s.outer sp l.span == l.span), edits s r (divisor := op == "div" || op == "mod")]
+      let members := if op == "and" then members else #[]
+      #[edits s l (op == "and" && s.outer sp l.span == l.span) (members := members),
+        edits s r (divisor := op == "div" || op == "mod") (members := members)]
     | .neg _ e => #[edits s e (divisor := divisor)]
     | .not _ e | .field _ e _ => #[edits s e]
     | .app _ _ as | .set _ as | .seq _ as | .chain _ as _ => as.map (edits s ·)
@@ -591,7 +614,7 @@ where
     | .table _ rows => (tableParts rows).map (edits s ·)
     | .is _ sc _ => #[edits s sc]
     -- The body once, not each instance.
-    | .quant _ _ _ b => #[edits s b]
+    | .quant sp _ _ b => #[edits s b (members := ((s.coreElems.find? (·.1 == sp)).map (·.2)).getD #[])]
     -- A closure's body once, not at each application of it.
     | .matches _ ss arms _ => (ss ++ arms.flatMap (fun (_, g, b) => g.toArray.push b)).map (edits s ·)
     | .closure _ _ b => #[edits s b]
