@@ -19,14 +19,12 @@ pub mod m
 
 pub fn ident?(w: String) := w != ""
 
-pub fn guarded?(names: Seq<String>) :=
-    forall (v: String), when v in names and v != "x", ident?(v)
+pub fn guarded?(names: Seq<String>) := forall (v: String), when v in names and v != "x", ident?(v)
 
 pub fn triggered?(names: Seq<String>, a?, b?) :=
     forall (v: String), when a?, when v in names, when b?, ident?(v)
 
-pub fn some?(names: Seq<String>) :=
-    exists (v: String), v in names and ident?(v) and v != "y"
+pub fn some?(names: Seq<String>) := exists (v: String), v in names and ident?(v) and v != "y"
 
 pub fn nested?(names: Seq<String>, others: Seq<String>) :=
     forall (v: String), when v in names, forall (w: String), when w in others, v != w
@@ -34,8 +32,7 @@ pub fn nested?(names: Seq<String>, others: Seq<String>) :=
 pub fn around?(names: Seq<String>, a?) :=
     a? and (forall (v: String), when v in names, ident?(v) and v != "q")
 
-pub fn other?(names: Seq<String>) :=
-    exists (v: String), v in names and v in ["a"] and ident?(v)
+pub fn other?(names: Seq<String>) := exists (v: String), v in names and v in ["a"] and ident?(v)
 
 pub fn retriggered?(names: Seq<String>) :=
     forall (v: String), when v in names, when v in ["a"], ident?(v)
@@ -53,5 +50,4 @@ pub fn block_nested?(names: Seq<String>) :=
     exists (v: String), and { and { v in names and ident?(v), v != "y" }, v != "z" }
 
 set_option fren.lint.undecidable "allow" in
-pub fn allowed?(names: Seq<String>) :=
-    forall (v: String), when v in names, ident?(v)
+pub fn allowed?(names: Seq<String>) := forall (v: String), when v in names, ident?(v)
