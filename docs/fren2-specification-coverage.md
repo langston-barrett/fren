@@ -36,7 +36,7 @@ trusted: `spec::types::expression_uniqueness`
 
 The one `trusted` procedure is the open `types.derivation.unique-expression`,
 whose claim's reason starts `open:`. Types.md, Expressions.md,
-LexicalStructure.md, Syntax.md, AstAndParsing.md,
+NamesAndScope.md, LexicalStructure.md, Syntax.md, AstAndParsing.md,
 [PropertiesAndChecks.md](#definedness-and-verification-correspondence) and the THIR
 chapter are the converted chapters: their wrappers trace with `trusted` as the required
 level, so a property that loses its evidence fails `lake build --wfail`,
@@ -1127,23 +1127,81 @@ prerequisite to extend Fren's recursive specification features.
 
 ## Retained record: src/Spec/Language/NamesAndScope.md
 
-The full lookup and traversal properties need evidence over the actual
-resolver, not a roundtrip or agreement between two copies of lookup.
+The chapter is converted: it defines resolution in Fren as total functions
+from source forms to the item identities, scopes of de Bruijn levels and
+symbol environment of Core typing, and its wrapper traces its evidence.
+The wrapper proves in Lean the laws of local lookup, weakening by an
+unmentioned name, the resolved table's scoping and alignment, the item
+kinds that each resolved position names, sibling scopes, the parallel
+parameter context, that collection yields a well-formed symbol
+environment, that exchanging the last two declarations changes
+nothing that collection binds, that two sequences of the same
+admitted declarations collect alike, that a clear written type, one whose first name is no function of the
+module, resolves in the environment of enumerations exactly as in the
+collected one (`names.collection.agreement`); admission makes every
+signature type clear, but not the annotation of a `let`, which resolves
+in the collected environment only, that a resolved `let` and a
+resolved parameter satisfy the `?` suffix rule of typing and that one
+breaking it is refused (`names.expression.layer`,
+`names.collection.parameters`), that an item shadows the module's name,
+and exactly when a first name denotes nothing (`names.paths.unknown`). It binds the production resolver's
+nearest-name search and name equality (`FrenAstToHir.nearest`,
+`FrenAstToHir.sameName`) to their rules. Two of the chapter's claims are `trusted` and open: `naming_order`
+and `table_weakening`. A third is open and stated in prose only:
+`names.expression.unique-expression`, that two source tables denoting the
+same expression resolve to tables that unfold alike. The wrapper proves
+determinism for one source table, not for the expression it denotes.
 
-- [ ] Bind the future nearest-name primitive to the finite facts and the
-  wrapper's arbitrary-context law, with a genuine Lean proof where cheap.
-- [ ] Test actual collection under declaration permutations, including
-  forward type, function and expectation references and all duplicate kinds.
-- [ ] Test actual lexical traversal on parameters, nested lets, each arm and
-  siblings, including unknown names in let values and uses outside a let.
-- [ ] Use direct Plausible on actual lookup and resolution, with accepted and
-  rejected inputs and counts for successful parse, walking-domain membership,
-  duplicate-free collection and lookup-hit/miss premises. No sampled test is
-  classified as a universal proof or discharged with `impl ... by plausible`.
+The chapter's functions return no diagnostic, so the codes its prose
+names are untraced: F0201, F0203, F0204, F0206, F0210, F0212 and F0213
+have no Fren item and no evidence. Its rules decide only that the
+construct has no resolution.
+
+What production does differently, recorded here rather than in the
+chapter: the resolver numbers locals by index from the newest binder,
+not by level; it may find a path's target before it knows the position,
+and reports a function used as a value or a local used as a callee when
+it forms the typed term; it collects expectations into the item namespace and resolves
+their parameter types and bodies, which the chapter's domain leaves
+out; its `let`
+has no written type, so no front end exercises the annotated `let`; and
+it collects names only, while the chapter's `collect` also resolves
+signature types.
+
+- [x] Bind the nearest-name primitive to its rule with a genuine Lean
+  proof over every scope.
+- [x] Prove in Lean that collection yields a well-formed symbol
+  environment (`names.handoff.environment`), which is what
+  `types.symbols.resolution` assumes.
+- [x] Prove the exchange law of collection (`names.collection.order`).
+- [x] State the order law for every reordering of the declarations
+  (`names.collection.permutation`) and prove that sequences of the same
+  admitted declarations collect alike.
+- [ ] Prove `naming_order`: a reordering of admitted declarations is
+  admitted. It is `trusted` and open.
+- [ ] Prove `table_weakening` (`names.expression.table-weakening`), which
+  is `trusted` and open; `names.expression.weakening` proves the law for
+  one layer.
+- [ ] Define resolution for expectations, which the production resolver
+  collects into the item namespace and resolves; the chapter's domain
+  (`names.overview.domain`) leaves them out.
+- [ ] State in Fren and prove `names.expression.unique-expression`, which
+  needs the relation "unfold alike" on source tables.
+- [ ] Return the diagnostic from `head`, `descend` and the naming checks,
+  so that the F02xx codes are traced.
+- [ ] State that a module's resolution is invariant under reordering its
+  declarations, bodies included, with a forward-call example; the order
+  laws stop at collection.
+- [ ] Return the environment and each function's resolved body from the
+  module judgment, and state that every function has exactly one body.
+- [ ] Bind path-head and member lookup and collection to the production
+  resolver, whose functions read production scope and token structures
+  that Fren does not yet state.
+- [ ] State the correspondence between source text and the source table
+  that this chapter resolves, once the Syntax chapter defines the table.
 - [ ] Extend this chapter before imports, multiple modules, visibility across
   modules, payload binders, generics, recursion policy or body visibility are
-  implemented. These are remaining obligations, not prerequisites for the
-  single-file resolver.
+  implemented.
 
 ## Retained record: src/Spec/Compiler/Thir.md
 

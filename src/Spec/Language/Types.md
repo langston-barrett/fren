@@ -242,7 +242,8 @@ pub fn symb_ok?(symb: Symb) := bindings_ok?(symb, symb)
 r[types.symbols.resolution]
 The symbol environment that [resolution](NamesAndScope.md) produces for a
 program is well formed; in particular, resolution rejects an item declared
-twice. This depends on the resolution chapter and is open.
+twice. Resolution states and proves this as the [well-formed
+environment of collection](NamesAndScope.md#r-names.handoff.environment).
 
 <a id="finite-expression-derivations"></a>
 
