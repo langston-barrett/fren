@@ -1,19 +1,20 @@
 # Denotational semantics
 
-The denotational semantics gives each function of a
-[verified](StaticSemantics.md#r-statics.program.verified) program, and
-each defined expression over such functions, a value, as a set-theoretic
-function of the values of its free locals. It gives a meaning to verified
-Core only. A verified program has passed the termination check, so no
-denotation has to account for an evaluation that does not end; a program
-that is defined and meets its contracts without that check has no
-denotation. The chapter proceeds
+The denotational semantics gives each function whose declaration is
+[verified](StaticSemantics.md#r-statics.program.verified), with the
+declarations that it depends on, and each defined expression over such
+functions, a value, as a set-theoretic function of the values of its free
+locals. It gives a meaning to verified Core only. A verified declaration
+has passed the termination check, so no denotation has to account for an
+evaluation that does not end; a function that is defined and meets its
+contract without that check has no denotation. The chapter proceeds
 [stratum by stratum](StaticSemantics.md#r-statics.stratification). A
 denotation is total on its domain: it has no undefined result, no error
 value and no case for a zero divisor, and it has no order of evaluation.
 The [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
-program, and [adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy)
-states where the two agree.
+program with distinct arms, and
+[adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy) states where
+the two agree.
 
 A rule whose `r[...]` line names no Fren definition is stated in prose
 only.
@@ -30,7 +31,7 @@ only.
 | `⟦e⟧ρ = v` | e denotes v at ρ | [expressions](#r-denotation.expression), [domain](#r-denotation.domain) | — |
 | `⟦f⟧(v₁, …, vₙ) = v` | the function f maps the argument tuple to v | [functions](#r-denotation.function) | — |
 | `ρ ⊨ φ` | the Boolean expression φ is true at ρ | [truth](#r-denotation.truth) | — |
-| `⊨ A` | the assumption A holds | [truth](#r-denotation.truth) | — |
+| `⊨ A` | the assumption A is true | [truth](#r-denotation.truth) | — |
 | `⊨ ψ` | the expectation ψ is true | [truth](#r-denotation.truth) | — |
 
 ```text
@@ -170,9 +171,10 @@ meaning to its positional arguments, and its callee's body is read in the
 parameter context, without inheriting the caller's locals. A let
 interprets its value in the incoming context and its body with that value
 appended as the newest level. An if denotes its selected branch; a match
-denotes, in the incoming context, the body of the arm that
-[arm selection](DynamicSemantics.md#r-dynamics.match.selection) gives for
-its scrutinee's constructor.
+denotes, in the incoming context, the body of the arm whose constructor
+is its scrutinee's constructor. The arms of a match are
+[distinct](StaticSemantics.md#r-statics.match.distinct), so there is at
+most one such arm.
 
 r[denotation.expression]
 `⟦e⟧ᴵρ`, the value of e at ρ under an interpretation I, is given by one
@@ -195,23 +197,28 @@ interpretation that gives each function its
 ## Domain
 
 r[denotation.domain]
-`⟦f⟧(v̄)` exists exactly when the stratum of f and every earlier
-[stratum](StaticSemantics.md#r-statics.stratification) are
-[verified](StaticSemantics.md#r-statics.program.verified), the
-[assumptions of those strata hold](#r-denotation.truth), and v̄ meets f's
+A function f *has a denotation* when the declaration of f and the
+declaration of every function that f
+[depends on](StaticSemantics.md#r-statics.call-order.relation) are
+[verified](StaticSemantics.md#r-statics.program.verified), and the
+assumptions of those declarations are [true](#r-denotation.truth). The
+definition is by recursion on the
+[strata](StaticSemantics.md#r-statics.stratification): the truth of an
+assumption reads the denotations of functions of earlier strata only.
+`⟦f⟧(v̄)` exists exactly when f has a denotation and v̄ meets f's
 precondition. `⟦e⟧ρ` is asked for exactly when e is
 [defined](StaticSemantics.md#r-statics.definedness.rules) under some
-hypotheses Φ, every function that e or Φ mentions is of a stratum that
-is verified, with every earlier stratum, and whose assumptions hold with
-theirs, ρ is an assignment of e's context, and ρ makes every hypothesis
-of Φ true. The equations then need a callee's denotation only at the
-argument tuples of the calls that they
-[read](#r-denotation.expression) at ρ, and a callee need have a
-denotation at no other tuple: a call in a branch that is not selected is
-not read. This chapter gives no meaning to an ill-typed
-expression, to an expression that is not defined, to a function whose
-stratum or an earlier one is not verified, or to a defined expression at
-an assignment that fails its hypotheses.
+hypotheses Φ, every function that e or Φ mentions has a denotation, ρ is
+an assignment of e's context, and ρ makes every hypothesis of Φ true.
+The equations then need a callee's denotation only at the argument
+tuples of the calls that they [read](#r-denotation.expression) at ρ, and
+a callee need have a denotation at no other tuple: a call in a branch
+that is not selected is not read. A declaration that f does not depend
+on takes no denotation away from f: it may be unverified, and its
+assumptions may be false. This chapter gives no meaning to an ill-typed
+expression, to an expression that is not defined, to a function that has
+no denotation, or to a defined expression at an assignment that fails
+its hypotheses.
 
 ## Functions and programs
 
@@ -225,8 +232,10 @@ decreasing parameters under which f's group
 [terminates](StaticSemantics.md#r-statics.termination).
 
 r[denotation.program]
-The denotation of a verified program gives each of its functions its
-denotation, [stratum by stratum](StaticSemantics.md#r-statics.stratification).
+The denotation of a program gives each of its functions that
+[has a denotation](#r-denotation.domain) its denotation,
+[stratum by stratum](StaticSemantics.md#r-statics.stratification). In a
+verified program whose assumptions are all true, every function has one.
 
 ## Truth
 
@@ -235,19 +244,25 @@ Under an interpretation I, a Boolean expression φ is *true* at ρ when
 `⟦φ⟧ᴵρ` is the value true and *false* at ρ when it is the value false;
 where `⟦φ⟧ᴵρ` has no value, φ is neither. φ is true at ρ, `ρ ⊨ φ`, when
 `⟦φ⟧ρ` is the value true. A tuple v̄ *meets* the precondition of f when
-the precondition is true at v̄. An assumption A of a function f *holds*,
-`⊨ A`, when it is true at every argument tuple that meets f's
-precondition. The *assumptions of a stratum hold* when every assumption
-of every function of the stratum holds; this is asked only where the
-earlier strata are verified and their assumptions hold, since the
-assumption's truth reads those strata's denotations. A program's
-assumptions hold when those of each of its strata do. The assumptions of
-an expectation declaration are hypotheses of its expectations and are not
-asked to hold. An expectation ψ of a declaration d is true, `⊨ ψ`, when ψ
-is true at every assignment of d's parameters that makes true the
-[hypotheses of d](StaticSemantics.md#r-statics.condition.scope); this too
-is asked only where the strata before d's are verified and their
-assumptions hold. The truth of an expectation is a fact about the program
+the precondition is true at v̄. An assumption A of a function f is
+*true*, `⊨ A`, when it is true at every argument tuple that meets f's
+precondition. This is asked only where every function that A or the
+precondition mentions [has a denotation](#r-denotation.domain); those
+functions are of
+[strata before f's](StaticSemantics.md#r-statics.condition.group), and
+they [terminate hereditarily](StaticSemantics.md#r-statics.condition.terminating).
+An assumption is a hypothesis
+[only within its own declaration](StaticSemantics.md#r-statics.condition.scope),
+and it is asked to be true only by a theorem about a function that
+depends on its declaration's function, or about that function itself. No
+theorem of these chapters asks that all the assumptions of a program be
+true. The assumptions of an expectation declaration are hypotheses of its
+expectations and are not asked to be true. An expectation ψ of a
+declaration d is true, `⊨ ψ`, when ψ is true at every assignment of d's
+parameters that makes true the
+[hypotheses of d](StaticSemantics.md#r-statics.condition.scope); this is
+asked only where every function that ψ or those hypotheses mention has a
+denotation. The truth of an expectation is a fact about the program
 and depends on no solver, and it is no part of being verified. The
 verdict that a check reports for an expectation belongs to the
 [tooling part](../Tooling/index.md).
@@ -257,8 +272,9 @@ verdict that a check reports for an expectation belongs to the
 The properties of this section are open: none is stated in Fren or proved.
 
 r[expressions.value.denotation]
-In a verified program whose assumptions hold, a well-typed expression of
-type τ that is defined under hypotheses Φ has a denotation at every
+A well-typed expression of type τ that is defined under hypotheses Φ,
+where every function that it or Φ mentions
+[has a denotation](#r-denotation.domain), has a denotation at every
 assignment of its context that makes Φ true, and the denotation is a valid
 value of type τ. No division or remainder that the denotation reads has a
 zero divisor there, and every match that it reads has an arm for its
@@ -271,8 +287,10 @@ under which e is defined.
 
 r[denotation.theorem.well-defined]
 The domain is not defined in terms of itself. Whether a declaration is
-verified reads no denotation, and whether its assumptions hold reads the
-denotations of earlier strata only. A verified group
+verified reads no denotation, and whether its assumptions are true reads
+the denotations of earlier strata only, since
+[no assumption or precondition mentions a function of its own group](StaticSemantics.md#r-statics.condition.group).
+A verified group
 [terminates](StaticSemantics.md#r-statics.termination), so at an
 argument tuple of its domain the body reads the group's denotations only
 at preceding call instances; call order is
@@ -292,9 +310,11 @@ on the denotations of the functions that e
 [mentions](StaticSemantics.md#r-expressions.mentions.closure).
 
 r[denotation.theorem.contract]
-In a verified program whose assumptions hold, every function has a
-denotation at every argument tuple that meets its precondition, and its
-postcondition is true of that tuple and the denotation's value there. The
+Every function that [has a denotation](#r-denotation.domain) has a value
+at every argument tuple that meets its precondition, and its
+postcondition is true of that tuple and that value. The postcondition
+has a truth value there, since the functions that it mentions are of
+earlier strata and have denotations. The
 proof is by induction on call order, over call instances. At `(f, v̄)`,
 the denotations of the earlier strata, together with those of f's
 recursive group restricted to the instances that precede `(f, v̄)`, form

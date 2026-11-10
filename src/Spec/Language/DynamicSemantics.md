@@ -2,15 +2,17 @@
 
 The dynamic semantics evaluates an expression. It is operational and
 small-step: a one-step relation rewrites a configuration, and an
-evaluation is a run of steps. It is defined for every well-typed program,
+evaluation is a run of steps. It is defined for every well-typed program
+with [distinct arms](StaticSemantics.md#r-statics.match.distinct),
 whether or not the program is
 [verified](StaticSemantics.md#r-statics.program.verified). A run has one
 of three results: it ends in a value, it ends in an error state, or it
 diverges. Evaluation contexts fix one order of evaluation. An operation
 outside its domain steps to an error state, and never to an arbitrary
 value. The [denotational semantics](DenotationalSemantics.md) is defined
-for verified Core only; [adequacy](#r-dynamics.theorem.adequacy) states
-that there a run ends in a value, which is the denotation.
+for verified declarations only;
+[adequacy](#r-dynamics.theorem.adequacy) states that there a run ends in
+a value, which is the denotation.
 
 A rule whose `r[...]` line names no Fren definition is stated in prose
 only. What this chapter states in Fren is
@@ -57,16 +59,21 @@ only. What this chapter states in Fren is
 
 The values v are those of the
 [denotational semantics](DenotationalSemantics.md#values). P is a
-well-typed program.
+well-typed program with
+[distinct arms](StaticSemantics.md#r-statics.match.distinct).
 
 ## Scope
 
 r[dynamics.scope]
-The dynamic semantics is defined for every well-typed program. It reads
-no contract, no hypothesis, no result of the termination check and no
-solver's answer: a run depends only on the program, the expression and
-the assignment. It evaluates the bodies of functions and never their
-conditions, unless a condition is itself the expression being evaluated.
+The dynamic semantics is defined for every well-typed program with
+[distinct arms](StaticSemantics.md#r-statics.match.distinct), and for the
+well-typed expressions with distinct arms over it. A program in which a
+match has two arms for one constructor is in error statically, and this
+chapter gives it no evaluation. The dynamic semantics reads no contract,
+no hypothesis, no result of the termination check and no solver's answer:
+a run depends only on the program, the expression and the assignment. It
+evaluates the bodies of functions and never their conditions, unless a
+condition is itself the expression being evaluated.
 
 ## Configurations
 
@@ -77,11 +84,16 @@ has been replaced by its value. The body of a let stays a Core expression
 e, paired with the assignment ρ at which the let was loaded; it becomes a
 configuration when the let's value is known. A *state* is a configuration
 or an error state `error(k)`. An error state is not a configuration: no
-context holds one, and no operator or call takes one as an operand.
+context holds one, and no operator or call takes one as an operand. The
+arms of every match in a configuration are
+[distinct](StaticSemantics.md#r-statics.match.distinct):
+[loading](#r-dynamics.configuration.loading) keeps the constructors of a
+match's arms, and so does every step.
 
 r[dynamics.configuration.loading]
 *Loading* gives the configuration `⟨e, ρ⟩` of an expression e, well typed
-in a context Γ, at an assignment ρ of Γ. It is defined by recursion on e
+in a context Γ and with distinct arms, at an assignment ρ of Γ. It is
+defined by recursion on e
 and evaluates nothing. A literal and a constructor load to their
 [leaf values](DenotationalSemantics.md#r-denotation.leaf), and the local
 of level i loads to the value that ρ gives level i. `⟨let e₁ in e₂, ρ⟩`
@@ -201,9 +213,10 @@ be defined, under the same hypotheses.
 
 r[dynamics.match.selection]
 A match selects, for a scrutinee value that is the constructor c, the arm
-whose constructor is c. When several arms have that constructor, it
-selects the one written last. When none has it, the match selects no arm
-and steps to `error(no-arm)`.
+whose constructor is c. The arms of a match are
+[distinct](StaticSemantics.md#r-statics.match.distinct), so at most one
+arm has that constructor, and selection chooses among none. When no arm
+has it, the match selects no arm and steps to `error(no-arm)`.
 
 r[dynamics.operators.total]
 `op(v) = r` and `op(v₁, v₂) = r` give an operator's outcome at operand
@@ -246,13 +259,6 @@ value of its value appended. A conditional has the outcome of the branch
 that its condition's value selects, and a match that of the arm that
 [selection](#r-dynamics.match.selection) gives. A call has the outcome of
 its callee's body at the assignment that lists its arguments' values.
-
-r[dynamics.truth]
-A Boolean expression φ *evaluates to true* at ρ when
-`P ⊢ ⟨φ, ρ⟩ →* true`, and to false likewise. The *assumptions of P hold
-in evaluation* when, for every function declaration of P and every tuple
-of values of its parameters' types at which each of its preconditions
-evaluates to true, each of its assumptions evaluates to true.
 
 ## The table evaluator
 
@@ -424,16 +430,21 @@ pub fn eval(rows: Snoc<Row>, pos: Int, env: Snoc<Value>): Option<Value> :=
 
 r[dynamics.table.differences]
 The table evaluator is not the step relation, and it differs from it in
-five ways. It computes a row's value in one pass over the rows before
+six ways. It computes a row's value in one pass over the rows before
 it, and has no configurations, steps or runs. It has no error state: a
 row that the step relation takes to an error has no value. It gives no
 value to a call, a product, a quotient or a remainder, where the step
 relation reduces each. It needs the second operand of `and` and of `or`
 even where the first decides the result, so a row has no value when that
 operand has none, where the step relation never evaluates it. It cannot
-diverge.
-[Where it gives a value](#r-dynamics.theorem.table-agreement), the step
-relation gives the same one.
+diverge. And for a match with two arms for its scrutinee's constructor,
+`arm_value` takes the arm written last, where the step relation is not
+defined. Such a match is a
+[static error](StaticSemantics.md#r-statics.match.distinct), so this last
+difference is not reachable on a program that the static semantics
+accepts.
+[Where it gives a value](#r-dynamics.theorem.table-agreement) in a
+program with distinct arms, the step relation gives the same one.
 
 r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, evaluation_examples::{bound, unbound, uncomputed}}
 `let d := 2 in 10 - d` has this table; row 4 is the let.
@@ -486,27 +497,33 @@ r[dynamics.theorem.determinism]
 A configuration takes at most one step. A configuration that is not a
 value decomposes in exactly one way into an evaluation context E and a
 configuration m that is not a value and whose evaluated children are all
-values, and m has at most one [reduction](#r-dynamics.step.reductions). Every derivation of a
-step of `E[m]` ends in that reduction: the context rules, applied through
-E or through the contexts that compose to E, derive the same step. So a run from a
-configuration is unique, and an evaluation has exactly one of the three
-results, or it reaches a stuck configuration.
+values, and m has at most one [reduction](#r-dynamics.step.reductions).
+For a match this is because its arms are
+[distinct](#r-dynamics.match.selection): selection gives one arm or
+none. Every derivation of a step of `E[m]` ends in that reduction: the
+context rules, applied through E or through the contexts that compose to
+E, derive the same step. So a run from a configuration is unique, and an
+evaluation has exactly one of the three results, or it reaches a stuck
+configuration.
 
 r[dynamics.theorem.progress]
-In a well-typed program, a configuration that has a type is a value or
-takes a step, to a configuration or to an error state of one of the
+In a well-typed program with distinct arms, a configuration that has a
+type is a value or takes a step, to a configuration or to an error state
+of one of the
 [two kinds](#r-dynamics.error.kinds). It is not stuck.
 
 r[dynamics.theorem.preservation]
-In a well-typed program, a step keeps the type: if `P ⊢ m : τ` and
-`P ⊢ m → m′`, then `P ⊢ m′ : τ`. The initial configuration of an
-expression of type τ, at an assignment of its context, has the type τ.
+In a well-typed program with distinct arms, a step keeps the type: if
+`P ⊢ m : τ` and `P ⊢ m → m′`, then `P ⊢ m′ : τ`. The initial
+configuration of an expression of type τ with distinct arms, at an
+assignment of its context, has the type τ.
 
 r[dynamics.theorem.type-safety]
 Type safety is [progress](#r-dynamics.theorem.progress) and
 [preservation](#r-dynamics.theorem.preservation) together. In a
-well-typed program, a well-typed expression of type τ, at an assignment
-of its context, ends in a valid value of type τ, or ends in an error of
+well-typed program with distinct arms, a well-typed expression of type τ
+with distinct arms, at an assignment of its context, ends in a valid
+value of type τ, or ends in an error of
 one of the two kinds, or [diverges](#r-dynamics.divergence). It never
 reaches a stuck configuration. The theorem does not say that evaluation
 ends, and it needs neither definedness nor termination.
@@ -517,14 +534,28 @@ The derived judgment agrees with the runs that end:
 an error state r.
 
 r[dynamics.theorem.adequacy]
-In a verified program whose
-[assumptions hold](DenotationalSemantics.md#r-denotation.truth), an
-expression that is defined under hypotheses which the assignment ρ makes
-true ends in a value, and that value is its denotation:
-`P ⊢ ⟨e, ρ⟩ →* ⟦e⟧ρ`, and so `P ⊢ ⟨e, ρ⟩ ⇓ ⟦e⟧ρ`. It does not end in an
-error and it does not diverge. A function of such a program, called at
-an argument tuple that meets its precondition, ends in its denotation
-there.
+Let e be an expression that is defined under hypotheses Φ, and let every
+function that e or Φ mentions
+[have a denotation](DenotationalSemantics.md#r-denotation.domain). At an
+assignment ρ that makes each hypothesis of Φ true, e ends in a value, and
+that value is its denotation: `P ⊢ ⟨e, ρ⟩ →* ⟦e⟧ρ`, and so
+`P ⊢ ⟨e, ρ⟩ ⇓ ⟦e⟧ρ`. It does not end in an error and it does not
+diverge. A function that has a denotation, called at an argument tuple
+that meets its precondition, ends in its denotation there. The theorem
+asks nothing of a declaration that e and Φ do not depend on: such a
+declaration may be unverified, and its assumptions may be false.
+
+r[dynamics.theorem.total-correctness]
+A function that
+[has a denotation](DenotationalSemantics.md#r-denotation.domain) is
+totally correct. Let v̄ be a tuple of values of its parameters' types at
+which its precondition is true. Then the call of f at v̄ ends in a value
+u, and the postcondition is true at v̄ and u. The call does not end in an
+error and it does not diverge. This is
+[adequacy](#r-dynamics.theorem.adequacy) with
+[the contract theorem](DenotationalSemantics.md#r-denotation.theorem.contract).
+The precondition and the postcondition have truth values there, since
+[the functions that they mention terminate hereditarily](StaticSemantics.md#r-statics.condition.terminating).
 
 r[dynamics.theorem.termination]
 Evaluation ends where the termination check has passed: this is the part
@@ -535,29 +566,32 @@ function whose body is a call of itself at its own parameters is
 and it diverges at every argument.
 
 r[dynamics.theorem.partial-correctness]
-A program that is well typed, is
-[defined](StaticSemantics.md#r-statics.program.defined) and
-[meets its contracts](StaticSemantics.md#r-statics.contract.meets) is
-partially correct, whether or not it passes the termination check. Let
-its [assumptions hold in evaluation](#r-dynamics.truth), and let f be one
-of its functions and v̄ a tuple at which each precondition of f evaluates
-to true. If the call of f at v̄ ends in a value u, then u meets the
-postcondition: the postcondition does not evaluate to false at v̄ and u.
-The theorem says nothing of a call that diverges. It does not say that
-the call reaches no error state, and that is not claimed of a program
-that has not passed the termination check: a condition may mention a
-function that diverges, and then a precondition that has no value can be
-entailed at a call whose callee's body divides by zero.
+A function that has not passed the termination check is partially
+correct. Let f be a function of a well-typed program with distinct arms,
+and let the declaration of f and of every function that f depends on be
+[defined](StaticSemantics.md#r-statics.declaration.defined) and
+[meet its contract](StaticSemantics.md#r-statics.contract.meets), with
+[true assumptions](DenotationalSemantics.md#r-denotation.truth). Let v̄
+be a tuple of values of f's parameters' types at which the precondition
+of f is true. Then the call of f at v̄ reaches no error state, and if it
+ends in a value u, the postcondition of f is true at v̄ and u. The call
+may diverge, and the theorem says nothing more of one that does. The
+conditions have truth values where the theorem reads them:
+[the functions that a contract or an assumption mentions terminate hereditarily](StaticSemantics.md#r-statics.condition.terminating),
+and by the theorem's own conditions they are verified with true
+assumptions, so
+[each has a denotation](StaticSemantics.md#r-statics.property.conditions).
 
 r[dynamics.theorem.table-agreement]
-Where the [table evaluator](#the-table-evaluator) gives a row a value v
-at ρ, the row's expression e has that outcome: `P ⊢ ⟨e, ρ⟩ →* v`.
+In a program with distinct arms, where the
+[table evaluator](#the-table-evaluator) gives a row a value v at ρ, the
+row's expression e has that outcome: `P ⊢ ⟨e, ρ⟩ →* v`.
 
 r[dynamics.theorem.implementation]
 An implementation that evaluates in another order, that leaves an unused
 let's value unevaluated, that evaluates in one pass and not by steps, or
 that omits a check which verification has discharged, agrees with this
-chapter on verified programs whose assumptions hold, at the assignments
-of [adequacy](#r-dynamics.theorem.adequacy). The
+chapter where [adequacy](#r-dynamics.theorem.adequacy) applies: on the
+expressions, and at the assignments, of that theorem. The
 [evaluator chapter](../Compiler/Evaluator.md) states how the compiler's
 evaluator differs from this chapter elsewhere.

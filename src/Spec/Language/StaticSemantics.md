@@ -4,13 +4,15 @@ Static semantics comprises resolution, typing, definedness, contracts and
 termination. [Resolution](NamesAndScope.md) produces the Core and its
 symbol environment, and [Core typing](Types.md) defines the typing
 judgment. This chapter defines which items an expression mentions, the
-call order of a program, when a partial operation is within its domain,
-and the judgments of definedness and of contracts. It names the judgment
-of termination, which a chapter of its own will define. A program that
-satisfies all of them is *verified*. The
-[denotational semantics](DenotationalSemantics.md) gives a meaning to
-verified programs only. The [dynamic semantics](DynamicSemantics.md)
-evaluates every well-typed program, verified or not.
+call order of a program, when the arms of a match are distinct, when a
+partial operation is within its domain, and the judgments of definedness
+and of contracts. It names the judgment of termination, which a chapter
+of its own will define. A program that satisfies all of them is
+*verified*: it is typed, it is defined, it meets its contracts and it
+terminates. The [denotational semantics](DenotationalSemantics.md) gives
+a meaning to verified declarations only. The
+[dynamic semantics](DynamicSemantics.md) evaluates every well-typed
+program with distinct arms, verified or not.
 
 A rule whose `r[...]` line names no Fren definition is stated in prose
 only. [Definedness and verification](PropertiesAndChecks.md) states
@@ -24,6 +26,7 @@ definedness as obligations over derivation tables; a
 | `Σ; Γ ⊢ e : τ` | e has type τ in Γ | [typing](#r-statics.typing) | [Core typing](Types.md)'s `derivation?` |
 | `e ∋ a` | e mentions the item a | [mentioned items](#r-expressions.mentions.closure) | `direct_item?`, for one layer |
 | `Σ ⊢ f → g` | the function f calls the function g | [calls](#r-statics.call-order.relation) | — |
+| `e distinct` | no match written in e has two arms for one constructor | [distinct arms](#r-statics.match.distinct) | `arms_distinct?`, for one match |
 | `Σ; Γ; Φ ⊨ φ` | the hypotheses Φ entail φ | [entailment](#r-statics.entailment) | — |
 | `Σ; Γ; Φ ⊢ e def` | under Φ, e is defined | [definedness](#r-statics.definedness.rules) | `integer_domain?`, for one operator |
 | `Σ ⊢ {P} f {Q} ok` | the contract of f, with precondition P and postcondition Q, is well formed | [contracts](#r-statics.contract.well-formed) | — |
@@ -126,7 +129,37 @@ the conditions of f's declaration [mentions](#r-expressions.mentions.closure)
 g. f *reaches* g when a chain of one or more calls leads from f to g. Two
 functions are in one *recursive group* when each reaches the other. A
 function that reaches itself is *recursive*, and its group may hold it
-alone. A function that does not reach itself is in no group.
+alone. A function that does not reach itself is in no group. A
+declaration d *depends on* a function g when d's body or one of d's
+conditions mentions g, or mentions a function that reaches g. So the
+declaration of a function f depends on exactly the functions that f
+reaches.
+
+## Distinct arms
+
+r[statics.match.distinct] spec::statics::arms_distinct?
+The arms of a match are *distinct* when no two of them have the same
+constructor. An expression *has distinct arms*, `e distinct`, when the
+arms of every match written in it are distinct, and a program does when
+every body and every condition of its declarations does. A match with two
+arms for one constructor is a static error. Typing does not establish the
+condition: a well-typed match stays well typed when an arm is
+[repeated](Types.md#r-types.judgment.coverage-separate). Every judgment
+that this chapter defines after this rule is stated of expressions with
+distinct arms only, and the
+[dynamic semantics](DynamicSemantics.md#r-dynamics.scope) evaluates no
+other expression. So a match has at most one arm for a constructor, and
+no rule of the three semantics chooses among several. The compiler
+rejects a match that repeats a constructor in its
+[coverage validation](../Compiler/Thir.md#r-thir.validation.coverage).
+
+```fren
+pub fn arms_distinct?<E>(arms: Snoc<ArmF<E>>) := match arms {
+    Snoc::Empty => true,
+    Snoc::Extend(earlier, arm) =>
+        not arm_mentions?(earlier, arm.constructor) and arms_distinct?(earlier),
+}
+```
 
 ## Definedness
 
@@ -163,9 +196,11 @@ the premise of [coverage](#r-statics.definedness.coverage).
 
 r[statics.definedness.coverage]
 A match *covers* its scrutinee when every constructor of the scrutinee's
-enum is the constructor of at least one of its arms. Coverage reads the
-written arms and the scrutinee's type, and no hypothesis: an arm is
-required for a constructor even where the hypotheses exclude it.
+enum is the constructor of one of its arms. The arms are
+[distinct](#r-statics.match.distinct), so each constructor then has
+exactly one arm. Coverage reads the written arms and the scrutinee's
+type, and no hypothesis: an arm is required for a constructor even where
+the hypotheses exclude it.
 
 r[statics.definedness.declarative]
 Definedness is independent of evaluation. An operation needs its premise
@@ -188,13 +223,17 @@ r[statics.contract.well-formed]
 A contract is well formed, `Σ ⊢ {P} f {Q} ok`, when P has type `Bool` in
 the context of the parameters and is defined under no hypotheses, Q has
 type `Bool` in that context extended by the result's type and is defined
-under P, and neither mentions a function of f's own recursive group.
+under P, neither mentions a
+[function of f's own recursive group](#r-statics.condition.group), and
+every function that either mentions
+[terminates hereditarily](#r-statics.condition.terminating).
 
 ```text
   Σ; Δ ⊢ P : Bool        Σ; Δ; · ⊢ P def
   Σ; Δ, τ ⊢ Q : Bool     Σ; Δ, τ; P ⊢ Q def
   P and Q mention no function of f's recursive group
-  ──────────────────────────────────────────────────
+  every function that P or Q mentions terminates hereditarily
+  ───────────────────────────────────────────────────────────
   Σ ⊢ {P} f {Q} ok
 ```
 
@@ -219,7 +258,41 @@ and its assumptions. A precondition and an assumption have no hypotheses.
 The body, the postcondition's entailment and each asserted fact have Φ_d.
 An expectation has Φ_d and the asserted facts. No condition of another
 declaration is a hypothesis, and an expectation is a hypothesis of
-nothing.
+nothing. In particular an assumption is a hypothesis only within its own
+declaration: a caller of f does not have f's assumptions among its
+hypotheses. What a caller knows of f is f's contract, and the theorems
+that rely on that contract ask that f's assumptions be
+[true](DenotationalSemantics.md#r-denotation.truth).
+
+r[statics.condition.group]
+No condition of a declaration mentions a function of the declaration's
+own recursive group: neither a precondition, the postcondition or an
+assumption, nor an asserted fact or an expectation. A function's body
+may call the function's group, and its conditions may not. Since a
+function [calls](#r-statics.call-order.relation) what its conditions
+mention, the rule also excludes a cycle that passes through a condition:
+when a precondition of f mentions g and g's body mentions f, the two are
+in one group, and the precondition mentions a function of it. So every
+function that a condition of d mentions is of a
+[stratum](#r-statics.stratification) before d's. The restriction is
+provisional, and a later revision of this chapter may admit some of
+these mentions under rules of their own.
+
+r[statics.condition.terminating]
+Every function that a precondition, the postcondition or an assumption
+of a declaration mentions
+[terminates hereditarily](#r-statics.termination): its declaration
+passes the termination check, and so does the declaration of every
+function that it reaches. The rule is about the declarations that the
+condition depends on, which are of earlier strata, and not about the
+termination of the declaration that states the condition. A declaration
+that [opts out](#r-statics.termination.optional) of the termination
+check has not passed it, so no precondition, postcondition or assumption
+mentions its function or a function that reaches it. An asserted fact
+and an expectation are not so restricted. The rule asks for more than
+the check of the mentioned function alone: a function g with the body
+`h(0)` is in no recursive group and passes the check whatever h does,
+and its evaluation diverges where that of `h(0)` does.
 
 r[statics.declaration.defined]
 A function declaration is defined, `Σ ⊢ d defined`, when its contract is
@@ -227,17 +300,22 @@ well formed, each assumption is defined under no hypotheses, its body is
 defined under Φ_d, each asserted fact is defined under Φ_d and entailed
 by it, and each expectation is defined under Φ_d and the asserted facts.
 An expectation declaration is defined by the same rule without the
-contract and the body: its Φ_d is its assumptions. In both cases no
-condition of d mentions a function of d's own recursive group. The rule
-asks for the definedness of an expectation and never for its truth, and
-it has no premise about the postcondition or about termination.
+contract and the body: its Φ_d is its assumptions. In both cases
+[no condition of d mentions a function of d's own recursive group](#r-statics.condition.group),
+and every function that an assumption of d mentions
+[terminates hereditarily](#r-statics.condition.terminating). The rule
+asks for the definedness of an expectation and never for its truth. It
+has no premise about the postcondition's truth, and none about the
+termination of d itself or of d's recursive group.
 
 ```text
   Σ ⊢ {P} f {Q} ok       Φ = P, A₁, …, Aₖ
   Σ; Δ; · ⊢ A def                         for each assumption A
+  every function that A mentions terminates hereditarily
   Σ; Δ; Φ ⊢ e def
   Σ; Δ; Φ ⊢ φ def        Σ; Δ; Φ ⊨ φ      for each asserted fact φ
   Σ; Δ; Φ, φ₁, …, φₘ ⊢ ψ def              for each expectation ψ
+  no condition mentions a function of f's recursive group
   ──────────────────────────────────────────────────────────────
   Σ ⊢ function f with body e defined
 ```
@@ -295,15 +373,23 @@ and the meeting of contracts have no premise about it, and each is stated
 of declarations that fail it. The Termination chapter, which follows this
 one among the chapters of static semantics and is not yet written,
 defines the judgment. Until it does, the judgment is the placeholder
-below: a declaration terminates when it is in no recursive group, or when
-its recursion is [structural](#r-statics.call-order.structural).
+below: a declaration terminates when it has not
+[opted out](#r-statics.termination.optional) of the check and either it
+is in no recursive group or its recursion is
+[structural](#r-statics.call-order.structural). A function *terminates
+hereditarily* when its declaration terminates and so does the declaration
+of every function that it reaches.
 
 r[statics.termination.optional]
-The termination check need not be applied to a program. A program to
-which it is not applied may be well typed, be defined and meet its
-contracts; it is not [verified](#r-statics.program.verified), and it has
-no denotation. This chapter does not state how a program selects whether
-the check applies.
+The termination check need not be applied to every declaration. A
+declaration may *opt out* of it; the Termination chapter will define how
+a declaration is marked so, and this chapter states only what follows. A
+declaration that opts out has not passed the check: `Σ ⊢ d terminates`
+does not hold of it, whether or not it is recursive. Such a declaration
+may be well typed, be defined and meet its contract. It is not
+[verified](#r-statics.program.verified), its function has no denotation,
+and
+[no precondition, postcondition or assumption mentions its function](#r-statics.condition.terminating).
 
 r[statics.call-order.instances]
 A *call instance* is a pair `(f, v̄)` of a function and a tuple of values of
@@ -332,8 +418,9 @@ hypotheses at the place where it is written.
 
 r[statics.program.defined]
 A program is defined, `⊢ (Σ, ds) defined`, when it is
-[well typed](Types.md#r-types.program.typing) and each of its
-declarations is [defined](#r-statics.declaration.defined).
+[well typed](Types.md#r-types.program.typing), it has
+[distinct arms](#r-statics.match.distinct) and each of its declarations
+is [defined](#r-statics.declaration.defined).
 
 r[statics.program.verified]
 A declaration is *verified* when it is defined, meets its contract if it
@@ -364,13 +451,31 @@ needs are a computable function of the expression, and they are the only
 premises of definedness that are not decidable.
 
 r[statics.property.independence]
-Definedness and the meeting of contracts do not depend on termination. No
-rule of either has a premise about call order, and the interpretations
-that entailment ranges over are constrained at the tuples where they give
-a value and nowhere else. The interpretation that gives no function a
-value is admissible for every declaration. So whether a program is
-defined and meets its contracts is the same with the termination check
-applied and without it.
+Whether a declaration is defined and meets its contract does not depend
+on its own termination or on that of its recursive group. No rule of
+either has a premise about call order, and the interpretations that
+entailment ranges over are constrained at the tuples where they give a
+value and nowhere else. The interpretation that gives no function a value
+is admissible for every declaration. The one premise about termination is
+that of the
+[functions that a contract or an assumption mentions](#r-statics.condition.terminating),
+which are of earlier strata. So a declaration is defined and meets its
+contract when it opts out of the termination check exactly when it does
+otherwise; opting out can change those judgments only for the
+declarations whose contract or assumptions depend on it.
+
+r[statics.property.conditions]
+The conditions of a contract and the assumptions are total. Let d be a
+[defined](#r-statics.declaration.defined) declaration, and let every
+function that its preconditions, its postcondition and its assumptions
+depend on be defined, meet its contract and have
+[true assumptions](DenotationalSemantics.md#r-denotation.truth). Those
+functions terminate hereditarily, so each
+[has a denotation](DenotationalSemantics.md#r-denotation.domain). Then
+each precondition and each assumption of d has a truth value at every
+assignment of d's parameters, and the postcondition has one at every
+assignment of the parameters and the result at which the precondition is
+true. This holds whether or not d itself terminates.
 
 r[statics.property.call-order]
 Call order is well founded for every choice of decreasing parameters: no
@@ -394,24 +499,28 @@ stratum, and each
 [reads the earlier strata only](DenotationalSemantics.md#r-denotation.theorem.well-defined).
 
 r[statics.property.entailment]
-In a [verified](#r-statics.program.verified) stratum that comes after
-verified strata only, with the
-[assumptions of those strata holding](DenotationalSemantics.md#r-denotation.truth),
-entailment implies truth under the denotations. If `Σ; Γ; Φ ⊨ φ` holds in
-a declaration of the stratum and φ is defined under Φ, then every
-assignment at which each hypothesis of Φ denotes true is one at which φ
-denotes true.
+Entailment implies truth under the denotations. Let d be a
+[verified](#r-statics.program.verified) declaration, and let every
+function that d depends on
+[have a denotation](DenotationalSemantics.md#r-denotation.domain). If
+`Σ; Γ; Φ ⊨ φ` holds in d and φ is defined under Φ, then every assignment
+at which each hypothesis of Φ denotes true is one at which φ denotes
+true. The property asks nothing of a declaration that d does not depend
+on, and nothing of d's own assumptions beyond what Φ holds, unless d is
+recursive and so depends on its own function.
 
 r[statics.property.soundness]
-The static semantics is sound for the other two semantics. In a verified
-program whose assumptions hold, every function has a denotation on every
-argument tuple that meets its precondition, and that denotation meets its
-postcondition
+The static semantics is sound for the other two semantics. A function
+that [has a denotation](DenotationalSemantics.md#r-denotation.domain)
+has a value on every argument tuple that meets its precondition, and
+that value meets its postcondition
 ([the contract theorem](DenotationalSemantics.md#r-denotation.theorem.contract)).
+Its evaluation there ends in that value: the function is
+[totally correct](DynamicSemantics.md#r-dynamics.theorem.total-correctness).
 Evaluation agrees with the denotation as
 [adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy) states: only
 at an assignment that makes true the hypotheses under which the evaluated
-expression is defined. A program that is defined and meets its contracts
+expression is defined. A function that is defined and meets its contract
 without passing the termination check has no denotation; the dynamic
 semantics states its
 [partial correctness](DynamicSemantics.md#r-dynamics.theorem.partial-correctness).
@@ -423,10 +532,10 @@ the obligations collected from it with their hypotheses, satisfaction at
 an assignment, validity, and defined programs. Its goals are the divisor
 of a division or remainder, a callee's `require` and an asserted fact; it
 states no postcondition and admits no recursion. For a program without
-recursion whose postconditions are all `true`, one direction holds: when
-its tables are
-[defined](PropertiesAndChecks.md#r-verification.program.defined) there,
-the program is defined by this chapter. Such a program meets its
+recursion whose postconditions are all `true` and in which no declaration
+opts out of the termination check, one direction holds: when its tables
+are [defined](PropertiesAndChecks.md#r-verification.program.defined)
+there, the program is defined by this chapter. Such a program meets its
 contracts and terminates, so it is then verified. The converse fails.
 The tables give
 [no value](PropertiesAndChecks.md#r-verification.validity.uncomputed) to
@@ -453,3 +562,22 @@ decreasing only if the value of `x` is a proper subterm of itself, and no
 value is. So the program is not verified and f has no denotation. Its
 evaluation [diverges](DynamicSemantics.md#r-dynamics.divergence) at every
 argument.
+
+r[statics.examples.conditions]
+Let `g(x: Int): Bool` have the body `if g(x) then false else true`, and
+let `f(x: Int): Int` have the precondition `g(x)` and the body
+`1 div 0`. g is recursive and its recursion is not structural, so g does
+not terminate. The precondition of f mentions g, so the declaration of f
+is [not defined](#r-statics.condition.terminating). Entailment alone
+would not reject it. No admissible interpretation gives g a value, since
+no Boolean is its own negation. So the body of f would be defined, its
+hypothesis `g(x)` being true nowhere, and a call `f(0)` would be defined
+too, its goal `g(0)` being false nowhere, though the evaluation of
+`f(0)` ends in `error(zero-divisor)`.
+
+r[statics.examples.repeated-arm]
+With an enum of the constructors `A` and `B`, the match
+`match e { A => 1, A => 2, B => 3 }` is well typed and has an arm for
+each constructor. Its arms are not
+[distinct](#r-statics.match.distinct), so a program that writes it is in
+error: it is not defined, and it has no evaluation.

@@ -50,9 +50,9 @@ labels in such a chapter; repeated bold labels are unnecessary. A chapter
 about typing need not invent a dynamic-semantics section. Resolution,
 typing, definedness, contracts and termination are judgments within
 static semantics. Verification obligations are discharged by SMT. The
-denotational semantics is defined only for verified programs, and
+denotational semantics is defined only for verified declarations, and
 prescribes no evaluation order. The dynamic semantics is small-step and is
-defined for every well-typed program, with error states, divergence and
+defined for every well-typed program with distinct arms, with error states, divergence and
 one fixed evaluation order, given by evaluation contexts. Source constructs are defined
 by derived forms translating to the typed Core, and a source program is
 well typed exactly when its translation is.

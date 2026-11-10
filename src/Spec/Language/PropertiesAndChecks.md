@@ -921,10 +921,11 @@ pub fn represents?(symb: Symb, decls: Snoc<Decl>, prog: Snoc<Declared>) :=
 r[verification.program.defined]
 A program with tables P is *defined* when five conditions hold. It is
 [well typed](Types.md#declarations-and-programs). P
-[represents](#r-verification.program.tables) its declarations. Every match in it covers
-its scrutinee's constructors; coverage is a condition separate from typing
-([Core typing](Types.md#r-types.judgment.coverage-separate)) and is not yet
-specified. No function in it calls itself, directly or through others
+[represents](#r-verification.program.tables) its declarations. Every match in it has
+[distinct arms](StaticSemantics.md#r-statics.match.distinct) and covers
+its scrutinee's constructors; both are conditions separate from typing
+([Core typing](Types.md#r-types.judgment.coverage-separate)), and this
+chapter does not yet state either in Fren. No function in it calls itself, directly or through others
 ([Core typing](Types.md#r-types.program.nonrecursive)). Every
 [obligation of every declaration](#r-verification.member.obligations) is
 valid, except the `Asserted` obligation of an `expect` member. The
@@ -947,7 +948,9 @@ the truth of an expectation is no part of it: an `expect` is a hypothesis
 of nothing.
 
 r[verification.program.assumptions]
-Both notions are relative to the program's assumptions. A caller proves a
+Both notions are relative to assumptions, each within its own
+declaration: an `assume` member is a hypothesis of the obligations of the
+declaration that states it, and of no other declaration's. A caller proves a
 callee's `require` members and nothing else, so an `assume` member that is
 false at some assignment makes the goals that use it hold vacuously there.
 Assumptions that contradict each other are not an error: every goal that
@@ -1312,11 +1315,16 @@ pub proc context_weakening(rows: Snoc<Row>, cutoff: Int, extra: Ty): (holds?) {
 
 r[verification.soundness]
 Verification is sound for the dynamic semantics: in a
-[defined](#r-verification.program.defined) program whose `assume` members
-hold at every assignment, every expression denotes a value at every
-assignment that satisfies its hypotheses, as the
+[defined](#r-verification.program.defined) program, an expression of a
+declaration d denotes a value at every assignment that satisfies its
+hypotheses, when the `assume` members of every function that d
+[depends on](StaticSemantics.md#r-statics.call-order.relation) are
+[true](DenotationalSemantics.md#r-denotation.truth), that is, true at
+every argument tuple that meets their function's `require` members. The
+`assume` members of d itself are among the hypotheses, and those of a
+declaration that d does not depend on are not asked to be true. The
 [denotational semantics](DenotationalSemantics.md#r-expressions.value.denotation)
-states. This is open: the evaluator gives no value to a product, a
+states this. It is open: the evaluator gives no value to a product, a
 quotient, a remainder or a call, so the statement cannot yet be written
 for the whole Core. The laws above are its local parts: generation omits
 no partial operation, the divisor goal is the operator's domain, strict

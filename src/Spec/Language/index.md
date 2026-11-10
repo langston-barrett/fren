@@ -20,9 +20,9 @@ definedness, contracts and termination; a program that is typed, is
 defined, meets its contracts and passes the termination check is
 verified. The
 [denotational semantics](DenotationalSemantics.md) gives each verified
-program a set-theoretic meaning. The
+function a set-theoretic meaning. The
 [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
-program by a small-step relation, with error states and one fixed order
+program whose matches have distinct arms by a small-step relation, with error states and one fixed order
 of evaluation; a run ends in a value, ends in an error, or diverges.
 [Definedness and verification](PropertiesAndChecks.md) defines the obligations
 of a typed expression, the hypotheses under which each must be proved, and
@@ -38,21 +38,29 @@ nominal enums, named functions, locals and lets, conditionals, constructor
 matches and global assumptions and expectations. The [source grammar](Syntax.md)
 fixes its concrete forms. Static semantics comprises resolution, typing,
 definedness, contracts and termination. Match coverage is part of
-definedness. The termination check is a judgment of its own, which need
-not be applied; a program that has not passed it is not verified. A
+definedness, and a match with two arms for one constructor is a
+[static error](StaticSemantics.md#r-statics.match.distinct). The
+termination check is a judgment of its own, which a declaration may opt
+out of; a declaration that has not passed it is not verified. A
 contract is a precondition and a postcondition
 that relate a function's whole argument tuple to its result; it is not
-part of a type.
+part of a type. A contract and an assumption
+[mention only functions that have passed the termination check](StaticSemantics.md#r-statics.condition.terminating),
+so they are total, and an assumption is a hypothesis only within its own
+declaration.
 Verification obligations are discharged by SMT. Passing typing does not
 establish verification. The denotational semantics is defined only for
-verified programs, which terminate: it assigns no meaning to an undefined
+verified declarations, which terminate: it assigns no meaning to an undefined
 operation and prescribes no evaluation order. The dynamic semantics is
-defined for every well-typed program: an undefined operation evaluates to
+defined for every well-typed program with distinct arms: an undefined operation evaluates to
 an error, in one fixed order, and unbounded recursion diverges.
 [Adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy) states where
-the two agree: in a verified program whose assumptions hold, an
-expression evaluated where its hypotheses are true ends in a value, which
-is its denotation. A program that is defined and meets its contracts
+the two agree: an expression over functions that have denotations,
+evaluated where its hypotheses are true, ends in a value, which
+is its denotation. So a verified function whose assumptions, and those of
+the functions that it depends on, are true is
+[totally correct](DynamicSemantics.md#r-dynamics.theorem.total-correctness).
+A function that is defined and meets its contract
 without the termination check has no denotation and is
 [partially correct](DynamicSemantics.md#r-dynamics.theorem.partial-correctness).
 A solver limit or unknown

@@ -11,7 +11,9 @@ with, and supplies identities, and
 [Definedness and verification](PropertiesAndChecks.md) defines the
 obligations that verification proves. The
 [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
-program, and the [denotational semantics](DenotationalSemantics.md) gives
+program whose matches have
+[distinct arms](StaticSemantics.md#r-statics.match.distinct), and the
+[denotational semantics](DenotationalSemantics.md) gives
 a meaning to the verified ones. Typing alone establishes neither definedness nor logical truth.
 
 ## Overview
@@ -547,7 +549,9 @@ pub fn derivation?(symb: Symb, rows: Snoc<Row>, ctx: Ctx, ty: Ty) :=
 ```
 
 r[types.judgment.separate]
-Match coverage, the absence of recursive call cycles and operation domains,
+Match coverage, the
+[distinctness of a match's arms](StaticSemantics.md#r-statics.match.distinct),
+the absence of recursive call cycles and operation domains,
 including nonzero divisors, are not premises of typing. No dynamic behavior
 is assigned here to an unverified division by zero or to an evaluation
 order.
@@ -1052,7 +1056,8 @@ pub proc judgment_weakening(symb: Symb, rows: Snoc<Row>, ctx: Ctx, ty: Ty, extra
 ```
 
 r[types.safety]
-Typing is sound for the dynamic semantics: in a well-typed program,
+Typing is sound for the dynamic semantics: in a well-typed program with
+[distinct arms](StaticSemantics.md#r-statics.match.distinct),
 evaluating a well-typed expression under values of its context's types
 ends in a value of its type, or ends in an error, or diverges, and is
 never stuck. The

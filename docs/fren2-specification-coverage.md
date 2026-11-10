@@ -346,7 +346,19 @@ chapters is prose.
   structural recursion on one decreasing parameter. With the present
   types (Bool, Int and enums without payloads) no value has a proper
   subterm, so no recursive group passes the placeholder.
-- [ ] Decide how a program selects whether the termination check applies.
+- [ ] Define the marker by which a declaration opts out of the
+  termination check, in the Termination chapter.
+  `statics.termination.optional` states only what follows from opting
+  out.
+- [ ] `statics.match.distinct` makes a match with two arms for one
+  constructor a static error. The compiler rejects it in
+  `thir.validation.coverage`, which `coverageCases` in
+  `src/FrenHirToThirTests/Walking.lean` and the coverage examples of
+  `src/Spec/Compiler/Mir.lean` test, but no `impl` binds that check to
+  the rule. The table evaluator takes the last of two such arms and the
+  compiler's evaluator the first; the evaluators are not yet aligned.
+- [ ] `statics.condition.group` and `statics.condition.terminating` are
+  prose: no checker enforces them yet.
 - [ ] Write the definedness rules, the denotational equations and the
   step relation, with its configurations and evaluation contexts, as
   Fren definitions.
@@ -359,14 +371,15 @@ chapters is prose.
   exclude all recursion, which is narrower than the termination check.
 - [ ] Match coverage is part of definedness in the static semantics; the
   compiler's check of it is not yet tied to that rule.
+- [ ] `verification.program.defined` asks for distinct arms and coverage
+  in prose only; neither is stated in Fren for a program with tables.
 - [ ] Prove the open properties of the three chapters. Entailment over
   admissible interpretations is stated to agree with truth of the
   denotations in verified programs in one direction only.
 
-**A program without the termination check can reach an error.** The
-dynamic semantics states partial correctness for a program that is
-typed, is defined and meets its contracts without the check. It does not
-state that such a program reaches no error state, because that fails:
+**Conditions call only functions that terminate.** Before
+`statics.condition.terminating`, a program without the termination check
+could reach an error though it was defined and met its contracts:
 
 ```text
 g(x: Int): Bool := if g(x) then false else true
@@ -375,17 +388,19 @@ h(): Int := f(0)
 ```
 
 `g` is defined and meets its trivial contract, and it diverges at every
-argument, so no admissible interpretation gives `g` a value. The body of
-`f` is defined, since its hypothesis `g(x)` is true nowhere. The call in
-`h` is defined, since the precondition goal `g(0)` is false nowhere.
-Evaluation reads no contract, so `h()` evaluates `1 div 0` and ends in
-`error(zero-divisor)`. Other readings of entailment fail as well. If
-interpretations are total and satisfy each postcondition, a diverging
-function with the postcondition `false` makes every caller's goals hold
-vacuously, and partial correctness fails too. The claim would hold if a
-call's precondition had to be true, and not only not false, which
-requires conditions to mention only functions that have passed the
-termination check.
+argument, so no admissible interpretation gives `g` a value. Under
+entailment alone the body of `f` would be defined, since its hypothesis
+`g(x)` is true nowhere, and the call in `h` would be defined, since the
+precondition goal `g(0)` is false nowhere, while `h()` evaluates
+`1 div 0`. The rule now rejects the declaration of `f`: its precondition
+mentions `g`, which does not terminate. With it, a precondition has a
+truth value wherever a theorem reads it, and partial correctness states
+that a call reaches no error state. That statement is open, as every
+property of the three chapters is. It still rests on entailment being
+read over partial interpretations: a diverging function with the
+postcondition `false` meets its contract, and its callers' goals after
+the call hold vacuously, which is harmless only because evaluation never
+gets past that call.
 
 ## Compiler correction units
 

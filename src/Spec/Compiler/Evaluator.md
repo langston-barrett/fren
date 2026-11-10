@@ -5,10 +5,11 @@ of its inputs. This chapter specifies the source domain of
 [typed syntax](Thir.md). It does not decide whether a property holds for
 all inputs. It defines the concrete value-debugging strategy.
 The [dynamic semantics](../Language/DynamicSemantics.md) is the language's
-evaluation. This evaluator agrees with it on verified programs whose
-assumptions hold, as its
+evaluation. This evaluator agrees with it where
+[adequacy](../Language/DynamicSemantics.md#r-dynamics.theorem.adequacy)
+applies, as its
 [implementation property](../Language/DynamicSemantics.md#r-dynamics.theorem.implementation)
-states, and differs from it elsewhere in four ways. It is a recursive
+states, and differs from it elsewhere in five ways. It is a recursive
 walk that computes an outcome in one pass, where the dynamic semantics
 is a step relation on configurations. It leaves a let's
 definition unread where the body does not read it, where the dynamic
@@ -16,7 +17,15 @@ semantics evaluates every let's value. It has one undefined outcome,
 where the dynamic semantics has two kinds of error. It evaluates only
 the admitted nonrecursive programs, so it always ends, where an
 evaluation of the dynamic semantics may
-[diverge](../Language/DynamicSemantics.md#r-dynamics.divergence). The
+[diverge](../Language/DynamicSemantics.md#r-dynamics.divergence). For a
+match with two arms for its scrutinee's constructor it takes the arm
+written first, where the
+[table evaluator](../Language/DynamicSemantics.md#r-dynamics.table.differences)
+of the dynamic semantics takes the one written last and the step
+relation is not defined. Such a match is a
+[static error](../Language/StaticSemantics.md#r-statics.match.distinct),
+which [coverage validation](Thir.md#r-thir.validation.coverage) rejects,
+so this difference is not reachable on an accepted program. The
 [static semantics](../Language/StaticSemantics.md) separately defines
 declarative source verification.
 
