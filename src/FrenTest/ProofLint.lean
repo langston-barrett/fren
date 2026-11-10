@@ -57,6 +57,9 @@ private def expected : List (String × String) :=
    ("simpLoop", "turn_both:depth-limit@turn n 1"),
    -- Two rewrites with findings of one kind.
    ("simpNF", "same_pair:redundant@same (same 1)"), ("simpNF", "same_pair:redundant@same (same 2)"),
+   -- Only the right-hand side simplifies, and simp does not loop: it cannot
+   -- prove the condition. The cycle search reads no conditions.
+   ("simpNF", "calm_eq:redundant"), ("simpLoop", "calm_eq:cycle"), ("simpLoop", "rest_eq:cycle"),
    ("simpLoop", "mix_comm:renaming"),
    ("simpNF", "spin_eq:simp-fails"), ("simpLoop", "spin_eq:self-instance"),
    ("simpLoop", "spin_eq:depth-limit"),
@@ -277,6 +280,13 @@ private def identityCases (env : Environment) : IO (Array String) := do
      ("one fixed in a namespace and the same call added to the same name in another",
       "module\nnamespace A\n" ++ named ++ "  simp at h\n  exact h\nend A\nnamespace B\n" ++ named ++ "  exact h\nend B\n",
       "module\nnamespace A\n" ++ named ++ "  exact h\nend A\nnamespace B\n" ++ named ++ "  simp at h\n  exact h\nend B\n", 1, 1),
+     -- `end B` closes only `B` of `namespace A.B`, so the first `t` is `A.B.t`.
+     ("one fixed in a namespace reopened inside its parent and the same call added outside",
+      "module\nnamespace A.B\nend B\nnamespace B\n" ++ named ++ "  simp at h\n  exact h\nend B\nend A\nnamespace B\n" ++ named ++ "  exact h\nend B\n",
+      "module\nnamespace A.B\nend B\nnamespace B\n" ++ named ++ "  exact h\nend B\nend A\nnamespace B\n" ++ named ++ "  simp at h\n  exact h\nend B\n", 1, 1),
+     ("one fixed in a section of a namespace and the same call added in the namespace of both names",
+      "module\nnamespace A\nsection B\n" ++ named ++ "  simp at h\n  exact h\nend B\nend A\nnamespace A.B\n" ++ named ++ "  exact h\nend A.B\n",
+      "module\nnamespace A\nsection B\n" ++ named ++ "  exact h\nend B\nend A\nnamespace A.B\n" ++ named ++ "  simp at h\n  exact h\nend A.B\n", 1, 1),
      ("one fixed in a named section and the same call added to the same label in another",
       "module\nsection A\n" ++ one ++ "  simp at h\n  exact h\nend A\nsection B\n" ++ one ++ "  exact h\nend B\n",
       "module\nsection A\n" ++ one ++ "  exact h\nend A\nsection B\n" ++ one ++ "  simp at h\n  exact h\nend B\n", 1, 1),

@@ -184,7 +184,12 @@ another identity.
 
 The label is qualified by the names of the namespaces and named sections
 that enclose the declaration, outermost first, so declarations of one name
-in two of them differ. An unnamed declaration's label ends in `#n` when it
+in two of them differ. A section's name stands in brackets, since it is no
+part of the declared name: `t` is `A.[B].t` in section `B` of namespace `A`
+and `A.B.t` in namespace `A.B`. Scopes open and close as in Lean, one for
+each component of a name: `namespace A.B` opens two, `end B` closes one of
+them and `end A.B` both, and an `end` without a name closes one, which in a
+file that compiles is an anonymous section. An unnamed declaration's label ends in `#n` when it
 is the n-th unnamed one of its label, signature included, in its scope in
 the file, from the second. Calls of the same text under the same label are
 numbered alike: the second and later ones end in ` #n`.
@@ -197,14 +202,16 @@ a label. -/
 def unsqueezed (commands : Array Syntax) : Array (String × Syntax) := Id.run do
   let mut found : Array (String × Syntax) := #[]
   let mut keys : Array String := #[]
-  -- The enclosing namespaces and sections; an anonymous section is "".
+  -- The enclosing namespaces and sections, one entry for each component of
+  -- their names; a section is in brackets, and an anonymous one is "".
   let mut scopes : Array String := #[]
   let mut nameless : Array String := #[]
   for piece in commands.flatMap pieces do
     let kind := piece.getKind
     let named := (piece.getArgs.back?.bind (·.find? (·.isIdent))).map (·.getId.components.map toString)
     if kind == ``Parser.Command.namespace || kind == ``Parser.Command.section then
-      scopes := scopes ++ (named.getD [""]).toArray
+      let part (name : String) := if kind == ``Parser.Command.section then s!"[{name}]" else name
+      scopes := scopes ++ ((named.map (·.map part)).getD [""]).toArray
       continue
     if kind == ``Parser.Command.end then
       scopes := scopes.extract 0 (scopes.size - max 1 ((named.getD []).length))

@@ -14,6 +14,8 @@ namespace FrenTest.ProofLint.Cases
 
 public def twice (n : Nat) : Nat := n + n
 def same (n : Nat) : Nat := n
+def calm (n : Nat) : Nat := n
+def rest (n : Nat) : Nat := n
 def mix (a b : Nat) : Nat := a + b
 def up (n : Nat) : Nat := n + 1
 def next (n : Nat) : Nat := n + 1
@@ -73,6 +75,13 @@ end
 -- Two rewrites with a finding of the same kind each: their identities differ.
 @[simp] theorem same_pair : same (same 1) = 1 ∧ same (same 2) = 2 := ⟨rfl, rfl⟩
 
+-- Redundant because only its right-hand side simplifies, to its left-hand
+-- side, by `rest_eq`. Simp cannot prove the condition, so it neither fails
+-- nor runs away here. `simpLoop` still reports the cycle of the two, which
+-- loops wherever the condition is known: its search reads no conditions.
+@[simp] theorem calm_eq (n : Nat) (_ : 1000 < n) : calm n = rest n := rfl
+@[simp] theorem rest_eq (n : Nat) : rest n = calm n := rfl
+
 /-! ## Simp lemmas that `simpLoop` reports -/
 
 -- Two rewrites, of which only the second loops: its findings name its
@@ -85,8 +94,8 @@ end
 @[simp] theorem mix_comm (a b : Nat) : mix a b = mix b a := Nat.add_comm a b
 -- Each undoes the other, so each is redundant too: without `up_eq` simp
 -- leaves `up n` alone and rewrites the right-hand side `next n` to it. Only
--- the right-hand side changes, and every such lemma loops with the one that
--- changes it, so `simpNF` must check past simp's failure on the whole set.
+-- the right-hand side changes, and simp fails on the whole set, so `simpNF`
+-- must check past that failure.
 @[simp] theorem up_eq (n : Nat) : up n = next n := rfl
 @[simp] theorem next_eq (m : Nat) : next m = up m := rfl
 -- Growing: the right-hand side contains an instance of the left-hand side.
