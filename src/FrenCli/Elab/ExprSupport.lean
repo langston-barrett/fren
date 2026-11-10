@@ -653,6 +653,53 @@ def appElementUse (cx : ExprCtx) (segs : Array Ident) : M (Array Fren.Core.Eleme
     | none => false
   return cond facts #[.factArgument] #[]
 
+/-- Whether `e` mentions the bound name `x`, or a name of `inner`, the names
+that the body of its quantifier declares, which may stand for `x`. -/
+def namesElement (x : Name) (inner : Array Name) (e : Expr) : Bool :=
+  (mentions e).any fun n => n.getRoot == x || inner.contains n.getRoot
+
+/-- The sets and sequences of the memberships of the guard of a quantifier,
+a `forall` if `all`, whose body is `b`. -/
+def guardReceivers (all : Bool) (b : Expr) : Array Expr :=
+  (guardConjuncts all b).filterMap fun
+    | some (_, .mem, r) => some r
+    | _ => none
+
+/-- Whether `e` uses the bound name `x` in the members of a quantifier's
+guard (`Fren.Core.ElementUse.receiver`), as `elementUses` finds that use. -/
+partial def receiverUse (x : Name) (inner : Array Name) (e : Expr) : Bool :=
+  (match e with
+    | .quant _ all _ b => (guardReceivers all b).any (namesElement x inner)
+    | _ => false) || e.children.any (receiverUse x inner)
+
+/-- The members of each bound name of a type that is not listed of a
+quantifier, a `forall` if `all`, with the bound names `names` and the body
+`body`: the `e` of `x in e`, the first conjunct of the guard that names it
+(`lang::element_quantifier`), if that is a membership of it. `unbounded` are
+those bound names, in order: each one's position in `names`, and whether it
+is a `Nat`. -/
+def elementMembers (all : Bool) (names : Array String) (unbounded : Array (Nat × Bool)) (body : Expr) : Array (Option Expr) :=
+  let parts := Fren.Core.guardPartsBy guardNode whenOf? all body
+  unbounded.map fun (k, nat) =>
+    match domainOf all names body k nat with
+    | (.members j, bounds) =>
+      if (parts.extract 0 j).any (·.any (·.names names[k]!)) then none else bounds[j]?.bind (·.map (·.1))
+    | _ => none
+
+/-- Where the quantifier at `span`, a `forall` if `all`, is among the
+quantifiers over elements around it: `kind?` is whether the nearest is a
+`forall`, and `direct` are the quantifiers that are directly the body of
+one (`ExprCtx.elemKind?`, `ExprCtx.elemDirect`). -/
+def elementNesting (kind? : Option Bool) (direct : Array Span) (span : Span) (all : Bool) : Fren.Core.ElementNesting :=
+  match kind? with
+  | none => .top
+  | some k => if k == all && direct.contains span then .direct else .other
+
+/-- Whether the members `e` of a bound name mention one of `earlier`, the
+bound names of types that are not listed before it and around its
+quantifier (`Fren.Core.ElementBinder.receiverBound`). -/
+def membersBound (earlier : Array Name) (e : Expr) : Bool := (mentions e).any (earlier.contains ·.getRoot)
+
 /-- How the expression `e`, within the body of a quantifier, uses the bound
 name `x`, where `inner` are the names that the body declares, which may
 stand for `x` (`Fren.Core.ElementUse`): as an index, or an `update`'s
@@ -661,18 +708,14 @@ defined function with a parameter that has a sequence within it, or of an
 uninterpreted function whose applications bring facts; or in the members of
 a quantifier's guard. -/
 partial def elementUses (cx : ExprCtx) (x : Name) (inner : Array Name) (e : Expr) : M (Array Fren.Core.ElementUse) := do
-  let names (e : Expr) : Bool := (mentions e).any fun n => n.getRoot == x || inner.contains n.getRoot
+  let names := namesElement x inner
   let own : Array Fren.Core.ElementUse ← match e with
     | .index _ r i => pure <| if names i && !(← isConstant cx r) then #[.index] else #[]
     | .method _ r m args =>
       let positions := match m.name with | "update" | "at" => 1 | "slice" => 2 | _ => 0
       pure <| if (args.extract 0 positions).any names && !(← isConstant cx r) then #[.index] else #[]
     | .app _ segs args => if args.any names then appElementUse cx segs else pure #[]
-    | .quant _ all _ b =>
-      let receivers := (guardConjuncts all b).filterMap fun
-        | some (_, .mem, r) => some r
-        | _ => none
-      pure <| if receivers.any names then #[.receiver] else #[]
+    | .quant _ all _ b => pure <| if (guardReceivers all b).any names then #[.receiver] else #[]
     | _ => pure #[]
   return own ++ (← e.children.flatMapM (elementUses cx x inner))
 
@@ -723,6 +766,44 @@ partial def Expr.declaredNames (e : Expr) : Array String :=
     | .is _ _ p => p.names.map fun x => (declaredIdent x).1.name
     | _ => #[]
   own ++ e.operands.flatMap (·.declaredNames)
+
+/-- What elaboration recorded of the quantifiers over elements of a file
+that are in the decidable core (`State.coreElems`), and the sequences of
+the memberships within them (`State.seqMembers`). -/
+structure CoreElems where
+  quants : Array CoreElem := #[]
+  seqs : Array Span := #[]
+  deriving Inhabited
+
+/-- Whether every quantifier of `f.quants` within `e`, a quantifier or a
+part of one as a mutant has it (`Reqs/Mutate`), is in the decidable core,
+by `Fren.Core.elementVerdict`, as `elabQuantExpr` decides it: its members
+are read again from its guard, and so is its nesting within a quantifier
+of `f.quants` in `e`, of which `around?` gives the kind and the quantifiers
+directly its body; the outermost has the nesting that it had. A mutant
+that this is asked of changes what a quantifier's guard is or which names
+are its members', and adds no mention to the quantifier, so the quantifier
+mentions no output and no bound name that it may not, as before, and its
+bound names have the uses that they had and those that a guard within it
+gives them (`receiverUse`). -/
+partial def CoreElems.keeps (f : CoreElems) (around? : Option (Bool × Array Span)) (e : Expr) : Bool :=
+  match e with
+  | .quant sp all _ body =>
+    match f.quants.find? (·.span == sp) with
+    | none => f.keeps around? body
+    | some r =>
+      let nesting := match around? with
+        | some (k, direct) => elementNesting (some k) direct sp all
+        | none => if all == r.all || r.nesting == .top then r.nesting else .other
+      let members := elementMembers all r.names (r.unbounded.map fun (k, nat, _) => (k, nat)) body
+      let inner := body.declaredNames.map Name.mkSimple
+      let infos := (r.unbounded.zip members).zipIdx.filterMap fun (((_, _, x, uses), e?), i) => e?.map fun e =>
+        ({ members := if f.seqs.contains e.span then .seq else .set
+           receiverBound := membersBound ((r.unbounded.extract 0 i).map (·.2.2.1) ++ r.outer) e
+           uses := uses ++ (if receiverUse x inner body then [.receiver] else []) } : Fren.Core.ElementBinder)
+      members.all Option.isSome && (Fren.Core.elementVerdict nesting false false infos.toList).isInCore
+        && f.keeps (some (all, ((around?.map (·.2)).getD #[]) ++ (elementSpine all body).toArray)) body
+  | _ => e.children.all (f.keeps around?)
 
 /-- The integer literals of a pattern: its own, its bounds' and those of
 its parts. -/

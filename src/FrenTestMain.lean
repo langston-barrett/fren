@@ -3316,6 +3316,7 @@ partial def shapeWith (s : Mutate.Src) (f : FrenCli.Expr → Option String) (e :
   | some t => t
   | none => match e with
     | .bin _ op l r => s!"({op} {go l} {go r})"
+    | .block _ op members => s!"(block {op} {members.toList.map fun (m : Option FrenCli.Ident × FrenCli.Expr) => (m.1.map (·.name), go m.2)})"
     | .when _ neg c b => s!"({if neg then "unless" else "when"} {go c} {go b})"
     | .ite _ c a b => s!"(if {go c} {go a} {go b})"
     | .not _ e => s!"(not {go e})"

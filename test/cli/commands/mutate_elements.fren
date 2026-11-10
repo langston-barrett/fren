@@ -1,0 +1,57 @@
+--@ args: mutate --list -A collapsible_when
+-- A quantifier over a sequence's elements stays in the decidable core: a
+-- mutant is made only if the quantifier, as mutated, is still in it. So
+-- neither `forall` nor `exists` is swapped; an `and` whose operand is the
+-- bound name's only membership is not made an `or`, and is not dropped for
+-- its other operand; and the membership's trigger is neither dropped nor
+-- negated, nor is a trigger before it negated. Where the guard gives the
+-- name another sequence's members (`other?`, `retriggered?`), the first
+-- membership is dropped like any conjunct or trigger; where the other
+-- membership is a set's (`settled?`), it is not. A member of a Boolean
+-- block is a part of the guard like any conjunct, in an `exists`
+-- (`blocked?`), in a trigger (`block_trigger?`) and in a block within a
+-- block (`block_nested?`). Everything else is
+-- mutated: the other conjuncts, a trigger before the membership is
+-- dropped, one after it is dropped and negated, and so are the body and an
+-- `and` around the quantifier. Where `undecidable` is allowed, the
+-- quantifier is mutated like any other.
+pub mod m
+
+pub fn ident?(w: String) := w != ""
+
+pub fn guarded?(names: Seq<String>) :=
+    forall (v: String), when v in names and v != "x", ident?(v)
+
+pub fn triggered?(names: Seq<String>, a?, b?) :=
+    forall (v: String), when a?, when v in names, when b?, ident?(v)
+
+pub fn some?(names: Seq<String>) :=
+    exists (v: String), v in names and ident?(v) and v != "y"
+
+pub fn nested?(names: Seq<String>, others: Seq<String>) :=
+    forall (v: String), when v in names, forall (w: String), when w in others, v != w
+
+pub fn around?(names: Seq<String>, a?) :=
+    a? and (forall (v: String), when v in names, ident?(v) and v != "q")
+
+pub fn other?(names: Seq<String>) :=
+    exists (v: String), v in names and v in ["a"] and ident?(v)
+
+pub fn retriggered?(names: Seq<String>) :=
+    forall (v: String), when v in names, when v in ["a"], ident?(v)
+
+pub fn settled?(names: Seq<String>, allowed: Set<String>) :=
+    exists (v: String), v in names and v in allowed and ident?(v)
+
+pub fn blocked?(names: Seq<String>) :=
+    exists (v: String), and { v in names and ident?(v), v != "z" }
+
+pub fn block_trigger?(names: Seq<String>) :=
+    forall (v: String), when and { v in names and v != "x", v != "z" }, ident?(v)
+
+pub fn block_nested?(names: Seq<String>) :=
+    exists (v: String), and { and { v in names and ident?(v), v != "y" }, v != "z" }
+
+set_option fren.lint.undecidable "allow" in
+pub fn allowed?(names: Seq<String>) :=
+    forall (v: String), when v in names, ident?(v)

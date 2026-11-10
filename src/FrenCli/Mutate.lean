@@ -118,6 +118,14 @@ structure Src where
   toks : Array Token
   /-- Each `+` where a `Nat` is expected, which a `-` would make an `Int`. -/
   natSums : Array Span := #[]
+  /-- Each quantifier over a sequence's elements that is in the decidable
+  core where leaving it is an error (`Reqs/Lang/ElementQuantifiers`): a
+  mutant that took it out of the core would have that error. -/
+  coreElems : Array Span := #[]
+  /-- Whether such a quantifier, or a quantifier that has one within it, as
+  a mutant has it, leaves each of them in the core, as the checker decides
+  it (`CoreElems.keeps`). -/
+  keepsCore : Expr → Bool := fun _ => true
   /-- The spec's enumerations, in any of its files. -/
   enums : Enums := {}
   /-- The variants that the file's `use`s bring into scope by their own
@@ -415,6 +423,13 @@ structure Edit where
   /-- The expression changed, for the identifier. -/
   context : Span
 
+/-- Whether the quantifier at `sp` stays in the decidable core as another
+expression, if a mutant of it could take it, or a quantifier around it, out
+of the core: by `core?`, which says so of what is around it, or else, for a
+quantifier of `Src.coreElems`, by `Src.keepsCore`. -/
+def Src.coreOf? (s : Src) (core? : Option (Expr → Bool)) (sp : Span) : Option (Expr → Bool) :=
+  core? <|> (if s.coreElems.contains sp then some s.keepsCore else none)
+
 /-- Whether a pattern test of the chain of `and` `c` binds a name
 (`Src.binds`), which the rest of the chain, or the body of the `when` or
 `if` whose condition it is, may mention (`lang::test_scope`): a mutant of
@@ -427,8 +442,17 @@ partial def Src.chainBinds (s : Src) (c : Expr) : Bool :=
 
 /-- The edits of expression `e`. `inAndLeft` says that `e` is the left
 operand of an `and`, unparenthesized, where an `or` needs parentheses; an
-`or` whose left operand is an unparenthesized `or` parenthesizes it. -/
-partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bool := false) : Array Edit :=
+`or` whose left operand is an unparenthesized `or` parenthesizes it.
+Where `e` is within a quantifier over a sequence's elements that is in the
+decidable core (`Src.coreElems`), `core?` says whether the quantifier stays
+in the core with another expression in the place of `e` (`Src.keepsCore`):
+a mutant that would take it out of the core is not made. Every operand is
+asked it, so a part of the guard is, wherever the checker finds it, such as
+in a member of a Boolean block. -/
+partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bool := false)
+    (core? : Option (Expr → Bool) := none) : Array Edit :=
+  -- Whether the quantifiers around `e` stay in the core with `e'` for `e`.
+  let keeps (e' : Expr) : Bool := core?.all (· e')
   -- Not of a chain, a `when` or an `if` whose pattern tests bind names.
   let binding := match e with
     | .bin _ "and" .. => s.chainBinds e
@@ -444,6 +468,8 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
       -- A `-` is an `Int`, so a `+` where a `Nat` is expected stays.
       else if let some new := arithmeticSwap? op then if s.natSums.contains sp then #[] else swap .swapArithmetic new
       else if op == "or" then
+        -- A new conjunct of a guard may take its quantifier out of the core.
+        if !keeps (.bin sp "and" l r) then #[] else
         -- `a or b or c` is `(a or b) or c`: its left operand needs
         -- parentheses under `and`.
         match l, opTok? with
@@ -461,7 +487,11 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
               #[{ origin := .swapAndOr, span := sp, after := s!"({text})", context := sp }]
             else #[{ origin := .swapAndOr, span := t.span, after := "or", context := sp }]
           | none => #[]
-        toOr ++ #[l, r].map fun k => { origin := .dropConjunct, span := sp, after := s.text (s.outer sp k.span), context := sp }
+        -- A quantifier whose bound name has no membership without this
+        -- conjunct, or with an `or`, would leave the core.
+        (if keeps (.bin sp "or" l r) then toOr else #[]) ++ #[l, r].filterMap fun k =>
+          if keeps k then some { origin := .dropConjunct, span := sp, after := s.text (s.outer sp k.span), context := sp }
+          else none
       else #[]
     | .chain sp es ops =>
       let outs := es.map (s.outer sp ·.span)
@@ -471,13 +501,22 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
       -- Without its first comparison, and without its last.
       swaps ++ #[{ start := outs[1]!.start, stop := sp.stop }, { start := sp.start, stop := outs[outs.size - 2]!.stop }].map fun k =>
         { origin := .dropConjunct, span := sp, after := s.text k, context := sp }
-    | .when sp negated _ body =>
+    | .when sp negated c body =>
       let kw := if negated then "unless" else "when"
-      #[{ origin := .negateTrigger, span := { start := sp.start, stop := sp.start + kw.length }, after := if negated then "when" else "unless",
-          context := sp },
-        { origin := .dropTrigger, span := sp, after := s.text (s.outer sp body.span), context := sp }]
-    -- `forall` and `exists` are both six letters long.
-    | .quant sp all _ _ =>
+      -- A guard ends at an `unless`, and has no membership of a trigger
+      -- that is dropped.
+      (if keeps (.when sp (!negated) c body) then
+        #[{ origin := .negateTrigger, span := { start := sp.start, stop := sp.start + kw.length }, after := if negated then "when" else "unless",
+            context := sp }]
+      else #[])
+      ++ (if keeps body then
+        #[{ origin := .dropTrigger, span := sp, after := s.text (s.outer sp body.span), context := sp }]
+      else #[])
+    -- `forall` and `exists` are both six letters long. A `forall`'s guard
+    -- is its triggers and an `exists`'s its conjuncts, so the other
+    -- quantifier may have no membership.
+    | .quant sp all bs body =>
+      if !(s.coreOf? core? sp).all (· (.quant sp (!all) bs body)) then #[] else
       #[{ origin := .swapQuantifier, span := { start := sp.start, stop := sp.start + 6 }, after := if all then "exists" else "forall",
           context := sp }]
     -- In decimal, whatever the literal's radix.
@@ -491,7 +530,10 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
       let (a, b) := (s.outer sp a.span, s.outer sp b.span)
       if s.text a == s.text b then #[] else
       #[{ origin := .swapBranches, span := { start := a.start, stop := b.stop }, after := s.swapped a b, context := sp }]
-    | .not sp k | .neg sp k => #[{ origin := .dropNegation, span := sp, after := s.text (s.outer sp k.span), context := sp }]
+    | .not sp k | .neg sp k =>
+      -- A membership that is no longer negated may be a guard's.
+      if !keeps k then #[] else
+      #[{ origin := .dropNegation, span := sp, after := s.text (s.outer sp k.span), context := sp }]
     | .update sp _ fs =>
       if fs.size < 2 then #[] else
       let spans := fs.map fun (x, e?) => match e? with
@@ -575,29 +617,58 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
     | _ => #[]
   here ++ (children e).flatMap id
 where
-  children : Expr → Array (Array Edit)
-    | .when _ _ c b => #[edits s c, edits s b]
-    | .block _ _ members => members.map fun (_, value) => edits s value
-    | .ite _ c a b => #[edits s c, edits s a, edits s b]
+  /-- The mutants of each operand of `e`. Each is asked `core?` with `e` as
+  it is with the mutated operand in the operand's place, whatever `e` is:
+  the checker decides what of it is a guard, as it lowers a Boolean block
+  to find the conjuncts of one. -/
+  children (e : Expr) : Array (Array Edit) :=
+    -- `x`, an operand of `e`: `mk x'` is `e` with `x'` for it.
+    let sub (x : Expr) (mk : Expr → Expr) : Array Edit := edits s x (core? := core?.map fun k x' => k (mk x'))
+    let subs (xs : Array Expr) (mk : Array Expr → Expr) : Array (Array Edit) :=
+      xs.mapIdx fun i x => sub x fun x' => mk (xs.set! i x')
+    let fields (fs : Array (Ident × Option Expr)) (mk : Array (Ident × Option Expr) → Expr) : Array (Array Edit) :=
+      (fs.mapIdx fun i (f, x?) => x?.map fun x => sub x fun x' => mk (fs.set! i (f, some x'))).filterMap id
+    match e with
+    | .when sp negated c b => #[sub c (.when sp negated · b), sub b (.when sp negated c ·)]
+    | .block sp op members =>
+      members.mapIdx fun i (name?, value) => sub value fun value' => .block sp op (members.set! i (name?, value'))
+    | .ite sp c a b => #[sub c (.ite sp · a b), sub a (.ite sp c · b), sub b (.ite sp c a ·)]
     | .bin sp op l r =>
       -- `l` is unparenthesized when its span starts the `and`'s.
-      #[edits s l (op == "and" && s.outer sp l.span == l.span), edits s r (divisor := op == "div" || op == "mod")]
-    | .neg _ e => #[edits s e (divisor := divisor)]
-    | .not _ e | .field _ e _ => #[edits s e]
-    | .app _ _ as | .set _ as | .seq _ as | .chain _ as _ => as.map (edits s ·)
-    | .record _ _ fs => fs.filterMap fun (_, e?) => e?.map (edits s ·)
-    | .update _ r fs => #[edits s r] ++ fs.filterMap fun (_, e?) => e?.map (edits s ·)
-    | .match _ sc arms _ => #[edits s sc] ++ (armParts arms).map (edits s ·)
-    | .table _ rows => (tableParts rows).map (edits s ·)
-    | .is _ sc _ => #[edits s sc]
+      #[edits s l (op == "and" && s.outer sp l.span == l.span) (core? := core?.map fun k l' => k (.bin sp op l' r)),
+        edits s r (divisor := op == "div" || op == "mod") (core? := core?.map fun k r' => k (.bin sp op l r'))]
+    | .neg sp x => #[edits s x (divisor := divisor) (core? := core?.map fun k x' => k (.neg sp x'))]
+    | .not sp x => #[sub x (.not sp ·)]
+    | .field sp x f => #[sub x (.field sp · f)]
+    | .app sp f as => subs as (.app sp f ·)
+    | .set sp as => subs as (.set sp ·)
+    | .seq sp as => subs as (.seq sp ·)
+    | .chain sp as ops => subs as (.chain sp · ops)
+    | .record sp ty fs => fields fs (.record sp ty ·)
+    | .update sp r fs => #[sub r (.update sp · fs)] ++ fields fs (.update sp r ·)
+    | .match sp sc arms table =>
+      #[sub sc (.match sp · arms table)] ++ (arms.mapIdx fun i (p, g?, b) =>
+        (g?.toArray.map fun g => sub g fun g' => .match sp sc (arms.set! i (p, some g', b)) table).push
+          (sub b fun b' => .match sp sc (arms.set! i (p, g?, b')) table)).flatMap id
+    | .table sp rows =>
+      (rows.mapIdx fun i (row, c?, v) =>
+        (c?.toArray.map fun c => sub c fun c' => .table sp (rows.set! i (row, some c', v))).push
+          (sub v fun v' => .table sp (rows.set! i (row, c?, v')))).flatMap id
+    | .is sp sc p => #[sub sc (.is sp · p)]
     -- The body once, not each instance.
-    | .quant _ _ _ b => #[edits s b]
+    | .quant sp all bs b => #[edits s b (core? := (s.coreOf? core? sp).map fun k b' => k (.quant sp all bs b'))]
+    | .matches sp ss arms table =>
+      subs ss (.matches sp · arms table) ++ (arms.mapIdx fun i (ps, g?, b) =>
+        (g?.toArray.map fun g => sub g fun g' => .matches sp ss (arms.set! i (ps, some g', b)) table).push
+          (sub b fun b' => .matches sp ss (arms.set! i (ps, g?, b')) table)).flatMap id
     -- A closure's body once, not at each application of it.
-    | .matches _ ss arms _ => (ss ++ arms.flatMap (fun (_, g, b) => g.toArray.push b)).map (edits s ·)
-    | .closure _ _ b => #[edits s b]
-    | .pair _ a b | .index _ a b => #[edits s a, edits s b]
-    | .method _ r _ as => #[edits s r] ++ as.map (edits s ·)
-    | .«let» _ defs body _ => defs.map (edits s ·.2.2) |>.push (edits s body)
+    | .closure sp ps b => #[sub b (.closure sp ps ·)]
+    | .pair sp a b => #[sub a (.pair sp · b), sub b (.pair sp a ·)]
+    | .index sp a b => #[sub a (.index sp · b), sub b (.index sp a ·)]
+    | .method sp r name as => #[sub r (.method sp · name as)] ++ subs as (.method sp r name ·)
+    | .«let» sp defs body isWhere =>
+      (defs.mapIdx fun i (x, ty?, d) => sub d fun d' => .«let» sp (defs.set! i (x, ty?, d')) body isWhere).push
+        (sub body (.«let» sp defs · isWhere))
     | _ => #[]
 
 /-! ## Sites -/

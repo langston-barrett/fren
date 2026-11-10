@@ -83,6 +83,40 @@ which would be a static error: `shift-integer` does not change a divisor
 is a constant that the value of such a constant names. A constant is told
 by its name alone, in any of the files.
 
+A [quantifier over a sequence's elements](Lang/ElementQuantifiers.md) that
+is in the [decidable core](Lang/Decidability.md) stays in it, where leaving
+the core is a static error, that is, where `undecidable` is `deny` or
+`forbid`: a mutant is not made if, as the mutant has it, the quantifier or
+a quantifier over elements within it would be outside the core. This is
+decided as the checker decides it, by the same rule
+(`lang::element_quantifier`) applied to the quantifier as mutated: its
+bound names' members are read again from its guard, each from the first
+conjunct that names it, and so is its place among the quantifiers around
+it. It is asked of the mutants that can change a guard: `swap-quantifier`,
+`swap-and-or`, `drop-conjunct` of an `and`, `drop-trigger`, `negate-trigger`
+and `drop-negation`, wherever they are within the quantifier. So it is
+asked of them in the members of a Boolean block as well, at every depth,
+since the checker finds a guard's conjuncts in an `and { ... }` block as in
+an `and`: of `exists (x: String), and { x in names and ident?(x), q? }`, of
+`forall (x: String), when and { x in names and ident?(x), q? }, r?` and of
+`exists (x: String), and { and { x in names and ident?(x), q? }, r? }`
+there is no `drop-conjunct` mutant `ident?(x)` and no `swap-and-or` mutant
+of that `and`.
+
+So a mutant that takes a bound name's membership `x in e` from the guard is
+made only if the guard still gives the name a sequence's members. Of
+`exists (x: String), x in names and ident?(x)` there is no `drop-conjunct`
+mutant `ident?(x)`, no `swap-and-or` mutant and no `swap-quantifier`
+mutant, and of `forall (x: String), when x in names, ident?(x)` no
+`drop-trigger`, `negate-trigger` or `swap-quantifier` mutant. But of
+`exists (x: String), x in names and x in ["a"] and ident?(x)` there is the
+`drop-conjunct` mutant `x in ["a"] and ident?(x)`, in which `x` is an
+element of `["a"]`, and likewise the `drop-trigger` mutant
+`when x in ["a"], ident?(x)` of
+`forall (x: String), when x in names, when x in ["a"], ident?(x)`. Every
+other place of the quantifier is changed as anywhere else. Where
+`undecidable` is `allow` or `warn`, a quantifier is mutated like any other.
+
 The [patterns](Lang/Patterns.md) of `match` arms are not changed, so that
 every mutant's `match` stays exhaustive and every arm reachable, and only
 the top-level alternatives of a pattern test's pattern are dropped:

@@ -2179,6 +2179,64 @@ def test_cpu_signal_fold():
         assert record["peak_rss_kb"] == 200 and record["involuntary_context_switches"] == 18
 
 
+def test_owned_census_skips_dead():
+    """The owned-run harness skips a process sampled in state X, keeps a zombie."""
+    path = os.path.join(HERE, "heavy_build_test.py")
+    spec = importlib.util.spec_from_file_location("heavy_build_owned_census", path)
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    dead = lambda pid: f"{pid} (lean) X 0 -1 -1 0 -1 " + " ".join(["0"] * 44)
+    with tempfile.TemporaryDirectory() as directory:
+        run = build.OwnedRun(heavy, build.Path(directory), "census")
+        sample = os.path.join(directory, "stat")
+        def row(text):
+            with open(sample, "w") as f:
+                f.write(text)
+            return run.stat_row(sample)
+        assert raises(lambda: row(dead(123)), ProcessLookupError)
+        assert row(proc_line(state="Z"))["state"] == "Z"
+        assert row(proc_line(name="a ) X 0", state="S"))["state"] == "S"
+        # Any other rejected sample still fails, with the sample retained.
+        try:
+            row(proc_line(user=-1))
+            assert False
+        except ProcessLookupError:
+            assert False
+        except ValueError as error:
+            assert "raw stat=" in str(error)
+        assert raises(lambda: run.stat_row(os.path.join(directory, "gone")), FileNotFoundError)
+        # A marked child of ours is in both censuses; once its samples show
+        # state X, both omit it and neither fails nor reports an error.
+        child = subprocess.Popen(["sleep", "60"], env=dict(os.environ, HEAVY_TEST_OWNER=run.token))
+        try:
+            key = lambda rows: [k for k in rows if k[0] == child.pid]
+            deadline = time.monotonic() + 10
+            while not key(run.collect()) and time.monotonic() < deadline:
+                time.sleep(0.01)  # Until exec has installed the marked environment.
+            assert len(key(run.collect())) == 1 and len(key(run.handles)) == 1
+            rows, errors = run.kernel_children()
+            assert len(key(rows)) == 1 and errors == []
+            real = build.Path.read_text
+            def read(self, *args, **kwargs):
+                if str(self) == f"/proc/{child.pid}/stat":
+                    return dead(child.pid)
+                return real(self, *args, **kwargs)
+            with mock.patch.object(build.Path, "read_text", read):
+                assert key(run.collect()) == []
+                rows, errors = run.kernel_children()
+                assert key(rows) == [] and errors == []
+                # Not yet pinned: the first census skips it rather than pin it.
+                fresh = build.OwnedRun(heavy, build.Path(directory), "fresh")
+                fresh.token = run.token
+                assert key(fresh.collect()) == [] and fresh.handles == {}
+            assert len(key(run.collect())) == 1
+        finally:
+            child.kill()
+            child.wait()
+            for fd in run.handles.values():
+                os.close(fd)
+
+
 def test_process_readings():
     # fren-covers: testing::heavy_counter_rate
     row = heavy.process_stat(proc_line(name="a ) b ( c"))
@@ -2753,7 +2811,7 @@ def main():
     tests = [test_process_lifetime_retention, test_process_group_reentry,
              test_cpu_ticks, test_cpu_samples, test_cpu_monitor, test_monitor_group_completion,
              test_cpu_descendants, test_cpu_reaping, test_cpu_many_waits, test_cpu_signal_fold,
-             test_child_subreaper, test_process_readings,
+             test_child_subreaper, test_owned_census_skips_dead, test_process_readings,
              test_process_sampling, test_machine_pressure, test_memory_prediction, test_forecast_kind, test_command_forecast_real_rows, test_forecast_fresh_and_stale_adviser, test_forecast_helper_memory_cap, test_forecast_helper_orphan_cleanup,
              test_process_integration,
              test_parse_args, test_missing_command, test_recheck_wait_message, test_reservation_wait_message,
