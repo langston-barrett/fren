@@ -483,9 +483,11 @@ def direct_run_controls(work):
     for flag in ('-r','--run'):
         native_command=[str(real.parent/'lake'),'env','lean',flag,str(selected)]
         assert build.heavy_command(native_command,1300000)==native_command
-        native=run(native_command,directory=work,label='native-'+flag.lstrip('-'),cwd=ROOT,env=env,timeout=5)
+        # Lake startup and Heavy admission share the machine with builds.
+        # Keep the same bounded budget as the nested Heavy controls below.
+        native=run(native_command,directory=work,label='native-'+flag.lstrip('-'),cwd=ROOT,env=env,timeout=30)
         wrapped_command=[str(ROOT/'scripts/heavy'),'--offline',*native_command]
-        wrapped=run(wrapped_command,directory=work,label='heavy-'+flag.lstrip('-'),cwd=ROOT,env=env,timeout=5)
+        wrapped=run(wrapped_command,directory=work,label='heavy-'+flag.lstrip('-'),cwd=ROOT,env=env,timeout=30)
         row=dict(flag=flag,native_command=native_command,wrapped_command=wrapped_command,
                  native_status=native.returncode,status=wrapped.returncode,
                  native_stdout=native.stdout.decode(),stdout=wrapped.stdout.decode(),

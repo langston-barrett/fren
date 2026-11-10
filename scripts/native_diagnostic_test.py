@@ -127,10 +127,56 @@ globals_["state"] = production_state
             shutil.copyfile(root / "wait-receipt.json", destination / "terminal-wait.json")
 
 
+def retry_debugger_crash(attempt):
+    """Retry only a debugger that died itself, not one killed by the observer."""
+    for index in range(2):
+        child, report = attempt()
+        code = report.get("debugger_exit")
+        crashed = (report.get("debugger_status") == "failed" and
+                   isinstance(code, int) and code < 0 and
+                   report.get("debugger_cleanup_exit") == code and
+                   report.get("cleanup_initiator") is None)
+        if not crashed:
+            return child, report
+        if index:
+            raise RuntimeError("native diagnostic environment failure: debugger crashed twice: " +
+                               json.dumps({k: report.get(k) for k in
+                                           ("debugger_exit", "debugger_cleanup_exit", "helper_error", "debugger_log")}))
+
+
+def retry_controls():
+    crashed = {"debugger_status": "failed", "debugger_exit": -11,
+               "debugger_cleanup_exit": -11, "cleanup_initiator": None,
+               "helper_error": "thread error"}
+    captured = {"debugger_status": "captured", "debugger_exit": 0}
+    calls = []
+    def sequence(reports):
+        def attempt():
+            calls.append(1)
+            return None, reports.pop(0)
+        return attempt
+    assert retry_debugger_crash(sequence([crashed, captured])) == (None, captured)
+    assert len(calls) == 2
+    calls.clear()
+    try:
+        retry_debugger_crash(sequence([crashed, crashed]))
+        raise AssertionError("two debugger crashes must fail")
+    except RuntimeError as error:
+        assert "environment failure" in str(error) and "thread error" in str(error), error
+    assert len(calls) == 2
+    for report in (dict(crashed, debugger_exit=None, debugger_cleanup_exit=-9,
+                        cleanup_initiator="native-observer:operation-budget"),
+                   dict(crashed, debugger_exit=0, debugger_cleanup_exit=0)):
+        calls.clear()
+        assert retry_debugger_crash(sequence([report])) == (None, report)
+        assert len(calls) == 1
+
+
 def own(args, driver, wrapper, destination, debugger, protected, unprotected):
     # The production initial-check boundary serializes its actual verdict
     # and output. Exercise both caller decoders: valid JSON must not hide
     # a missing debugger's 125, and a real native crash must retain frames.
+    retry_controls()
     with tempfile.TemporaryDirectory(prefix="fren-own-native-") as directory:
         root = Path(directory)
         empty = root / "tools"
@@ -156,8 +202,12 @@ def own(args, driver, wrapper, destination, debugger, protected, unprotected):
                        FREN_ENUM_DIAG_RECEIPT=str(report_file))
             if absent:
                 env["PATH"] = str(empty)
-            child = run([driver, *command], env=env)
-            report = json.loads(report_file.read_text())
+            def attempt():
+                journal.write_text("")
+                report_file.unlink(missing_ok=True)
+                child = run([driver, *command], env=env)
+                return child, json.loads(report_file.read_text())
+            child, report = retry_debugger_crash(attempt)
             if destination:
                 shutil.copyfile(report_file, destination / (name + ".json"))
                 shutil.copyfile(journal, destination / (name + ".jsonl"))
