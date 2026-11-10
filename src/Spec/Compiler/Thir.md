@@ -1423,7 +1423,9 @@ Desugaring a table desugars what it unfolds to: when a row of a valid HIR
 table unfolds to e, the row at the same level of the table's desugaring
 unfolds to `|e|`, the expression e with every parenthesis replaced by its
 body (`desugaring.pass.parens`). Fren cannot state unfolding to a tree, so
-no procedure states this law. It is open.
+no procedure states this law; it is proved in Lean beside the chapter's
+wrapper, as `Spec.Compiler.Thir.desugared_unfolding`, of every table that
+has a desugaring.
 
 r[thir.algorithmic.judgment] spec::algorithmic::{hir_rows_extend?, synthesis?}
 `Σ; Γ ⊢ e ⇒ τ` holds when Σ and Γ are well formed and some valid HIR table,
@@ -1702,11 +1704,15 @@ pub proc paren_true(): (holds?) {
 }
 ```
 
-### Open: expressions as trees
+### Expressions as trees
 
 The rules above are about tables, and relate two tables for one expression
-by a supplied pairing. The two rules below state what remains for
-expressions given as trees.
+by a supplied pairing. The rules below are about expressions given as
+trees. Fren cannot state a tree or the unfolding of a row to one, so no
+procedure states these laws; they are proved in Lean beside the chapter's
+wrapper, in the modules `Spec.Compiler.Thir.Adequacy` and
+`Spec.Compiler.Thir.Infer`, and the theorems named below are in the
+namespace `Spec.Compiler.Thir`.
 
 r[thir.algorithmic.tree-lift]
 The judgment agrees with the inductive reading of the rules: when Σ and Γ
@@ -1716,42 +1722,72 @@ each written child of each form, in the context that the rule gives that
 child. The well-formedness conditions are part of the reading and do not
 follow from a tree, as in `types.judgment.adequacy`: the rule of a Boolean
 literal has an instance under any Σ and Γ. Then a HIR expression synthesizes
-at most one type in a context, and a traversal that judges each layer after
-its children, in the contexts that the rules prescribe, finds a τ with
-`Σ; Γ ⊢ e ⇒ τ` or the first blamed premise.
+at most one type in a context.
 
-This is open. It rests on four lemmas:
+The theorem `synthesis_adequate` is the first statement: some table that
+`synthesis?` accepts for τ in Γ has a root that unfolds to e, exactly when
+Σ and Γ are well formed and a tree of rule instances concludes `Γ ⊢ e ⇒ τ`.
+The theorem `synthesis_unique` is the second: two tables that `synthesis?`
+accepts in one context, whose roots unfold to the same expression, have the
+same type. They rest on four lemmas:
 
-1. Regularity: every row of a table that `synthesis?` accepts has a well
-   formed context and a type that Σ declares. For the desugared table this
-   is the Core's `types.judgment.regularity`, by
-   `thir.algorithmic.preservation`, and a HIR row has the context and type
-   of its desugared row.
-2. Two HIR tables whose roots unfold to the same expression desugar alike.
-   With `thir.algorithmic.expression-unique` this gives the uniqueness of
-   the synthesized type. It is not proved.
+1. Regularity: under well formed Σ and Γ, every node of a tree of rule
+   instances has a well formed context that extends Γ, and the type that the
+   tree concludes is one that Σ declares. Desugaring the tree
+   (`thir.algorithmic.agreement`, `thir.algorithmic.parens`) gives a tree of
+   Core rule instances with the same contexts and types, and the Core's
+   `types.judgment.regularity` holds of that tree. The theorems are
+   `synth_contexts_ok`, `hrule_extends` and `synth_regular`.
+2. Two HIR tables whose roots unfold to the same expression e desugar
+   alike: the root of each desugaring unfolds to `|e|`, by
+   `thir.algorithmic.desugared-unfolding`. The theorem is
+   `desugarings_unfold_alike`.
 3. A valid table's root unfolds to exactly one expression, and a tree of
    rule instances concludes its row. The Lean development proves both for
    any layer functor, as `Spec.Tables.Unfolds.unique` and
-   `Spec.Tables.Valid.derives`. They are not yet instantiated at HIR layers.
+   `Spec.Tables.Valid.derives`. The theorem `hir_valid_iff` instantiates
+   them at HIR layers: `hir_rows_valid?` is validity for the rule of one
+   layer. The theorem `synthesis_synth` is the result.
 4. Every tree of rule instances has a table. The Lean development proves
-   this for any layer functor as `Spec.Tables.Derives.table`, under
-   conditions on the rule that the HIR rules are not yet shown to meet.
+   this for any layer functor as `Spec.Tables.Derives.table`, and the
+   theorem `synthesis_of_valid` gives that `synthesis?` accepts the table.
 
 r[thir.algorithmic.expression-complete]
 Synthesis is complete for expressions: when Σ and Γ are well formed and
 `Σ; Γ ⊢ |e| : τ` holds in the Core for the desugaring of a HIR expression e,
-`Σ; Γ ⊢ e ⇒ τ` holds. This is open. `thir.algorithmic.reflection` does not
-give it, since a Core table for `|e|` need not be the desugaring of a HIR
-table for e (`thir.algorithmic.example`). The route is by induction on e.
-The Core's adequacy theorem
-`Spec.Language.Types.judgment_adequate` gives a tree of Core rule instances
-for `|e|`, whatever the shape of the given table.
+`Σ; Γ ⊢ e ⇒ τ` holds. `thir.algorithmic.reflection` does not give this,
+since a Core table for `|e|` need not be the desugaring of a HIR table for e
+(`thir.algorithmic.example`). The proof is by induction on e. The Core's
+adequacy theorem `Spec.Language.Types.judgment_adequate` gives a tree of
+Core rule instances for `|e|`, whatever the shape of the given table.
 `thir.algorithmic.agreement` turns each of its nodes into an instance of the
 synthesis rule of the same form, and `thir.algorithmic.parens` adds an
 instance for each parenthesis of e, with the typing of its body. The
 result is a tree of synthesis rule instances for e, and
-`thir.algorithmic.tree-lift` gives its table.
+`thir.algorithmic.tree-lift` gives its table. The theorem
+`expression_complete` states this and its converse of tables: the Core has
+a derivation of τ in Γ whose root unfolds to `|e|` exactly when some table
+that `synthesis?` accepts for τ in Γ has a root that unfolds to e. The
+theorem `synth_iff_typed` states the same of trees of rule instances.
+
+r[thir.algorithmic.inference]
+*Inference* computes a table from an expression. It visits the expression
+once, each node after its children and the children in written order, and
+adds one row for each node. The context of the root's row is Γ, the context
+of a child's row is the one that its parent's rule gives that child
+(`thir.algorithmic.synthesis`), and the type of a row is the type that
+`synth_layer` gives its layer when it gives one. Inference then returns the
+table and the type of its newest row when `synthesis?` accepts them for Γ,
+and nothing otherwise. The functions are `inferTable`, which returns the
+table and the type, and `infer`, which returns the type.
+
+Inference is sound: a table that it returns is accepted by `synthesis?`
+for the type that it returns, and the table's root unfolds to the
+expression (`inferTable_sound`). Inference is complete: when
+`Σ; Γ ⊢ e ⇒ τ` holds, inference returns a table for e in Γ, with the type τ
+(`inferTable_complete`). So inference returns τ for e in Γ exactly when
+`Σ; Γ ⊢ e ⇒ τ` holds (`infer_iff`), and the judgment is decidable.
+Inference reports no blamed premise when it returns nothing.
 
 ### The production checker
 
@@ -1859,7 +1895,8 @@ of this section is open. No theorem yet states any of the following.
    rules of this section give the outcome of a layer whose children are all
    typed.
 3. The successful production traversal of an expression yields a valid
-   HIR table whose root unfolds to it (`thir.algorithmic.tree-lift`), in
+   HIR table whose root unfolds to it, as `thir.algorithmic.inference`
+   does, in
    the context that `FrenHirToThir.Pass.typeItem` gives a declaration's
    body.
 
