@@ -1392,8 +1392,9 @@ pub fn hir_rows_valid?(symb: Symb, rows: Snoc<HirRow>) := match rows {
 r[thir.algorithmic.rows] spec::algorithmic::desugaring_keeps_rows::same
 Desugaring keeps the number of rows. The desugaring of a table with a
 parenthesis row therefore has more rows than the smallest Core table for
-the same expression, and a Core table is in general not the desugaring of
-any HIR table.
+the same expression. A Core table for the desugaring of an expression that
+has a parenthesis therefore need not be the desugaring of a HIR table for
+that expression (`thir.algorithmic.example`).
 
 ```fren
 -- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
@@ -1847,11 +1848,16 @@ of this section is open. No theorem yet states any of the following.
    callee is a local is not callable; the arity of a call is decided before
    any argument is typed; and each arm's pattern and body are checked
    before the next arm's.
-2. When a child of a node fails, `step` fails with that child's failure.
-   The production traversal types the children of a node in written order
-   and stops at the first that fails, so a failure in an earlier child is
-   reported before a mismatch of a later one. The rules of this section
-   give the outcome of a layer whose children are all typed.
+2. When a child of a node fails, every child before it was typed and every
+   check that `step` makes before it types that child passes, `step` fails
+   with that child's failure. The production traversal types the children
+   of a node in written order and makes each check as soon as the child it
+   concerns is typed, and it stops at the first child or check that fails.
+   So the failure of a child is reported before a mismatch of a later one,
+   and a mismatch of an earlier child before the failure of a later one: in
+   `true + e`, `step` blames the left operand and does not type e. The
+   rules of this section give the outcome of a layer whose children are all
+   typed.
 3. The successful production traversal of an expression yields a valid
    HIR table whose root unfolds to it (`thir.algorithmic.tree-lift`), in
    the context that `FrenHirToThir.Pass.typeItem` gives a declaration's

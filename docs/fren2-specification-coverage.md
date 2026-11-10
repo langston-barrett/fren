@@ -156,7 +156,7 @@ compiler is specified later.
 | `thir.algorithmic.step` | Lean theorems named in the rule's prose: the production `step` returns the outcome of the rule of a unary operation, a binary operation, a conditional, a let and a parenthesis, and `typeBody` that of a body, with a mismatch at the origin of the blamed premise |
 | `thir.core.derivation` | Open for expressions. The `thir.algorithmic` rules prove the part for supplied derivation tables; the production half is open but for the five forms of `thir.algorithmic.step` |
 | `thir.algorithmic.desugared-unfolding`, `thir.algorithmic.tree-lift`, `thir.algorithmic.expression-complete` | Open, stated in prose. They depend on instantiating the generic table theorems `Spec.Tables.Valid.derives`, `Spec.Tables.Derives.table` and `Spec.Tables.Unfolds.unique` at HIR layers, and on the Core's `Spec.Language.Types.judgment_adequate` |
-| `thir.algorithmic.production` | Open, stated in prose: the other forms of `step`, the propagation of a child's failure, and that the traversal yields a valid HIR table |
+| `thir.algorithmic.production` | Open, stated in prose: the other forms of `step`, that a child's failure is the node's when every earlier child and check succeeds, and that the traversal yields a valid HIR table |
 
 Definitions carry no evidence; they are not implementation proofs. Open
 laws remain normative obligations. Existing production `FrenHirToThir.HasValue`
