@@ -70,10 +70,11 @@ private theorem Symbol.chars_inj {a b : Symbol} : a.chars = b.chars ↔ a = b :=
 @[simp] theorem Symbol.render_inj {a b : Symbol} : a.render = b.render ↔ a = b :=
   ⟨fun h => Symbol.chars_inj.mp (by rw [← Symbol.toList_render, ← Symbol.toList_render, h]), congrArg _⟩
 
+/-- Rendering is injective, in the form that `grind` takes. -/
 @[grind inj] theorem Symbol.render_injective : Function.Injective Symbol.render :=
   fun _ _ => Symbol.render_inj.mp
 
-/-- A rendered name starts with the letter of its family. -/
+/-- A rendered name starts with one of the five family letters. -/
 theorem Symbol.render_front (s : Symbol) :
     ∃ c rest, s.render.toList = c :: rest ∧ c ∈ ['E', 'C', 'F', 'P', 'L'] := by
   rw [Symbol.toList_render]

@@ -573,10 +573,11 @@ Continue the same correction objective with these separate chapter units:
 5. **SMT extensions** (`SCsmt`, 1027): the core encoding and response
    contracts below are specified. Injectivity and disjointness of the
    rendered symbol families are proved of the encoder's `Symbol.render`, and
-   freshness and capture freedom of the chapter's `Naming`. Prove that the
-   encoder builds only such environments, encoding
-   and environment preservation, solver adequacy and trust; implement and
-   justify model decoding and static source confirmation. Raw responses
+   freshness and capture freedom of the chapter's `Naming`. Four proofs
+   remain: that the encoder builds only such environments; encoding
+   preservation; environment preservation; and solver adequacy and trust.
+   Model decoding and static source confirmation remain to be implemented
+   and justified. Raw responses
    alone do not establish source verification.
 
 These are retained substantive obligations, not completed chapters or a
@@ -589,7 +590,10 @@ wrapper. It uses the accepted source witness, OIR program/questions/definitions,
 LIR terms, shared sorts, `Lir.Sorted`, `Meaning`, `Primitive`, `Slots`, `Symbols`,
 `ZeroValues`, and OIR assignment/equation judgments. It defines no duplicate
 executable compiler or toy logical IR. The five retained primitive expectations
-remain separate checked arithmetic/polarity facts, never pass proofs.
+remain separate checked arithmetic/polarity facts, never pass proofs. The
+same `smt_primitives` module now also holds the `smt.names` rules of symbol
+rendering, with three procedures that three `impl`s bind to the encoder's
+`Symbol.render`.
 
 `Encoded` is proved for actual `produce`: every original question is retained
 in order and its script is exactly actual prelude generation followed by
@@ -616,8 +620,7 @@ unsupported. The chapter states this boundary instead of inventing a new
 validator or implying low-level success establishes wellformedness.
 
 The wrapper proves actual OIR/question retention, exact encoding, error
-exclusion, local slot translation, all 14 binary operator spellings, distinct
-rendered function components, wrong local/operator-sort rejection and zero
+exclusion, local slot translation, all 14 binary operator spellings, wrong local/operator-sort rejection and zero
 translation-budget failure. The two closed multiple-answer/unknown equalities
 use `native_decide`; their printed native reduction axioms are retained
 separately from the kernel proofs of the general laws. It proves raw nonzero exit, multiple-answer and
@@ -633,6 +636,13 @@ through a name map. `flipped_goal_model` independently interprets
 the polarity mutant at false. A separate admitted constant definition and
 later assumption check exact declaration, parameter and assumption layout.
 These are finite/constrained witnesses, not universal metatheory.
+
+The results on names are universal. `Symbol.render_inj` and
+`Symbol.render_front` hold of the encoder's `Symbol.render` for every symbol
+and index, and `rendered_components` is an instance of the first.
+`render_ne_integer` keeps rendered names apart from numerals.
+`Naming.scoped`, `Naming.fresh` and `Naming.extend` hold of every environment
+that the chapter's `Naming` admits, but not yet of the encoder's own.
 
 `SearchSatisfiable` quantifies over compatible interpretations and typed
 assignments. `AnswerSound` states what trusted Sat/Unsat would need to establish;
@@ -655,18 +665,29 @@ upstream universal proof obligations are preserved in full.
   and that the chapter's `Naming` preserves active-scope freshness and
   capture freedom. `FrenOirToSmt.Symbol.render_inj` proves the first part of
   the encoder's own `Symbol.render`, for every index, and `render_front`
-  keeps rendered names apart from the reserved words and numerals. The
-  chapter's `smt.names` rules bind them with `impl`. `Naming.scoped`,
+  keeps rendered names apart from the words of `RESERVED`, and
+  `render_ne_integer` from numerals. The
+  chapter's `smt.names` rules bind them with `impl`, and `smt.names.capture`
+  states capture freedom. `Naming.scoped`,
   `Naming.fresh` and `Naming.extend` prove the second part, but only of the
   chapter's `Naming` and `EnvironmentFor`: they say nothing yet of the
   environments that the encoder builds.
 - [ ] Prove that the encoder's own `term` and `parameters` build only
   environments that `Naming` admits: `parameters` yields `Names` of the
   parameter count, and each let of `term` binds the local pair at the length
-  of its incoming environment. No contract states this yet.
-  `EncodingContract` requires only `QueryFor` of each script, whose `TermFor`
-  and `Renders` range over chapter-defined environments, so proving it does
-  not discharge this item.
+  of its incoming environment. This is wanted only as a step to
+  `EncodingContract`, not for its own sake. `EncodingContract` gives
+  `QueryFor`, whose `TermFor` starts from `Names` and whose `Renders.binding`
+  extends an environment exactly as `Naming.binding` does, so every
+  environment of such a derivation is `Naming` by those two constructors, and
+  `InterpretationContract` takes `Naming` as a hypothesis. `EncodingContract`
+  itself does not state the step. `parameters` is private to the encoder, so
+  the step is stated through `script`, or `parameters` is exposed first.
+- [ ] State and prove that no rendered name is a predefined symbol of the
+  logic `ALL` that the scripts set. `RESERVED` holds only the words that the
+  encoder emits. Every rendered name is one of the letters E, C, F, P and L
+  followed by digits, an underscore, `v` or `d`, which makes a collision
+  unlikely, but nothing checks it.
 - [ ] Prove `InterpretationContract` in both directions, including function
   equations and lets, under independently justified sufficient domains.
 - [ ] Establish model existence and total typed model readback, relate the

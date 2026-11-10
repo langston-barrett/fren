@@ -351,7 +351,8 @@ oir.meaning.search -- actual frame/search interpretation relations and literal l
 
 # src/Spec/Compiler/Smt.md
 smt.encoding.sorts -- actual SortFor/Lir.Sorted judgments; universal sorting and solver datatype adequacy remain unproved
-smt.encoding.names -- actual canonical index grammar and lookup laws; general rendered-family freshness/injectivity remains unproved
+smt.encoding.names -- actual canonical index grammar and lookup laws; rendered-family injectivity and freshness are the smt.names rules; that the encoder builds only Naming environments remains unproved
+smt.names.capture -- stated over the Lean relations Naming and EnvironmentFor, which no Fren procedure expresses; proved in the wrapper as Naming.extend
 smt.encoding.terms -- actual recursive Renders/TermFor with all binary translation laws; universal printer conformance remains unproved
 smt.encoding.interpretation -- concrete-text Interprets and actual equation Model; universal interpretation/model existence remains unproved
 smt.response.status -- actual classify laws and explicit raw protocol boundary; no recursive Fren receipt contract

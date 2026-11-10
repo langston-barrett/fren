@@ -51,8 +51,10 @@ r[smt.names.reserved] smt_primitives::spelled::unreserved
 No rendered name is a word of `RESERVED`: the built-in sort names, the
 Boolean literals, the operators, `ite` and `let`, and the logic name and the
 command words of the emitted scripts, those of model readback included. A
-numeral is not a rendered name either, since a rendered name begins with the
-letter of its family.
+numeral is not a rendered name either, since a rendered name begins with one
+of the five family letters. The scripts set the logic `ALL`, and `RESERVED`
+holds only the words that the encoder emits: that no rendered name is another
+predefined symbol of that logic is neither stated nor proved here.
 
 r[smt.names.scope] smt_primitives::active?
 The *active scope* of a term under `count` parameters, in an environment of
@@ -70,24 +72,40 @@ r[smt.names.fresh] smt_primitives::binding::fresh
 The names that a let binds differ from the rendered name of every symbol of
 the active scope.
 
-These rules are proved of the encoder's own `Symbol.render`, for every index.
-`Symbol.render_inj` is the first two rules, and `Symbol.render_front` gives
-the third. The wrapper binds each clause to that function with an `impl`,
-through the map `symbol` from the symbols written here to the encoder's.
-These three results are of `Symbol.render` alone. The next three are of the
-chapter's own `Naming` and `EnvironmentFor`, not of the environments that the
-encoder builds: that the encoder's `term` and `parameters` build only
-environments that `Naming` admits is not proved, and no contract of this
-chapter states it.
-`Naming.scoped` shows that the names of every environment that `Naming`
-admits are those of an active scope: the parameters, then one local pair for
-each let, at the index of the environment's length where it was bound.
-`Naming.fresh` shows that the pair a let binds next differs from every name
-of that environment, and from `true`, which stands for the domain of a
-parameter. `Naming.extend` shows that the let captures nothing: when an
-environment corresponds to the slots, the environment extended by the two
-new names corresponds to the slots extended by the bound pair, so every
-earlier name reads the value it read before.
+r[smt.names.capture]
+A let captures no name of its environment. When `Naming` admits the names of
+an environment, and the environment corresponds to the slots by
+`EnvironmentFor`, the environment extended by the two names that the let
+binds corresponds to the slots extended by the bound pair. Every earlier name
+then reads the value it read before.
+
+The wrapper binds the rules of rendering to the encoder's own
+`Symbol.render`, through the map `symbol` from the symbols written here onto
+the encoder's. Three `impl`s compute their outputs by rendering:
+
+- `rendered_proof` binds `smt.names.rendering` and `smt.names.families`;
+- `spelled_proof` binds `smt.names.reserved`;
+- `binding_proof` binds `smt.names.binding`.
+
+`smt.names.fresh` is an `expect`, which the solver proves from the `clash`
+clause and the definition of `active?`. The `impl`s rest on two theorems of
+the encoder that hold for every index. `Symbol.render_inj` says that two
+symbols with one rendered name are the same symbol, and `Symbol.render_front`
+that a rendered name begins with one of the five family letters.
+`render_ne_integer` shows from the second that no rendered name is a numeral.
+
+Three more theorems are of the chapter's own `Naming` and `EnvironmentFor`
+only, not of the environments that the encoder builds. That the encoder's
+`term` and `parameters` build only environments that `Naming` admits is not
+proved, and no contract of this chapter states it.
+
+- `Naming.scoped` shows that every entry of an environment that `Naming`
+  admits is of an active scope: a parameter with the literal domain `true`,
+  or the pair of a local whose index is below the environment's length. It
+  does not show that every symbol of the scope has an entry.
+- `Naming.fresh` shows that the pair a let binds next differs from every name
+  of that environment, and from `true`.
+- `Naming.extend` is `smt.names.capture`.
 
 ```fren
 pub mod smt_primitives
@@ -166,17 +184,22 @@ pub fn active?(count: Nat, length: Nat, symbol: Symbol) := match symbol {
     Symbol::Local(index, _) => count <= index < length,
 }
 
+-- The implementation decides `same?` by comparing the two rendered names.
 pub proc rendered(left: Symbol, right: Symbol): (same?) {
     ensure injective: same? iff left = right
     expect disjoint: when same?, family(left) = family(right)
 }
 
--- The implementation decides `rendered?` by rendering the symbol.
+-- The implementation decides `rendered?` by comparing `text` with the
+-- rendered name of `symbol`.
 set_option fren.lint.unused_variables "allow" in
 pub proc spelled(symbol: Symbol, text: String): (rendered?) {
     ensure unreserved: when rendered?, not text in RESERVED
 }
 
+-- The implementation renders both components of the local symbol with index
+-- `length`. It decides `distinct?` by comparing the two names, and `clash?` by
+-- comparing the rendered name of `bound` with each of them.
 pub proc binding(count: Nat, length: Nat, bound: Symbol): (distinct?, clash?) {
     ensure pair: distinct?
     ensure clash: clash? iff bound = Symbol::Local(length, Component::Value)
@@ -573,8 +596,8 @@ def CheckerContract : Prop := ∀ p command run, Mir.AdmissionResidue p →
 
 General source preservation additionally consumes the named MIR, LIR and OIR
 contracts and their semantic/safety domains. Source-model existence, reverse
-model readback, full checker correspondence, evaluator
-adequacy and solver trust cannot be inferred from producer determinism,
+model readback, freshness of the encoder's own environments, full checker
+correspondence, evaluator adequacy and solver trust cannot be inferred from producer determinism,
 `Encoded`, finitely many examples or a raw solver status. Their exact proof
 inventory belongs in the [development coverage document](../../../docs/fren2-specification-coverage.md).
 

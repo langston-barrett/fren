@@ -382,13 +382,14 @@ theorem translation_depth (p : FrenOir.Program) (env : List (String × String)) 
 
 theorem rendered_components (i : Nat) :
     (Symbol.function i .value).render ≠ (Symbol.function i .domain).render := by
-  simp [Symbol.render, toString]
+  simp
 
-/-- The production component and symbol that the chapter's `Component` and `Symbol` name. -/
+/-- The encoder's component that the chapter's `Component` names. -/
 def component : smt_primitives.Component → Component
   | .Value => .value
   | .Domain => .domain
 
+/-- The encoder's symbol that the chapter's `Symbol` names. -/
 def symbol : smt_primitives.Symbol → Symbol
   | .Nominal i => .sort i
   | .Constructor i j => .constructor i j
@@ -400,6 +401,17 @@ theorem symbol_inj {a b : smt_primitives.Symbol} : symbol a = symbol b ↔ a = b
   rcases a with _ | _ | ⟨_, _ | _⟩ | _ | ⟨_, _ | _⟩ <;> rcases b with _ | _ | ⟨_, _ | _⟩ | _ | ⟨_, _ | _⟩ <;>
     simp [symbol, component]
 
+/-- Every symbol of the encoder is one that the chapter writes. -/
+theorem symbol_surjective (s : Symbol) : ∃ a, symbol a = s := by
+  rcases s with i | ⟨i, j⟩ | ⟨i, _ | _⟩ | i | ⟨i, _ | _⟩
+  · exact ⟨.Nominal i, rfl⟩
+  · exact ⟨.Constructor i j, rfl⟩
+  · exact ⟨.Function i .Value, rfl⟩
+  · exact ⟨.Function i .Domain, rfl⟩
+  · exact ⟨.Parameter i, rfl⟩
+  · exact ⟨.Local i .Value, rfl⟩
+  · exact ⟨.Local i .Domain, rfl⟩
+
 /-- No rendered name is a word whose first character is not a family letter. -/
 theorem render_ne (s : Symbol) (text : String)
     (front : ∀ c rest, text.toList = c :: rest → c ∉ ['E', 'C', 'F', 'P', 'L']) : s.render ≠ text := by
@@ -410,7 +422,23 @@ theorem render_ne (s : Symbol) (text : String)
 theorem render_ne_true (s : Symbol) : s.render ≠ "true" :=
   render_ne s "true" (by simp)
 
+--@ reference: smt.names.reserved
+/-- No rendered name is a numeral: a numeral starts with a digit or a parenthesis. -/
+theorem render_ne_integer (s : Symbol) (n : Int) : s.render ≠ integer n := by
+  by_cases negative : n < 0
+  · rw [integer, if_pos negative]
+    exact render_ne s _ (by simp [toString])
+  · rw [integer, if_neg negative]
+    refine render_ne s _ fun c rest chars member => ?_
+    have chars : (Nat.repr n.natAbs).toList = c :: rest := chars
+    rw [Nat.repr_eq_ofList_toDigits, String.toList_ofList] at chars
+    have digit : c.isDigit = true :=
+      Nat.isDigit_of_mem_toDigits (by decide) (by decide) (chars ▸ List.mem_cons_self)
+    have letters : ∀ letter ∈ ['E', 'C', 'F', 'P', 'L'], letter.isDigit = false := by decide
+    exact Bool.eq_false_iff.mp (letters c member) digit
+
 --@ reference: smt.names.rendering
+--@ reference: smt.names.families
 open smt_primitives in
 impl rendered_proof: rendered for (left right : smt_primitives.Symbol) {
   left := left, right := right, same? := (symbol left).render == (symbol right).render
@@ -437,41 +465,53 @@ impl binding_proof: binding for (count length : Nat) (bound : smt_primitives.Sym
   intro count length bound _
   simp [fren_spec, symbol_inj]
 
-/-- The names of an environment are those of an active scope: `count`
-parameters below the locals that lets have bound, each at the index of the
-environment's length when it was bound. -/
-def Scoped (count : Nat) (names : List (String × String)) : Prop :=
-  count ≤ names.length ∧ ∀ entry ∈ names,
-    (∃ i, i < count ∧ entry = ((Symbol.parameter i).render, "true")) ∨
-    ∃ i, count ≤ i ∧ i < names.length ∧
-      entry = ((Symbol.local i .value).render, (Symbol.local i .domain).render)
+--@ reference: smt.names.scope
+theorem active_parameter {count length i : Nat} :
+    smt_primitives.active? count length (.Parameter i) = true ↔ i < count := by
+  simp [smt_primitives.active?, smt_primitives.Symbol.Parameter.x0]
 
 --@ reference: smt.names.scope
-theorem active_iff {count length : Nat} {s : smt_primitives.Symbol} :
-    smt_primitives.active? count length s = true ↔
-      (∃ i, i < count ∧ s = .Parameter i) ∨ ∃ i c, count ≤ i ∧ i < length ∧ s = .Local i c := by
-  open smt_primitives.Symbol in
-  cases s <;> simp [smt_primitives.active?, Nominal.x0, Constructor.x0, Constructor.x1, Function.x0, Function.x1,
-    Parameter.x0, Local.x0]
+theorem active_local {count length i : Nat} {c : smt_primitives.Component} :
+    smt_primitives.active? count length (.Local i c) = true ↔ count ≤ i ∧ i < length := by
+  simp [smt_primitives.active?, smt_primitives.Symbol.Local.x0]
 
 --@ reference: smt.names.scope
-theorem Naming.scoped (h : Naming names) : ∃ count, Scoped count names := by
+/-- Every entry of an environment that `Naming` admits is of an active scope:
+a parameter with the literal domain, or the pair of a local. -/
+theorem Naming.scoped (h : Naming names) : ∃ count, count ≤ names.length ∧ ∀ entry ∈ names,
+    (∃ i, smt_primitives.active? count names.length (.Parameter i) = true ∧
+      entry = ((symbol (.Parameter i)).render, "true")) ∨
+    ∃ i, smt_primitives.active? count names.length (.Local i .Value) = true ∧
+      smt_primitives.active? count names.length (.Local i .Domain) = true ∧
+      entry = ((symbol (.Local i .Value)).render, (symbol (.Local i .Domain)).render) := by
   induction h with
-  | @parameters count => exact ⟨count, by simp [Names], fun entry member => .inl (by simpa [Names, eq_comm] using member)⟩
+  | @parameters count =>
+    refine ⟨count, by simp [Names], fun entry member => ?_⟩
+    obtain ⟨i, low, rfl⟩ : ∃ i, i < count ∧ ((Symbol.parameter i).render, "true") = entry := by
+      simpa [Names] using member
+    exact .inl ⟨i, active_parameter.mpr low, rfl⟩
   | @binding names _ ih =>
     obtain ⟨count, le, all⟩ := ih
     refine ⟨count, Nat.le_succ_of_le le, fun entry member => ?_⟩
+    have here : names.length < (((Symbol.local names.length .value).render,
+        (Symbol.local names.length .domain).render) :: names).length := Nat.lt_succ_self _
     rcases List.mem_cons.mp member with rfl | member
-    · exact .inr ⟨names.length, le, Nat.lt_succ_self _, rfl⟩
-    · exact (all entry member).imp_right fun ⟨i, low, high, eq⟩ => ⟨i, low, Nat.lt_succ_of_lt high, eq⟩
+    · exact .inr ⟨names.length, active_local.mpr ⟨le, here⟩, active_local.mpr ⟨le, here⟩, rfl⟩
+    · refine (all entry member).imp (fun ⟨i, active, eq⟩ => ⟨i, active_parameter.mpr (active_parameter.mp active), eq⟩)
+        fun ⟨i, active, _, eq⟩ => ?_
+      have wider (c : smt_primitives.Component) := (active_local (count := count) (c := c)).mpr
+        ⟨(active_local.mp active).1, Nat.lt_trans (active_local.mp active).2 here⟩
+      exact ⟨i, wider _, wider _, eq⟩
 
 --@ reference: smt.names.fresh
+/-- The pair that a let binds next differs from every name of the environment
+and from the literal domain of a parameter. -/
 theorem Naming.fresh (h : Naming names) (member : entry ∈ names) (c : Component) :
     entry.1 ≠ (Symbol.local names.length c).render ∧ entry.2 ≠ (Symbol.local names.length c).render := by
   obtain ⟨count, _, all⟩ := h.scoped
-  rcases all entry member with ⟨i, _, rfl⟩ | ⟨i, _, high, rfl⟩
-  · exact ⟨by simp, (render_ne_true _).symm⟩
-  · simp [Nat.ne_of_lt high]
+  rcases all entry member with ⟨i, _, rfl⟩ | ⟨i, active, _, rfl⟩
+  · exact ⟨by simp [symbol], (render_ne_true _).symm⟩
+  · simp [symbol, component, Nat.ne_of_lt (active_local.mp active).2]
 
 /-- A correspondence survives a change of relation that agrees on the listed entries. -/
 theorem pairs_congr {r r' : α → β → Prop} (h : Lir.Pairs r as bs) (agree : ∀ a ∈ as, ∀ b, r a b → r' a b) :
@@ -481,20 +521,12 @@ theorem pairs_congr {r r' : α → β → Prop} (h : Lir.Pairs r as bs) (agree :
   | cons head _ ih =>
     exact .cons (agree _ List.mem_cons_self _ head) (ih fun a member => agree a (List.mem_cons_of_mem _ member))
 
---@ reference: smt.names.fresh
-theorem active_fresh {count length : Nat} {s : smt_primitives.Symbol}
-    (h : smt_primitives.active? count length s = true) (c : Component) :
-    (symbol s).render ≠ (Symbol.local length c).render := by
-  rcases active_iff.mp h with ⟨i, _, rfl⟩ | ⟨i, _, _, high, rfl⟩
-  · simp [symbol]
-  · simp [symbol, Nat.ne_of_lt high]
-
 /-- `grind` uses the injectivity of rendering without unfolding it. -/
 example (i j : Nat) (h : (Symbol.parameter i).render = (Symbol.local j .value).render) : False := by grind
 example (i j : Nat) (h : (Symbol.function i .domain).render = (Symbol.function j .domain).render) : i = j := by
   grind
 
---@ reference: smt.names.fresh
+--@ reference: smt.names.capture
 /-- A let captures no name of its environment: every earlier entry reads the
 same values after the binding as before it, and the new entry reads the bound pair. -/
 theorem Naming.extend {env : Environment} (h : Naming names) (environment : EnvironmentFor env names slots) :
@@ -692,10 +724,16 @@ theorem flipped_goal_model (p : FrenOir.Program) :
 #print axioms false_goal_query
 #print axioms parameter_domain_total
 #print axioms flipped_goal_model
+#print axioms Symbol.render_inj
+#print axioms Symbol.render_front
 #print axioms symbol_inj
+#print axioms symbol_surjective
 #print axioms render_ne
-#print axioms active_iff
-#print axioms active_fresh
+#print axioms render_ne_true
+#print axioms render_ne_integer
+#print axioms active_parameter
+#print axioms active_local
+#print axioms pairs_congr
 #print axioms Naming.scoped
 #print axioms Naming.fresh
 #print axioms Naming.extend
