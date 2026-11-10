@@ -10,7 +10,7 @@ namespace FrenExpr
 this with canonical ItemId; the primitive spec can instantiate it with Int. -/
 inductive ValueType (Id : Type) where
   | bool | int | enum (owner : Id)
-  deriving Repr, BEq, DecidableEq
+  deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
 
 abbrev Ty := ValueType FrenBase.ItemId
 

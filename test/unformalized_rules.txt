@@ -341,12 +341,13 @@ bindings.free-indices.children -- mathematical child rule here; actual collector
 bindings.alpha.definition -- structural definition here; production metadata-independent equality API pending
 
 # src/Spec/Compiler/Lir.md
-lir.terms.sorts -- actual recursive Lean Sorted judgment; checker equivalence and recursive Fren binding remain unproved
+lir.terms.sorts -- actual recursive Lean Sorted judgment; lir.terms.checker proves the production checker equivalent; recursive Fren binding is not expressible yet
+lir.terms.checker -- proved in Lean of FrenLir.Term.infer (infer_sorted, sorted_infer, sorted_unique, produced_sorted); a Fren proc cannot range over the recursive FrenLir.Term
 lir.meaning.values -- actual recursive Lean Meaning judgment; universal typed interpretation correspondence remains unproved
 lir.meaning.symbols -- actual source-definition Models relation and constructive sufficient model proof; universal model existence remains unproved
 
 # src/Spec/Compiler/Oir.md
-oir.terms.sorts -- actual DomainFor/ParametersFor and LIR Sorted judgments; universal checker correspondence remains unproved
+oir.terms.sorts -- actual DomainFor/ParametersFor and LIR Sorted judgments; lir.terms.checker proves the checker sound; that every produced question passed checkedQuestion remains unproved
 oir.meaning.search -- actual frame/search interpretation relations and literal laws; universal SearchContract remains unproved
 
 # src/Spec/Compiler/Smt.md

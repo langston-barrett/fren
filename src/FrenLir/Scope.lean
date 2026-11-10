@@ -17,8 +17,9 @@ def Term.infer : Nat → Typed → TypeContext → Term → Option FrenExpr.Ty
     | .bool _ => some .bool
     | .int _ => some .int
     | .constructor owner id =>
-      if id.parent == some owner && t.resolved.scope.items.any (fun i =>
-          i.id == id && i.kind == .constructor) then some (.enum owner) else none
+      if t.resolved.scope.items.any (fun i => i.id == owner && i.kind == .enumeration) &&
+          t.resolved.scope.items.any (fun i => i.id == id && i.kind == .constructor) &&
+          id.parent == some owner then some (.enum owner) else none
     | .local ty i component =>
       if ctx[i]?.map Prod.snd != some ty then none
       else some (if component == .domain then .bool else ty)

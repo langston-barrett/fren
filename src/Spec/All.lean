@@ -9,6 +9,7 @@ import Spec.Compiler.Hir
 import Spec.Compiler.Index
 import Spec.Compiler.LeanEmission
 import Spec.Compiler.Lir
+import Spec.Compiler.Lir.Sorting
 import Spec.Compiler.MatchCompilation
 import Spec.Compiler.Metatheory
 import Spec.Compiler.Mir

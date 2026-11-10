@@ -7,7 +7,7 @@ namespace FrenAst
 
 inductive LexicalKind where
   | identifier | keyword | numeral | punctuation | trivia | rejected
-  deriving Repr, BEq, DecidableEq
+  deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
 
 /-- The tape owns bytes once; syntax references tape positions. Spelling is
 stored per slice, so emission never reads the retained source string. -/
@@ -22,24 +22,24 @@ structure Token where
   text : String
   span : FrenSource.Span
   kind : LexicalKind
-  deriving Repr, BEq, DecidableEq
+  deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
 
 structure Path where
   head : Token
   tail : Array (Token × Token) := #[] -- separator, name, in written order
-  deriving Repr, BEq, DecidableEq
+  deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
 
 inductive Ty where
   | bool (token : Token)
   | int (token : Token)
   | named (path : Path)
-  deriving Repr, BEq
+  deriving Repr, BEq, ReflBEq, LawfulBEq
 
 /-- Implicit Bool is written with a question-mark suffix on the name. -/
 structure Parameter where
   name : Token
   annotation : Option (Token × Ty)
-  deriving Repr, BEq
+  deriving Repr, BEq, ReflBEq, LawfulBEq
 
 inductive UnaryOp where
   | neg | not

@@ -69,9 +69,69 @@ lexical slots or canonical symbols.
 `Body.wellSorted` is the production bounded checker: it checks value and
 domain sorts and all origin owner/member/occurrence data, using depth 10000.
 `Program.wellFormed` also checks declaration, member and request retention.
-These executable certificates and the declarative judgments are distinct.
-Neither a true checker result nor a type-only source derivation proves
-universal semantic correspondence or unique match coverage.
+
+r[lir.terms.constructors] spec::lir::constructor_sort::rule
+A constructor term `constructor owner c` has a sort under `s` exactly when
+`enum owner c` is a valid value of `s`: `owner` is an enumeration item of
+the scope, `c` is a constructor item of the scope, and the parent of `c` is
+`owner`. Its sort is then `enum owner`, in every context.
+
+```fren
+pub mod spec
+pub mod spec::lir
+
+-- The implementation decides `valid?` by `FrenEval.Value.valid` on the value
+-- `enum owner c`, and `sorted?` by asking the production checker
+-- `FrenLir.Term.infer` whether `constructor owner c` has the sort `enum owner`.
+pub proc constructor_sort(valid?): (sorted?) {
+    ensure rule: sorted? iff valid?
+}
+```
+
+r[lir.terms.checker]
+Write `infer(n, s, Γ, t)` for the production function
+`FrenLir.Term.infer n s Γ t`, whose first argument bounds the depth of the
+term that it reads. The checker and the judgment agree as follows.
+
+```text
+ infer(n, s, Γ, t) = some τ
+---------------------------- (sound)
+       Sorted s Γ t τ
+
+            Sorted s Γ t τ
+--------------------------------------- (complete)
+ ∃ n. ∀ m ≥ n. infer(m, s, Γ, t) = some τ
+
+ Sorted s Γ t τ     Sorted s Γ t τ'
+------------------------------------ (unique)
+              τ = τ'
+
+ Produces p out     Root out b     s = out.mir.source     Γ = b.source.context
+------------------------------------------------------------------------------- (roots)
+ Sorted s Γ b.term.value b.source.type     Sorted s Γ b.term.defined Bool
+```
+
+So `Sorted s Γ t τ` holds exactly when some depth bound makes the checker
+return `τ`, and by (sound) and (unique) a bound that is too small makes the
+checker return nothing, never another sort. Rule (roots) is the sorting half
+of `BodyFor` for every root body of a successful production. It rests on
+`Body.wellSorted`, which `Program.wellFormed` requires of each root at depth
+10000: an output with a root deeper than that is rejected, not accepted
+unsorted.
+
+The wrapper `Spec.Compiler.Lir.Sorting` proves these rules about the
+production functions, not about a model of them. `infer_sorted` is (sound),
+`sorted_infer` is (complete), `sorted_iff_infer` joins them, `sorted_unique`
+is (unique), and `produced_sorted` is (roots), through `wellSorted_sorted`
+and `wellFormed_root`. The `impl` `constructor_sort` binds
+`lir.terms.constructors`. The other cases of the judgment are recursive in
+the term, and a Fren `proc` cannot yet range over `FrenLir.Term`, so those
+cases are bound by the theorems and not by an `impl`.
+
+These rules cover sorts only. The origin data that `Body.wellSorted` also
+checks has no declarative rule yet. Neither a true checker result nor a
+type-only source derivation proves universal semantic correspondence or
+unique match coverage.
 
 **Dynamic semantics**
 
@@ -500,9 +560,6 @@ ignores the value. These finite algebra laws specialize the verification
 constructors. They do not replace `Lowers`, source judgments or root inventory.
 
 ```fren
-pub mod spec
-pub mod spec::lir
-
 pub proc verification_laws(selected?, condition_wd?, left_wd?, right_wd?, value_wd?, body_wd?) {
     expect ordinary: (left_wd? and right_wd?) iff (not (not left_wd? or not right_wd?))
     expect conditional: (condition_wd? and (if selected? then left_wd? else right_wd?)) iff (

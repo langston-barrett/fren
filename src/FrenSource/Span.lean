@@ -7,7 +7,7 @@ namespace FrenSource
 /-- Caller-assigned identity of a source file. No global allocation is implied. -/
 public structure FileId where
   value : Nat
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 /-- A half-open range of UTF-8 byte offsets in a file. Bounds checking does not
 ensure that either endpoint lies on a Unicode character boundary. -/
@@ -15,7 +15,7 @@ public structure Span where private mk ::
   file : FileId
   start : Nat
   stop : Nat
-  deriving Repr, DecidableEq, BEq
+  deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 namespace Span
 

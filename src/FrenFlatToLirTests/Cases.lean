@@ -76,6 +76,16 @@ private def controls : IO Unit := do
   require (Term.infer 100 t ctx (.local .int 999 .value) == none &&
     Term.infer 100 t ctx (.constructor (key "Other") ((key "Light").named "Red")) == none)
     "dangling slot/nominal owner controls"
+  -- A constructor has a sort only when its owner is an enumeration item, as
+  -- `Value.valid` requires of the enum value (`lir.terms.constructors`).
+  let red := Term.constructor (key "Light") ((key "Light").named "Red")
+  let ownerless := {t with resolved := {t.resolved with scope := {t.resolved.scope with
+    items := t.resolved.scope.items.filter (fun i => i.kind != .enumeration)}}}
+  require (Term.infer 100 t ctx red == some (.enum (key "Light")) &&
+    Value.valid t (.enum (key "Light") ((key "Light").named "Red")) &&
+    Term.infer 100 ownerless ctx red == none &&
+    !Value.valid ownerless (.enum (key "Light") ((key "Light").named "Red")))
+    "constructor without an enumeration owner must have no sort"
   let some sig := t.signatures[0]? | throw (IO.userError "missing fixture signature")
   let fakeSig := {sig with id := key "absent"}
   require (Term.infer 100 t [] (.app fakeSig .domain [.int 0]) == none) "unknown symbol control"
