@@ -132,10 +132,14 @@ def retry_debugger_crash(attempt):
     for index in range(2):
         child, report = attempt()
         code = report.get("debugger_exit")
+        cleanup_report = report.get("cleanup")
         crashed = (report.get("debugger_status") == "failed" and
                    isinstance(code, int) and code < 0 and
                    report.get("debugger_cleanup_exit") == code and
-                   report.get("cleanup_initiator") is None)
+                   report.get("cleanup_initiator") is None and
+                   isinstance(cleanup_report, dict) and
+                   cleanup_report.get("errors") == [] and
+                   cleanup_report.get("remaining") == [])
         if not crashed:
             return child, report
         if index:
@@ -147,7 +151,7 @@ def retry_debugger_crash(attempt):
 def retry_controls():
     crashed = {"debugger_status": "failed", "debugger_exit": -11,
                "debugger_cleanup_exit": -11, "cleanup_initiator": None,
-               "helper_error": "thread error"}
+               "helper_error": "thread error", "cleanup": {"errors": [], "remaining": []}}
     captured = {"debugger_status": "captured", "debugger_exit": 0}
     calls = []
     def sequence(reports):
@@ -166,7 +170,10 @@ def retry_controls():
     assert len(calls) == 2
     for report in (dict(crashed, debugger_exit=None, debugger_cleanup_exit=-9,
                         cleanup_initiator="native-observer:operation-budget"),
-                   dict(crashed, debugger_exit=0, debugger_cleanup_exit=0)):
+                   dict(crashed, debugger_exit=0, debugger_cleanup_exit=0),
+                   dict(crashed, cleanup={"errors": ["reap failed"], "remaining": []}),
+                   dict(crashed, cleanup={"errors": [], "remaining": [123]}),
+                   dict(crashed, cleanup=None)):
         calls.clear()
         assert retry_debugger_crash(sequence([report])) == (None, report)
         assert len(calls) == 1

@@ -163,7 +163,7 @@ pub mod testing
   environment regression checks that failure with an empty tool path.
   The own-spec harness retries once when the debugger itself dies by signal;
   a second debugger crash reports an environment failure. Observer-initiated
-  cleanup and helper errors alone do not trigger that retry.
+  cleanup, incomplete cleanup and helper errors alone do not trigger that retry.
   Protected test children set `FREN_NATIVE_CORELESS=1`: the test driver's
   startup hook disables core files and, on Linux, dumpability after exec.
   The latter also prevents piped core collectors, which ignore a zero
