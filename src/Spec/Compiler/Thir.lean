@@ -737,84 +737,264 @@ theorem first_body_nonempty (arms : Snoc (ArmF Typing)) (first : Typing)
     (h : first_body arms = some first) : arms ≠ .Empty := by
   intro e; subst e; simp [first_body] at h
 
-/-- `thir.algorithmic.sound`, for the lift. -/
+/-! ### Outcomes of the sequences -/
+
+theorem expect_blamed (premise : Premise) (expected found : Ty) (rest : Outcome)
+    (h : outcome_type rest = none) :
+    outcome_type (expect_type premise expected found rest) = none := by
+  unfold expect_type
+  split <;> simp_all [outcome_type]
+
+theorem outcome_typed (ty : Ty) : outcome_type (.Typed ty) = some ty := rfl
+
+theorem outcome_expect (premise : Premise) (expected found : Ty) (rest : Outcome) :
+    outcome_type (expect_type premise expected found rest) =
+      if found = expected then outcome_type rest else none := by
+  unfold expect_type
+  split <;> simp [outcome_type]
+
+theorem outcome_local (ctx : Snoc Ty) (level : Int) :
+    outcome_type (judge_local ctx level) = lookup _ ctx level := by
+  unfold judge_local
+  cases lookup _ ctx level <;> simp [outcome_type]
+
+theorem judge_arguments_blamed (args : Snoc Typing) (params : Snoc Ty) (rest : Outcome)
+    (h : outcome_type rest = none) : outcome_type (judge_arguments args params rest) = none := by
+  induction args generalizing params rest with
+  | Empty => simpa [judge_arguments] using h
+  | Extend earlier arg ih =>
+    cases params with
+    | Empty => simpa [judge_arguments] using h
+    | Extend earlier_params param =>
+      simp only [judge_arguments]
+      exact ih earlier_params _ (expect_blamed _ _ _ _ h)
+
+/-- `thir.algorithmic.sequences`: accepted arguments leave the rest as it was. -/
+theorem arguments_accepted (args : Snoc Typing) (params : Snoc Ty) (rest : Outcome)
+    (h : argument_types? args params = true) :
+    length _ args = length _ params ∧ judge_arguments args params rest = rest := by
+  induction args generalizing params rest with
+  | Empty =>
+    cases params with
+    | Empty => simp [length, judge_arguments]
+    | Extend _ _ => simp [argument_types?] at h
+  | Extend earlier arg ih =>
+    cases params with
+    | Empty => simp [argument_types?] at h
+    | Extend earlier_params param =>
+      simp only [argument_types?, decide_eq_true_eq] at h
+      obtain ⟨hl, hj⟩ := ih earlier_params rest h.2
+      simp [length, judge_arguments, expect_type, h.1, hl, hj]
+
+/-- `thir.algorithmic.sequences`: a rejected argument blames a premise. -/
+theorem arguments_rejected (args : Snoc Typing) (params : Snoc Ty) (rest : Outcome)
+    (hl : length _ args = length _ params) (h : argument_types? args params = false) :
+    outcome_type (judge_arguments args params rest) = none := by
+  induction args generalizing params rest with
+  | Empty =>
+    cases params with
+    | Empty => simp [argument_types?] at h
+    | Extend _ _ => simp [length] at hl
+  | Extend earlier arg ih =>
+    cases params with
+    | Empty => simp [length] at hl
+    | Extend earlier_params param =>
+      simp [length] at hl
+      simp only [judge_arguments]
+      by_cases ht : arg.ty = param
+      · have hr : argument_types? earlier earlier_params = false := by
+          simpa [argument_types?, ht] using h
+        exact ih earlier_params _ hl hr
+      · exact judge_arguments_blamed _ _ _ (by simp [expect_type, ht, outcome_type])
+
+/-- An arm either satisfies both of its premises or blames one. -/
+theorem judge_arm_cases (symb : Snoc Entry) (owner : Fren.Seq String) (common : Ty) (index : Int)
+    (arm : ArmF Typing) (rest : Outcome) :
+    (entry symb arm.constructor = some (.Constructor owner) ∧ arm.body.ty = common ∧
+      judge_arm symb owner common index arm rest = rest) ∨
+    outcome_type (judge_arm symb owner common index arm rest) = none := by
+  cases he : entry symb arm.constructor with
+  | none => right; simp [judge_arm, he, outcome_type]
+  | some kind =>
+    cases kind with
+    | Constructor found =>
+      by_cases hf : found = owner
+      · by_cases hb : arm.body.ty = common
+        · left; simp [judge_arm, he, expect_type, hf, hb]
+        · right; simp [judge_arm, he, expect_type, hf, hb, outcome_type]
+      · right; simp [judge_arm, he, expect_type, hf, outcome_type]
+    | _ => right; simp [judge_arm, he, outcome_type]
+
+theorem judge_arms_blamed (symb : Snoc Entry) (owner : Fren.Seq String) (common : Ty)
+    (arms : Snoc (ArmF Typing)) (rest : Outcome) (h : outcome_type rest = none) :
+    outcome_type (judge_arms symb owner common arms rest) = none := by
+  induction arms generalizing rest with
+  | Empty => simpa [judge_arms] using h
+  | Extend earlier arm ih =>
+    simp only [judge_arms]
+    apply ih
+    rcases judge_arm_cases symb owner common (length _ earlier) arm rest with ⟨_, _, hj⟩ | hn
+    · rw [hj]; exact h
+    · exact hn
+
+/-- `thir.algorithmic.sequences`: accepted arms leave the rest as it was. -/
+theorem arms_accepted (symb : Snoc Entry) (owner : Fren.Seq String) (common : Ty)
+    (arms : Snoc (ArmF Typing)) (ctx : Snoc Ty) (rest : Outcome)
+    (hp : arm_patterns? symb arms owner = true) (hb : arm_bodies? arms ctx common = true) :
+    arms_in_context? arms ctx = true ∧ judge_arms symb owner common arms rest = rest := by
+  induction arms generalizing rest with
+  | Empty => simp [arms_in_context?, judge_arms]
+  | Extend earlier arm ih =>
+    simp only [arm_patterns?, decide_eq_true_eq] at hp
+    simp only [arm_bodies?, decide_eq_true_eq] at hb
+    obtain ⟨hc, hj⟩ := ih rest hp.2 hb.2
+    simp [arms_in_context?, judge_arms, judge_arm, expect_type, hp.1, hb.1.1, hb.1.2, hc, hj]
+
+/-- `thir.algorithmic.sequences`: a rejected arm blames a premise. -/
+theorem arms_rejected (symb : Snoc Entry) (owner : Fren.Seq String) (common : Ty)
+    (arms : Snoc (ArmF Typing)) (ctx : Snoc Ty) (rest : Outcome)
+    (hc : arms_in_context? arms ctx = true)
+    (h : ¬(arm_patterns? symb arms owner = true ∧ arm_bodies? arms ctx common = true)) :
+    outcome_type (judge_arms symb owner common arms rest) = none := by
+  induction arms generalizing rest with
+  | Empty => exact absurd (by simp [arm_patterns?, arm_bodies?]) h
+  | Extend earlier arm ih =>
+    simp only [arms_in_context?, decide_eq_true_eq] at hc
+    simp only [judge_arms]
+    rcases judge_arm_cases symb owner common (length _ earlier) arm rest with ⟨he, hb, hj⟩ | hn
+    · rw [hj]
+      apply ih rest hc.2
+      intro hpb
+      apply h
+      simp [arm_patterns?, arm_bodies?, he, hb, hc.1, hpb.1, hpb.2]
+    · exact judge_arms_blamed symb owner common earlier _ hn
+
+/-! ### Agreement of one layer -/
+
+theorem synth_layer_core (symb : Snoc Entry) (ctx : Snoc Ty) (form : CoreF Typing) :
+    synth_layer symb ctx (.Core form) = synth_core symb ctx form := by
+  simp [synth_layer, synth_core, placed?, judge_layer, fren_spec]
+
+/-- `thir.algorithmic.agreement`, sound, for the lift. -/
 theorem synth_core_sound (symb : Snoc Entry) (ctx : Snoc Ty) (form : CoreF Typing) (ty : Ty)
     (h : synth_core symb ctx form = some ty) : rule? symb ctx form ty = true := by
   cases form with
   | Unary op operand =>
-    cases op <;> simp [synth_core, provided, checked?, unary_operand, fren_spec] at h <;>
+    cases op <;> simp [synth_core, provided, placed_core?, judge_core, judge_unary, outcome_expect, unary_operand, fren_spec] at h <;>
       simp [rule?, unary_rule?, unary_type?, fren_spec] <;> simp_all
   | Binary op left right =>
-    cases op <;> simp [synth_core, provided, checked?, synthesized?, binary_operand, binary_output,
-      integer_binary?, comparison?, boolean_binary?, fren_spec] at h <;>
+    cases op <;> simp [synth_core, provided, placed_core?, judge_core, judge_binary, outcome_expect, binary_operand, binary_output, integer_binary?, comparison?, boolean_binary?,
+      fren_spec] at h <;>
       simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?, boolean_binary?,
         fren_spec] <;> simp_all
   | Constructor item =>
     cases hE : entry symb item with
-    | none => simp [synth_core, hE, fren_spec] at h
+    | none =>
+      simp [synth_core, provided, placed_core?, judge_core, judge_constructor, outcome_type, hE,
+        fren_spec] at h
     | some kind =>
-      cases kind <;> simp [synth_core, hE, fren_spec] at h <;>
+      cases kind <;> simp [synth_core, provided, placed_core?, judge_core, judge_constructor,
+        outcome_type, hE, fren_spec] at h <;>
         simp [rule?, constructor_rule?, hE, fren_spec] <;> simp_all
   | Call item args =>
-    cases hE : entry symb item with
-    | none => simp [synth_core, hE, fren_spec] at h
-    | some kind =>
-      cases kind <;> simp [synth_core, provided, hE, fren_spec] at h <;>
-        simp [rule?, call_rule?, hE, fren_spec] <;> simp_all
+    by_cases hp : placed_core? ctx (.Call item args) = true
+    · have h' : outcome_type (judge_call symb item args) = some ty := by
+        simpa [synth_core, provided, hp, judge_core] using h
+      simp [placed_core?, fren_spec] at hp
+      cases hE : entry symb item with
+      | none => simp [judge_call, hE, outcome_type] at h'
+      | some kind =>
+        cases kind with
+        | Function sig =>
+          by_cases hlen : length _ args = length _ sig.params
+          · cases hat : argument_types? args sig.params with
+            | false =>
+              have hn := arguments_rejected args sig.params (.Typed sig.result) hlen hat
+              simp [judge_call, hE, hlen, hn] at h'
+            | true =>
+              have hj := (arguments_accepted args sig.params (.Typed sig.result) hat).2
+              simp [judge_call, hE, hlen, hj, outcome_type] at h'
+              simp [rule?, call_rule?, hE, hat, hp, h', fren_spec]
+          · simp [judge_call, hE, hlen, outcome_type] at h'
+        | _ => simp [judge_call, hE, outcome_type] at h'
+    · simp [synth_core, provided, hp] at h
   | Match scrutinee arms =>
     rcases scrutinee with ⟨sc, sty⟩
-    cases hf : first_body arms with
-    | none => cases sty <;> simp [synth_core, hf, fren_spec] at h
-    | some first =>
-      have hne := first_body_nonempty arms first hf
-      cases sty <;> simp [synth_core, provided, synthesized?, hf, fren_spec] at h
-      obtain ⟨⟨⟨hs, hp⟩, hb⟩, ht⟩ := h
-      subst ht
-      simp [rule?, match_rule?, fren_spec, hs, hp, hb, hne]
+    by_cases hp : placed_core? ctx (.Match ⟨sc, sty⟩ arms) = true
+    · have h' : outcome_type (judge_match symb ⟨sc, sty⟩ arms) = some ty := by
+        simpa [synth_core, provided, hp, judge_core] using h
+      simp [placed_core?, fren_spec] at hp
+      obtain ⟨hsc, hin⟩ := hp
+      cases sty with
+      | Nominal owner =>
+        cases hf : first_body arms with
+        | none => simp [judge_match, hf, outcome_type] at h'
+        | some first =>
+          have hne := first_body_nonempty arms first hf
+          simp only [judge_match, hf] at h'
+          by_cases hpb : arm_patterns? symb arms owner = true ∧
+              arm_bodies? arms ctx first.ty = true
+          · rw [(arms_accepted symb owner first.ty arms ctx _ hpb.1 hpb.2).2] at h'
+            simp [outcome_type] at h'
+            subst h'
+            simp [rule?, match_rule?, fren_spec, hsc, hpb.1, hpb.2, hne]
+          · rw [arms_rejected symb owner first.ty arms ctx _ hin hpb] at h'
+            cases h'
+      | _ => simp [outcome_type] at h'
+    · simp [synth_core, provided, hp] at h
   | Let annotation value body =>
     cases annotation <;>
-      simp [synth_core, provided, value_typed?, checked?, synthesized?, fren_spec] at h <;>
+      simp [synth_core, provided, placed_core?, judge_core, judge_let, outcome_expect, fren_spec] at h <;>
       simp [rule?, let_rule?, let_annotated_rule?, fren_spec] <;> simp_all
   | _ =>
-    simp [synth_core, provided, checked?, synthesized?, fren_spec] at h <;>
+    simp [synth_core, provided, placed_core?, judge_core, judge_local, judge_if, outcome_expect, outcome_local, fren_spec] at h <;>
       simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?, fren_spec] <;> simp_all
 
-/-- `thir.algorithmic.complete`, for the lift. -/
+/-- `thir.algorithmic.agreement`, complete, for the lift. -/
 theorem synth_core_complete (symb : Snoc Entry) (ctx : Snoc Ty) (form : CoreF Typing) (ty : Ty)
     (h : rule? symb ctx form ty = true) : synth_core symb ctx form = some ty := by
   cases form with
   | Unary op operand =>
     cases op <;> simp [rule?, unary_rule?, unary_type?, fren_spec] at h <;>
-      simp [synth_core, provided, checked?, unary_operand, fren_spec] <;> simp_all
+      simp [synth_core, provided, placed_core?, judge_core, judge_unary, outcome_expect, unary_operand, fren_spec] <;> simp_all
   | Binary op left right =>
     cases op <;> simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?,
       boolean_binary?, fren_spec] at h <;>
-      simp [synth_core, provided, checked?, synthesized?, binary_operand, binary_output,
-        integer_binary?, comparison?, boolean_binary?, fren_spec] <;> simp_all
+      simp [synth_core, provided, placed_core?, judge_core, judge_binary, outcome_expect, binary_operand, binary_output, integer_binary?, comparison?,
+        boolean_binary?, fren_spec] <;> simp_all
   | Constructor item =>
     cases hE : entry symb item with
     | none => simp [rule?, constructor_rule?, hE, fren_spec] at h
     | some kind =>
       cases kind <;> simp [rule?, constructor_rule?, hE, fren_spec] at h <;>
-        simp [synth_core, hE, fren_spec] <;> simp_all
+        simp [synth_core, provided, placed_core?, judge_core, judge_constructor, outcome_type,
+          hE, fren_spec] <;> simp_all
   | Call item args =>
     cases hE : entry symb item with
     | none => simp [rule?, call_rule?, hE, fren_spec] at h
     | some kind =>
-      cases kind <;> simp [rule?, call_rule?, hE, fren_spec] at h <;>
-        simp [synth_core, provided, hE, fren_spec] <;> simp_all
+      cases kind with
+      | Function sig =>
+        simp [rule?, call_rule?, hE, fren_spec] at h
+        obtain ⟨⟨hty, hin⟩, hat⟩ := h
+        obtain ⟨hlen, hj⟩ := arguments_accepted args sig.params (.Typed sig.result) hat
+        simp [synth_core, provided, placed_core?, judge_core, judge_call, hE, hlen, hj,
+          outcome_type, hin, hty, fren_spec]
+      | _ => simp [rule?, call_rule?, hE, fren_spec] at h
   | Match scrutinee arms =>
     rcases scrutinee with ⟨sc, sty⟩
     cases sty <;> simp [rule?, match_rule?, fren_spec] at h
+    rename_i owner
     have hf := first_arm_typed arms ctx ty h.1.1.2 h.1.2
-    simp [synth_core, provided, synthesized?, hf, fren_spec]
-    simp_all
+    obtain ⟨hin, hj⟩ := arms_accepted symb owner ty arms ctx (.Typed ty) h.2 h.1.2
+    simp [synth_core, provided, placed_core?, judge_core, judge_match, hf, hj, hin,
+      outcome_type, h.1.1.1, fren_spec]
   | Let annotation value body =>
     cases annotation <;> simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at h <;>
-      simp [synth_core, provided, value_typed?, checked?, synthesized?, fren_spec] <;> simp_all
+      simp [synth_core, provided, placed_core?, judge_core, judge_let, outcome_expect, fren_spec] <;> simp_all
   | _ =>
     simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?, fren_spec] at h <;>
-      simp [synth_core, provided, checked?, synthesized?, fren_spec] <;> simp_all
+      simp [synth_core, provided, placed_core?, judge_core, judge_local, judge_if, outcome_expect, outcome_local, fren_spec] <;> simp_all
 
 /-! ### The lift to tables -/
 
@@ -961,8 +1141,10 @@ theorem desugar_valid (symb : Snoc Entry) (rows : Snoc HirRow)
       cases ha : annotate core f with
       | none => simp [ha] at h2
       | some typed =>
-        simp only [ha, check_layer?, synth_layer, decide_eq_true_eq] at h2
-        have hr := synth_core_sound symb rc typed rt h2
+        simp only [ha] at h2
+        have h3 : synth_core symb rc typed = some rt := by
+          rw [← synth_layer_core]; exact of_decide_eq_true h2
+        have hr := synth_core_sound symb rc typed rt h3
         exact ⟨.Extend core ⟨f, rc, rt⟩, by simp [desugar_rows, core_row, hd],
           by simp [rows_valid?, hc, hctx, ha, hr]⟩
     | Paren body =>
@@ -970,7 +1152,7 @@ theorem desugar_valid (symb : Snoc Entry) (rows : Snoc HirRow)
       cases hl : lookup _ core body with
       | none => simp [typing_at, hl] at h2
       | some d =>
-        simp [typing_at, hl, check_layer?, synth_layer, provided, synthesized?, fren_spec] at h2
+        simp [typing_at, hl, synth_layer, provided, placed?, outcome_type, fren_spec] at h2
         obtain ⟨typed, ha, hr⟩ := core_rows_layer symb core hc body d hl
         rw [h2.1, h2.2] at hr
         exact ⟨.Extend core ⟨d.form, rc, rt⟩, by simp [desugar_rows, core_row, hd, hl],
@@ -1078,8 +1260,9 @@ theorem desugaring_reflects_typing (symb : Snoc Entry) (rows : Snoc HirRow) (cor
           simp only [ha] at hl
           have hs := synth_core_complete symb rc typed rt hl
           have hctx : ctx_ok? symb rc = true := hc.1.2
-          simp [hir_rows_valid?, ih c hp.1 hd' hc.1.1, hd', hir_annotate, ha, check_layer?,
-            synth_layer, hs, hctx]
+          have hs' : synth_layer symb rc (.Core typed) = some rt := by
+            rw [synth_layer_core]; exact hs
+          simp [hir_rows_valid?, ih c hp.1 hd' hc.1.1, hd', hir_annotate, ha, hs', hctx]
       | Paren body =>
         cases hl : lookup _ c body with
         | none => simp [hd', hl] at hd
@@ -1088,8 +1271,31 @@ theorem desugaring_reflects_typing (symb : Snoc Entry) (rows : Snoc HirRow) (cor
           simp only [rows_valid?, decide_eq_true_eq] at hc
           have hctx : ctx_ok? symb rc = true := hc.1.2
           simp [hd'] at hp2
-          simp [hir_rows_valid?, ih c hp.1 hd' hc.1.1, hd', hir_annotate, hp2, check_layer?,
-            synth_layer, provided, synthesized?, hctx, fren_spec]
+          simp [hir_rows_valid?, ih c hp.1 hd' hc.1.1, hd', hir_annotate, hp2, synth_layer,
+            provided, placed?, outcome_type, hctx, fren_spec]
+
+/-- A valid table's parentheses are faithful: half of `thir.algorithmic.reflection`. -/
+theorem hir_valid_faithful (symb : Snoc Entry) (rows : Snoc HirRow)
+    (hv : hir_rows_valid? symb rows = true) : parens_faithful? rows = true := by
+  induction rows with
+  | Empty => simp [parens_faithful?]
+  | Extend earlier row ih =>
+    simp only [hir_rows_valid?, decide_eq_true_eq] at hv
+    have h2 := hv.2
+    rcases row with ⟨form, rc, rt⟩
+    cases hd : desugar_rows earlier with
+    | none => simp [hd] at h2
+    | some core =>
+      cases form with
+      | Core f => simp [parens_faithful?, ih hv.1.1]
+      | Paren body =>
+        simp only [hd, hir_annotate] at h2
+        cases ht : typing_at core body with
+        | none => simp [ht] at h2
+        | some typed =>
+          rcases typed with ⟨tc, tt⟩
+          simp [ht, synth_layer, provided, placed?, outcome_type, fren_spec] at h2
+          simp [parens_faithful?, ih hv.1.1, hd, ht, h2.1, h2.2]
 
 /-- `thir.algorithmic.unique`. -/
 theorem hir_table_unique (symb : Snoc Entry) (left right : Snoc HirRow)
@@ -1122,10 +1328,25 @@ theorem hir_table_unique (symb : Snoc Entry) (left right : Snoc HirRow)
         cases ha : hir_annotate core lf with
         | none => simp [hd, ha] at hl2
         | some form =>
-          simp only [hd, ha, check_layer?, decide_eq_true_eq] at hl2 hr2
+          simp only [hd, ha, decide_eq_true_eq] at hl2 hr2
           have := hl2.symm.trans hr2
           simp at this
           rw [this]
+
+/-- `thir.algorithmic.expression-sound`: the commuting square, by `types.derivation.unique-expression`. -/
+theorem expression_sound_typing (symb : Snoc Entry) (ctx : Snoc Ty) (hir : Snoc HirRow)
+    (core : Snoc Row) (pairs : Snoc Pair) (a b : Ty) (hs : synthesis? symb hir ctx a = true)
+    (hc : derivation? symb core ctx b = true) (ha : desugars_alike? hir core pairs = true) :
+    a = b := by
+  have hd := desugaring_preserves_typing symb hir ctx a hs
+  simp only [desugared_derivation?] at hd
+  simp only [desugars_alike?] at ha
+  cases hr : desugar_rows hir with
+  | none => simp [hr] at hd
+  | some desugared =>
+    simp only [hr] at hd ha
+    exact Spec.Language.Types.expression_unique symb ctx desugared core pairs a b
+      (of_decide_eq_true hd) hc (of_decide_eq_true ha)
 
 /-! ### The production operator modes -/
 
@@ -1142,6 +1363,195 @@ theorem algorithmic_binary_output (op : BinaryOp) :
     coreType (binary_output op) = FrenExpr.binaryResult (coreBinary op) := by
   cases op <;> simp [coreType, coreBinary, binary_output, FrenExpr.binaryResult, integer_binary?,
     fren_spec]
+
+/-! ### The production checker's outcomes -/
+
+/-- A type of this chapter as a production type, under a naming of the nominal types. -/
+def prodType (ι : Fren.Seq String → FrenBase.ItemId) : Ty → FrenExpr.Ty
+  | .Boolean => .bool
+  | .Integer => .int
+  | .Nominal owner => .enum (ι owner)
+
+/-- What a production result decides: the type of the node, or the blamed origin and reason. -/
+def verdict (r : FrenHirToThir.Pass.Result (FrenExpr.Expr .thir)) :
+    Except (FrenExpr.OriginId × FrenHirToThir.Pass.Reason) FrenExpr.Ty :=
+  match r with
+  | .ok e => .ok e.ann
+  | .error e => .error (e.origin, e.reason)
+
+/-- The production reading of an outcome, where `site` gives the origin of each premise.
+Only a type and a mismatch are read; the other faults belong to forms whose production
+correspondence is open (`thir.algorithmic.production`). -/
+def produced (ι : Fren.Seq String → FrenBase.ItemId) (site : Premise → FrenExpr.OriginId) :
+    Outcome → Option (Except (FrenExpr.OriginId × FrenHirToThir.Pass.Reason) FrenExpr.Ty)
+  | .Typed ty => some (.ok (prodType ι ty))
+  | .Blamed premise (.Mismatch expected found) =>
+    some (.error (site premise, .mismatch (prodType ι expected) (prodType ι found)))
+  | .Blamed _ _ => none
+
+theorem prodType_compatible (ι : Fren.Seq String → FrenBase.ItemId)
+    (hι : Function.Injective ι) (a b : Ty) :
+    (prodType ι a).compatible (prodType ι b) = true ↔ a = b := by
+  rw [FrenExpr.ValueType.compatible_iff]
+  cases a <;> cases b <;> simp [prodType, hι.eq_iff]
+
+theorem prodType_unary_operand (ι : Fren.Seq String → FrenBase.ItemId) (op : UnaryOp) :
+    prodType ι (unary_operand op) = FrenExpr.unaryOperand (coreUnary op) := by
+  cases op <;> simp [prodType, coreUnary, FrenExpr.unaryOperand, fren_spec]
+
+theorem prodType_binary_operand (ι : Fren.Seq String → FrenBase.ItemId) (op : BinaryOp)
+    (left : Ty) :
+    prodType ι (binary_operand op left) =
+      FrenExpr.binaryOperand (coreBinary op) (prodType ι left) := by
+  cases op <;> simp [prodType, coreBinary, binary_operand, FrenExpr.binaryOperand,
+    integer_binary?, comparison?, boolean_binary?, fren_spec]
+
+theorem prodType_binary_output (ι : Fren.Seq String → FrenBase.ItemId) (op : BinaryOp) :
+    prodType ι (binary_output op) = FrenExpr.binaryResult (coreBinary op) := by
+  cases op <;> simp [prodType, coreBinary, binary_output, FrenExpr.binaryResult,
+    integer_binary?, fren_spec]
+
+/-- `thir.algorithmic.step`, unary: `step` returns the outcome of `judge_unary`,
+blaming the operand at its origin. -/
+theorem step_unary (ι : Fren.Seq String → FrenBase.ItemId) (hι : Function.Injective ι)
+    (env : FrenHirToThir.Pass.Env) (o : FrenExpr.OriginId) (a : FrenExpr.Ann .hir)
+    (op : UnaryOp) (operand : Typing) (child : FrenHirToThir.Pass.Typing)
+    (ctx : FrenHirToThir.Pass.Ctx) (te : FrenExpr.Expr .thir) (site : Premise → FrenExpr.OriginId)
+    (hc : child ctx = .ok te) (ht : te.ann = prodType ι operand.ty)
+    (hs : site .Operand = te.origin) :
+    produced ι site (judge_unary op operand) =
+      some (verdict (FrenHirToThir.Pass.step env o a (.unary (coreUnary op) child) ctx)) := by
+  have hv : verdict (FrenHirToThir.Pass.step env o a (.unary (coreUnary op) child) ctx) =
+      match FrenExpr.unary (coreUnary op) te.ann with
+      | some ty => .ok ty
+      | none => .error (te.origin, .mismatch (FrenExpr.unaryOperand (coreUnary op)) te.ann) := by
+    simp only [FrenHirToThir.Pass.step, hc, Bind.bind, Except.bind]
+    cases FrenExpr.unary (coreUnary op) te.ann <;> rfl
+  rw [hv, ht]
+  simp only [FrenExpr.unary, ← prodType_unary_operand ι, judge_unary, expect_type]
+  by_cases h : operand.ty = unary_operand op
+  · simp [h, (prodType_compatible ι hι _ _).2, produced]
+  · have hn : (prodType ι operand.ty).compatible (prodType ι (unary_operand op)) = false :=
+      Bool.eq_false_iff.2 fun hh => h ((prodType_compatible ι hι _ _).1 hh)
+    simp [h, hn, produced, hs]
+
+
+theorem expect_prodType (ι : Fren.Seq String → FrenBase.ItemId) (hι : Function.Injective ι)
+    (env : FrenHirToThir.Pass.Env) (o : FrenExpr.OriginId) (expected found : Ty) :
+    env.expect o (prodType ι expected) (prodType ι found) =
+      if found = expected then .ok ()
+      else .error ⟨env.item, o, .mismatch (prodType ι expected) (prodType ι found)⟩ := by
+  unfold FrenHirToThir.Pass.Env.expect FrenHirToThir.Pass.Env.fail
+  by_cases h : found = expected
+  · simp [h, (prodType_compatible ι hι _ _).2]
+  · have hn : (prodType ι found).compatible (prodType ι expected) = false :=
+      Bool.eq_false_iff.2 fun hh => h ((prodType_compatible ι hι _ _).1 hh)
+    simp [h, hn]
+
+/-- `thir.algorithmic.step`, binary: `step` returns the outcome of `judge_binary`,
+blaming the left and then the right operand at its origin. -/
+theorem step_binary (ι : Fren.Seq String → FrenBase.ItemId) (hι : Function.Injective ι)
+    (env : FrenHirToThir.Pass.Env) (o : FrenExpr.OriginId) (a : FrenExpr.Ann .hir)
+    (op : BinaryOp) (left right : Typing) (l r : FrenHirToThir.Pass.Typing)
+    (ctx : FrenHirToThir.Pass.Ctx) (tl tr : FrenExpr.Expr .thir)
+    (site : Premise → FrenExpr.OriginId)
+    (hl : l ctx = .ok tl) (hr : r ctx = .ok tr)
+    (htl : tl.ann = prodType ι left.ty) (htr : tr.ann = prodType ι right.ty)
+    (hsl : site .Left = tl.origin) (hsr : site .Right = tr.origin) :
+    produced ι site (judge_binary op left right) =
+      some (verdict (FrenHirToThir.Pass.step env o a (.binary (coreBinary op) l r) ctx)) := by
+  simp only [FrenHirToThir.Pass.step, hl, hr, Bind.bind, Except.bind, htl, htr,
+    ← prodType_binary_operand ι, expect_prodType ι hι, FrenExpr.binary, judge_binary, expect_type]
+  by_cases h1 : left.ty = binary_operand op left.ty
+  · by_cases h2 : right.ty = binary_operand op left.ty
+    · simp [← h1, h2, (prodType_compatible ι hι _ _).2, produced, ← prodType_binary_output ι]
+      rfl
+    · have hn : (prodType ι right.ty).compatible (prodType ι left.ty) = false :=
+        Bool.eq_false_iff.2 fun hh => h2 (h1 ▸ (prodType_compatible ι hι _ _).1 hh)
+      have h2' : ¬right.ty = left.ty := fun hh => h2 (hh.trans h1)
+      simp [← h1, h2', hn, produced, hsr]
+      rfl
+  · simp [h1, produced, hsl]
+    rfl
+
+/-- `thir.algorithmic.step`, conditional: `step` returns the outcome of `judge_if`,
+blaming the condition and then the second branch at its origin. -/
+theorem step_if (ι : Fren.Seq String → FrenBase.ItemId) (hι : Function.Injective ι)
+    (env : FrenHirToThir.Pass.Env) (o : FrenExpr.OriginId) (a : FrenExpr.Ann .hir)
+    (condition then_branch else_branch : Typing) (c y n : FrenHirToThir.Pass.Typing)
+    (ctx : FrenHirToThir.Pass.Ctx) (tc ty tn : FrenExpr.Expr .thir)
+    (site : Premise → FrenExpr.OriginId)
+    (hc : c ctx = .ok tc) (hy : y ctx = .ok ty) (hn : n ctx = .ok tn)
+    (htc : tc.ann = prodType ι condition.ty) (hty : ty.ann = prodType ι then_branch.ty)
+    (htn : tn.ann = prodType ι else_branch.ty)
+    (hsc : site .Condition = tc.origin) (hsn : site .ElseBranch = tn.origin) :
+    produced ι site (judge_if condition then_branch else_branch) =
+      some (verdict (FrenHirToThir.Pass.step env o a (.ite c y n) ctx)) := by
+  have hb : (FrenExpr.ValueType.bool : FrenExpr.Ty) = prodType ι .Boolean := rfl
+  simp only [FrenHirToThir.Pass.step, hc, hy, hn, Bind.bind, Except.bind, htc, hty, htn, hb,
+    expect_prodType ι hι, judge_if, expect_type]
+  by_cases h1 : condition.ty = .Boolean
+  · by_cases h2 : else_branch.ty = then_branch.ty
+    · simp [h1, h2, produced]
+      rfl
+    · simp [h1, h2, produced, hsn]
+      rfl
+  · simp [h1, produced, hsc]
+    rfl
+
+/-- `thir.algorithmic.step`, binding: `step` returns the outcome of `judge_let`, where
+the binder is annotated `Bool` exactly when it carries the suffix, blaming the binder. -/
+theorem step_let (ι : Fren.Seq String → FrenBase.ItemId) (hι : Function.Injective ι)
+    (env : FrenHirToThir.Pass.Env) (o : FrenExpr.OriginId) (a : FrenExpr.Ann .hir)
+    (value body : Typing) (b : FrenExpr.Binder) (v e : FrenHirToThir.Pass.Typing)
+    (ctx : FrenHirToThir.Pass.Ctx) (tv te : FrenExpr.Expr .thir)
+    (site : Premise → FrenExpr.OriginId)
+    (hv : v ctx = .ok tv) (he : e (tv.ann :: ctx) = .ok te)
+    (htv : tv.ann = prodType ι value.ty) (hte : te.ann = prodType ι body.ty)
+    (hs : site .Binder = b.origin) :
+    produced ι site (judge_let (if b.suffix = true then some .Boolean else none) value body) =
+      some (verdict (FrenHirToThir.Pass.step env o a (.letE b v e) ctx)) := by
+  have hb : (FrenExpr.ValueType.bool : FrenExpr.Ty) = prodType ι .Boolean := rfl
+  simp only [FrenHirToThir.Pass.step, hv, Bind.bind, Except.bind, he]
+  rw [htv, hb]
+  simp only [expect_prodType ι hι, judge_let, expect_type]
+  by_cases h1 : b.suffix = true
+  · by_cases h2 : value.ty = .Boolean
+    · simp [h1, h2, produced, ← hte]
+      rfl
+    · simp [h1, h2, produced, hs]
+      rfl
+  · simp [h1, produced, ← hte]
+    rfl
+
+/-- `thir.algorithmic.step`, parentheses: `step` returns the outcome of `judge_paren`. -/
+theorem step_paren (ι : Fren.Seq String → FrenBase.ItemId) (symb : Snoc Entry) (rc : Snoc Ty)
+    (env : FrenHirToThir.Pass.Env) (o : FrenExpr.OriginId) (a : FrenExpr.Ann .hir)
+    (g : FrenExpr.Phase.Surface .hir) (inner : Typing) (e : FrenHirToThir.Pass.Typing)
+    (ctx : FrenHirToThir.Pass.Ctx) (te : FrenExpr.Expr .thir)
+    (site : Premise → FrenExpr.OriginId)
+    (he : e ctx = .ok te) (hte : te.ann = prodType ι inner.ty) :
+    produced ι site (judge_layer symb rc (.Paren inner)) =
+      some (verdict (FrenHirToThir.Pass.step env o a (.paren g e) ctx)) := by
+  simp only [FrenHirToThir.Pass.step, he, Bind.bind, Except.bind, produced, ← hte]
+  rfl
+
+/-- `thir.algorithmic.step`, bodies: `typeBody` returns the outcome of `judge_body`,
+blaming the body at its origin. -/
+theorem body_checked (ι : Fren.Seq String → FrenBase.ItemId) (hι : Function.Injective ι)
+    (env : FrenHirToThir.Pass.Env) (ctx : FrenHirToThir.Pass.Ctx) (expected found : Ty)
+    (body : FrenExpr.Expr .hir) (out : FrenExpr.Expr .thir)
+    (site : Premise → FrenExpr.OriginId)
+    (hf : FrenExpr.Expr.fold (FrenHirToThir.Pass.step env) body ctx = .ok out)
+    (ht : out.ann = prodType ι found) (hs : site .Whole = out.origin) :
+    produced ι site (judge_body expected found) =
+      some (verdict (FrenHirToThir.Pass.typeBody env ctx (prodType ι expected) body)) := by
+  simp only [FrenHirToThir.Pass.typeBody, hf, Bind.bind, Except.bind, ht,
+    expect_prodType ι hι, judge_body, expect_type]
+  by_cases h : found = expected
+  · subst h
+    simp [produced, verdict, pure, Except.pure, ht]
+  · simp [h, produced, verdict, hs]
 
 end Algorithmic
 
@@ -1193,14 +1603,130 @@ impl desugaring_reflects_proof: desugaring_reflects for (symb : Snoc Entry)
 } by
   intro symb rows _
   simp only [desugaring_reflects.ensures, desugaring_reflects.ensure.output,
-    desugaring_reflects.ensure.typed]
+    desugaring_reflects.ensure.exact]
+  refine ⟨trivial, ?_⟩
+  have hiff : hir_rows_valid? symb rows = true ↔
+      (desugared_valid? symb rows = true ∧ parens_faithful? rows = true) := by
+    constructor
+    · intro hv
+      obtain ⟨core, hd, hc⟩ := Spec.Compiler.Thir.desugar_valid symb rows hv
+      exact ⟨by simp [desugared_valid?, hd, hc],
+        Spec.Compiler.Thir.hir_valid_faithful symb rows hv⟩
+    · intro h
+      cases hd : desugar_rows rows with
+      | none => simp [desugared_valid?, hd] at h
+      | some core =>
+        exact Spec.Compiler.Thir.desugaring_reflects_typing symb rows core h.2 hd
+          (by simpa [desugared_valid?, hd] using h.1)
+  simpa using hiff
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl arguments_judged_proof: arguments_judged for (args : Snoc Typing) (params : Snoc Ty)
+    (rest : Outcome) {
+  args := args, params := params, rest := rest, holds? := true
+} by
+  intro args params rest _
+  simp only [arguments_judged.ensures, arguments_judged.ensure.output,
+    arguments_judged.ensure.accepted, arguments_judged.ensure.rejected]
+  refine ⟨trivial, ?_, ?_⟩
+  · intro h
+    have := Spec.Compiler.Thir.arguments_accepted args params rest h
+    simp [this.1, this.2]
+  · intro h
+    have := Spec.Compiler.Thir.arguments_rejected args params rest (by simpa using h.1)
+      (by simpa using h.2)
+    simp [this]
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl arms_judged_proof: arms_judged for (symb : Snoc Entry) (owner : Fren.Seq String) (common : Ty)
+    (arms : Snoc (ArmF Typing)) (ctx : Snoc Ty) (rest : Outcome) {
+  symb := symb, owner := owner, common := common, arms := arms, ctx := ctx, rest := rest,
+  holds? := true
+} by
+  intro symb owner common arms ctx rest _
+  simp only [arms_judged.ensures, arms_judged.ensure.output, arms_judged.ensure.accepted,
+    arms_judged.ensure.rejected]
+  refine ⟨trivial, ?_, ?_⟩
+  · intro h
+    have := Spec.Compiler.Thir.arms_accepted symb owner common arms ctx rest h.1 h.2
+    simp [this.1, this.2]
+  · intro h
+    have := Spec.Compiler.Thir.arms_rejected symb owner common arms ctx rest h.1 h.2
+    simp [this]
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl match_agrees_proof: match_agrees for (symb : Snoc Entry) (ctx : Snoc Ty)
+    (scrutinee : Typing) (arms : Snoc (ArmF Typing)) (ty : Ty) {
+  symb := symb, ctx := ctx, scrutinee := scrutinee, arms := arms, ty := ty, holds? := true
+} by
+  intro symb ctx scrutinee arms ty _
+  simp only [match_agrees.ensures, match_agrees.ensure.output, match_agrees.ensure.exact]
+  refine ⟨trivial, ?_⟩
+  have hiff : synth_layer symb ctx (.Core (.Match scrutinee arms)) = some ty ↔
+      rule? symb ctx (.Match scrutinee arms) ty = true := by
+    rw [Spec.Compiler.Thir.synth_layer_core]
+    exact ⟨Spec.Compiler.Thir.synth_core_sound symb ctx _ ty,
+      Spec.Compiler.Thir.synth_core_complete symb ctx _ ty⟩
+  simpa using hiff
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl expression_sound_proof: expression_sound for (symb : Snoc Entry) (ctx : Snoc Ty)
+    (hir : Snoc HirRow) (core : Snoc Row) (pairs : Snoc Pair) (a b : Ty) {
+  symb := symb, ctx := ctx, hir := hir, core := core, pairs := pairs, a := a, b := b,
+  holds? := true
+} by
+  intro symb ctx hir core pairs a b _
+  simp only [expression_sound.ensures, expression_sound.ensure.output,
+    expression_sound.ensure.agrees]
   refine ⟨trivial, ?_⟩
   intro h
-  cases hd : desugar_rows rows with
-  | none => simp [desugared_valid?, hd] at h
+  exact Spec.Compiler.Thir.expression_sound_typing symb ctx hir core pairs a b h.1.1 h.1.2 h.2
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl expression_unique_proof: expression_unique for (symb : Snoc Entry) (ctx : Snoc Ty)
+    (left right : Snoc HirRow) (pairs : Snoc Pair) (a b : Ty) {
+  symb := symb, ctx := ctx, left := left, right := right, pairs := pairs, a := a, b := b,
+  holds? := true
+} by
+  intro symb ctx left right pairs a b _
+  simp only [expression_unique.ensures, expression_unique.ensure.output,
+    expression_unique.ensure.unique]
+  refine ⟨trivial, ?_⟩
+  intro h
+  have hr := Spec.Compiler.Thir.desugaring_preserves_typing symb right ctx b h.1.2
+  have ha := h.2
+  simp only [desugarings_alike?] at ha
+  simp only [desugared_derivation?] at hr
+  cases hd : desugar_rows right with
+  | none => simp [hd] at ha
   | some core =>
-    exact Spec.Compiler.Thir.desugaring_reflects_typing symb rows core h.1 hd
-      (by simpa [desugared_valid?, hd] using h.2)
+    simp only [hd] at ha hr
+    exact Spec.Compiler.Thir.expression_sound_typing symb ctx left core pairs a b h.1.1
+      (of_decide_eq_true hr) (of_decide_eq_true ha)
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl judged_examples_proof: judged_examples { holds? := true } by
+  intro _
+  simp only [judged_examples.ensures, judged_examples.ensure.output,
+    judged_examples.ensure.literal, judged_examples.ensure.unbound,
+    judged_examples.ensure.not_value, judged_examples.ensure.operand,
+    judged_examples.ensure.left, judged_examples.ensure.right, judged_examples.ensure.equality,
+    judged_examples.ensure.arity, judged_examples.ensure.argument,
+    judged_examples.ensure.not_callable, judged_examples.ensure.local_callee,
+    judged_examples.ensure.binder, judged_examples.ensure.condition,
+    judged_examples.ensure.else_branch, judged_examples.ensure.scrutinee,
+    judged_examples.ensure.no_arms, judged_examples.ensure.foreign_pattern,
+    judged_examples.ensure.pattern, judged_examples.ensure.later_body,
+    judged_examples.ensure.paren, judged_examples.ensure.body]
+  decide
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl paren_true_proof: paren_true { holds? := true } by
+  intro _
+  simp only [paren_true.ensures, paren_true.ensure.output, paren_true.ensure.accepted,
+    paren_true.ensure.desugared, paren_true.ensure.preserved, paren_true.ensure.smaller,
+    paren_true.ensure.alike]
+  decide
 
 open spec.surface spec.names spec.types spec.algorithmic in
 impl synthesis_unique_proof: synthesis_unique for (symb : Snoc Entry)

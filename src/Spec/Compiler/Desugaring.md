@@ -83,10 +83,10 @@ output's bodies. The node count falls by one for each parenthesis, and
 scoping is unchanged. Only the tests cover the last four for the pass
 itself. For supplied derivation tables, not for expressions, the THIR
 chapter proves that desugaring preserves typing
-(`thir.algorithmic.preservation`) and, when each parenthesis row has the
-context and type of its body's row, reflects it
-(`thir.algorithmic.reflection`); no theorem states that desugaring preserves
-scoping or evaluation.
+(`thir.algorithmic.preservation`) and that a table is valid exactly when its
+desugaring is valid and each parenthesis row has the context and type of its
+body's row (`thir.algorithmic.reflection`); no theorem states that
+desugaring preserves scoping or evaluation.
 
 Parentheses are concrete syntax. The [Language](../Language/Types.md)
 states its typing and evaluation rules over the Core, which has no

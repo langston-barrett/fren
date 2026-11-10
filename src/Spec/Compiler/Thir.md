@@ -345,19 +345,9 @@ For an admitted resolved expression, a successful production typing
 traversal yields a derivation of its reported type in its resolved context
 for the desugared expression, and every such derivation is accepted by that
 traversal. The correspondence retains every written occurrence and relates
-nearest-first indices to levels as `thir.core.levels` states. It has two
-halves, and neither is proved for expressions.
-[Algorithmic typing](#algorithmic-typing) proves a part of the first, for
-supplied derivation tables only: a HIR table that the bidirectional rules
-accept desugars to a Core table that the declarative rules accept
-(`thir.algorithmic.preservation`), and a HIR table whose desugaring the
-declarative rules accept is itself accepted, provided each of its
-parenthesis rows has the context and type of its body's row
-(`thir.algorithmic.reflection`). That a HIR expression synthesizes a type
-whenever its desugaring has that type in the Core is open
-(`thir.algorithmic.expression-complete`). The second half, that the
-production traversal is that judgment, is open, as
-`thir.algorithmic.production` states.
+nearest-first indices to levels as `thir.core.levels` states. This is open.
+[Algorithmic typing](#algorithmic-typing) states the traversal's rules and
+what is proved of them.
 
 The following contracts express the production operator decisions with a
 finite tag and a separate nominal equality atom.
@@ -449,54 +439,34 @@ pub proc binary(op: BinaryTag, left: ValueKind, right: ValueKind, left_id: Int, 
 ## Algorithmic typing
 
 The Core's typing rules are declarative: `Σ; Γ ⊢ e : τ` says which types an
-expression has, and gives no order in which to find them. This section
-states the checker's rules as a *bidirectional* judgment over HIR, the
-checker's input. *Synthesis* `Σ; Γ ⊢ e ⇒ τ` computes τ from Σ, Γ and e.
-*Checking* `Σ; Γ ⊢ e ⇐ τ` takes τ as an input as well. Each premise of a
-rule is in one of the two modes, so a rule says where each expected type
-comes from. The language has no subtyping and every form synthesizes, so the
-two modes accept the same expressions; they differ in which premise a
-mismatch is reported against.
+expression has, and gives no order in which to find them or to report a
+failure. This section states the checker's rules as a *bidirectional*
+judgment over HIR, the checker's input. *Synthesis* `Σ; Γ ⊢ e ⇒ τ` computes
+τ from Σ, Γ and e. *Checking* `Σ; Γ ⊢ e ⇐ τ` takes τ as an input as well.
+The language has no subtyping and every form synthesizes, so the two modes
+accept the same expressions. They differ in what a failure reports: a
+checking premise that fails *blames* its own expression, with the expected
+type and the type found.
 
 The Core is the desugared THIR. A HIR expression is typed to a THIR
 expression, which keeps every written parenthesis, and
 [desugaring](Desugaring.md) removes the parentheses. The declarative rules
-type the result of both steps. The rules below are sound and complete for
-them one layer at a time. For a supplied table of typed rows, they are
-related to the declarative rules in both directions, the converse under a
-hypothesis on the table's parenthesis rows. Nothing below is proved for an
-expression given as a tree; the rules that would do so are stated as open.
+type the result of both steps.
 
-```text
-                    valid HIR table, root Γ, τ
-   HIR rows T  ───────────────────────────▶  typed HIR table T
-     │                                            │
-     │ erase parentheses                          │ desugar
-     ▼                                            ▼
-   Core rows |T|  ────────────────────────▶  typed Core table |T|
-                    valid Core table, root Γ, τ
-```
+| Judgment | Subject | Rule |
+| --- | --- | --- |
+| `c ⇒ σ`, `c ⇐ σ` as a premise | a child of a layer, already typed | `thir.algorithmic.modes` |
+| `Σ; Γ ⊢ l ⇒ τ`, or a blamed premise | one layer, its children's typings given | `thir.algorithmic.synthesis` |
+| valid table | a table of typed rows | `thir.algorithmic.table` |
+| `Σ; Γ ⊢ e ⇒ τ` | a HIR expression | `thir.algorithmic.judgment` |
+| `Σ; Γ ⊢ e ⇐ τ` | the body of a declaration | `thir.algorithmic.declaration` |
 
-Here `|T|` is the desugaring of the table T, which has a row for each row of
-T with the same context and type. The square is stated for supplied tables,
-whose rows already carry their contexts and types. Downwards, desugaring
-preserves typing: when T is a valid HIR table, `|T|` is a valid Core table
-with the same root (`thir.algorithmic.preservation`). Upwards, when `|T|` is
-a valid Core table and each parenthesis row of T has the context and type of
-its body's row, T is a valid HIR table (`thir.algorithmic.reflection`); the
-hypothesis is needed, as that rule's example shows. The statement for
-expressions, that e synthesizes τ in Γ exactly when its desugaring `|e|` has
-type τ in Γ in the Core, is not proved: it needs
-`thir.algorithmic.tree-lift` and `thir.algorithmic.expression-complete`,
-which are open.
+### Layers
 
 r[thir.algorithmic.layer] spec::algorithmic::HirF
 A *HIR layer* is a Core layer or a parenthesis around one child. As in a
 Core layer, a child position holds the child's typing: the context it was
-typed in and the type it synthesized. In HIR a constructor is an item in
-value position, a call is an application whose callee is an item, and a let
-whose binder has the `?` suffix is a let annotated `Bool`. An application
-whose callee is a local has no layer and no type.
+typed in and the type it synthesized.
 
 ```fren
 pub mod spec::algorithmic
@@ -506,14 +476,21 @@ use spec::names::{
     CoreF,
     Ctx,
     Form,
+    ItemId,
     ItemKind,
+    LIGHT,
+    LIGHT_GREEN,
+    LIGHT_RED,
+    Sig,
     Symb,
     Ty,
     ctx_ok?,
     entry,
     length,
     lookup,
+    one,
     symb_ok?,
+    two,
 }
 
 use spec::surface::{BinaryOp, Snoc, UnaryOp}
@@ -521,8 +498,14 @@ use spec::surface::Snoc::{Empty, Extend}
 use spec::thir
 
 use spec::types::{
+    F,
+    Pair,
     Row,
+    SIGNAL,
+    SIGNAL_RED,
+    SYMB,
     Typing,
+    alike?,
     annotate,
     argument_types?,
     arm_bodies?,
@@ -542,14 +525,110 @@ use spec::types::{
 pub enum HirF<E> { Core(CoreF<E>), Paren(E) }
 ```
 
-r[thir.algorithmic.modes] spec::algorithmic::{synthesized?, checked?}
-A premise `Σ; Γ ⊢ c ⇒ σ` on a child c holds when c was typed in Γ; σ is then
-the type c synthesized. A premise `Σ; Γ ⊢ c ⇐ σ` holds when c was typed in Γ
-and synthesized σ.
+r[thir.algorithmic.embedding] spec::algorithmic::{Callee, NodeF, embed}
+A *HIR node* is one node of the checker's input. It differs from a HIR
+layer in three forms. An item in value position is a constructor layer. An
+application whose callee is an item is a call layer; an application whose
+callee is a local has no layer. A let carries only whether its binder has
+the `?` suffix: with the suffix it is the let annotated `Bool`, and without
+it the let with no annotation. No HIR node is a let annotated with another
+type. Every other node is the layer of the same form with the same children.
 
 ```fren
-pub fn synthesized?(child: Typing, ctx: Ctx) := child.ctx = ctx
-pub fn checked?(child: Typing, ctx: Ctx, expected: Ty) := child.ctx = ctx and child.ty = expected
+pub enum Callee { Item(ItemId), Local(Int) }
+
+pub enum NodeF<E> {
+    BooleanLiteral(Bool),
+    IntegerLiteral(Int),
+    Local(Int),
+    Item(ItemId),
+    Apply(Callee, Snoc<E>),
+    Unary(UnaryOp, E),
+    Binary(BinaryOp, E, E),
+    If(E, E, E),
+    Let(Bool, E, E),
+    Match(E, Snoc<ArmF<E>>),
+    Paren(E),
+}
+
+pub fn embed<E>(node: NodeF<E>): Option<HirF<E>> := match node {
+    NodeF::BooleanLiteral(value?) => Some(HirF::Core(CoreF::BooleanLiteral(value?))),
+    NodeF::IntegerLiteral(value) => Some(HirF::Core(CoreF::IntegerLiteral(value))),
+    NodeF::Local(level) => Some(HirF::Core(CoreF::Local(level))),
+    NodeF::Item(item) => Some(HirF::Core(CoreF::Constructor(item))),
+    NodeF::Apply(Callee::Item(item), args) => Some(HirF::Core(CoreF::Call(item, args))),
+    NodeF::Apply(Callee::Local(_), _) => None,
+    NodeF::Unary(op, operand) => Some(HirF::Core(CoreF::Unary(op, operand))),
+    NodeF::Binary(op, left, right) => Some(HirF::Core(CoreF::Binary(op, left, right))),
+    NodeF::If(condition, then_branch, else_branch) =>
+        Some(HirF::Core(CoreF::If(condition, then_branch, else_branch))),
+    NodeF::Let(suffix?, value, body) => Some(
+        HirF::Core(
+            CoreF::Let(if suffix? then Some(Ty::Boolean) else None, value, body)
+        )
+    ),
+    NodeF::Match(scrutinee, arms) => Some(HirF::Core(CoreF::Match(scrutinee, arms))),
+    NodeF::Paren(body) => Some(HirF::Paren(body)),
+}
+```
+
+### Outcomes and modes
+
+r[thir.algorithmic.outcome] spec::algorithmic::{Premise, Fault, Outcome, outcome_type}
+Judging a layer has one *outcome*: the type it synthesizes, or the first
+premise that fails, in the order in which its rule lists them, with the
+fault found there. A premise is named by its place in the layer: the layer
+as a whole, a child, the binder of a let, or the pattern or body of the arm
+at a written index, counted from zero. A diagnostic for a blamed premise
+points at the expression, binder or pattern in that place.
+
+```fren
+pub enum Premise {
+    Whole,
+    Operand,
+    Left,
+    Right,
+    Argument(Int),
+    Binder,
+    Condition,
+    ElseBranch,
+    Scrutinee,
+    Pattern(Int),
+    Body(Int),
+}
+
+pub enum Fault {
+    -- The expected type, then the type found.
+    Mismatch(Ty, Ty),
+    Unbound,
+    NotValue,
+    NotCallable,
+    -- The number of parameters, then the number of arguments.
+    Arity(Int, Int),
+    NotEnumeration(Ty),
+    NoArms,
+    NotConstructor,
+}
+
+pub enum Outcome { Typed(Ty), Blamed(Premise, Fault) }
+
+pub fn outcome_type(outcome: Outcome): Option<Ty> := match outcome {
+    Outcome::Typed(ty) => Some(ty),
+    Outcome::Blamed(_, _) => None,
+}
+```
+
+r[thir.algorithmic.modes] spec::algorithmic::expect_type
+A premise on a child of a layer is in one of two modes. A synthesis premise
+`c ⇒ σ` reads σ, the type the child synthesized, and cannot fail. A checking
+premise `c ⇐ σ` takes σ from the rule and holds when the child synthesized
+σ; otherwise the layer's outcome blames the premise with a mismatch of the
+expected σ and the type found. `expect_type` states one checking premise,
+followed by the outcome of the premises after it.
+
+```fren
+pub fn expect_type(premise: Premise, expected: Ty, found: Ty, rest: Outcome): Outcome :=
+    if found = expected then rest else Outcome::Blamed(premise, Fault::Mismatch(expected, found))
 ```
 
 r[thir.algorithmic.operators] spec::algorithmic::{unary_operand, binary_operand, binary_output}
@@ -573,47 +652,211 @@ pub fn binary_operand(op: BinaryOp, left: Ty): Ty :=
 pub fn binary_output(op: BinaryOp): Ty := if integer_binary?(op) then Ty::Integer else Ty::Boolean
 ```
 
-r[thir.algorithmic.synthesis] spec::algorithmic::{first_body, value_typed?, synth_core, synth_layer}
-Synthesis of one layer, its children's typings given:
+### The rule of each form
+
+Each rule below gives the outcome of one form from its children's types.
+Its premises are listed, and fail, in the order written. That each child
+was typed in the context its rule prescribes is stated once for all forms,
+by `thir.algorithmic.synthesis`.
+
+r[thir.algorithmic.literal]
+A Boolean literal synthesizes `Bool` and an integer literal `Int`. Neither
+has a premise.
 
 ```text
-  ───────────────   ───────────────   Γ(x) = τ        Σ(c) = constructor of a
-  Σ; Γ ⊢ b ⇒ Bool   Σ; Γ ⊢ n ⇒ Int    ─────────────   ────────────────────────
-                                      Σ; Γ ⊢ x ⇒ τ    Σ; Γ ⊢ c ⇒ Nominal(a)
-
-  Σ; Γ ⊢ e ⇐ unary_operand(⊖)         Σ; Γ ⊢ l ⇒ σ   υ = binary_operand(⊕, σ)
-  ──────────────────────────────      Σ; Γ ⊢ l ⇐ υ   Σ; Γ ⊢ r ⇐ υ
-  Σ; Γ ⊢ ⊖ e ⇒ unary_operand(⊖)       ─────────────────────────────────────────
-                                      Σ; Γ ⊢ l ⊕ r ⇒ binary_output(⊕)
-
-  Σ(f) = function with parameters σ₀, …, σₙ₋₁ and result τ
-  Σ; Γ ⊢ aₖ ⇐ σₖ   (each k < n)
-  ────────────────────────────────────────────────────────
-  Σ; Γ ⊢ f(a₀, …, aₙ₋₁) ⇒ τ
-
-  Σ; Γ ⊢ e₁ ⇒ σ   Σ; Γ, x : σ ⊢ e₂ ⇒ τ     Σ; Γ ⊢ e₁ ⇐ σ   Σ; Γ, x : σ ⊢ e₂ ⇒ τ
-  ─────────────────────────────────────    ─────────────────────────────────────
-  Σ; Γ ⊢ let x := e₁ in e₂ ⇒ τ             Σ; Γ ⊢ let x : σ := e₁ in e₂ ⇒ τ
-
-  Σ; Γ ⊢ c ⇐ Bool   Σ; Γ ⊢ e₁ ⇒ τ   Σ; Γ ⊢ e₂ ⇐ τ      Σ; Γ ⊢ e ⇒ τ
-  ─────────────────────────────────────────────────    ───────────────
-  Σ; Γ ⊢ if c then e₁ else e₂ ⇒ τ                      Σ; Γ ⊢ (e) ⇒ τ
-
-  Σ; Γ ⊢ s ⇒ Nominal(a)   Σ(cₖ) = constructor of a   (each arm k)
-  Σ; Γ ⊢ e₀ ⇒ τ   Σ; Γ ⊢ eₖ ⇐ τ   (each later arm k)
-  ─────────────────────────────────────────────────────────────
-  Σ; Γ ⊢ match s { c₀ ⇒ e₀ | … | cₘ ⇒ eₘ } ⇒ τ
+  ────────────────        ───────────────
+  Σ; Γ ⊢ b ⇒ Bool         Σ; Γ ⊢ n ⇒ Int
 ```
 
-A local, a constructor and a call read their types from Γ and Σ. A call
-checks each argument against its parameter's type, and there are as many
-arguments as parameters. A let synthesizes its value, or checks it against
-the annotation, and synthesizes its body in the extended context. A
-conditional synthesizes its first branch and checks the second against it.
-A match has at least one arm; the body of the first written arm synthesizes
-and each later body is checked against that type. A parenthesis synthesizes
-what its body does. `synth_layer` returns the synthesized type, or `None`
-when a premise fails.
+r[thir.algorithmic.local] spec::algorithmic::judge_local
+A local synthesizes the type at its level in Γ. A level that Γ does not
+have is unbound, and blames the local.
+
+```text
+  Γ(x) = τ
+  ─────────────
+  Σ; Γ ⊢ x ⇒ τ
+```
+
+```fren
+pub fn judge_local(ctx: Ctx, level: Int): Outcome := match lookup(ctx, level) {
+    Some(ty) => Outcome::Typed(ty),
+    None => Outcome::Blamed(Premise::Whole, Fault::Unbound),
+}
+```
+
+r[thir.algorithmic.constructor] spec::algorithmic::judge_constructor
+An item in value position synthesizes the nominal type of its enumeration
+when Σ binds it to a constructor. Any other item is not a value, and blames
+the item.
+
+```text
+  Σ(c) = constructor of a
+  ────────────────────────
+  Σ; Γ ⊢ c ⇒ Nominal(a)
+```
+
+```fren
+pub fn judge_constructor(symb: Symb, item: ItemId): Outcome := match entry(symb, item) {
+    Some(ItemKind::Constructor(owner)) => Outcome::Typed(Ty::Nominal(owner)),
+    _ => Outcome::Blamed(Premise::Whole, Fault::NotValue),
+}
+```
+
+r[thir.algorithmic.unary] spec::algorithmic::judge_unary
+A unary operation checks its operand against the operator's operand type
+and synthesizes that type.
+
+```text
+  Σ; Γ ⊢ e ⇐ unary_operand(⊖)
+  ──────────────────────────────
+  Σ; Γ ⊢ ⊖ e ⇒ unary_operand(⊖)
+```
+
+```fren
+pub fn judge_unary(op: UnaryOp, operand: Typing): Outcome := expect_type(
+    Premise::Operand,
+    unary_operand(op),
+    operand.ty,
+    Outcome::Typed(unary_operand(op))
+)
+```
+
+r[thir.algorithmic.binary] spec::algorithmic::judge_binary
+A binary operation synthesizes its left operand, checks the left and then
+the right operand against the operand type that the operator takes from the
+left operand's type, and synthesizes the operator's result type. For
+equality and inequality the left check cannot fail, so a mismatch blames the
+right operand.
+
+```text
+  Σ; Γ ⊢ l ⇒ σ
+  υ = binary_operand(⊕, σ)
+  Σ; Γ ⊢ l ⇐ υ
+  Σ; Γ ⊢ r ⇐ υ
+  ────────────────────────────────
+  Σ; Γ ⊢ l ⊕ r ⇒ binary_output(⊕)
+```
+
+```fren
+pub fn judge_binary(op: BinaryOp, left: Typing, right: Typing): Outcome := expect_type(
+    Premise::Left,
+    binary_operand(op, left.ty),
+    left.ty,
+    expect_type(
+        Premise::Right,
+        binary_operand(op, left.ty),
+        right.ty,
+        Outcome::Typed(binary_output(op))
+    )
+)
+```
+
+r[thir.algorithmic.call] spec::algorithmic::{judge_arguments, judge_call}
+A call reads its callee's signature from Σ. An item that Σ does not bind to
+a function is not callable, and a call with another number of arguments
+than the signature has parameters has the wrong arity; both blame the call,
+and the arity is decided before any argument is checked. The arguments are
+then checked against their parameters' types in written order, and the call
+synthesizes the signature's result type.
+
+```text
+  Σ(f) = function with parameters σ₀, …, σₙ₋₁ and result τ
+  Σ; Γ ⊢ aₖ ⇐ σₖ   (each k < n, in order)
+  ────────────────────────────────────────────────────────
+  Σ; Γ ⊢ f(a₀, …, aₙ₋₁) ⇒ τ
+```
+
+```fren
+-- The arguments before the newest are judged first; `rest` is what follows them all.
+pub fn judge_arguments(args: Snoc<Typing>, params: Ctx, rest: Outcome): Outcome :=
+    match args, params {
+        Extend(earlier, arg), Extend(earlier_params, param) => judge_arguments(
+            earlier,
+            earlier_params,
+            expect_type(Premise::Argument(length(earlier)), param, arg.ty, rest)
+        ),
+        _, _ => rest,
+    }
+
+pub fn judge_call(symb: Symb, item: ItemId, args: Snoc<Typing>): Outcome :=
+    match entry(symb, item) {
+        Some(ItemKind::Function(sig)) =>
+            if length(args) != length(sig.params)
+            then Outcome::Blamed(
+                Premise::Whole,
+                Fault::Arity(length(sig.params), length(args))
+            )
+            else judge_arguments(args, sig.params, Outcome::Typed(sig.result)),
+        _ => Outcome::Blamed(Premise::Whole, Fault::NotCallable),
+    }
+```
+
+r[thir.algorithmic.let] spec::algorithmic::judge_let
+A let synthesizes its value, or checks it against the annotation when it
+has one, and synthesizes its body in Γ extended by the value's type. A
+mismatch with the annotation blames the binder, where the annotation is
+written.
+
+```text
+  Σ; Γ ⊢ e₁ ⇒ σ                     Σ; Γ ⊢ e₁ ⇐ σ
+  Σ; Γ, x : σ ⊢ e₂ ⇒ τ              Σ; Γ, x : σ ⊢ e₂ ⇒ τ
+  ─────────────────────────────     ─────────────────────────────────
+  Σ; Γ ⊢ let x := e₁ in e₂ ⇒ τ      Σ; Γ ⊢ let x : σ := e₁ in e₂ ⇒ τ
+```
+
+```fren
+pub fn judge_let(annotation: Option<Ty>, value: Typing, body: Typing): Outcome := match annotation {
+    Some(written) => expect_type(Premise::Binder, written, value.ty, Outcome::Typed(body.ty)),
+    None => Outcome::Typed(body.ty),
+}
+```
+
+r[thir.algorithmic.if] spec::algorithmic::judge_if
+A conditional checks its condition against `Bool`, synthesizes its first
+branch and checks its second branch against the first's type, which it
+synthesizes.
+
+```text
+  Σ; Γ ⊢ c ⇐ Bool
+  Σ; Γ ⊢ e₁ ⇒ τ
+  Σ; Γ ⊢ e₂ ⇐ τ
+  ────────────────────────────────
+  Σ; Γ ⊢ if c then e₁ else e₂ ⇒ τ
+```
+
+```fren
+pub fn judge_if(condition: Typing, then_branch: Typing, else_branch: Typing): Outcome :=
+    expect_type(
+        Premise::Condition,
+        Ty::Boolean,
+        condition.ty,
+        expect_type(
+            Premise::ElseBranch,
+            then_branch.ty,
+            else_branch.ty,
+            Outcome::Typed(then_branch.ty)
+        )
+    )
+```
+
+r[thir.algorithmic.match] spec::algorithmic::{first_body, judge_arm, judge_arms, judge_match}
+A match synthesizes its scrutinee, whose type must be nominal; another type
+blames the scrutinee. A match with no arm blames the match. The arms are
+then judged in written order. The pattern of an arm must be an item that Σ
+binds to a constructor, and is checked against the scrutinee's type, so a
+constructor of another enumeration is a mismatch; both blame the pattern.
+The body of the first arm synthesizes the match's type, and the body of each
+later arm is checked against it.
+
+```text
+  Σ; Γ ⊢ s ⇒ Nominal(a)
+  Σ(cₖ) = constructor of a   (each arm k, before its body)
+  Σ; Γ ⊢ e₀ ⇒ τ
+  Σ; Γ ⊢ eₖ ⇐ τ   (each later arm k)
+  ───────────────────────────────────────────────
+  Σ; Γ ⊢ match s { c₀ ⇒ e₀ | … | cₘ ⇒ eₘ } ⇒ τ
+```
 
 ```fren
 pub fn first_body(arms: Snoc<ArmF<Typing>>): Option<Typing> := match arms {
@@ -624,66 +867,143 @@ pub fn first_body(arms: Snoc<ArmF<Typing>>): Option<Typing> := match arms {
     },
 }
 
-pub fn value_typed?(annotation: Option<Ty>, value: Typing, ctx: Ctx) := match annotation {
-    Some(written) => checked?(value, ctx, written),
-    None => synthesized?(value, ctx),
+-- One arm at a written index, `common` being the first body's type.
+pub fn judge_arm(
+    symb: Symb,
+    owner: ItemId,
+    common: Ty,
+    index: Int,
+    arm: ArmF<Typing>,
+    rest: Outcome
+): Outcome := match entry(symb, arm.constructor) {
+    Some(ItemKind::Constructor(found)) => expect_type(
+        Premise::Pattern(index),
+        Ty::Nominal(owner),
+        Ty::Nominal(found),
+        expect_type(Premise::Body(index), common, arm.body.ty, rest)
+    ),
+    _ => Outcome::Blamed(Premise::Pattern(index), Fault::NotConstructor),
 }
 
-pub fn synth_core(symb: Symb, ctx: Ctx, form: CoreF<Typing>): Option<Ty> := match form {
-    CoreF::BooleanLiteral(_) => Some(Ty::Boolean),
-    CoreF::IntegerLiteral(_) => Some(Ty::Integer),
-    CoreF::Local(level) => lookup(ctx, level),
-    CoreF::Constructor(item) => match entry(symb, item) {
-        Some(ItemKind::Constructor(owner)) => Some(Ty::Nominal(owner)),
-        _ => None,
-    },
-    CoreF::Unary(op, operand) => provided(
-        checked?(operand, ctx, unary_operand(op)),
-        Some(unary_operand(op))
+-- The arms before the newest are judged first; `rest` is what follows them all.
+pub fn judge_arms(
+    symb: Symb,
+    owner: ItemId,
+    common: Ty,
+    arms: Snoc<ArmF<Typing>>,
+    rest: Outcome
+): Outcome := match arms {
+    Empty => rest,
+    Extend(earlier, arm) => judge_arms(
+        symb,
+        owner,
+        common,
+        earlier,
+        judge_arm(symb, owner, common, length(earlier), arm, rest)
     ),
-    CoreF::Binary(op, left, right) => provided(
-        synthesized?(left, ctx)
-            and checked?(left, ctx, binary_operand(op, left.ty))
-            and checked?(right, ctx, binary_operand(op, left.ty)),
-        Some(binary_output(op))
-    ),
-    CoreF::Call(item, args) => match entry(symb, item) {
-        Some(ItemKind::Function(sig)) => provided(
-            in_context?(args, ctx) and argument_types?(args, sig.params),
-            Some(sig.result)
-        ),
-        _ => None,
-    },
-    CoreF::Let(annotation, value, body) => provided(
-        value_typed?(annotation, value, ctx) and synthesized?(body, Extend(ctx, value.ty)),
-        Some(body.ty)
-    ),
-    CoreF::If(condition, then_branch, else_branch) => provided(
-        checked?(condition, ctx, Ty::Boolean)
-            and synthesized?(then_branch, ctx)
-            and checked?(else_branch, ctx, then_branch.ty),
-        Some(then_branch.ty)
-    ),
-    CoreF::Match(scrutinee, arms) => match scrutinee.ty, first_body(arms) {
-        Ty::Nominal(owner), Some(first) => provided(
-            synthesized?(scrutinee, ctx)
-                and arm_patterns?(symb, arms, owner)
-                and arm_bodies?(arms, ctx, first.ty),
-            Some(first.ty)
-        ),
-        _, _ => None,
-    },
 }
 
-pub fn synth_layer(symb: Symb, ctx: Ctx, form: HirF<Typing>): Option<Ty> := match form {
-    HirF::Core(core) => synth_core(symb, ctx, core),
-    HirF::Paren(body) => provided(synthesized?(body, ctx), Some(body.ty)),
+pub fn judge_match(symb: Symb, scrutinee: Typing, arms: Snoc<ArmF<Typing>>): Outcome :=
+    match scrutinee.ty {
+        Ty::Nominal(owner) => match first_body(arms) {
+            Some(first) => judge_arms(symb, owner, first.ty, arms, Outcome::Typed(first.ty)),
+            None => Outcome::Blamed(Premise::Whole, Fault::NoArms),
+        },
+        found => Outcome::Blamed(Premise::Scrutinee, Fault::NotEnumeration(found)),
+    }
+```
+
+r[thir.algorithmic.paren]
+A parenthesis synthesizes the type that its body synthesizes. It has no
+checking premise.
+
+```text
+  Σ; Γ ⊢ e ⇒ τ
+  ───────────────
+  Σ; Γ ⊢ (e) ⇒ τ
+```
+
+r[thir.algorithmic.synthesis] spec::algorithmic::{judge_core, judge_layer, arms_in_context?, placed_core?, placed?, synth_core, synth_layer}
+The outcome of a layer is the outcome of the rule of its form. A layer is
+*placed* in Γ when each child was typed in the context that its rule
+prescribes: the body of a let in Γ extended by the value's type, and every
+other child in Γ. `Σ; Γ ⊢ l ⇒ τ` holds for a layer l, its children's typings
+given, when l is placed in Γ and its outcome is the type τ. A layer
+therefore synthesizes at most one type.
+
+```fren
+pub fn judge_core(symb: Symb, ctx: Ctx, form: CoreF<Typing>): Outcome := match form {
+    CoreF::BooleanLiteral(_) => Outcome::Typed(Ty::Boolean),
+    CoreF::IntegerLiteral(_) => Outcome::Typed(Ty::Integer),
+    CoreF::Local(level) => judge_local(ctx, level),
+    CoreF::Constructor(item) => judge_constructor(symb, item),
+    CoreF::Unary(op, operand) => judge_unary(op, operand),
+    CoreF::Binary(op, left, right) => judge_binary(op, left, right),
+    CoreF::Call(item, args) => judge_call(symb, item, args),
+    CoreF::Let(annotation, value, body) => judge_let(annotation, value, body),
+    CoreF::If(condition, then_branch, else_branch) => judge_if(condition, then_branch, else_branch),
+    CoreF::Match(scrutinee, arms) => judge_match(symb, scrutinee, arms),
+}
+
+pub fn judge_layer(symb: Symb, ctx: Ctx, form: HirF<Typing>): Outcome := match form {
+    HirF::Core(core) => judge_core(symb, ctx, core),
+    HirF::Paren(body) => Outcome::Typed(body.ty),
+}
+
+pub fn arms_in_context?(arms: Snoc<ArmF<Typing>>, ctx: Ctx) := match arms {
+    Empty => true,
+    Extend(earlier, arm) => arm.body.ctx = ctx and arms_in_context?(earlier, ctx),
+}
+
+pub fn placed_core?(ctx: Ctx, form: CoreF<Typing>) := match form {
+    CoreF::Unary(_, operand) => operand.ctx = ctx,
+    CoreF::Binary(_, left, right) => left.ctx = ctx and right.ctx = ctx,
+    CoreF::Call(_, args) => in_context?(args, ctx),
+    CoreF::Let(_, value, body) => value.ctx = ctx and body.ctx = Extend(ctx, value.ty),
+    CoreF::If(condition, then_branch, else_branch) =>
+        condition.ctx = ctx and then_branch.ctx = ctx and else_branch.ctx = ctx,
+    CoreF::Match(scrutinee, arms) => scrutinee.ctx = ctx and arms_in_context?(arms, ctx),
+    _ => true,
+}
+
+pub fn placed?(ctx: Ctx, form: HirF<Typing>) := match form {
+    HirF::Core(core) => placed_core?(ctx, core),
+    HirF::Paren(body) => body.ctx = ctx,
+}
+
+pub fn synth_core(symb: Symb, ctx: Ctx, form: CoreF<Typing>): Option<Ty> := provided(
+    placed_core?(ctx, form),
+    outcome_type(judge_core(symb, ctx, form))
+)
+
+pub fn synth_layer(symb: Symb, ctx: Ctx, form: HirF<Typing>): Option<Ty> := provided(
+    placed?(ctx, form),
+    outcome_type(judge_layer(symb, ctx, form))
+)
+```
+
+r[thir.algorithmic.local-callee] spec::algorithmic::judge_node
+A HIR node has the outcome of its layer. An application whose callee is a
+local has no layer: it is not callable, and blames the application, whatever
+its arguments are. For example `x(1)`, with x a local of any type, is
+rejected in this way.
+
+```fren
+pub fn judge_node(symb: Symb, ctx: Ctx, node: NodeF<Typing>): Outcome := match embed(node) {
+    Some(form) => judge_layer(symb, ctx, form),
+    None => Outcome::Blamed(Premise::Whole, Fault::NotCallable),
 }
 ```
 
-r[thir.algorithmic.checking] spec::algorithmic::{check_layer?, modes::switch, modes::unique}
-A layer checks against τ when it synthesizes τ. This is the only checking
-rule, so a layer checks against at most one type.
+r[thir.algorithmic.declaration] spec::algorithmic::judge_body
+`Σ; Γ ⊢ e ⇐ τ` holds when `Σ; Γ ⊢ e ⇒ τ` does. This is the only checking
+rule for an expression, and the body of a declaration is the only expression
+whose expected type comes from outside it. The body of a function is checked
+against the function's declared result type, in the context of its
+parameters in written order, and each member of a check is checked against
+`Bool` in the context of the check's parameters. A body that synthesizes
+another type blames the body as a whole, with a mismatch of the declared
+type and the type found.
 
 ```text
   Σ; Γ ⊢ e ⇒ τ
@@ -692,24 +1012,196 @@ rule, so a layer checks against at most one type.
 ```
 
 ```fren
-pub fn check_layer?(symb: Symb, ctx: Ctx, form: HirF<Typing>, expected: Ty) :=
-    synth_layer(symb, ctx, form) = Some(expected)
-
-expect modes(symb: Symb, ctx: Ctx, form: HirF<Typing>, a: Ty, b: Ty) {
-    expect switch: check_layer?(symb, ctx, form, a) iff synth_layer(symb, ctx, form) = Some(a)
-    expect unique: when check_layer?(symb, ctx, form, a) and check_layer?(symb, ctx, form, b), a = b
-}
+pub fn judge_body(expected: Ty, found: Ty): Outcome :=
+    expect_type(Premise::Whole, expected, found, Outcome::Typed(expected))
 ```
 
-r[thir.algorithmic.sound] spec::algorithmic::layer_sound::sound
-Synthesis is sound for the Core, one layer at a time: when a Core layer
-synthesizes τ, `Σ; Γ ⊢ l ▷ τ` holds.
+r[thir.algorithmic.outcomes] spec::algorithmic::{closed, RED_ARM, FOREIGN_ARM, judged_examples::{literal, unbound, not_value, operand, left, right, equality, arity, argument, not_callable, local_callee, binder, condition, else_branch, scrutinee, no_arms, foreign_pattern, pattern, later_body, paren, body}}
+The examples below give one outcome for each fault of each rule, in the
+empty context, with every child typed there. They use the Core chapter's
+example environment: an enumeration `M::Light` with constructors `Red` and
+`Green`, an enumeration `M::Signal` with constructor `Red`, and a function
+`M::f` from `Int` to `Int`.
+
+| Expression | Outcome |
+| --- | --- |
+| `true` | `Bool` |
+| `#0` | the local is unbound |
+| `M::f` in value position | the item is not a value |
+| `-true` | the operand: expected `Int`, found `Bool` |
+| `true + 1` | the left operand: expected `Int`, found `Bool` |
+| `1 + false` | the right operand: expected `Int`, found `Bool` |
+| `1 = false` | the right operand: expected `Int`, found `Bool` |
+| `M::f()` | the call: one parameter, no argument |
+| `M::f(true)` | argument 0: expected `Int`, found `Bool` |
+| `M::Light(1)` | the call: the item is not callable |
+| `x(1)`, x a local | the application: not callable |
+| `let b? := 1 in b?` | the binder: expected `Bool`, found `Int` |
+| `if 1 then 2 else 3` | the condition: expected `Bool`, found `Int` |
+| `if true then 1 else false` | the second branch: expected `Int`, found `Bool` |
+| `match 1 { M::Light::Red ⇒ 1 }` | the scrutinee: `Int` is not an enumeration |
+| a match on `M::Light::Red` with no arm | the match: no arm |
+| `match M::Light::Red { M::Signal::Red ⇒ 1 }` | pattern 0: expected `Nominal(M::Light)`, found `Nominal(M::Signal)` |
+| `match M::Light::Red { M::f ⇒ 1 }` | pattern 0: not a constructor |
+| `match M::Light::Red { M::Light::Red ⇒ 1 \| M::Light::Green ⇒ true }` | body 1: expected `Int`, found `Bool` |
+| `(1)` | `Int` |
+| a body of type `Int` declared `Bool` | the body: expected `Bool`, found `Int` |
 
 ```fren
-expect layer_sound(symb: Symb, ctx: Ctx, form: CoreF<Typing>, ty: Ty) {
-    expect sound: when synth_layer(symb, ctx, HirF::Core(form)) = Some(ty), rule?(symb, ctx, form, ty)
+-- A child typed in the empty context.
+pub fn closed(ty: Ty): Typing := Typing { ctx := Empty, ty }
+
+pub const RED_ARM: ArmF<Typing> := ArmF {
+    constructor := LIGHT_RED,
+    body := closed(Ty::Integer),
+}
+
+pub const FOREIGN_ARM: ArmF<Typing> := ArmF {
+    constructor := SIGNAL_RED,
+    body := closed(Ty::Integer),
+}
+
+-- The examples are constant judgments, which the wrapper evaluates.
+set_option fren.lint.assertions_on_constants "allow" in
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
+set_option fren.evidence "random" in
+pub proc judged_examples(): (holds?) {
+    ensure output: holds?
+    ensure literal: judge_node(SYMB, Empty, NodeF::BooleanLiteral(true)) = Outcome::Typed(Ty::Boolean)
+    ensure unbound: judge_node(SYMB, Empty, NodeF::Local(0)) = Outcome::Blamed(Premise::Whole, Fault::Unbound)
+    ensure not_value: judge_node(SYMB, Empty, NodeF::Item(F)) = Outcome::Blamed(Premise::Whole, Fault::NotValue)
+    ensure operand: judge_node(SYMB, Empty, NodeF::Unary(UnaryOp::Neg, closed(Ty::Boolean)))
+        = Outcome::Blamed(Premise::Operand, Fault::Mismatch(Ty::Integer, Ty::Boolean))
+    ensure left: judge_node(
+        SYMB,
+        Empty,
+        NodeF::Binary(BinaryOp::Add, closed(Ty::Boolean), closed(Ty::Integer))
+    )
+        = Outcome::Blamed(Premise::Left, Fault::Mismatch(Ty::Integer, Ty::Boolean))
+    ensure right: judge_node(
+        SYMB,
+        Empty,
+        NodeF::Binary(BinaryOp::Add, closed(Ty::Integer), closed(Ty::Boolean))
+    )
+        = Outcome::Blamed(Premise::Right, Fault::Mismatch(Ty::Integer, Ty::Boolean))
+    ensure equality: judge_node(
+        SYMB,
+        Empty,
+        NodeF::Binary(BinaryOp::Eq, closed(Ty::Integer), closed(Ty::Boolean))
+    )
+        = Outcome::Blamed(Premise::Right, Fault::Mismatch(Ty::Integer, Ty::Boolean))
+    ensure arity: judge_node(SYMB, Empty, NodeF::Apply(Callee::Item(F), Empty))
+        = Outcome::Blamed(Premise::Whole, Fault::Arity(1, 0))
+    ensure argument: judge_node(
+        SYMB,
+        Empty,
+        NodeF::Apply(Callee::Item(F), one(closed(Ty::Boolean)))
+    )
+        = Outcome::Blamed(
+            Premise::Argument(0),
+            Fault::Mismatch(Ty::Integer, Ty::Boolean)
+        )
+    ensure not_callable: judge_node(
+        SYMB,
+        Empty,
+        NodeF::Apply(Callee::Item(LIGHT), one(closed(Ty::Integer)))
+    )
+        = Outcome::Blamed(Premise::Whole, Fault::NotCallable)
+    ensure local_callee: judge_node(
+        SYMB,
+        one(Ty::Integer),
+        NodeF::Apply(Callee::Local(0), one(closed(Ty::Integer)))
+    )
+        = Outcome::Blamed(Premise::Whole, Fault::NotCallable)
+    ensure binder: judge_node(
+        SYMB,
+        Empty,
+        NodeF::Let(
+            true,
+            closed(Ty::Integer),
+            Typing {
+                ctx := one(Ty::Integer),
+                ty := Ty::Integer,
+            }
+        )
+    )
+        = Outcome::Blamed(Premise::Binder, Fault::Mismatch(Ty::Boolean, Ty::Integer))
+    ensure condition: judge_node(
+        SYMB,
+        Empty,
+        NodeF::If(
+            closed(Ty::Integer),
+            closed(Ty::Integer),
+            closed(Ty::Integer)
+        )
+    )
+        = Outcome::Blamed(
+            Premise::Condition,
+            Fault::Mismatch(Ty::Boolean, Ty::Integer)
+        )
+    ensure else_branch: judge_node(
+        SYMB,
+        Empty,
+        NodeF::If(
+            closed(Ty::Boolean),
+            closed(Ty::Integer),
+            closed(Ty::Boolean)
+        )
+    )
+        = Outcome::Blamed(
+            Premise::ElseBranch,
+            Fault::Mismatch(Ty::Integer, Ty::Boolean)
+        )
+    ensure scrutinee: judge_node(SYMB, Empty, NodeF::Match(closed(Ty::Integer), one(RED_ARM)))
+        = Outcome::Blamed(Premise::Scrutinee, Fault::NotEnumeration(Ty::Integer))
+    ensure no_arms: judge_node(SYMB, Empty, NodeF::Match(closed(Ty::Nominal(LIGHT)), Empty))
+        = Outcome::Blamed(Premise::Whole, Fault::NoArms)
+    ensure foreign_pattern: judge_node(
+        SYMB,
+        Empty,
+        NodeF::Match(closed(Ty::Nominal(LIGHT)), one(FOREIGN_ARM))
+    )
+        = Outcome::Blamed(
+            Premise::Pattern(0),
+            Fault::Mismatch(Ty::Nominal(LIGHT), Ty::Nominal(SIGNAL))
+        )
+    ensure pattern: judge_node(
+        SYMB,
+        Empty,
+        NodeF::Match(
+            closed(Ty::Nominal(LIGHT)),
+            one(
+                ArmF {
+                    constructor := F,
+                    body := closed(Ty::Integer),
+                }
+            )
+        )
+    )
+        = Outcome::Blamed(Premise::Pattern(0), Fault::NotConstructor)
+    ensure later_body: judge_node(
+        SYMB,
+        Empty,
+        NodeF::Match(
+            closed(Ty::Nominal(LIGHT)),
+            two(
+                RED_ARM,
+                ArmF {
+                    constructor := LIGHT_GREEN,
+                    body := closed(Ty::Boolean),
+                }
+            )
+        )
+    )
+        = Outcome::Blamed(Premise::Body(1), Fault::Mismatch(Ty::Integer, Ty::Boolean))
+    ensure paren: judge_node(SYMB, Empty, NodeF::Paren(closed(Ty::Integer))) = Outcome::Typed(Ty::Integer)
+    ensure body: judge_body(Ty::Boolean, Ty::Integer)
+        = Outcome::Blamed(Premise::Whole, Fault::Mismatch(Ty::Boolean, Ty::Integer))
 }
 ```
+
+### Agreement with the Core, one layer at a time
 
 r[thir.algorithmic.first-arm] spec::algorithmic::{first_typed?, first_arm::typed}
 When a match has an arm and every arm body is typed in Γ at τ, its first
@@ -728,18 +1220,89 @@ pub proc first_arm(arms: Snoc<ArmF<Typing>>, ctx: Ctx, ty: Ty): (holds?) {
 }
 ```
 
-r[thir.algorithmic.complete] spec::algorithmic::layer_complete::complete
-Synthesis is complete for the Core, one layer at a time: when
-`Σ; Γ ⊢ l ▷ τ` holds, the layer l synthesizes τ. The solver uses
-`thir.algorithmic.first-arm` for a match, as the assumption below.
+r[thir.algorithmic.sequences] spec::algorithmic::{arguments_judged::{accepted, rejected}, arms_judged::{accepted, rejected}}
+Judging a sequence of arguments passes on to what follows exactly when the
+Core's premise on the sequence holds: when each argument has its
+parameter's type, the outcome is that of what follows, and when the
+sequences have one length and some argument has another type, the outcome
+is a blame. Likewise for arms whose bodies were typed in Γ: when each
+pattern is a constructor of the scrutinee's enumeration and each body has
+the common type, the outcome is that of what follows, and otherwise it is a
+blame.
 
 ```fren
-expect layer_complete(symb: Symb, ctx: Ctx, form: CoreF<Typing>, ty: Ty) {
-    assume first_arm: match form {
-        CoreF::Match(_, arms) => first_typed?(arms, ctx, ty),
-        _ => true,
-    }
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
+set_option fren.evidence "random" in
+pub proc arguments_judged(args: Snoc<Typing>, params: Ctx, rest: Outcome): (holds?) {
+    ensure output: holds?
+    ensure accepted: when argument_types?(args, params),
+        length(args) = length(params) and judge_arguments(args, params, rest) = rest
+    ensure rejected: when length(args) = length(params) and not argument_types?(args, params),
+        outcome_type(judge_arguments(args, params, rest)) = None
+}
+
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
+set_option fren.evidence "random" in
+pub proc arms_judged(
+    symb: Symb,
+    owner: ItemId,
+    common: Ty,
+    arms: Snoc<ArmF<Typing>>,
+    ctx: Ctx,
+    rest: Outcome,
+): (holds?) {
+    ensure output: holds?
+    ensure accepted: when arm_patterns?(symb, arms, owner) and arm_bodies?(arms, ctx, common),
+        arms_in_context?(arms, ctx) and judge_arms(symb, owner, common, arms, rest) = rest
+    ensure rejected: when arms_in_context?(arms, ctx) and not (arm_patterns?(symb, arms, owner) and arm_bodies?(arms, ctx, common)),
+        outcome_type(judge_arms(symb, owner, common, arms, rest)) = None
+}
+```
+
+r[thir.algorithmic.agreement] spec::algorithmic::{layer_agrees::{sound, complete}, call_agrees::{function, other}, match_agrees::exact}
+Synthesis agrees with the Core, one layer at a time: a Core layer l
+synthesizes τ in Γ exactly when `Σ; Γ ⊢ l ▷ τ` holds. The solver proves
+this for every form but a call and a match, and for a call from
+`thir.algorithmic.sequences`; the two cases of a call are exhaustive. For a
+match the wrapper proves it, from `thir.algorithmic.sequences` and
+`thir.algorithmic.first-arm`.
+
+```fren
+expect layer_agrees(symb: Symb, ctx: Ctx, form: CoreF<Typing>, ty: Ty) {
+    assume other_form: not (form is CoreF::Call(_, _)) and not (form is CoreF::Match(_, _))
+    expect sound: when synth_layer(symb, ctx, HirF::Core(form)) = Some(ty), rule?(symb, ctx, form, ty)
     expect complete: when rule?(symb, ctx, form, ty), synth_layer(symb, ctx, HirF::Core(form)) = Some(ty)
+}
+
+expect call_agrees(
+    symb: Symb,
+    ctx: Ctx,
+    item: ItemId,
+    args: Snoc<Typing>,
+    params: Ctx,
+    result: Ty,
+    ty: Ty,
+) {
+    call judged := arguments_judged(args, params, Outcome::Typed(result))
+    expect function: when entry(symb, item) = Some(ItemKind::Function(Sig { params, result })),
+        synth_layer(symb, ctx, HirF::Core(CoreF::Call(item, args))) = Some(ty)
+        iff rule?(symb, ctx, CoreF::Call(item, args), ty)
+    expect other: when not (entry(symb, item) is Some(ItemKind::Function(_))),
+        synth_layer(symb, ctx, HirF::Core(CoreF::Call(item, args))) = None
+        and not rule?(symb, ctx, CoreF::Call(item, args), ty)
+}
+
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
+set_option fren.evidence "random" in
+pub proc match_agrees(symb: Symb, ctx: Ctx, scrutinee: Typing, arms: Snoc<ArmF<Typing>>, ty: Ty): (
+    holds?,
+) {
+    ensure output: holds?
+    ensure exact: synth_layer(symb, ctx, HirF::Core(CoreF::Match(scrutinee, arms))) = Some(ty)
+        iff rule?(symb, ctx, CoreF::Match(scrutinee, arms), ty)
 }
 ```
 
@@ -754,21 +1317,31 @@ expect paren_layer(symb: Symb, ctx: Ctx, body: Typing, ty: Ty) {
 }
 ```
 
-r[thir.algorithmic.table] spec::algorithmic::{HirRow, core_row, desugar_rows, desugaring_keeps_rows::same, hir_annotate, hir_rows_valid?}
+### Tables and expressions
+
+A table of typed rows stands for an expression and its typing, as in the
+Core. Desugaring maps a HIR table to a Core table row by row, and the rules
+below relate what the two judgments accept.
+
+```text
+  HIR table  ───── desugar_rows, row by row ─────▶  Core table
+      │                                                 │
+  synthesis?                                       derivation?
+      ▼                                                 ▼
+  Σ; Γ ⊢ e ⇒ τ  ──────── the same Γ and τ ────────  Σ; Γ ⊢ |e| : τ
+```
+
+r[thir.algorithmic.table] spec::algorithmic::{HirRow, core_row, desugar_rows, hir_annotate, hir_rows_valid?}
 A *HIR table* is a snoc sequence of rows, each a HIR layer whose children
 are levels of earlier rows, a context and a type. Its *desugaring* is the
 Core table with a row for each of its rows, at the same level and with the
 same context and type. The row of a Core layer keeps its layer. The row of a
-parenthesis takes the layer of its body's desugared row, so it unfolds to
-what the body's row unfolds to, and a parenthesis whose body names no
-earlier row has no desugaring. A child's typing is read at its level, which
-is the same in a table and its desugaring. Desugaring therefore keeps the
-number of rows, so the desugaring of a table with a parenthesis row has
-more rows than the smallest Core table for the same expression, and a Core
-table is in general not the desugaring of any HIR table. A HIR table is
-valid in Σ when
-every row's context is well formed and every row's layer, with each child
-replaced by its typing, checks against the row's type in the row's context.
+parenthesis takes the layer of its body's desugared row, and a parenthesis
+whose body names no earlier row has no desugaring. A child's typing is read
+at its level, which is the same in a table and its desugaring. A HIR table
+is valid in Σ when every row's context is well formed and every row's
+layer, with each child replaced by its typing, synthesizes the row's type
+in the row's context.
 
 ```fren
 pub struct HirRow { form: HirF<Int>, ctx: Ctx, ty: Ty }
@@ -790,17 +1363,6 @@ pub fn desugar_rows(rows: Snoc<HirRow>): Option<Snoc<Row>> := match rows {
     },
 }
 
--- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
--- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
-set_option fren.evidence "random" in
-pub proc desugaring_keeps_rows(rows: Snoc<HirRow>): (holds?) {
-    ensure output: holds?
-    ensure same: match desugar_rows(rows) {
-        Some(core) => length(core) = length(rows),
-        None => true,
-    }
-}
-
 pub fn hir_annotate(core: Snoc<Row>, form: HirF<Int>): Option<HirF<Typing>> := match form {
     HirF::Core(layer) => match annotate(core, layer) {
         Some(typed) => Some(HirF::Core(typed)),
@@ -819,7 +1381,7 @@ pub fn hir_rows_valid?(symb: Symb, rows: Snoc<HirRow>) := match rows {
         and ctx_ok?(symb, row.ctx)
         and match desugar_rows(earlier) {
             Some(core) => match hir_annotate(core, row.form) {
-                Some(form) => check_layer?(symb, row.ctx, form, row.ty),
+                Some(form) => synth_layer(symb, row.ctx, form) = Some(row.ty),
                 None => false,
             },
             None => false,
@@ -827,15 +1389,46 @@ pub fn hir_rows_valid?(symb: Symb, rows: Snoc<HirRow>) := match rows {
 }
 ```
 
+r[thir.algorithmic.rows] spec::algorithmic::desugaring_keeps_rows::same
+Desugaring keeps the number of rows. The desugaring of a table with a
+parenthesis row therefore has more rows than the smallest Core table for
+the same expression, and a Core table is in general not the desugaring of
+any HIR table.
+
+```fren
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
+set_option fren.evidence "random" in
+pub proc desugaring_keeps_rows(rows: Snoc<HirRow>): (holds?) {
+    ensure output: holds?
+    ensure same: match desugar_rows(rows) {
+        Some(core) => length(core) = length(rows),
+        None => true,
+    }
+}
+```
+
+r[thir.algorithmic.unfolding]
+A row of a HIR table *unfolds* to a HIR expression. The row of a Core layer
+unfolds as a row of a Core table does (`types.derivation.unfolding`): to the
+expression whose root form is the row's layer, with each child level
+replaced by the expression that the row at that level unfolds to. The row
+of a parenthesis whose body is the level i unfolds to `(e)`, where e is the
+expression that the row at level i unfolds to. A valid table's children name
+only earlier rows, so unfolding ends.
+
+r[thir.algorithmic.desugared-unfolding]
+Desugaring a table desugars what it unfolds to: when a row of a valid HIR
+table unfolds to e, the row at the same level of the table's desugaring
+unfolds to `|e|`, the expression e with every parenthesis replaced by its
+body (`desugaring.pass.parens`). Fren cannot state unfolding to a tree, so
+no procedure states this law. It is open.
+
 r[thir.algorithmic.judgment] spec::algorithmic::{hir_rows_extend?, synthesis?}
 `Σ; Γ ⊢ e ⇒ τ` holds when Σ and Γ are well formed and some valid HIR table,
-every row of which has a context that extends Γ, has a newest row with
-context Γ and type τ that unfolds to e. `Σ; Γ ⊢ e ⇐ τ` holds when
-`Σ; Γ ⊢ e ⇒ τ` does. `synthesis?` checks that a supplied table is valid in
-this way with such a root. It takes every row's context and type as inputs
-and does not check that the root unfolds to e: this chapter defines no
-unfolding of a HIR table, and the rules below are about tables for that
-reason (`thir.algorithmic.tree-lift`).
+every row of which has a context that extends Γ, has a newest row, its
+*root*, with context Γ and type τ that unfolds to e. `synthesis?` checks
+that a table is valid in this way with such a root.
 
 ```fren
 pub fn hir_rows_extend?(rows: Snoc<HirRow>, base: Ctx) := match rows {
@@ -855,13 +1448,11 @@ pub fn synthesis?(symb: Symb, rows: Snoc<HirRow>, ctx: Ctx, ty: Ty) :=
 ```
 
 r[thir.algorithmic.preservation] spec::algorithmic::{desugared_valid?, desugared_derivation?, desugaring_preserves::typed}
-Desugaring preserves the typing of a table: when `synthesis?` accepts a HIR
-table with root context Γ and root type τ, the Core's `derivation?` accepts
-its desugaring with the same Γ and τ. This lifts `thir.algorithmic.sound`
-and `thir.algorithmic.parens` from one layer to a supplied table, by
-induction on its rows. That the desugared table's root unfolds to the
-desugaring of the expression that the HIR table types is part of the open
-`thir.algorithmic.tree-lift`.
+Desugaring preserves typing: when `synthesis?` accepts a HIR table with root
+context Γ and root type τ, the Core's `derivation?` accepts its desugaring
+with the same Γ and τ. This lifts `thir.algorithmic.agreement` and
+`thir.algorithmic.parens` from one layer to a table, by induction on its
+rows.
 
 ```fren
 pub fn desugared_valid?(symb: Symb, rows: Snoc<HirRow>) := match desugar_rows(rows) {
@@ -884,22 +1475,11 @@ pub proc desugaring_preserves(symb: Symb, rows: Snoc<HirRow>, ctx: Ctx, ty: Ty):
 }
 ```
 
-r[thir.algorithmic.reflection] spec::algorithmic::{parens_faithful?, desugaring_reflects::typed, UNFAITHFUL, unfaithful_paren::{desugaring_valid, table_invalid, excluded}}
-Desugaring reflects typing: a HIR table is valid when its desugaring is a
-valid Core table and each parenthesis row has the context and type of its
-body's row. With `thir.algorithmic.preservation` this relates a supplied HIR
-table to its desugaring in both directions, the converse only under that
-hypothesis on the parenthesis rows. This lifts `thir.algorithmic.complete`
-and `thir.algorithmic.parens`.
-
-The hypothesis is needed, because desugaring gives a parenthesis row the
-layer of its body's row and forgets that row's context and type. In the
-table `UNFAITHFUL`, row 0 is the literal `true` in the context `·, Bool` and
-row 1 is a parenthesis around row 0 in the empty context. Its desugaring has
-the literal in both rows and is a valid Core table, but the parenthesis row
-is not valid, since its body was typed in another context. The procedure
-`unfaithful_paren` states this for the empty Σ, and the wrapper proves it by
-evaluation.
+r[thir.algorithmic.reflection] spec::algorithmic::{parens_faithful?, desugaring_reflects::exact}
+A HIR table is valid exactly when its desugaring is a valid Core table and
+each of its parenthesis rows has the context and type of its body's row.
+The second condition is what desugaring forgets: it gives a parenthesis row
+the layer of its body's row, and not that row's context and type.
 
 ```fren
 pub fn parens_faithful?(rows: Snoc<HirRow>) := match rows {
@@ -918,9 +1498,22 @@ pub fn parens_faithful?(rows: Snoc<HirRow>) := match rows {
 set_option fren.evidence "random" in
 pub proc desugaring_reflects(symb: Symb, rows: Snoc<HirRow>): (holds?) {
     ensure output: holds?
-    ensure typed: when parens_faithful?(rows) and desugared_valid?(symb, rows), hir_rows_valid?(symb, rows)
+    ensure exact: hir_rows_valid?(symb, rows) iff (desugared_valid?(symb, rows) and parens_faithful?(rows))
 }
+```
 
+r[thir.algorithmic.unfaithful] spec::algorithmic::{UNFAITHFUL, unfaithful_paren::{desugaring_valid, table_invalid, excluded}}
+The table `UNFAITHFUL` shows that the second condition of
+`thir.algorithmic.reflection` is needed. Its desugaring is a valid Core
+table in the empty Σ, and it is not a valid HIR table: the body of its
+parenthesis was typed in another context than the parenthesis.
+
+| Row | Layer | Context | Type | Desugared layer |
+| --- | --- | --- | --- | --- |
+| 0 | `true` | `·, Bool` | `Bool` | `true` |
+| 1 | `(#0)` | `·` | `Bool` | `true` |
+
+```fren
 pub const UNFAITHFUL: Snoc<HirRow> := Extend(
     Extend(
         Empty,
@@ -952,7 +1545,7 @@ pub proc unfaithful_paren(): (holds?) {
 r[thir.algorithmic.unique] spec::algorithmic::{hir_same_shape?, synthesis_unique::equal}
 Synthesis is deterministic for a table: two valid HIR tables with the same
 layers and contexts, row by row, are equal, and so have the same types row
-by row. This lifts the `unique` expectation of `thir.algorithmic.checking`.
+by row.
 
 ```fren
 pub fn hir_same_shape?(left: Snoc<HirRow>, right: Snoc<HirRow>) := match left, right {
@@ -972,79 +1565,207 @@ pub proc synthesis_unique(symb: Symb, left: Snoc<HirRow>, right: Snoc<HirRow>): 
 }
 ```
 
-r[thir.algorithmic.decidable]
-Verifying a supplied table is decidable and deterministic. Each of
-`synth_layer`, `check_layer?`, `hir_rows_valid?` and `synthesis?` is a total
-function, so evaluating it decides the premise it states: no rule guesses a
-type. A layer has at most one synthesized type because `synth_layer` is a
-function, and two valid tables with the same layers and contexts have the
-same types by `thir.algorithmic.unique`. `synthesis?` takes every row's
-context and type as inputs, so this decides whether a given table is a
-derivation. It does not decide whether an expression has a typing, which
-needs a procedure that builds the table; that is
-`thir.algorithmic.inference`, which is open. Whether a tree, as opposed to a
-table, has a unique type is the Core chapter's
-`types.derivation.unique-expression` question and is not settled here.
+r[thir.algorithmic.expression-sound] spec::algorithmic::{desugars_alike?, expression_sound::agrees}
+Synthesis is sound for an expression, against any Core table for its
+desugaring. A HIR table *desugars alike* a Core table when the root of its
+desugaring and the root of the Core table unfold alike
+(`types.derivation.alike`), whatever the two tables' sharing of rows and
+numbers of rows. When `synthesis?` accepts a HIR table with Γ and τ,
+`derivation?` accepts a Core table with Γ and υ, and the HIR table desugars
+alike the Core table, τ = υ.
 
-### Open: expressions
+```fren
+pub fn desugars_alike?(hir: Snoc<HirRow>, core: Snoc<Row>, pairs: Snoc<Pair>) :=
+    match desugar_rows(hir) {
+        Some(desugared) => alike?(
+            desugared,
+            length(desugared) - 1,
+            core,
+            length(core) - 1,
+            pairs
+        ),
+        None => false,
+    }
 
-The rules above relate supplied tables. The three rules below state what
-would carry them to expressions given as trees. None is proved, and no Fren
-definition states them yet.
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
+set_option fren.evidence "random" in
+pub proc expression_sound(
+    symb: Symb,
+    ctx: Ctx,
+    hir: Snoc<HirRow>,
+    core: Snoc<Row>,
+    pairs: Snoc<Pair>,
+    a: Ty,
+    b: Ty,
+): (holds?) {
+    ensure output: holds?
+    ensure agrees: when synthesis?(symb, hir, ctx, a) and derivation?(symb, core, ctx, b) and desugars_alike?(hir, core, pairs),
+        a = b
+}
+```
+
+r[thir.algorithmic.expression-unique] spec::algorithmic::{desugarings_alike?, expression_unique::unique}
+Synthesis is deterministic for an expression, up to parentheses: when
+`synthesis?` accepts two HIR tables in Γ, with types τ and υ, and the roots
+of their desugarings unfold alike, τ = υ.
+
+```fren
+pub fn desugarings_alike?(left: Snoc<HirRow>, right: Snoc<HirRow>, pairs: Snoc<Pair>) :=
+    match desugar_rows(right) {
+        Some(core) => desugars_alike?(left, core, pairs),
+        None => false,
+    }
+
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
+set_option fren.evidence "random" in
+pub proc expression_unique(
+    symb: Symb,
+    ctx: Ctx,
+    left: Snoc<HirRow>,
+    right: Snoc<HirRow>,
+    pairs: Snoc<Pair>,
+    a: Ty,
+    b: Ty,
+): (holds?) {
+    ensure output: holds?
+    ensure unique: when synthesis?(symb, left, ctx, a) and synthesis?(symb, right, ctx, b) and desugarings_alike?(left, right, pairs),
+        a = b
+}
+```
+
+r[thir.algorithmic.example] spec::algorithmic::{PAREN_TRUE, PAREN_TRUE_DESUGARED, TRUE_CORE, paren_true::{accepted, desugared, preserved, smaller, alike}}
+`Σ; · ⊢ (true) ⇒ Bool`, for the empty Σ. The HIR table `PAREN_TRUE` has a
+row for the literal and a row for the parenthesis, whose root unfolds to
+`(true)`. Its desugaring `PAREN_TRUE_DESUGARED` has the same two rows with
+the literal's layer in both, and its root unfolds to `true`. The Core table
+`TRUE_CORE` for `true` has one row. It is not the desugaring of a HIR
+table for `(true)`, and `PAREN_TRUE` desugars alike it, with both rows of
+the desugaring paired with its one row.
+
+| Row | HIR layer | Desugared layer | Context | Type |
+| --- | --- | --- | --- | --- |
+| 0 | `true` | `true` | `·` | `Bool` |
+| 1 | `(#0)` | `true` | `·` | `Bool` |
+
+```fren
+pub const PAREN_TRUE: Snoc<HirRow> := two(
+    HirRow {
+        form := HirF::Core(CoreF::BooleanLiteral(true)),
+        ctx := Empty,
+        ty := Ty::Boolean,
+    },
+    HirRow {
+        form := HirF::Paren(0),
+        ctx := Empty,
+        ty := Ty::Boolean,
+    }
+)
+
+pub const TRUE_CORE: Snoc<Row> := one(
+    Row {
+        form := CoreF::BooleanLiteral(true),
+        ctx := Empty,
+        ty := Ty::Boolean,
+    }
+)
+
+pub const PAREN_TRUE_DESUGARED: Snoc<Row> := Extend(
+    TRUE_CORE,
+    Row {
+        form := CoreF::BooleanLiteral(true),
+        ctx := Empty,
+        ty := Ty::Boolean,
+    }
+)
+
+set_option fren.lint.assertions_on_constants "allow" in
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
+set_option fren.evidence "random" in
+pub proc paren_true(): (holds?) {
+    ensure output: holds?
+    ensure accepted: synthesis?(Empty, PAREN_TRUE, Empty, Ty::Boolean)
+    ensure desugared: desugar_rows(PAREN_TRUE) = Some(PAREN_TRUE_DESUGARED)
+    ensure preserved: derivation?(Empty, PAREN_TRUE_DESUGARED, Empty, Ty::Boolean)
+    ensure smaller: derivation?(Empty, TRUE_CORE, Empty, Ty::Boolean)
+    ensure alike: desugars_alike?(
+        PAREN_TRUE,
+        TRUE_CORE,
+        two(
+            Pair { left := 1, right := 0 },
+            Pair { left := 0, right := 0 }
+        )
+    )
+}
+```
+
+### Open: expressions as trees
+
+The rules above are about tables, and relate two tables for one expression
+by a supplied pairing. The two rules below state what remains for
+expressions given as trees.
 
 r[thir.algorithmic.tree-lift]
-Building a table for a HIR expression e in a context Γ is a partial
-construction. It visits e's subexpressions in postorder, each in the
-context that the rule of its parent prescribes, and gives each a row whose
-type is what `synth_layer` synthesizes from its children's rows. It fails at
-the first layer for which `synth_layer` gives no type, so an expression that
-is not typable, such as a conditional whose condition is an integer, has no
-such table. `Σ; Γ ⊢ e ⇒ τ` holds exactly when the construction succeeds and
-the root of its table has type τ. When it succeeds, the desugaring of its
-table unfolds to the desugaring `|e|` of the expression
-(`desugaring.pass.parens`). This is open: the chapter defines no
-construction of a table from a tree and no unfolding of a HIR table.
+The judgment agrees with the inductive reading of the rules: when Σ and Γ
+are well formed, `Σ; Γ ⊢ e ⇒ τ` holds exactly when a finite tree of
+instances of the rules of this section concludes it, with one subtree for
+each written child of each form, in the context that the rule gives that
+child. The well-formedness conditions are part of the reading and do not
+follow from a tree, as in `types.judgment.adequacy`: the rule of a Boolean
+literal has an instance under any Σ and Γ. Then a HIR expression synthesizes
+at most one type in a context, and a traversal that judges each layer after
+its children, in the contexts that the rules prescribe, finds a τ with
+`Σ; Γ ⊢ e ⇒ τ` or the first blamed premise.
+
+This is open. It rests on four lemmas:
+
+1. Regularity: every row of a table that `synthesis?` accepts has a well
+   formed context and a type that Σ declares. For the desugared table this
+   is the Core's `types.judgment.regularity`, by
+   `thir.algorithmic.preservation`, and a HIR row has the context and type
+   of its desugared row.
+2. Two HIR tables whose roots unfold to the same expression desugar alike.
+   With `thir.algorithmic.expression-unique` this gives the uniqueness of
+   the synthesized type. It is not proved.
+3. A valid table's root unfolds to exactly one expression, and a tree of
+   rule instances concludes its row. The Lean development proves both for
+   any layer functor, as `Spec.Tables.Unfolds.unique` and
+   `Spec.Tables.Valid.derives`. They are not yet instantiated at HIR layers.
+4. Every tree of rule instances has a table. The Lean development proves
+   this for any layer functor as `Spec.Tables.Derives.table`, under
+   conditions on the rule that the HIR rules are not yet shown to meet.
 
 r[thir.algorithmic.expression-complete]
-Synthesis is complete for expressions: when `Σ; Γ ⊢ |e| : τ` holds in the
-Core for the desugaring of a HIR expression e, `Σ; Γ ⊢ e ⇒ τ` holds. This
-is open. `thir.algorithmic.reflection` does not give it: that rule starts
-from a supplied HIR table and reflects only the validity of that table's own
-desugaring. A Core table for `|e|` need not be the desugaring of any HIR
-table for e, because desugaring keeps the number of rows: for e = `(true)`
-the Core has a table of one row for `true`, and every HIR table for e has a
-row for the literal and a row for the parenthesis. So the statement is one
-of existence, across tables of different shapes: from any Core table whose
-root unfolds to `|e|` with type τ in Γ, some valid HIR table for e with a
-root of type τ in Γ exists. The intended route is by induction on e, read
-as a tree. The Core's tree reading (`types.judgment.adequacy`, which is
-open) gives each subexpression of `|e|` its typing in the context its
-parent's rule prescribes, whatever the shape of the given table. The
-per-layer rule `thir.algorithmic.complete` then synthesizes that type at
-each Core layer of e, and `thir.algorithmic.parens` gives each parenthesis
-the typing of its body, so the construction of `thir.algorithmic.tree-lift`
-succeeds with that root.
-
-r[thir.algorithmic.inference]
-An expression's typing is decidable: an algorithm, given Σ, Γ and a HIR
-expression e, finds the τ with `Σ; Γ ⊢ e ⇒ τ` or reports that there is
-none, by inference that builds e's table as `thir.algorithmic.tree-lift`
-describes. This is open, as is the Core's `types.judgment.decidability`.
+Synthesis is complete for expressions: when Σ and Γ are well formed and
+`Σ; Γ ⊢ |e| : τ` holds in the Core for the desugaring of a HIR expression e,
+`Σ; Γ ⊢ e ⇒ τ` holds. This is open. `thir.algorithmic.reflection` does not
+give it, since a Core table for `|e|` need not be the desugaring of a HIR
+table for e (`thir.algorithmic.example`). The route is by induction on e.
+The Core's adequacy theorem
+`Spec.Language.Types.judgment_adequate` gives a tree of Core rule instances
+for `|e|`, whatever the shape of the given table.
+`thir.algorithmic.agreement` turns each of its nodes into an instance of the
+synthesis rule of the same form, and `thir.algorithmic.parens` adds an
+instance for each parenthesis of e, with the typing of its body. The
+result is a tree of synthesis rule instances for e, and
+`thir.algorithmic.tree-lift` gives its table.
 
 ### The production checker
 
 r[thir.algorithmic.primitive] spec::algorithmic::{unary_tag, binary_tag, value_kind, primitive_unary::{accepts, result}, primitive_binary::{accepts, result}}
-The operator modes are the production operator decisions. The primitive
-contracts `thir.primitive.unary` and `thir.primitive.binary`, which the
-production `FrenExpr.unary` and `FrenExpr.binary` implement, accept an
-operand exactly when it has the type `thir.algorithmic.operators` expects,
-and return the kind of the type it gives. Two nominal types have equal
-identity atoms exactly when they are equal. The wrapper also proves, as
-`Spec.Compiler.Thir.algorithmic_unary_operand`,
+The operator types of `thir.algorithmic.operators` are the production
+operator decisions. The primitive contracts `thir.primitive.unary` and
+`thir.primitive.binary`, which the production `FrenExpr.unary` and
+`FrenExpr.binary` implement, accept an operand exactly when it has the
+expected type, and return the kind of the result type. Two nominal types
+have equal identity atoms exactly when they are equal. The wrapper also
+proves, as `Spec.Compiler.Thir.algorithmic_unary_operand`,
 `Spec.Compiler.Thir.algorithmic_binary_operand` and
-`Spec.Compiler.Thir.algorithmic_binary_output`, that the three mode tables
-are the functions `FrenExpr.unaryOperand`, `FrenExpr.binaryOperand` and
-`FrenExpr.binaryResult` from which `FrenHirToThir.Pass.step` takes each
+`Spec.Compiler.Thir.algorithmic_binary_output`, that the three functions
+are `FrenExpr.unaryOperand`, `FrenExpr.binaryOperand` and
+`FrenExpr.binaryResult`, from which `FrenHirToThir.Pass.step` takes each
 expected type.
 
 ```fren
@@ -1097,17 +1818,45 @@ expect primitive_binary(op: BinaryOp, left: Ty, right: Ty, left_id: Int, right_i
 }
 ```
 
+r[thir.algorithmic.step]
+`FrenHirToThir.Pass.step` is the production form of the rules of five
+forms: a unary operation, a binary operation, a conditional, a let and a
+parenthesis. Given that each child of a node was typed, with the type that
+the rule's typing of that child has, `step` returns the outcome of the
+node's rule: the same type, or a mismatch with the same expected and found
+types at the origin of the blamed premise. The operand, the left and right
+operands, the condition and the second branch are blamed at the origin of
+that child, and the binder of a let at the binder's origin. A production
+binder has the annotation `Bool` when it carries the `?` suffix and none
+otherwise. Likewise
+`FrenHirToThir.Pass.typeBody` checks a typed body against a declared type
+as `judge_body` does, and blames the body's origin. The wrapper proves
+these as `Spec.Compiler.Thir.step_unary`, `step_binary`, `step_if`,
+`step_let`, `step_paren` and `body_checked`. They relate a production type
+to a type of this chapter by any injective naming of the nominal types.
+
 r[thir.algorithmic.production]
-`FrenHirToThir.Pass.step` is the production form of `synth_layer`: it runs a
-layer's children in written order, takes each expected type from the modes
-above, and annotates the layer with the type it synthesized. Erasing the
-types of its output gives back its input, as `thir.result.preservation` requires; the
-generated cases of the checker's tests check this on every accepted case.
-Three differences of representation separate `step` from `synth_layer`:
-production contexts are nearest first (`thir.core.levels`), production
-items are canonical identities rather than paths, and a production `let`
-carries a `?` suffix where the Core carries an annotation. No theorem yet
-states that `step` accepts a layer exactly when `synth_layer` does, for
-calls, matches, constructors, locals and `let` in particular, nor that the
-successful production traversal of a tree yields a valid HIR table
-(`thir.algorithmic.tree-lift`). Both are open.
+The rest of the correspondence between `FrenHirToThir.Pass` and the rules
+of this section is open. No theorem yet states any of the following.
+
+1. `step` on a local, an item in value position, an application and a
+   match returns the outcome of `judge_node`. These need the production
+   context, which is nearest first (`thir.core.levels`), and the production
+   item environment, whose items are canonical identities and not paths,
+   related to Γ and Σ. In the production checker an application whose
+   callee is a local is not callable; the arity of a call is decided before
+   any argument is typed; and each arm's pattern and body are checked
+   before the next arm's.
+2. When a child of a node fails, `step` fails with that child's failure.
+   The production traversal types the children of a node in written order
+   and stops at the first that fails, so a failure in an earlier child is
+   reported before a mismatch of a later one. The rules of this section
+   give the outcome of a layer whose children are all typed.
+3. The successful production traversal of an expression yields a valid
+   HIR table whose root unfolds to it (`thir.algorithmic.tree-lift`), in
+   the context that `FrenHirToThir.Pass.typeItem` gives a declaration's
+   body.
+
+Erasing the types of the traversal's output gives back its input, as
+`thir.result.preservation` requires; the generated cases of the checker's
+tests check this on every accepted case.
