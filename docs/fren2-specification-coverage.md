@@ -341,13 +341,22 @@ operator meanings of the denotational semantics, and the table evaluator
 of the dynamic semantics. Every judgment and every property of the three
 chapters is prose.
 
-- [ ] Write the Termination chapter, which defines `Σ ⊢ d terminates`.
+- [ ] Write Termination, a sub-chapter of Static semantics, which
+  defines `Σ ⊢ d passes`, the judgment that a declaration passes the
+  termination check.
   The static semantics holds its placeholder: no recursive group, or
   structural recursion on one decreasing parameter. With the present
   types (Bool, Int and enums without payloads) no value has a proper
-  subterm, so no recursive group passes the placeholder.
+  subterm, so a recursive group passes the placeholder only when no
+  evaluation reaches a recursive call of it with a value for the
+  decreasing argument: `f(x) := if false then f(x) else 0` passes.
+- [ ] Whether "verified", said of one declaration, should be hereditary
+  is an open question for the owner. At present it is not hereditary:
+  a verified declaration passes its own termination check only, and
+  the theorems are stated of a function that has a denotation.
 - [ ] Define the marker by which a declaration opts out of the
-  termination check, in the Termination chapter.
+  termination check, in the Termination sub-chapter. The Core's
+  declarations have no field for it, and none for a postcondition.
   `statics.termination.optional` states only what follows from opting
   out.
 - [ ] `statics.match.distinct` makes a match with two arms for one
@@ -357,6 +366,17 @@ chapters is prose.
   `src/Spec/Compiler/Mir.lean` test, but no `impl` binds that check to
   the rule. The table evaluator takes the last of two such arms and the
   compiler's evaluator the first; the evaluators are not yet aligned.
+  The rule also has two Fren definitions whose agreement is not proved:
+  `arms_distinct?` in the static semantics and `reachable?` with
+  `repeats` in the Patterns chapter. One of them should own the rule and
+  the other cite it.
+- [ ] An expectation makes no call in the static call order, and
+  `statics.condition.group` does not restrict it. Its definedness is
+  still a premise of its declaration's, judged under interpretations
+  that constrain a function reaching the declaration's own function by
+  its contract only (`statics.entailment.admissible`). Whether the
+  definedness of an expectation belongs to the static semantics at all
+  is open.
 - [ ] `statics.condition.group` and `statics.condition.terminating` are
   prose: no checker enforces them yet.
 - [ ] Write the definedness rules, the denotational equations and the
@@ -372,9 +392,10 @@ chapters is prose.
   termination check where that admits structural recursion.
 - [ ] `types.program.nonrecursive` and `verification.program.defined`
   read the calls in bodies only, and the static call order also reads
-  the functions that a condition mentions. A table-defined program may
-  so have a recursive group through a condition (`f` with the body `0`
-  and `expect g() = 0`, `g` with the body `f()`).
+  the functions that a condition other than an expectation mentions. A
+  table-defined program may so have a recursive group through a
+  condition (`f` with the body `0` and `assert g() = 0`, `g` with the
+  body `f()`).
   `statics.property.tables` and `verification.soundness` therefore
   carry acyclicity of the static call order as a condition of their
   own. The table definition should check it, with the compiler's
@@ -387,7 +408,8 @@ chapters is prose.
   admissible interpretations is stated to agree with truth of the
   denotations in verified programs in one direction only.
 
-**Conditions call only functions that terminate.** Before
+**Conditions call only functions that pass the termination check
+hereditarily.** Before
 `statics.condition.terminating`, a program without the termination check
 could reach an error though it was defined and met its contracts:
 
@@ -403,8 +425,9 @@ entailment alone the body of `f` would be defined, since its hypothesis
 `g(x)` is true nowhere, and the call in `h` would be defined, since the
 precondition goal `g(0)` is false nowhere, while `h()` evaluates
 `1 div 0`. The rule now rejects the declaration of `f`: its precondition
-mentions `g`, which does not terminate. The rule requires hereditary
-termination: the mentioned function and every function that it reaches
+mentions `g`, whose declaration does not pass the termination check.
+The rule asks that the check be passed hereditarily: the mentioned
+function and every function that it reaches
 pass the check, and none opts out. That alone gives a precondition no
 truth value. It has one where those functions are also defined and meet
 their contracts, with true assumptions, and under those conditions

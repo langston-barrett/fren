@@ -86,7 +86,11 @@ A *configuration* m is an expression in the course of its evaluation. It
 has the forms of Core, with two differences. It has no local: every local
 has been replaced by its value. The body of a let stays a Core expression
 e, paired with the assignment ρ at which the let was loaded; it becomes a
-configuration when the let's value is known. A *state* is a configuration
+configuration when the let's value is known. The body cannot be loaded
+with the let: loading replaces every local by its value, and the body's
+newest local has none until the let's value is known. So the pair is a
+closure, and a let is the one place where the replacement of locals is
+delayed. A *state* is a configuration
 or an error state `error(k)`. An error state is not a configuration: no
 context holds one, and no operator or call takes one as an operand. The
 arms of every match in a configuration are
@@ -434,7 +438,10 @@ pub fn eval(rows: Snoc<Row>, pos: Int, env: Snoc<Value>): Option<Value> :=
 
 r[dynamics.table.differences]
 The table evaluator is not the step relation, and it differs from it in
-six ways. It computes a row's value in one pass over the rows before
+six ways. The compiler's evaluator is a third function, and the
+[evaluator chapter](../Compiler/Evaluator.md) lists the five ways in
+which it differs from the step relation; the two lists are of different
+evaluators and are kept apart. It computes a row's value in one pass over the rows before
 it, and has no configurations, steps or runs. It has no error state: a
 row that the step relation takes to an error has no value. It gives no
 value to a call, a product, a quotient or a remainder, where the step
@@ -538,7 +545,9 @@ The derived judgment agrees with the runs that end:
 an error state r.
 
 r[dynamics.theorem.adequacy]
-Let e be an expression that is defined under hypotheses Φ, and let every
+Let e be an expression that is defined under hypotheses Φ,
+[in its declaration or as an expression written in none](StaticSemantics.md#r-statics.entailment),
+and let every
 function that e or Φ mentions
 [have a denotation](DenotationalSemantics.md#r-denotation.domain). At an
 assignment ρ that makes each hypothesis of Φ true, e ends in a value, and
@@ -558,9 +567,11 @@ u, and the postcondition is true at v̄ and u. The call does not end in an
 error and it does not diverge. This is
 [adequacy](#r-dynamics.theorem.adequacy) with
 [the contract theorem](DenotationalSemantics.md#r-denotation.theorem.contract).
-The precondition and the postcondition have truth values there: f
-depends on the functions that they mention and on every function that
-those reach, so each of them has a denotation too. The theorem is not
+The precondition and the postcondition have truth values there: they
+are conditions of f's declaration that the
+[call relation](StaticSemantics.md#r-statics.call-order.relation) reads,
+so f depends on the functions that they mention and on every function
+that those reach, and each of them has a denotation too. The theorem is not
 stated of a function whose declaration is verified while a declaration
 that it depends on is not.
 
@@ -575,7 +586,7 @@ function that has opted out of the check, and that does not reach it, is
 in no recursive group and
 [passes the check](StaticSemantics.md#r-statics.termination), and its
 call diverges where the callee's does. Nor does
-[hereditary termination](StaticSemantics.md#r-statics.termination) alone
+[passing the check hereditarily](StaticSemantics.md#r-statics.termination) alone
 give a value: the call may end in an error where a declaration is not
 defined or an assumption is false. Without the check the theorem fails.
 A well-typed function whose body is a call of itself at its own
@@ -596,24 +607,32 @@ ends in a value u, the postcondition of f is true at v̄ and u. The call
 may diverge, and the theorem says nothing more of one that does. The
 conditions have truth values where the theorem reads them. The
 declarations of f and of the functions that f depends on are defined, so
-[each function that one of their contracts or assumptions mentions terminates hereditarily](StaticSemantics.md#r-statics.condition.terminating).
+[each function that one of their contracts or assumptions mentions passes the termination check hereditarily](StaticSemantics.md#r-statics.condition.terminating).
 By the theorem's own conditions such a function and every function that
 it reaches are also defined and meet their contracts, with true
 assumptions, so
 [each has a denotation](StaticSemantics.md#r-statics.property.conditions).
-The theorem needs all of these conditions and not the termination of the
-mentioned functions alone.
+The theorem needs all of these conditions and not the termination check
+of the mentioned functions alone.
 
 r[dynamics.theorem.table-agreement]
-In a program with distinct arms, where the
-[table evaluator](#the-table-evaluator) gives a row a value v at ρ, the
-row's expression e has that outcome: `P ⊢ ⟨e, ρ⟩ →* v`.
+Let P be a [well-typed](Types.md#r-types.program.typing) program with
+distinct arms, let the table be a derivation of `Γ ⊢ e : τ` in it, and
+let ρ be an assignment of Γ. Where the
+[table evaluator](#the-table-evaluator) gives the table's last row a
+value v at ρ, the expression e has that outcome: `P ⊢ ⟨e, ρ⟩ →* v`. The
+same holds of each earlier row with the expression and the context that
+the row derives. The premises are needed: loading is defined only for a
+well-typed expression at an assignment of its context, and the table
+evaluator also gives values to rows of a table that is no derivation.
 
 r[dynamics.theorem.implementation]
 An implementation that evaluates in another order, that leaves an unused
 let's value unevaluated, that evaluates in one pass and not by steps, or
 that omits a check which verification has discharged, agrees with this
 chapter where [adequacy](#r-dynamics.theorem.adequacy) applies: on the
-expressions, and at the assignments, of that theorem. The
+expressions, and at the assignments, of that theorem, in a well-typed
+program with distinct arms. The property is not yet stated formally, and
+its formal statement will name those premises for each implementation. The
 [evaluator chapter](../Compiler/Evaluator.md) states how the compiler's
 evaluator differs from this chapter elsewhere.

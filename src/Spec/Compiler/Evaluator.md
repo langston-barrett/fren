@@ -9,7 +9,10 @@ evaluation. This evaluator agrees with it where
 [adequacy](../Language/DynamicSemantics.md#r-dynamics.theorem.adequacy)
 applies, as its
 [implementation property](../Language/DynamicSemantics.md#r-dynamics.theorem.implementation)
-states, and differs from it elsewhere in five ways. It is a recursive
+states, and differs from it elsewhere in five ways. The table evaluator
+of the dynamic semantics is another function, with
+[six differences of its own](../Language/DynamicSemantics.md#r-dynamics.table.differences).
+It is a recursive
 walk that computes an outcome in one pass, where the dynamic semantics
 is a step relation on configurations. It leaves a let's
 definition unread where the body does not read it, where the dynamic

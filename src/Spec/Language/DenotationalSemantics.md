@@ -5,7 +5,8 @@ The denotational semantics gives each function whose declaration is
 declarations that it depends on, and each defined expression over such
 functions, a value, as a set-theoretic function of the values of its free
 locals. It gives a meaning to no other function. The termination check
-is of one declaration, and a verified declaration may call a function
+is of one declaration, passing it does not state that the declaration's
+function terminates, and a verified declaration may call a function
 whose declaration has not passed it, so a function
 [has a denotation](#r-denotation.domain) only when its own declaration
 and the declaration of every function that it depends on are verified,
@@ -205,7 +206,8 @@ interpretation that gives each function its
 r[denotation.domain]
 A function f *has a denotation* when the declaration of f and the
 declaration of every function that f
-[depends on](StaticSemantics.md#r-statics.call-order.relation) are
+[depends on](StaticSemantics.md#r-statics.call-order.relation), which
+are the functions that f reaches, are
 [verified](StaticSemantics.md#r-statics.program.verified), and the
 assumptions of those declarations are [true](#r-denotation.truth). The
 definition is by recursion on the
@@ -257,7 +259,7 @@ precondition mentions [has a denotation](#r-denotation.domain); those
 functions are of
 [strata before f's](StaticSemantics.md#r-statics.condition.group), and
 where f's declaration is defined they
-[terminate hereditarily](StaticSemantics.md#r-statics.condition.terminating),
+[pass the termination check hereditarily](StaticSemantics.md#r-statics.condition.terminating),
 which is necessary for them to have denotations and
 [not sufficient](StaticSemantics.md#r-statics.property.conditions).
 An assumption is a hypothesis
@@ -282,6 +284,7 @@ The properties of this section are open: none is stated in Fren or proved.
 
 r[expressions.value.denotation]
 A well-typed expression of type τ that is defined under hypotheses Φ,
+[in its declaration or as an expression written in none](StaticSemantics.md#r-statics.entailment),
 where every function that it or Φ mentions
 [has a denotation](#r-denotation.domain), has a denotation at every
 assignment of its context that makes Φ true, and the denotation is a valid

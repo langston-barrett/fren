@@ -674,7 +674,8 @@ the [termination check](StaticSemantics.md#r-statics.termination) of the
 static semantics in that the check admits structural recursion. It does
 not include that check: this condition reads the calls in bodies, and the
 [call order](StaticSemantics.md#r-statics.call-order.relation) of the
-static semantics also reads the functions that a condition mentions, so
+static semantics also reads the functions that a condition other than
+an expectation mentions, so
 a program without recursive call cycles may have a recursive group
 there.
 

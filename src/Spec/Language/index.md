@@ -36,7 +36,7 @@ separate check that rejects unreachable (repeated) arms.
 
 The defined source domain has Booleans, mathematical integers, payload-free
 nominal enums, named functions, locals and lets, conditionals, constructor
-matches and global assumptions and expectations. The [source grammar](Syntax.md)
+matches, and the conditions of declarations, among them assumptions and expectations. The [source grammar](Syntax.md)
 fixes its concrete forms. Static semantics comprises resolution, typing,
 definedness, contracts and termination. Match coverage is part of
 definedness, and a match with two arms for one constructor is a
@@ -46,7 +46,7 @@ out of; a declaration that has not passed it is not verified. A
 contract is a precondition and a postcondition
 that relate a function's whole argument tuple to its result; it is not
 part of a type. A contract and an assumption
-[mention only functions that terminate hereditarily](StaticSemantics.md#r-statics.condition.terminating):
+[mention only functions that pass the termination check hereditarily](StaticSemantics.md#r-statics.condition.terminating):
 the mentioned function and every function that it reaches have passed
 the termination check, and none has opted out. That alone does not make
 a condition total. It
@@ -55,8 +55,9 @@ where those functions are also defined and meet their contracts, with
 true assumptions. An assumption is a hypothesis only within its own
 declaration.
 Verification obligations are discharged by SMT. Passing typing does not
-establish verification. The termination check is of one declaration: a
-verified declaration that is in no recursive group may call a function
+establish verification. The termination check is of one declaration,
+and passing it does not state that the declaration's function
+terminates: a verified declaration that is in no recursive group may call a function
 that has opted out of the check and diverges. So the denotational
 semantics gives a function a meaning only when its declaration and the
 declaration of every function that it depends on are verified and their

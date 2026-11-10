@@ -937,8 +937,8 @@ static semantics, and neither includes the other. It is narrower in that
 the check admits structural recursion. It is wider in that it reads the
 calls in bodies only: the
 [call order](StaticSemantics.md#r-statics.call-order.relation) of the
-static semantics also reads the functions that a `require`, `assume`,
-`assert` or `expect` member mentions, so a defined program may have a
+static semantics also reads the functions that a `require`, `assume`
+or `assert` member mentions, so a defined program may have a
 recursive group there, which the
 [correspondence](StaticSemantics.md#r-statics.property.tables) and
 [soundness](#r-verification.soundness) exclude by a condition of their
@@ -1323,12 +1323,14 @@ pub proc context_weakening(rows: Snoc<Row>, cutoff: Int, extra: Ty): (holds?) {
 ```
 
 r[verification.soundness]
-Verification is sound for the dynamic semantics under conditions that
+Verification is sound for the denotational semantics, and through it
+for the dynamic semantics, under conditions that
 this chapter's definedness does not itself give. Let the program be
 [defined](#r-verification.program.defined), let no function of it
 reach itself in the
 [call order](StaticSemantics.md#r-statics.call-order.relation) of the
-static semantics, which reads conditions as well as bodies, let each of
+static semantics, which reads conditions other than expectations as
+well as bodies, let each of
 its postconditions be `true`, and let none of its declarations have
 [opted out](StaticSemantics.md#r-statics.termination.optional) of the
 termination check. By the
@@ -1342,8 +1344,14 @@ of them, and let the
 every argument tuple that meets their function's `require` members. Then
 every function that d depends on
 [has a denotation](DenotationalSemantics.md#r-denotation.domain), and an
-expression of d denotes a value at every assignment that satisfies its
-hypotheses. The
+expression of d denotes a value at every assignment that makes its
+hypotheses true. That is less than every assignment that
+[satisfies](#r-verification.assignment.fact) them in this chapter's
+sense, which asks only that none be refuted. The evaluation of the
+expression there ends in that value by
+[adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy), and a
+function that d depends on is
+[totally correct](DynamicSemantics.md#r-dynamics.theorem.total-correctness). The
 `assume` members of d itself are among the hypotheses, and those of a
 declaration that d does not depend on are not asked to be true. Without
 the condition on opting out the statement fails as written: where `g()`
@@ -1351,7 +1359,7 @@ has the body `1` and has opted out and `f()` has the body `g()`, the
 program is defined, no assumption is false, and g has no denotation, so
 the body of f has none. Without the condition on the call order it fails
 too: a defined program has no recursion through bodies, and where `f()`
-has the body `0` and the member `expect g() = 0`, and `g()` has the body
+has the body `0` and the member `assert g() = 0`, and `g()` has the body
 `f()`, the two are one recursive group of the static semantics, neither
 declaration is verified, and neither function has a denotation. The
 [denotational semantics](DenotationalSemantics.md#r-expressions.value.denotation)
