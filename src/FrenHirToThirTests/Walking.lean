@@ -190,6 +190,12 @@ private def extractionCases : IO Unit := do
   writtenCase "let z := x in z" (.both empty (.bind (some 0) empty))
   writtenCase "if true then g(x) else y" (.both empty (.both gx empty))
   writtenCase "match E::A { E::A => x, E::B => g(x) }" (.both empty (.both (.both empty empty) gx))
+  -- A unary operator has its operand's calls, and a condition and a scrutinee theirs.
+  writtenCase "-g(x)" gx
+  let test : Termination.Calls FrenBase.ItemId := .both gx empty
+  writtenCase "if g(x) = 0 then x else y" (.both test (.both empty empty))
+  writtenCase "match (if g(x) = 0 then E::A else E::B) { E::A => x, E::B => y }"
+    (.both (.both test (.both empty empty)) (.both (.both empty empty) empty))
 
 private def boundaryCases : IO Unit := do
   let source ← IO.FS.readFile "test/FrenResolve/s1.fren"
