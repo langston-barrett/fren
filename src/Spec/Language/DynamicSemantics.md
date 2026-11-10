@@ -483,8 +483,12 @@ pub proc evaluation_examples(): (holds?) {
 The properties of this section are open: none is stated in Fren or proved.
 
 r[dynamics.theorem.determinism]
-A configuration takes at most one step: it is `E[m]` for a reduction of
-m in at most one way, and a reduction has one result. So a run from a
+A configuration takes at most one step. A configuration that is not a
+value decomposes in exactly one way into an evaluation context E and a
+configuration m whose evaluated children are all values, and m has at
+most one [reduction](#r-dynamics.step.reductions). Every derivation of a
+step of `E[m]` ends in that reduction: the context rules, applied through
+E or through the contexts that compose to E, derive the same step. So a run from a
 configuration is unique, and an evaluation has exactly one of the three
 results, or it reaches a stuck configuration.
 

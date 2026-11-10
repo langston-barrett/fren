@@ -201,9 +201,14 @@ r[denotation.domain]
 [assumptions of those strata hold](#r-denotation.truth), and v̄ meets f's
 precondition. `⟦e⟧ρ` is asked for exactly when e is
 [defined](StaticSemantics.md#r-statics.definedness.rules) under some
-hypotheses Φ, every function that e or Φ mentions has a denotation at
-some tuple, ρ is an assignment of e's context, and ρ makes every
-hypothesis of Φ true. This chapter gives no meaning to an ill-typed
+hypotheses Φ, every function that e or Φ mentions is of a stratum that
+is verified, with every earlier stratum, and whose assumptions hold with
+theirs, ρ is an assignment of e's context, and ρ makes every hypothesis
+of Φ true. The equations then need a callee's denotation only at the
+argument tuples of the calls that they
+[read](#r-denotation.expression) at ρ, and a callee need have a
+denotation at no other tuple: a call in a branch that is not selected is
+not read. This chapter gives no meaning to an ill-typed
 expression, to an expression that is not defined, to a function whose
 stratum or an earlier one is not verified, or to a defined expression at
 an assignment that fails its hypotheses.

@@ -423,10 +423,18 @@ the obligations collected from it with their hypotheses, satisfaction at
 an assignment, validity, and defined programs. Its goals are the divisor
 of a division or remainder, a callee's `require` and an asserted fact; it
 states no postcondition and admits no recursion. For a program without
-recursion whose postconditions are all `true`, the two statements agree:
-the program is defined by this chapter exactly when its tables are
-[defined](PropertiesAndChecks.md#r-verification.program.defined) there.
-Such a program meets its contracts and terminates, so it is then verified.
+recursion whose postconditions are all `true`, one direction holds: when
+its tables are
+[defined](PropertiesAndChecks.md#r-verification.program.defined) there,
+the program is defined by this chapter. Such a program meets its
+contracts and terminates, so it is then verified. The converse fails.
+The tables give
+[no value](PropertiesAndChecks.md#r-verification.validity.uncomputed) to
+a call, a product, a quotient or a remainder, so a goal that depends on
+one does not hold there, where entailment reads the callee's body. With
+`g()` of body `1` and `f()` of body `1 div g()`, this chapter's
+entailment admits the divisor, and the divisor's obligation is not valid
+over the tables.
 
 ## Examples
 
