@@ -966,17 +966,27 @@ What is known of an expectation is a report of tooling, read through the
 [denotations](DenotationalSemantics.md#r-denotation.truth). A check
 answers a
 [verdict](#r-verification.verdict.discharge) for each obligation of the
-`expect` member, and the member is reported in one of four ways. Where
-its expression or one of its hypotheses mentions a function that
-[has no denotation](DenotationalSemantics.md#r-denotation.domain), it is
-*not established*, whatever the checks of its obligations answer: the
-expectation has no truth value to report, and the report names the
-function. A function has no denotation where its declaration, or that of
-a function it depends on, is not verified, has opted out of the
-termination check or has a false assumption. Where all those functions
-have denotations, the member is *met* when every one of its obligations
-is discharged. A `Refuted(ρ)` does not by itself make it refuted. The
-verdict says that ρ does not
+`expect` member, and the member has exactly one of four reports, which
+is the first of these that applies: *not established* where its
+expression or one of its hypotheses mentions a function that
+[has no denotation](DenotationalSemantics.md#r-denotation.domain);
+otherwise *refuted* where its `Asserted` obligation has a computed
+refutation; otherwise *not defined* where one of its `NonZero` or
+`Defined` obligations has a computed refutation; otherwise
+*not established* where a check of one of its obligations answers
+`Unknown` or a `Refuted(ρ)`, which is then not computed; and otherwise
+*met*, which is where every one of its obligations is discharged. The
+order decides the report whatever the checks of the other obligations
+answer, and a report may list the answer of every obligation beside it.
+The paragraphs below say what a computed refutation is and why each
+report claims no more than it does.
+
+Where a function has no denotation, the expectation has no truth value
+to report, and the report names the function. A function has no
+denotation where its declaration, or that of a function it depends on,
+is not verified, has opted out of the termination check or has a false
+assumption. A `Refuted(ρ)` does not by itself make the member refuted.
+The verdict says that ρ does not
 [satisfy](#r-verification.assignment.obligation) the obligation in this
 chapter's sense, and the evaluator
 [gives no value](#r-verification.validity.uncomputed) to a row that
@@ -1002,7 +1012,7 @@ and so as its denotation. The arms are asked to be distinct because for a
 repeated constructor the evaluator takes the last arm and the denotation
 the first.
 
-The member is *refuted* only on a computed refutation of its `Asserted`
+The member is refuted only on a computed refutation of its `Asserted`
 obligation. The goal's row is the member's whole expression and the
 hypotheses are whole conditions of the declaration, so ρ makes the
 [hypotheses of the declaration](StaticSemantics.md#r-statics.condition.scope)
@@ -1024,7 +1034,9 @@ divisor that is computed to be zero at every assignment. Likewise, where
 true, and its `Defined` goal reads a `require` root that is computed to
 be `false`. Where the `Asserted` obligation has no computed refutation
 and a `NonZero` or `Defined` obligation has one, the member is
-*not defined*: at ρ an operation of the expression is outside its
+not defined, even when a check answers `Unknown` or a refutation that is
+not computed for another of its obligations, the `Asserted` one included:
+at ρ an operation of the expression is outside its
 domain when every operand is read as required, as
 [definedness](StaticSemantics.md#r-statics.definedness.declarative)
 reads it. The report names the operation and ρ. It does not say that the
@@ -1032,9 +1044,11 @@ expectation is false there or that it has no value: where the denotation
 skips the operation, the expectation may be true.
 
 A `Refuted(ρ)` that is not computed is a candidate counterexample and no
-proof of either: the member is not established, and the report gives ρ
-and the rows that have no value. With an obligation left `Unknown` and
-none with a computed refutation, the member is again not established.
+proof of either. Where no obligation of the member has a computed
+refutation and one has such a `Refuted(ρ)`, the member is not
+established, and the report gives ρ and the rows that have no value.
+With an obligation left `Unknown` and none with a computed refutation,
+the member is again not established.
 None of the four reports makes a declaration undefined or unverified,
 and none changes a verdict of another member.
 
