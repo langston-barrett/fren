@@ -124,8 +124,8 @@ does an error state.
 ```
 
 r[dynamics.step.reductions]
-A *reduction* is a step of a configuration whose evaluated children are
-values. The reductions are these, and no others.
+A *reduction* is a step of a configuration that is not a value and whose
+evaluated children are values. The reductions are these, and no others.
 
 ```text
   op v → v′                            when op(v) = v′
@@ -485,8 +485,8 @@ The properties of this section are open: none is stated in Fren or proved.
 r[dynamics.theorem.determinism]
 A configuration takes at most one step. A configuration that is not a
 value decomposes in exactly one way into an evaluation context E and a
-configuration m whose evaluated children are all values, and m has at
-most one [reduction](#r-dynamics.step.reductions). Every derivation of a
+configuration m that is not a value and whose evaluated children are all
+values, and m has at most one [reduction](#r-dynamics.step.reductions). Every derivation of a
 step of `E[m]` ends in that reduction: the context rules, applied through
 E or through the contexts that compose to E, derive the same step. So a run from a
 configuration is unique, and an evaluation has exactly one of the three
