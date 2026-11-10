@@ -865,9 +865,13 @@ Plausible jobs remain bounded evidence with explicit premise counts.
 
 - [ ] Prove whole-pass `PassContract`, including extraction-to-LIR `SiteFor`,
   source correspondence, complete group layout and dependency construction.
-- [ ] Prove bounded sort-checker correspondence and structural-totality
-  recognizer soundness for actual admitted bodies; neither is established by
-  `walk_extracts` or the empty-block witness.
+- [ ] Prove structural-totality recognizer soundness (`structurallyTotal`)
+  for actual admitted bodies, and state as an OIR theorem that each produced
+  search formula is `Sorted` at `Bool`. The LIR chapter now proves that the
+  checker `FrenLir.Term.infer`, which obligation generation runs on each
+  search formula, is sound and complete for `Sorted` (`lir.terms.checker`),
+  so the second part is that rule applied to each produced question.
+  Neither part is established by `walk_extracts` or the empty-block witness.
 - [ ] Prove `SearchContract` and `RequestContract`, including typed Boolean
   completeness/functionality of term/frame interpretation, guarded and bound
   environments, and complete domains. Do not infer them from finite tests.
@@ -1407,8 +1411,33 @@ wrong scope contexts and reversed verification algebra in their intended laws.
   declaration, member, assumption, goal and demand correspondence, for every
   successful production. Bounded-checker failures are explicit errors; do not
   assume every admitted input succeeds regardless of output/depth budgets.
-- [ ] Prove sorting/checker correspondence under the actual source static
-  premises, typed interpretation closure, origin validity and scope laws.
+- [x] Sort-checker correspondence (`lir.terms.checker`,
+  `lir.terms.constructors`; wrapper `Spec/Compiler/Lir/Sorting.lean`). The
+  production checker `FrenLir.Term.infer` is sound for `Sorted` at every
+  depth bound (`infer_sorted`) and complete at every large enough bound
+  (`sorted_infer`), so `Sorted` holds exactly when some bound returns the
+  sort (`sorted_iff_infer`) and sorts are unique (`sorted_unique`).
+  `produced_sorted` gives both `Sorted` premises of `BodyFor` for every
+  `Root` body of every successful production, through `Body.wellSorted`
+  and `Program.wellFormed` (`wellSorted_sorted`, `wellFormed_root`). The
+  `impl` `constructor_sort` binds the constructor case to
+  `FrenEval.Value.valid`; the recursive cases are bound by the theorems,
+  since a Fren `proc` cannot range over `FrenLir.Term`. The proofs use the
+  derived `LawfulBEq` instances of the source types, signatures, tokens and
+  spans, which were added for them.
+  This work found a bug. The checker accepted `constructor owner c` when
+  `owner` was not an enumeration item of the scope, which `Sorted` and
+  `Value.valid` refuse. The checker now requires it, and the `lir` job has
+  a control for it. No spec caught it because the chapter declared the
+  checker and the judgment distinct and no rule related them; the tests ran
+  the checker only on scopes that resolution had produced.
+- [ ] Prove the rest of the checker's correspondence: a declarative rule for
+  the origin data that `Term.originsValid` checks (owner, member and
+  occurrence of each `at`), with its soundness; that the depth bound 10000
+  of `Body.wellSorted` is never the reason a `Lowers` output is rejected, or
+  state the bound as a rejection rule; and the typed interpretation closure
+  and scope laws (`Sorted` and `Assigned` give `Meaning` a value of the
+  sort), under the actual source static premises.
 - [ ] Prove existence of `Models` for the full admitted nonrecursive definition
   domain from independently justified source functionality and totality on
   the verification domain; the true-literal model proof covers only its class.

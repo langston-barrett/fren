@@ -610,7 +610,7 @@ input_file spec_compiler_match_compilation_md where
   text := true
 
 lean_lib SpecCompilerLir where
-  globs := #[`Spec.Compiler.Lir]
+  globs := #[`Spec.Compiler.Lir, `Spec.Compiler.Lir.Sorting]
   needs := #[`@/spec_compiler_lir_md]
 
 input_file spec_compiler_lir_md where

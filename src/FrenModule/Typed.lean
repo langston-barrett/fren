@@ -9,14 +9,14 @@ namespace FrenModule
 structure TypedParameter where
   written : FrenAst.Parameter
   type : FrenExpr.Ty
-  deriving Repr, BEq
+  deriving Repr, BEq, ReflBEq, LawfulBEq
 
 structure Signature where
   id : FrenBase.ItemId
   parameters : Array TypedParameter
   result : FrenExpr.Ty
   resultAnnotation : FrenAst.Ty
-  deriving Repr, BEq
+  deriving Repr, BEq, ReflBEq, LawfulBEq
 
 abbrev TypeContext := FrenBase.Binding.Context (FrenAst.Token × FrenExpr.Ty)
 
