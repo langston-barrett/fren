@@ -966,7 +966,7 @@ What is known of an expectation is a report of tooling, read through the
 [denotations](DenotationalSemantics.md#r-denotation.truth). A check
 answers a
 [verdict](#r-verification.verdict.discharge) for each obligation of the
-`expect` member, and the member is reported in one of three ways. Where
+`expect` member, and the member is reported in one of four ways. Where
 its expression or one of its hypotheses mentions a function that
 [has no denotation](DenotationalSemantics.md#r-denotation.domain), it is
 *not established*, whatever the checks of its obligations answer: the
@@ -984,22 +984,59 @@ depends on a product, a quotient, a remainder or a call. So a goal may
 fail to hold at ρ because its row is uncomputed, and a hypothesis may be
 unrefuted at ρ because its row is: where `g()` is verified with the body
 `0`, the member `expect g() = 0` is true, its `Asserted` goal holds at no
-assignment, and a sound check may answer `Refuted(ρ)`. The member is
-*refuted* only when the refutation is computed: at ρ the evaluator gives
-every hypothesis's row the value that the hypothesis states, and it
-gives the goal a value that contradicts it, which is `false` for the
-row of an `Asserted` goal, zero for the divisor of a `NonZero` goal, and
-`false` for a `require` root that a `Defined` goal reads. A row that has
-a value depends on no uncomputed operation, and that value is the row's
-denotation at ρ, so ρ then makes the hypotheses true and the expectation
-false or without a value. The report names the obligation, which tells
-the two apart. A `Refuted(ρ)` that is not computed is a candidate
-counterexample and no proof that the expectation is false: the member is
-not established, and the report gives ρ and the rows that have no value.
-With an obligation left `Unknown` and none refuted by a computed
-refutation, the member is again
-not established. None of the three reports makes a declaration
-undefined or unverified, and none changes a verdict of another member.
+assignment, and a sound check may answer `Refuted(ρ)`.
+
+A refutation `Refuted(ρ)` of an obligation is *computed* when the arms of
+every match are
+[distinct](StaticSemantics.md#r-statics.match.distinct) in the member's
+expression, in its hypotheses and in the `require` members that its
+`Defined` goals read, and at ρ the evaluator gives every hypothesis's row
+the value that the hypothesis states and gives the goal a value that
+contradicts it: `false` for the row of an `Asserted` goal, zero for the
+divisor of a `NonZero` goal, and `false` for a `require` root that a
+`Defined` goal reads. A row that has a value needed no uncomputed
+operation, and with distinct arms its expression has that value as its
+outcome at ρ, by
+[table agreement](DynamicSemantics.md#r-dynamics.theorem.table-agreement),
+and so as its denotation. The arms are asked to be distinct because for a
+repeated constructor the evaluator takes the last arm and the denotation
+the first.
+
+The member is *refuted* only on a computed refutation of its `Asserted`
+obligation. The goal's row is the member's whole expression and the
+hypotheses are whole conditions of the declaration, so ρ makes the
+[hypotheses of the declaration](StaticSemantics.md#r-statics.condition.scope)
+true and the expectation false: the expectation is not true. That `and`
+and `or` [short-circuit](DynamicSemantics.md#r-dynamics.order) in the
+denotation does not weaken this. The evaluator needs both operands of
+each, so it gives a row a value only where every operand that the
+denotation evaluates has one, and the result of `and` and of `or` is the
+same whether or not the second operand is evaluated.
+
+A computed refutation of a `NonZero` or `Defined` obligation does not
+make the member refuted, and the reason is the same short-circuit.
+[Generation](#r-verification.generate.operator) requires both operands
+of `and` and of `or` in the same hypotheses, where the denotation skips
+the second operand once the first decides the result. So
+`expect true or (1 div 0 = 0)` is true, and its `NonZero` goal has a
+divisor that is computed to be zero at every assignment. Likewise, where
+`g(x)` is verified with `require x != 0`, `expect true or (g(0) = 0)` is
+true, and its `Defined` goal reads a `require` root that is computed to
+be `false`. Where the `Asserted` obligation has no computed refutation
+and a `NonZero` or `Defined` obligation has one, the member is
+*not defined*: at ρ an operation of the expression is outside its
+domain when every operand is read as required, as
+[definedness](StaticSemantics.md#r-statics.definedness.declarative)
+reads it. The report names the operation and ρ. It does not say that the
+expectation is false there or that it has no value: where the denotation
+skips the operation, the expectation may be true.
+
+A `Refuted(ρ)` that is not computed is a candidate counterexample and no
+proof of either: the member is not established, and the report gives ρ
+and the rows that have no value. With an obligation left `Unknown` and
+none with a computed refutation, the member is again not established.
+None of the four reports makes a declaration undefined or unverified,
+and none changes a verdict of another member.
 
 r[verification.program.assumptions]
 Both notions are relative to assumptions, each within its own
