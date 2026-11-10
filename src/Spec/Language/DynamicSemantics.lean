@@ -1,30 +1,17 @@
 import Fren.Impl
 import Fren.Literate
 import Fren.Trace
-import Spec.Language.Types
+import Spec.Language.DenotationalSemantics
 
 open Fren.Lang
 
-#fren_md "Expressions.md"
+#fren_md "DynamicSemantics.md"
 
 #fren_check
 
-namespace Spec.Language.Expressions
+pub mod spec::dynamics
 
-open spec.names spec.types in
-example : spec.expressions.value_valid? SYMB (.Nominal LIGHT LIGHT_RED) = true := by decide
-
-open spec.names spec.types in
-example : spec.expressions.value_valid? SYMB (.Nominal SIGNAL LIGHT_RED) = false := by decide
-
-open spec.names spec.types in
-example : spec.expressions.direct_item? Int (.Call F .Empty) F = true := by decide
-
-end Spec.Language.Expressions
-
-pub mod spec::expressions
-
-open spec.surface spec.types spec.expressions in
+open spec.surface spec.types spec.denotation spec.dynamics in
 impl values_agree_proof: values_agree for (unop : UnaryOp) (op : BinaryOp) (left right result : Value) {
   unop := unop, op := op, left := left, right := right, result := result, holds? := true
 } by
@@ -39,7 +26,7 @@ impl values_agree_proof: values_agree for (unop : UnaryOp) (op : BinaryOp) (left
         integer_meaning?, boolean_meaning?] <;>
       first | grind | (intro h; subst h; simp) | (intro h; exact h.symm)
 
-open spec.names spec.types spec.expressions in
+open spec.names spec.types spec.denotation spec.dynamics in
 impl evaluation_examples_proof: evaluation_examples { holds? := true } by
   intro _
   simp only [evaluation_examples.ensures, evaluation_examples.ensure.output,

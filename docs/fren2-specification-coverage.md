@@ -42,7 +42,8 @@ trusted: `spec::names::naming_order`, `spec::names::table_weakening`, `spec::typ
 Of the three `trusted` procedures, the chapter's own is the open
 `types.derivation.unique-expression`. The other two are the resolution
 chapter's open `names.expression.table-weakening` and
-`names.collection.permutation`. Each claim's reason starts `open:`. Types.md, Expressions.md,
+`names.collection.permutation`. Each claim's reason starts `open:`. Types.md, StaticSemantics.md,
+DenotationalSemantics.md, DynamicSemantics.md,
 NamesAndScope.md, LexicalStructure.md, Syntax.md, AstAndParsing.md,
 [PropertiesAndChecks.md](#definedness-and-verification-correspondence) and the THIR
 chapter are the converted chapters: their wrappers trace with `trusted` as the required
@@ -86,7 +87,7 @@ are not yet converted.
   no rule needs a `0 ≤ i` premise.
 - **Nonlinear arithmetic.** A product of two variables, or a quotient by
   one, is an error in Fren1, and a defined function cannot apply an
-  uninterpreted one, so the Expressions chapter's `binary_meaning?` states
+  uninterpreted one, so the denotational chapter's `binary_meaning?` states
   the result's sort for `*` and `div` and the remainder's range for `%`,
   and its prose gives their equations.
 - **Chapter order.** The own-spec check reads `src/Spec` in the book's
@@ -98,7 +99,7 @@ are not yet converted.
   match with an opaque earlier arm sequence, which a guarded claim's vacuity
   check needs.
 - **Operator enums.** `UnaryOp` and `BinaryOp` are the Syntax chapter's, in
-  `spec::surface`, which the Types and Expressions chapters import.
+  `spec::surface`, which the Types and semantics chapters import.
 - **Undecidable parts.** The chapter has no `undecidable` opt-out; this is
   a consequence of the representation, not a rule.
 - **Evidence for Lean-proved laws.** A law that Lean proves has, as a
@@ -217,8 +218,8 @@ defines, over the derivation tables of Core typing, the condition of each
 layer, the obligations collected from a condition with their hypotheses,
 a declaration's table of members with the obligations of each,
 satisfaction at an assignment, validity, verdicts, and defined and
-verified programs. Satisfaction reads row values from the evaluator of the
-[expressions chapter](../src/Spec/Language/Expressions.md#evaluation).
+verified programs. Satisfaction reads row values from the table evaluator of the
+[dynamic semantics](../src/Spec/Language/DynamicSemantics.md#the-table-evaluator).
 Its wrapper's `#fren_trace` reports the following; 13 of the proved
 procedures, the five tested and three trusted belong to the chapters it
 imports, and 15 proved and one trusted are its own:
@@ -240,7 +241,7 @@ trusted: `spec::names::naming_order`, `spec::names::table_weakening`, `spec::typ
 
 What shapes the chapter:
 
-- **The evaluator.** `eval` of the expressions chapter gives a row its
+- **The evaluator.** `eval` of the dynamic semantics chapter gives a row its
   value in an assignment, so an assignment is only the values of the
   locals, a counterexample is checkable, and the examples' values are
   computed. It gives no value to a product, a quotient, a remainder or a

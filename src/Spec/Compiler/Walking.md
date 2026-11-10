@@ -74,7 +74,7 @@ r[walking.program.obligations]
 `DomainSite` identifies each written division/remainder obligation by its full
 body, lexical context, ordered guard path, operands, operator token and kind.
 The required integer domain is nonzero divisor, as defined by
-[expression domains](../Language/Expressions.md#operator-domains).
+[definedness](../Language/StaticSemantics.md#definedness).
 `Members` gives the ordered assumption and expectation arrays for each
 canonical owner, including full member data. All of a block's assumptions
 remain available to its expectations, regardless of written position; no

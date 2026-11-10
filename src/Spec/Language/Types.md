@@ -9,9 +9,10 @@ definedness. This chapter defines typing;
 Core's expressions and the semantic objects that this chapter types them
 with, and supplies identities, and
 [Definedness and verification](PropertiesAndChecks.md) defines the
-obligations that verification proves. Dynamic semantics applies only to
-well-typed, verified programs. Typing alone establishes neither
-definedness nor logical truth.
+obligations that verification proves. The
+[dynamic semantics](DynamicSemantics.md) evaluates every well-typed
+program, and the [denotational semantics](DenotationalSemantics.md) gives
+a meaning to the verified ones. Typing alone establishes neither definedness nor logical truth.
 
 ## Overview
 
@@ -1049,12 +1050,13 @@ pub proc judgment_weakening(symb: Symb, rows: Snoc<Row>, ctx: Ctx, ty: Ty, extra
 ```
 
 r[types.safety]
-Typing is sound for the dynamic semantics: in a well-typed, verified
-program, evaluating a well-typed expression under values of its context's
-types is defined and gives a value of its type, as the
-[expressions chapter](Expressions.md#values-interpretation-and-mentioned-names)
-defines evaluation. This needs the dynamic semantics as a Fren definition
-and is open.
+Typing is sound for the dynamic semantics: in a well-typed program,
+evaluating a well-typed expression under values of its context's types
+ends in a value of its type or in an error, and in a verified program it
+ends in a value. The
+[dynamic semantics](DynamicSemantics.md#r-dynamics.theorem.type-safety)
+lists this with its theorems. This needs the evaluation rules as a Fren
+definition and is open.
 
 ## Whole-expression properties
 

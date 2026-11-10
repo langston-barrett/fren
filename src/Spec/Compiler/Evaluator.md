@@ -4,8 +4,10 @@ Evaluation gives a concrete meaning to an expression for a particular choice
 of its inputs. This chapter specifies the source domain of
 [typed syntax](Thir.md). It does not decide whether a property holds for
 all inputs. It defines the concrete value-debugging strategy.
-[Expressions](../Language/Expressions.md) separately defines declarative
-source verification.
+The [dynamic semantics](../Language/DynamicSemantics.md) is the language's
+evaluation, which this evaluator implements; the
+[static semantics](../Language/StaticSemantics.md) separately defines
+declarative source verification.
 
 ## Inputs and outcomes
 

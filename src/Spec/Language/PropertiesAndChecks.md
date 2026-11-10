@@ -7,8 +7,12 @@ true, at the place where it is written. This chapter defines the
 obligations that a typed Core expression gives rise to, the hypotheses under
 which each must be proved, what it means for an obligation to be valid, and
 what a solver's answer establishes. It builds on the typed Core of
-[Core typing](Types.md) and on the values and operator domains of
-[Expressions](Expressions.md).
+[Core typing](Types.md), on the operator domains of the
+[static semantics](StaticSemantics.md), on the values of the
+[denotational semantics](DenotationalSemantics.md) and on the table
+evaluator of the [dynamic semantics](DynamicSemantics.md). The static
+semantics lists, as open rules, the judgments that will restate this
+chapter's obligations.
 
 ## Overview
 
@@ -49,7 +53,7 @@ table, and reads neither contexts nor types
 A condition and its flattened obligations have the same meaning at every
 assignment ([flattening](#r-verification.obligation.flattening)).
 Satisfaction at one assignment is computed by the
-[evaluator](Expressions.md#evaluation). Validity quantifies over every
+[table evaluator](DynamicSemantics.md#the-table-evaluator). Validity quantifies over every
 assignment to the locals in scope of a goal; a solver is a sound and
 incomplete procedure for it
 ([the interface](#r-verification.validity.interface)), and its `Unknown`
@@ -70,16 +74,11 @@ Boolean row r is true.
 pub mod spec
 pub mod spec::verification
 
-use spec::expressions::{
-    Value,
-    eval,
-    integer_domain?,
-    typed,
-    value_at,
-    value_type,
-    value_valid?,
-    values,
-}
+use spec::denotation::{Value, value_type, value_valid?}
+
+use spec::dynamics::{eval, typed, value_at, values}
+
+use spec::statics::integer_domain?
 
 use spec::names::{
     ArmF,
@@ -540,7 +539,8 @@ pub fn implementation_discharges?(keyword: Keyword) := keyword = Keyword::Expect
 
 An *assignment* ρ gives a value to each local level in scope. A *program*
 P is a sequence of declarations. Satisfaction reads the value of a row
-from the [evaluator](Expressions.md#r-expressions.meaning.evaluation):
+from the
+[table evaluator](DynamicSemantics.md#r-expressions.meaning.evaluation):
 `eval(t, r, ρ)`.
 
 r[verification.assignment.fact] spec::verification::{fact_refuted?, some_refuted?}
@@ -751,7 +751,7 @@ Fren.
 r[verification.validity.uncomputed]
 A row that depends on a product, a quotient, a remainder or a call has no
 value in any assignment, since the
-[evaluator](Expressions.md#r-expressions.meaning.evaluation) computes
+[evaluator](DynamicSemantics.md#r-expressions.meaning.evaluation) computes
 none. No `NonZero` or `Asserted` goal of such a row holds, and such a
 row refutes no hypothesis. A `Defined` goal of a call row can hold, since
 it reads the arguments and the callee's `require` roots; it does not hold
@@ -1102,7 +1102,7 @@ pub proc guards(
 ```
 
 r[verification.generation.divisor] spec::verification::divisor::{sound, complete}
-The divisor goal is exactly the [operator's domain](Expressions.md#r-expressions.domain.integer):
+The divisor goal is exactly the [operator's domain](StaticSemantics.md#r-expressions.domain.integer):
 in an assignment where the divisor row is the integer d, `NonZero` holds
 exactly when `integer_domain?` does for a partial operator.
 
@@ -1309,7 +1309,7 @@ Verification is sound for the dynamic semantics: in a
 [defined](#r-verification.program.defined) program whose `assume` members
 hold at every assignment, every expression denotes a value at every
 assignment that satisfies its hypotheses, as the
-[expressions chapter](Expressions.md#r-expressions.value.denotation)
+[denotational semantics](DenotationalSemantics.md#r-expressions.value.denotation)
 states. This is open: the evaluator gives no value to a product, a
 quotient, a remainder or a call, so the statement cannot yet be written
 for the whole Core. The laws above are its local parts: generation omits
@@ -2020,7 +2020,7 @@ procedure.
 ```fren
 pub mod spec::validity
 
-use spec::expressions::Value
+use spec::denotation::Value
 use spec::names::Symb
 use spec::surface::Snoc
 use spec::types::Row

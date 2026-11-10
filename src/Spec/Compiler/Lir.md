@@ -4,7 +4,7 @@ Logical lowering represents source values as first-order terms and retains
 verification information separately. A false Boolean value and an unmet
 well-definedness obligation have different meanings. This chapter relates
 the actual LIR to the [MIR theory](Mir.md) and shared
-[expression semantics](../Language/Expressions.md).
+[expression semantics](../Language/DenotationalSemantics.md).
 
 ## 1. Semantic objects and admission
 

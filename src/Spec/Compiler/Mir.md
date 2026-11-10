@@ -3,7 +3,7 @@
 MIR separates declarations that give expressions their meaning from owned
 assumptions and questions about those expressions. This chapter relates the
 [walking program](Walking.md) to `FrenMir.Theory`, using the shared
-[Language meanings](../Language/Expressions.md) and [THIR judgments](Thir.md).
+[Language meanings](../Language/DenotationalSemantics.md) and [THIR judgments](Thir.md).
 MIR construction does not yet read [desugared THIR](Desugaring.md): its input
 keeps the written syntax, parentheses included.
 Its domain is Bool, Int, payload-free nominal enums, nonrecursive named

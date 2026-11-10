@@ -843,7 +843,8 @@ def guardRuleChapter (md text gap : String) : Array String :=
 def ruleAdjacentChapters : Array String :=
   #["src/Spec/Language/LexicalStructure.md", "src/Spec/Language/Syntax.md",
     "src/Spec/Language/NamesAndScope.md", "src/Spec/Language/Types.md",
-    "src/Spec/Language/Expressions.md",
+    "src/Spec/Language/StaticSemantics.md", "src/Spec/Language/DenotationalSemantics.md",
+    "src/Spec/Language/DynamicSemantics.md",
     "src/Spec/Compiler/AstAndParsing.md",
     "src/Spec/Language/PropertiesAndChecks.md"]
 

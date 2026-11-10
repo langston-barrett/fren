@@ -18,11 +18,9 @@ import Spec.Compiler.Overview
 import Spec.Compiler.Smt
 import Spec.Compiler.Thir
 import Spec.Compiler.Walking
-import Spec.Language.DiagnosticsAndLints
-import Spec.Language.Evidence
+import Spec.Language.DenotationalSemantics
+import Spec.Language.DynamicSemantics
 import Spec.Language.Example
-import Spec.Language.Expressions
-import Spec.Language.Formatting
 import Spec.Language.FunctionsAndRecursion
 import Spec.Language.Index
 import Spec.Language.LeanInterop
@@ -32,6 +30,11 @@ import Spec.Language.NamesAndScope
 import Spec.Language.Patterns
 import Spec.Language.Procedures
 import Spec.Language.PropertiesAndChecks
+import Spec.Language.StaticSemantics
 import Spec.Language.Syntax
 import Spec.Language.Types
 import Spec.Language.Types.Adequacy
+import Spec.Tooling.DiagnosticsAndLints
+import Spec.Tooling.Evidence
+import Spec.Tooling.Formatting
+import Spec.Tooling.Index

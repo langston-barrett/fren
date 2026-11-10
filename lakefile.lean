@@ -384,12 +384,28 @@ input_file spec_language_types_md where
   path := "src/Spec/Language/Types.md"
   text := true
 
-lean_lib SpecLanguageExpressions where
-  globs := #[`Spec.Language.Expressions]
-  needs := #[`@/spec_language_expressions_md]
+lean_lib SpecLanguageStaticSemantics where
+  globs := #[`Spec.Language.StaticSemantics]
+  needs := #[`@/spec_language_static_semantics_md]
 
-input_file spec_language_expressions_md where
-  path := "src/Spec/Language/Expressions.md"
+input_file spec_language_static_semantics_md where
+  path := "src/Spec/Language/StaticSemantics.md"
+  text := true
+
+lean_lib SpecLanguageDenotationalSemantics where
+  globs := #[`Spec.Language.DenotationalSemantics]
+  needs := #[`@/spec_language_denotational_semantics_md]
+
+input_file spec_language_denotational_semantics_md where
+  path := "src/Spec/Language/DenotationalSemantics.md"
+  text := true
+
+lean_lib SpecLanguageDynamicSemantics where
+  globs := #[`Spec.Language.DynamicSemantics]
+  needs := #[`@/spec_language_dynamic_semantics_md]
+
+input_file spec_language_dynamic_semantics_md where
+  path := "src/Spec/Language/DynamicSemantics.md"
   text := true
 
 lean_lib SpecLanguagePatterns where
@@ -432,28 +448,36 @@ input_file spec_language_modules_and_views_md where
   path := "src/Spec/Language/ModulesAndViews.md"
   text := true
 
-lean_lib SpecLanguageEvidence where
-  globs := #[`Spec.Language.Evidence]
-  needs := #[`@/spec_language_evidence_md]
+lean_lib SpecToolingIndex where
+  globs := #[`Spec.Tooling.Index]
+  needs := #[`@/spec_tooling_index_md]
 
-input_file spec_language_evidence_md where
-  path := "src/Spec/Language/Evidence.md"
+input_file spec_tooling_index_md where
+  path := "src/Spec/Tooling/index.md"
   text := true
 
-lean_lib SpecLanguageDiagnosticsAndLints where
-  globs := #[`Spec.Language.DiagnosticsAndLints]
-  needs := #[`@/spec_language_diagnostics_and_lints_md]
+lean_lib SpecToolingEvidence where
+  globs := #[`Spec.Tooling.Evidence]
+  needs := #[`@/spec_tooling_evidence_md]
 
-input_file spec_language_diagnostics_and_lints_md where
-  path := "src/Spec/Language/DiagnosticsAndLints.md"
+input_file spec_tooling_evidence_md where
+  path := "src/Spec/Tooling/Evidence.md"
   text := true
 
-lean_lib SpecLanguageFormatting where
-  globs := #[`Spec.Language.Formatting]
-  needs := #[`@/spec_language_formatting_md]
+lean_lib SpecToolingDiagnosticsAndLints where
+  globs := #[`Spec.Tooling.DiagnosticsAndLints]
+  needs := #[`@/spec_tooling_diagnostics_and_lints_md]
 
-input_file spec_language_formatting_md where
-  path := "src/Spec/Language/Formatting.md"
+input_file spec_tooling_diagnostics_and_lints_md where
+  path := "src/Spec/Tooling/DiagnosticsAndLints.md"
+  text := true
+
+lean_lib SpecToolingFormatting where
+  globs := #[`Spec.Tooling.Formatting]
+  needs := #[`@/spec_tooling_formatting_md]
+
+input_file spec_tooling_formatting_md where
+  path := "src/Spec/Tooling/Formatting.md"
   text := true
 
 lean_lib SpecLanguageLeanInterop where

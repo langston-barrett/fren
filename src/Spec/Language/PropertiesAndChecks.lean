@@ -1,7 +1,7 @@
 import Fren.Impl
 import Fren.Literate
 import Fren.Trace
-import Spec.Language.Expressions
+import Spec.Language.DynamicSemantics
 
 open Fren.Lang
 
@@ -14,7 +14,7 @@ namespace Spec.Language.Verification
 
 open spec.surface (BinaryOp UnaryOp Snoc)
 open spec.names hiding collect
-open spec.types spec.expressions spec.verification
+open spec.types spec.statics spec.denotation spec.dynamics spec.verification
 
 /-- Collecting a condition's obligations preserves its meaning in every assignment. -/
 theorem collect_exact (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
@@ -88,7 +88,7 @@ pub mod spec::verification
 
 open spec.surface (BinaryOp UnaryOp Snoc)
 open spec.names hiding collect
-open spec.types spec.expressions spec.verification in
+open spec.types spec.statics spec.denotation spec.dynamics spec.verification in
 impl flattening_proof: flattening for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (condition : Condition) (hyps : Snoc Fact) (found : Snoc Obligation) {
   prog := prog, rows := rows, env := env, condition := condition, hyps := hyps, found := found,
@@ -114,7 +114,7 @@ impl context_weakening_proof: context_weakening for (rows : Snoc Row) (cutoff : 
 
 open spec.surface (BinaryOp UnaryOp Snoc)
 open spec.names hiding collect
-open spec.types spec.expressions spec.verification in
+open spec.types spec.statics spec.denotation spec.dynamics spec.verification in
 impl strictness_proof: strictness for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (op : BinaryOp) (left right : Condition) (row : Int) {
   prog := prog, rows := rows, env := env, op := op, left := left, right := right, row := row,
@@ -129,7 +129,7 @@ impl strictness_proof: strictness for (prog : Snoc Declared) (rows : Snoc Row) (
 
 open spec.surface (BinaryOp UnaryOp Snoc)
 open spec.names hiding collect
-open spec.types spec.expressions spec.verification in
+open spec.types spec.statics spec.denotation spec.dynamics spec.verification in
 impl guards_proof: guards for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (condition : Condition) (guard : Int) (yes no : Condition) {
   prog := prog, rows := rows, env := env, condition := condition, guard := guard, yes := yes,
@@ -143,7 +143,7 @@ impl guards_proof: guards for (prog : Snoc Declared) (rows : Snoc Row) (env : Sn
 
 open spec.surface (BinaryOp UnaryOp Snoc)
 open spec.names hiding collect
-open spec.types spec.expressions spec.verification in
+open spec.types spec.statics spec.denotation spec.dynamics spec.verification in
 impl divisor_proof: divisor for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (op : BinaryOp) (row : Int) (d : Int) {
   prog := prog, rows := rows, env := env, op := op, row := row, d := d, holds? := true
@@ -155,7 +155,7 @@ impl divisor_proof: divisor for (prog : Snoc Declared) (rows : Snoc Row) (env : 
 
 open spec.surface (BinaryOp UnaryOp Snoc)
 open spec.names hiding collect
-open spec.types spec.expressions spec.verification in
+open spec.types spec.statics spec.denotation spec.dynamics spec.verification in
 impl hypotheses_proof: hypotheses for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (hyps : Snoc Fact) (fact : Fact) (goal : Goal) (row : Int) {
   prog := prog, rows := rows, env := env, hyps := hyps, fact := fact, goal := goal, row := row,
@@ -171,7 +171,7 @@ impl hypotheses_proof: hypotheses for (prog : Snoc Declared) (rows : Snoc Row) (
 
 open spec.surface (BinaryOp UnaryOp Snoc)
 open spec.names hiding collect
-open spec.types spec.expressions spec.verification in
+open spec.types spec.statics spec.denotation spec.dynamics spec.verification in
 impl cut_proof: cut for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (hyps : Snoc Fact) (root : Int) (goal : Goal) {
   prog := prog, rows := rows, env := env, hyps := hyps, root := root, goal := goal, holds? := true
@@ -183,7 +183,7 @@ impl cut_proof: cut for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Val
 
 open spec.surface (BinaryOp UnaryOp Snoc)
 open spec.names hiding collect
-open spec.types spec.expressions spec.verification in
+open spec.types spec.statics spec.denotation spec.dynamics spec.verification in
 impl member_scope_proof: member_scope for (rows : Snoc Row) (env : Snoc Value)
     (members : Snoc Member) (member other : Member) (keyword : Keyword) {
   rows := rows, env := env, members := members, member := member, other := other,
@@ -253,7 +253,7 @@ impl tables_proof: tables { holds? := true } by
 
 open spec.surface (BinaryOp UnaryOp Snoc)
 open spec.names hiding collect
-open spec.types spec.expressions spec.verification in
+open spec.types spec.statics spec.denotation spec.dynamics spec.verification in
 impl represented_proof: represented for (symb : Snoc Entry) (decls : Snoc Decl)
     (prog : Snoc Declared) (item : Fren.Seq String) (body : Snoc Row) {
   symb := symb, decls := decls, prog := prog, item := item, body := body, holds? := true
