@@ -109,6 +109,14 @@ def generatorSound (i : Input) : Bool :=
   | .ok typed => typed.toSexp true == i.thir.toSexp true
   | .error _ => false
 
+/-- `((x))`: the output is `x`'s own node with `x`'s origin, not either
+parenthesis's, and equals the output of `x` alone. -/
+def nestedOrigin : Bool :=
+  let g : Phase.Surface .thir := Or.inr rfl
+  let x : Expr .thir := ⟨7, ValueType.int, .var 0⟩
+  let d := desugarExpr ⟨1, ValueType.int, .paren g ⟨2, ValueType.int, .paren g x⟩⟩
+  d.origin == 7 && d.toSexp true == (desugarExpr x).toSexp true
+
 private def property (label : String) (p : Prop)
     (decorated : Decorations.DecorationsOf p := by mk_decorations) [Testable decorated] : IO Unit := do
   let report ← Testable.checkIO decorated {numInst := 500, maxSize := 12, randomSeed := some 20261110}
@@ -144,6 +152,8 @@ def census : IO Unit := do
 
 /-- Properties over Plausible-generated modules of the pass's own input IR. -/
 def run : IO Unit := do
+  unless nestedOrigin do
+    throw (IO.userError "THIR desugaring: nested parentheses did not give the body's origin")
   property "output is the input with only its parentheses removed (well-typed input)" <|
     ∀ c : WellTyped, removesOnlyParens c.input = true
   property "output is the input with only its parentheses removed (one injected fault)" <|
@@ -160,5 +170,6 @@ def run : IO Unit := do
 
 #print axioms FrenThirDesugar.desugarExpr_paren
 #print axioms FrenThirDesugar.desugarExpr_keeps
+#print axioms FrenThirDesugar.desugarExpr_nested
 
 end FrenThirDesugarTests

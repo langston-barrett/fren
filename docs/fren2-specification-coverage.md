@@ -693,10 +693,14 @@ THIR module. It removes parentheses and nothing else, and imports only the
 shared expression and module libraries; the `layering` test forbids it any
 pass, the parser and the syntax tree. The wrapper of
 `Spec/Compiler/Desugaring.md` proves, for every input, that the pass
-satisfies the layer equation `Desugars`, that it is the only function that
-does, that no output node is a parenthesis, and that the module keeps its
-identity, item order, item identities and origin tables. These are universal
-Lean proofs.
+is related to its input by `Erases` and `ErasesModule`, relations stated
+without the production functions: a parenthesis has the result of its body,
+every other node keeps its origin, type and data over related children, and
+the module keeps its identity, its items in order, each enum, each function's
+and check's identity, origin, parameters and result type, each member's kind,
+label and origin, and each origin table. It also proves that anything so
+related to an input is the pass's output, and that no output node is a
+parenthesis. These are universal Lean proofs.
 
 `FrenThirDesugarTests` holds Plausible properties over generated inputs:
 well-typed modules from `FrenGen.Thir`, with zero to two parentheses added

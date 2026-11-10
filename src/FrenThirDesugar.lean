@@ -8,9 +8,9 @@ The input is the type checker's output, `FrenModule.Core.Thir`; the pass reads
 no source text, syntax tree or resolver table, and runs no other pass. It is a
 fold of each body (`Expr.fold step`) that drops the forms the `Surface` gate
 marks: today, written parentheses. A parenthesised expression becomes its
-body, with the body's origin and annotation, so the parenthesis's own origin
-is the only thing removed. Every other node is rebuilt unchanged with its
-origin and type. The output phase cannot hold a surface form at all
+desugared body, so it carries the origin and annotation of that result: for
+`((x))` those of `x`, with both parentheses' origins removed. Every other node
+is rebuilt with its origin and type over its desugared children. The output phase cannot hold a surface form at all
 (`no_surface`), so that invariant needs no check. Items are independent: an
 item's output depends on that item only. -/
 
@@ -65,6 +65,13 @@ theorem desugarExpr_mk (o : OriginId) (ty : Ann .thir) (n : ExprF .thir (Expr .t
 theorem desugarExpr_paren (o : OriginId) (ty : Ann .thir) (g : Phase.Surface .thir) (e : Expr .thir) :
     desugarExpr ⟨o, ty, .paren g e⟩ = desugarExpr e := by
   rw [desugarExpr_mk]; rfl
+
+/-- Nested parentheses give the innermost body's result, with its origin and
+type: neither parenthesis's origin or annotation survives. -/
+theorem desugarExpr_nested (o₁ o₂ o : OriginId) (t₁ t₂ ty : Ann .thir)
+    (g₁ g₂ : Phase.Surface .thir) (i : Nat) :
+    desugarExpr ⟨o₁, t₁, .paren g₁ ⟨o₂, t₂, .paren g₂ ⟨o, ty, .var i⟩⟩⟩ = ⟨o, ty, .var i⟩ := by
+  rw [desugarExpr_paren, desugarExpr_paren, desugarExpr_mk]; rfl
 
 /-- Any node but a parenthesis keeps its origin and its type. -/
 theorem desugarExpr_keeps (o : OriginId) (ty : Ann .thir) (n : ExprF .thir (Expr .thir))

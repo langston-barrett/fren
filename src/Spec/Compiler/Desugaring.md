@@ -28,34 +28,54 @@ its argument.
 
 r[desugaring.pass.parens]
 A parenthesised expression desugars to the desugaring of its body. The result
-carries the body's origin and type; the parenthesis's own origin is the only
-thing removed. Every other node is rebuilt with the same origin, the same type
-and its desugared children in the same order. Literal values, local indices,
-item and constructor identities, operators, let binders and match arms are
-unchanged. These two clauses determine the pass: exactly one function
-satisfies them. The output phase admits no parenthesis node, so none remains
-at any depth.
+therefore carries the origin and type of the desugared body, not of the
+written body: `((x))` desugars to what `x` desugars to, with `x`'s origin, and
+the origins and types of both parentheses are removed. Every other node is
+rebuilt with the same origin, the same type and its desugared children in the
+same order. Literal values, local indices, constructor and callee identities,
+operators, let binders and the constructor pattern of each match arm are
+unchanged. These two clauses determine the pass: each expression has exactly
+one result that satisfies them. The output phase admits no parenthesis node,
+so none remains at any depth.
 
 r[desugaring.pass.module]
 The module keeps its identity. Items are desugared one for one in declaration
 order, and each item's output depends on that item alone. An enum is
-unchanged. A function keeps its identity, parameters and result type; a check
-keeps its identity, parameters and its members in order, each with its kind
-and label. No item, member, operand or unused definition is deleted. Each
-item keeps its origin table whole, including the entries of removed
-parentheses, so an origin that survives denotes the same source position
-before and after.
+unchanged. A function keeps its identity, origin, parameters and result
+type; a check keeps its identity, origin, parameters and its members in
+order, each with its kind, label and origin. No item, member, operand or
+unused definition is deleted. Each item keeps its origin table whole,
+including the entries of removed parentheses, so an origin that survives
+denotes the same source position before and after.
 
-The chapter wrapper states the layer equation as `Desugars` and proves that
-the production pass satisfies it (`desugar_sound`), that it is the only
-function that does (`desugar_unique`), that no output node is a parenthesis
-(`output_has_no_paren`) and the module clauses (`module_shape`). Property
-tests over generated well-typed modules, with parentheses added at every
-depth, check the whole-module consequences: the output is the input with only
-its parentheses removed; typing the parenthesis-free erasure of the input
-gives the output, so desugaring commutes with typing; added parentheses do not
-change the output's bodies; the node count falls by one for each parenthesis;
-and scoping is unchanged.
+The chapter wrapper states these rules as relations that do not mention the
+production pass. `Erases` relates a THIR expression to a desugared one by the
+two clauses of `desugaring.pass.parens`, one case for each node form.
+`ErasesMember`, `ErasesItem` and `ErasesModule` state every clause of
+`desugaring.pass.module`: the module's identity, the item count and order,
+that an item keeps its kind, an enum whole, a function's and a check's
+identity, origin, parameters and result type, the member count and order,
+each member's kind, label and origin, and the origin table. The wrapper
+proves, for every input, that the production pass's output is related to its
+input (`desugar_sound`, `item_sound`, `module_sound`) and that anything
+related to an input is the production pass's output (`desugar_unique`,
+`item_unique`, `module_unique`). It also proves that no output node is a
+parenthesis (`output_has_no_paren`) and the nested case above. Two parts of
+the rules are not theorems. In `desugaring.pass.input`, totality and
+dependence on the argument alone hold because the pass is a total Lean
+function of the module; that it runs no other pass and reads no other
+representation is checked by the `layering` test over its imports. That no
+operand or unused definition is deleted follows from the relations, which
+keep every child and every item, but is not stated as a theorem of its own.
+
+Property tests over generated well-typed modules, with parentheses added at
+every depth, check the pass against oracles of their own over a bounded
+sample. The output's printed form is the input's with only its parentheses
+removed. Typing the parenthesis-free erasure of the input gives the output,
+so desugaring commutes with typing. Added parentheses do not change the
+output's bodies. The node count falls by one for each parenthesis, and
+scoping is unchanged. Only the tests cover the last four; no theorem states
+that desugaring preserves typing, scoping or evaluation.
 
 Parentheses are concrete syntax. The [Language](../Language/Types.md)
 states its typing and evaluation rules over the Core, which has no
