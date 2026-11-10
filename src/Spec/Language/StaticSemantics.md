@@ -35,8 +35,8 @@ definedness as obligations over derivation tables; a
 | `Σ ⊢ d defined` | the declaration d is defined | [defined declarations](#r-statics.declaration.defined) | — |
 | `Σ ⊢ d meets {P} {Q}` | the function declaration d meets its contract | [meeting a contract](#r-statics.contract.meets) | — |
 | `Σ ⊢ (g, w̄) ≺ (f, v̄)` | the call of g at the arguments w̄ precedes the call of f at v̄ | [call instances](#r-statics.call-order.instances) | — |
-| `size(S, e) = s` | in the size context S, e has the size s | [sizes](#r-statics.termination.size) | `form_size`, for one layer |
-| `Σ ⊢ d passes` | the declaration d passes the termination check | [termination](#r-statics.termination) | `guarded?`, for one argument |
+| `size(S, e) = s` | in the size context S, e has the size s | [sizes](#r-statics.termination.size) | `form_size`, for one layer; `local_size` and `parameter_sizes`, for a size context |
+| `Σ ⊢ d passes` | the declaration d passes the termination check | [termination](#r-statics.termination) | `passes_alone?` and `group_passes?`, of functions given with their [written calls](#r-statics.termination.written) and grouped by the call order |
 | `⊢ (Σ, ds) defined` | the program is defined | [defined programs](#r-statics.program.defined) | — |
 | `⊢ (Σ, ds) verified` | the program is verified | [verified programs](#r-statics.program.verified) | — |
 
@@ -134,9 +134,13 @@ the same written spelling.
 pub mod spec
 pub mod spec::statics
 
-use spec::names::{ArmF, CoreF, ItemId, lookup}
+use spec::names::{ArmF, CoreF, Ctx, Form, ItemId, length, lookup}
 
 use spec::surface::{BinaryOp, Snoc}
+
+use spec::types::{Arm, Row}
+
+use spec::surface::Snoc::{Empty, Extend}
 
 pub fn arm_mentions?<E>(arms: Snoc<ArmF<E>>, item: ItemId) := match arms {
     Snoc::Empty => false,
@@ -533,7 +537,7 @@ not reach f; and when f and g are in one recursive group, each has a
 decreasing parameter, and the value that w̄ gives g's decreasing
 parameter is a proper subterm of the value that v̄ gives f's.
 
-r[statics.termination.size] spec::statics::{Size, form_size}
+r[statics.termination.size] spec::statics::{Size, local_of, local_size, form_size, parameter_sizes}
 The check reads the body of a function f that has a decreasing
 parameter, and gives each local of the body a *size* relative to that
 parameter: `same`, `smaller` or `unknown`. A *size context* S of a
@@ -550,7 +554,10 @@ context of its parent: the operands of an operator, the arguments of a
 call, the value of a let, the condition and the branches of a
 conditional, and the scrutinee and the arms of a match. An arm
 [binds no local](NamesAndScope.md#r-names.core.syntax), so it extends no
-size context. `form_size` states the size of one layer.
+size context. `form_size` states the size of one layer, and
+`local_size` that of a level, or of an expression that is no local.
+`parameter_sizes` gives the size context of a function's parameters for
+a decreasing parameter.
 
 ```text
   s ::= same | smaller | unknown       sizes
@@ -568,12 +575,27 @@ size context. `form_size` states the size of one layer.
 ```fren
 pub enum Size { Same, Smaller, Unknown }
 
-pub fn form_size<E>(sizes: Snoc<Size>, form: CoreF<E>): Size := match form {
-    CoreF::Local(level) => match lookup(sizes, level) {
+pub fn local_of<E>(form: CoreF<E>): Option<Int> := match form {
+    CoreF::Local(level) => Some(level),
+    _ => None,
+}
+
+pub fn local_size(sizes: Snoc<Size>, level: Option<Int>): Size := match level {
+    Some(index) => match lookup(sizes, index) {
         Some(size) => size,
         None => Size::Unknown,
     },
-    _ => Size::Unknown,
+    None => Size::Unknown,
+}
+
+pub fn form_size<E>(sizes: Snoc<Size>, form: CoreF<E>): Size := local_size(sizes, local_of(form))
+
+pub fn parameter_sizes(parameters: Ctx, decreasing: Int): Snoc<Size> := match parameters {
+    Empty => Empty,
+    Extend(earlier, _) => Extend(
+        parameter_sizes(earlier, decreasing),
+        if length(earlier) = decreasing then Size::Same else Size::Unknown
+    ),
 }
 ```
 
@@ -588,14 +610,16 @@ match gives each the size `unknown`. The Core has
 [no constructor with arguments](NamesAndScope.md#r-names.core.syntax)
 and no arm that binds a local, so the rule has no instance in it.
 
-r[statics.termination.guarded] spec::statics::guarded?
+r[statics.termination.guarded] spec::statics::{guarded?, argument_guarded?}
 Let f and g be functions of one recursive group, each with a decreasing
 parameter. A call `g(a₁, …, aₙ)` written in the body of f is *guarded*
 when the argument for g's decreasing parameter has the size `smaller` in
 the size context of the call. A guarded call's argument at that position
 is therefore a local. The condition reads the written argument and its
 size context only: no hypothesis, no assignment and no interpretation.
-`guarded?` states it of the argument's layer.
+`guarded?` states it of the argument's layer, and `argument_guarded?` of
+a call's arguments, each given by its level where it is a local, and
+the level of the callee's decreasing parameter.
 
 ```text
   g's decreasing parameter is its i-th     size(S, aᵢ) = smaller
@@ -606,9 +630,182 @@ size context only: no hypothesis, no assignment and no interpretation.
 ```fren
 pub fn guarded?<E>(sizes: Snoc<Size>, argument: CoreF<E>) :=
     form_size(sizes, argument) = Size::Smaller
+
+pub fn argument_guarded?(sizes: Snoc<Size>, arguments: Snoc<Option<Int>>, parameter: Int) :=
+    match lookup(arguments, parameter) {
+        Some(argument) => local_size(sizes, argument) = Size::Smaller,
+        None => false,
+    }
+```
+r[statics.termination.written] spec::statics::{Calls, local_at, calls_at, argument_locals, argument_calls, arm_calls, layer_calls, table_calls, written_calls}
+The check reads of a body only its *written calls*: each call written
+in it, with its callee and, for each argument, the level of the argument
+where the argument is a local; and each let that encloses a call or
+not, with the level of its value where the value is a local. `Leaf` has
+no call. `Both(C, D)` has the calls of C and of D in one size context.
+`Call(g, ās)` is one call of g, where `ās` lists for each argument its
+level, or nothing where the argument is not a local. `Let(a, C)` has the
+calls C of a let's body, where `a` is the level of the let's value, or
+nothing. An operator has the calls of its operands, a call those of its
+arguments and itself, a let those of its value and, under `Let`, those
+of its body, a conditional those of its condition and branches, and a
+match those of its scrutinee and arms. A literal, a local and a
+constructor have none. `written_calls` gives the written calls of the
+expression that a table derives, row by row as
+[typing reads the table](Types.md#r-types.table.rows).
+
+```fren
+pub enum Calls { Leaf, Both(Calls, Calls), Call(ItemId, Snoc<Option<Int>>), Let(Option<Int>, Calls) }
+
+pub fn local_at(rows: Snoc<Row>, position: Int): Option<Int> := match lookup(rows, position) {
+    Some(row) => local_of(row.form),
+    None => None,
+}
+
+pub fn calls_at(prior: Snoc<Calls>, position: Int): Calls := match lookup(prior, position) {
+    Some(calls) => calls,
+    None => Calls::Leaf,
+}
+
+pub fn argument_locals(rows: Snoc<Row>, arguments: Snoc<Int>): Snoc<Option<Int>> :=
+    match arguments {
+        Empty => Empty,
+        Extend(earlier, argument) =>
+            Extend(argument_locals(rows, earlier), local_at(rows, argument)),
+    }
+
+pub fn argument_calls(prior: Snoc<Calls>, arguments: Snoc<Int>): Calls := match arguments {
+    Empty => Calls::Leaf,
+    Extend(earlier, argument) =>
+        Calls::Both(argument_calls(prior, earlier), calls_at(prior, argument)),
+}
+
+pub fn arm_calls(prior: Snoc<Calls>, arms: Snoc<Arm>): Calls := match arms {
+    Empty => Calls::Leaf,
+    Extend(earlier, arm) => Calls::Both(arm_calls(prior, earlier), calls_at(prior, arm.body)),
+}
+
+pub fn layer_calls(rows: Snoc<Row>, prior: Snoc<Calls>, form: Form): Calls := match form {
+    CoreF::Unary(_, operand) => calls_at(prior, operand),
+    CoreF::Binary(_, left, right) => Calls::Both(calls_at(prior, left), calls_at(prior, right)),
+    CoreF::Call(callee, arguments) => Calls::Both(
+        argument_calls(prior, arguments),
+        Calls::Call(callee, argument_locals(rows, arguments))
+    ),
+    CoreF::Let(_, value, body) => Calls::Both(
+        calls_at(prior, value),
+        Calls::Let(local_at(rows, value), calls_at(prior, body))
+    ),
+    CoreF::If(condition, yes, no) => Calls::Both(
+        calls_at(prior, condition),
+        Calls::Both(calls_at(prior, yes), calls_at(prior, no))
+    ),
+    CoreF::Match(scrutinee, arms) =>
+        Calls::Both(calls_at(prior, scrutinee), arm_calls(prior, arms)),
+    _ => Calls::Leaf,
+}
+
+pub fn table_calls(rows: Snoc<Row>): Snoc<Calls> := match rows {
+    Empty => Empty,
+    Extend(earlier, row) =>
+        Extend(table_calls(earlier), layer_calls(earlier, table_calls(earlier), row.form)),
+}
+
+pub fn written_calls(rows: Snoc<Row>): Calls := match table_calls(rows) {
+    Empty => Calls::Leaf,
+    Extend(_, calls) => calls,
+}
 ```
 
-r[statics.termination.structural]
+r[statics.termination.group] spec::statics::{Mark, Function, Chosen, chosen, calls_guarded?, body_guarded?, choice_guarded?, extended_choices, parameter_choices, choices, some_guarded?}
+The check reads of a function its identity, its parameters, its
+[termination mark](#r-statics.declaration) and the written calls of its
+body. A *choice* of decreasing parameters lists functions, each with the
+level of one parameter. The calls of a body are *guarded under a choice*
+when every call written in it whose callee the choice lists is
+[guarded](#r-statics.termination.guarded) in its
+[size context](#r-statics.termination.size): the size context of the
+body is that of the function's parameters under the choice, and the
+calls under a `Let` have it extended by the size of the let's value. A
+call whose callee the choice does not list is of no function of the
+group, and the condition does not read it. A function is guarded under a
+choice when the choice lists it and its body is guarded under the
+choice, and a group is when each of its functions is. `choices`
+lists the choices of a group, each of which lists every function of the
+group once with one of its own parameters, and `some_guarded?` decides
+whether one of the listed choices guards the group.
+
+```fren
+pub enum Mark { Checked, Unchecked }
+
+pub struct Function { item: ItemId, parameters: Ctx, mark: Mark, body: Calls }
+
+pub struct Chosen { function: ItemId, parameter: Int }
+
+pub fn chosen(choice: Snoc<Chosen>, item: ItemId): Option<Int> := match choice {
+    Empty => None,
+    Extend(earlier, entry) =>
+        if entry.function = item then Some(entry.parameter) else chosen(earlier, item),
+}
+
+pub fn calls_guarded?(choice: Snoc<Chosen>, sizes: Snoc<Size>, calls: Calls) := match calls {
+    Calls::Leaf => true,
+    Calls::Both(left, right) =>
+        calls_guarded?(choice, sizes, left) and calls_guarded?(choice, sizes, right),
+    Calls::Call(callee, arguments) => match chosen(choice, callee) {
+        Some(parameter) => argument_guarded?(sizes, arguments, parameter),
+        None => true,
+    },
+    Calls::Let(value, body) =>
+        calls_guarded?(choice, Extend(sizes, local_size(sizes, value)), body),
+}
+
+pub fn body_guarded?(choice: Snoc<Chosen>, function: Function) :=
+    match chosen(choice, function.item) {
+        Some(parameter) => calls_guarded?(
+            choice,
+            parameter_sizes(function.parameters, parameter),
+            function.body
+        ),
+        None => false,
+    }
+
+pub fn choice_guarded?(choice: Snoc<Chosen>, group: Snoc<Function>) := match group {
+    Empty => true,
+    Extend(earlier, function) =>
+        body_guarded?(choice, function) and choice_guarded?(choice, earlier),
+}
+
+pub fn extended_choices(onto: Snoc<Snoc<Chosen>>, choices: Snoc<Snoc<Chosen>>, entry: Chosen): Snoc<Snoc<Chosen>> :=
+    match choices {
+        Empty => onto,
+        Extend(earlier, choice) =>
+            Extend(extended_choices(onto, earlier, entry), Extend(choice, entry)),
+    }
+
+pub fn parameter_choices(choices: Snoc<Snoc<Chosen>>, item: ItemId, candidates: Ctx): Snoc<Snoc<Chosen>> :=
+    match candidates {
+        Empty => Empty,
+        Extend(fewer, _) => extended_choices(
+            parameter_choices(choices, item, fewer),
+            choices,
+            Chosen { function := item, parameter := length(fewer) }
+        ),
+    }
+
+pub fn choices(group: Snoc<Function>): Snoc<Snoc<Chosen>> := match group {
+    Empty => Extend(Empty, Empty),
+    Extend(earlier, function) =>
+        parameter_choices(choices(earlier), function.item, function.parameters),
+}
+
+pub fn some_guarded?(candidates: Snoc<Snoc<Chosen>>, group: Snoc<Function>) := match candidates {
+    Empty => false,
+    Extend(earlier, choice) => choice_guarded?(choice, group) or some_guarded?(earlier, group),
+}
+```
+
+r[statics.termination.structural] spec::statics::structural?
 A recursive group is *structurally recursive* when one choice of a
 decreasing parameter for each of its functions makes
 [guarded](#r-statics.termination.guarded) every call of a function of
@@ -623,6 +820,33 @@ never a condition. A call of the group that is written in a condition
 other than an expectation is excluded by
 [a rule of its own](#r-statics.condition.group), which is a premise of
 definedness and not of this check.
+`structural?` decides it of the functions of one recursive group.
+
+```fren
+pub fn structural?(group: Snoc<Function>) := some_guarded?(choices(group), group)
+```
+
+r[statics.termination.decision] spec::statics::{opted_out?, passes_alone?, group_passes?}
+The [judgment](#r-statics.termination) is decided of the functions that
+pass or fail together: a function that is in no recursive group, alone,
+or the functions of one recursive group. Each is read as
+[the check reads it](#r-statics.termination.group). `opted_out?` decides
+whether [the mark](#r-statics.termination.optional) of one of them opts
+them out. `passes_alone?` decides the judgment of a function that is in
+no recursive group, and `group_passes?` of the functions of one
+recursive group. Which functions are in one recursive group is the
+[call order](#r-statics.call-order.relation)'s to say.
+
+```fren
+pub fn opted_out?(covered: Snoc<Function>) := match covered {
+    Empty => false,
+    Extend(earlier, function) => function.mark = Mark::Unchecked or opted_out?(earlier),
+}
+
+pub fn passes_alone?(function: Function) := not opted_out?(Extend(Empty, function))
+
+pub fn group_passes?(group: Snoc<Function>) := not opted_out?(group) and structural?(group)
+```
 
 ## Programs
 
