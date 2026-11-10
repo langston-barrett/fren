@@ -41,19 +41,23 @@ fixes its concrete forms. Static semantics comprises resolution, typing,
 definedness, contracts and termination. Match coverage is part of
 definedness, and a match with two arms for one constructor is a
 [static error](StaticSemantics.md#r-statics.match.distinct). [Termination](StaticSemantics.md#termination), a sub-chapter of Static
-semantics, defines the termination check. A declaration
+semantics, defines the termination check. A function
+declaration
 [passes the termination check](StaticSemantics.md#r-statics.termination)
-when its function is in no recursive group, or when its recursive group
-is
+when it has not
+[opted out](StaticSemantics.md#r-statics.termination.optional) of the
+check and its function is in no recursive group, or when it has not
+opted out and its recursive group is
 [structurally recursive](StaticSemantics.md#r-statics.termination.structural):
 each function of the group has a decreasing parameter, and every call of
-the group in a body of the group passes, at that parameter, a local that
-a match has bound to a part of it. The check reads the text of the
+the group in a body of the group passes, at the callee's decreasing
+parameter, a local that a match has bound to a part of the caller's. An
+expectation declaration passes. The check reads the text of the
 bodies and proves nothing, so it is decidable, and it rejects some
-functions whose every call ends. A declaration may
-[opt out](StaticSemantics.md#r-statics.termination.optional) of the
-check with a mark, which covers its function's whole recursive group; a
-declaration that has not passed the check is not verified. The present
+functions whose every call ends. A declaration opts out
+with a mark, which covers its function's whole recursive group; a
+declaration that has opted out does not pass the check, and a
+declaration that has not passed it is not verified. The present
 Core has no constructor with arguments, so
 [no group whose bodies call it passes](StaticSemantics.md#r-statics.property.subterms). A
 contract is a precondition and a postcondition

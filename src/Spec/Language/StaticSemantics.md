@@ -341,7 +341,8 @@ check has not passed it, so no precondition, postcondition or assumption
 mentions its function or a function that reaches it. An asserted fact
 and an expectation are not so restricted. The rule asks for more than
 the check of the mentioned function alone: a function g whose body is
-`h(0)`, where h does not reach g, is in no recursive group and passes
+`h(0)`, where h does not reach g, is in no recursive group and, where
+its own declaration has not opted out, passes
 the check even when h has opted out, and its evaluation diverges where
 that of `h(0)` does. The rule is a premise about the termination check
 and about nothing else. It does not by itself give a condition a truth
@@ -706,8 +707,9 @@ calls it has no truth value.
 
 r[statics.property.check-local]
 The termination check is of one declaration and of its recursive group,
-and reads no other declaration's check. A declaration that is in no
-recursive group passes it whether or not the functions that it calls do.
+and reads no other declaration's check. A function declaration that has
+not opted out and whose function is in no recursive group passes it
+whether or not the functions that it calls do.
 So passing the check does not state that the declaration's function
 terminates, and this chapter does not call a declaration terminating.
 Typing has no premise about the check. Definedness and the meeting of
@@ -719,23 +721,35 @@ assumption mentions
 [passes the check hereditarily](#r-statics.condition.terminating).
 
 r[statics.property.sizes]
-Sizes are sound for the values of an evaluation. Let f be a function
-with a decreasing parameter, let v̄ be a tuple of values of its
-parameters' types, and let v be the value that v̄ gives the decreasing
-parameter. In the run of f's body from the assignment v̄, every
-expression written in the body is
-[loaded](DynamicSemantics.md#r-dynamics.configuration.loading) only at
-assignments that give each level of size `same` the value v and each
-level of size `smaller` a proper subterm of v. The assignment v̄ does so
-for the size context of the parameters. A let keeps it: its body is
-loaded with the value of the let's value at the new level, and where
-the let's value is a local, that is the value of the local's level.
+Sizes are sound for the values of one evaluation of one body. Let
+`(f, v̄)` be a call instance of a function f with a decreasing parameter,
+and let v be the value that v̄ gives the decreasing parameter. The
+property is of the evaluation of f's body at the assignment v̄ by the
+[evaluation rules](DynamicSemantics.md#r-dynamics.evaluation.rules), as
+far as the expressions written in that body: it follows the rules from
+the body into operands, the value and the body of a let, conditions and
+branches, scrutinees and arms, and the arguments of calls, and it does
+not follow a call into its callee's body. A callee's body is evaluated
+at the assignment that lists the arguments' values, which is another
+call instance with a decreasing argument of its own, also where the
+callee is f: where the body of `f(n: Int)` is `f(n - 1)`, the instance
+`(f, 3)` evaluates `n - 1` at the assignment 3, and the evaluation of
+the body at 2 belongs to the instance `(f, 2)`. Within the evaluation of
+the instance `(f, v̄)`, every expression written in the body is
+evaluated only at assignments that give each level of size `same` the
+value v and each level of size `smaller` a proper subterm of v. The
+assignment v̄ does so for the size context of the parameters. A let
+keeps it: its body is evaluated with the value of the let's value at
+the new level, and where the let's value is a local, that is the value
+of the local's level.
 [Arms that bind arguments](#r-statics.termination.fields) keep it too:
 an argument of a constructor value is a proper subterm of that value,
-and a proper subterm of a proper subterm of v is one of v. So where a
-[guarded](#r-statics.termination.guarded) call of g in the body of f is
-reached with the argument values w̄,
-[`(g, w̄) ≺ (f, v̄)`](#r-statics.call-order.instances) holds by the
+and a proper subterm of a proper subterm of v is one of v. Every other
+form evaluates its children at its own assignment. So where a
+[guarded](#r-statics.termination.guarded) call of g written in the body
+of f is reached in that evaluation with the argument values w̄, the
+value that w̄ gives g's decreasing parameter is a proper subterm of v,
+and [`(g, w̄) ≺ (f, v̄)`](#r-statics.call-order.instances) holds by the
 second case of call order.
 
 r[statics.property.termination]
@@ -752,19 +766,26 @@ error. The argument is an induction on
 [well founded](#r-statics.property.call-order), over the call instances
 of f and of the functions that f reaches, with the decreasing parameters
 under which each of their groups is structurally recursive. At an
-instance `(f, v̄)`, an inner induction on the expressions written in f's
-body shows that each has an
+instance `(f, v̄)`, let v be the value that v̄ gives f's decreasing
+parameter, where f has one. An inner induction on the expressions
+written in f's body shows that each has an
 [outcome](DynamicSemantics.md#r-dynamics.evaluation.rules) at every
-assignment that gives the levels of size `same` and `smaller` the
-values that the [soundness of sizes](#r-statics.property.sizes) states. An operator has an outcome at all
+assignment that gives each level of size `same` the value v and each
+level of size `smaller` a proper subterm of v, which are the
+assignments that the [soundness of sizes](#r-statics.property.sizes)
+states for this one instance. The induction is on the expressions of
+this body only, and it enters no callee's body: a callee's body is that
+of another instance, which the outer induction covers. An operator has an outcome at all
 operand values, a match selects an arm or has the outcome
 `error(no-arm)`, and each other form has the outcome of the children
 that it evaluates. A call written in the body, reached with the argument
 values w̄, is of a callee g that f reaches. Where g does not reach f,
 `(g, w̄) ≺ (f, v̄)` by the first case of call order. Where g reaches f,
 the two are in one group, the group is structurally recursive, the call
-is guarded, and `(g, w̄) ≺ (f, v̄)` by the soundness of sizes. In both cases g's body
-has an outcome at w̄ by the outer induction, and so has the call. So
+is guarded, and `(g, w̄) ≺ (f, v̄)` by the soundness of sizes for the
+instance `(f, v̄)`. In both cases g's body has an outcome at w̄ by the
+outer induction, at the instance `(g, w̄)` with its own decreasing
+argument, and so has the call. So
 `P ⊢ ⟨e, v̄⟩ ⇓ r` holds of f's body e for some outcome r, the run
 [ends in r](DynamicSemantics.md#r-dynamics.theorem.big-step), and it is
 the [only run](DynamicSemantics.md#r-dynamics.theorem.determinism).
@@ -790,14 +811,22 @@ premise of entailment and quantifies over no assignment and no
 interpretation.
 
 r[statics.property.conservative]
-The termination check is sufficient for the calls of a function to end,
-and not necessary. It rejects every recursive group in which some call
+Passing the termination check
+[hereditarily](#r-statics.termination) is
+[sufficient](#r-statics.property.termination) for the calls of a
+function to end, and it is not necessary. Passing the check is not
+sufficient by itself: the declaration of a function in no recursive
+group passes it where it has not opted out, and the function
+[may call a function that diverges](#r-statics.property.check-local).
+The check rejects every recursive group in which some call
 of the group is written with an argument that is not a local of size
 `smaller`, whether or not an evaluation reaches that call and whether or
-not the argument's value decreases. A declaration that the check rejects
-and whose calls end can be stated only by
-[opting out](#r-statics.termination.optional), and it is then not
-verified.
+not the argument's value decreases. A declaration whose function's
+calls all end may so be stated, marked `checked`, and not pass the
+check, as [a call that no evaluation reaches](#r-statics.examples.unreachable-call)
+shows. Such a declaration is not verified, and
+[opting out](#r-statics.termination.optional) does not make it so: a
+declaration that has opted out does not pass the check either.
 
 r[statics.property.call-order]
 Call order is well founded for every choice of decreasing parameters: no
@@ -962,7 +991,8 @@ defined and meets its contract: the call in the body is defined, since
 the hypotheses `n >= 0` and `not (n = 0)` entail `n - 1 >= 0`. It is not
 verified and f has no denotation, so no precondition, postcondition or
 assumption of another declaration mentions f. A function `h()` with the
-body `f(3)` is in no recursive group and its declaration is verified;
+body `f(3)`, marked `checked`, is in no recursive group and its
+declaration is verified;
 h has no denotation, since it depends on f. With true assumptions f and
 h are
 [partially correct](DynamicSemantics.md#r-dynamics.theorem.partial-correctness).

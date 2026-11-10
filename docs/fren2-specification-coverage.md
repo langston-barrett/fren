@@ -343,9 +343,11 @@ chapters is prose.
 
 - [x] Write Termination, a sub-chapter of Static semantics, which
   defines `Σ ⊢ d passes`, the judgment that a declaration passes the
-  termination check: its function is in no recursive group, or its
-  recursive group is structurally recursive
-  (`statics.termination.structural`). Each function of the group has one
+  termination check. An expectation declaration passes. A function
+  declaration passes when it has not opted out and its function is in
+  no recursive group, or when it has not opted out and its recursive
+  group is structurally recursive (`statics.termination.structural`). A
+  declaration that has opted out does not pass, recursive or not. Each function of the group has one
   decreasing parameter, and every call of the group that is written in a
   body of the group passes a local of size `smaller` at the callee's
   decreasing parameter. The check reads sizes from the text and uses no
