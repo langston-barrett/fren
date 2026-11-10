@@ -665,10 +665,12 @@ upstream universal proof obligations are preserved in full.
   and that the chapter's `Naming` preserves active-scope freshness and
   capture freedom. `FrenOirToSmt.Symbol.render_inj` proves the first part of
   the encoder's own `Symbol.render`, for every index, and `render_front`
-  keeps rendered names apart from the words of `RESERVED`, and
-  `render_ne_integer` from numerals. The
-  chapter's `smt.names` rules bind them with `impl`, and `smt.names.capture`
-  states capture freedom. `Naming.scoped`,
+  keeps rendered names apart from the words of `RESERVED`. Three `impl`s
+  bind these two results to the chapter's `smt.names` rules of rendering,
+  families and reserved words. `render_ne_integer`, which keeps rendered
+  names apart from numerals, is a separate Lean theorem that no `impl` binds:
+  `spelled_proof` has no clause for numerals. `smt.names.capture` states
+  capture freedom. `Naming.scoped`,
   `Naming.fresh` and `Naming.extend` prove the second part, but only of the
   chapter's `Naming` and `EnvironmentFor`: they say nothing yet of the
   environments that the encoder builds.
