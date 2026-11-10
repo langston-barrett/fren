@@ -759,11 +759,13 @@ The arm that confirmation selects for a constructor is the arm that
 
 ```fren
 use spec::names::{ArmF, ItemId}
+use spec::patterns::select
 use spec::surface::Snoc
 use spec::types::Typing
-use spec::patterns::select
 
-pub fn confirmation_pick(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (arm: Option<ArmF<Typing>>) {
+pub fn confirmation_pick(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (
+    arm: Option<ArmF<Typing>>,
+) {
     ensure agrees: arm = select(arms, constructor)
 }
 ```

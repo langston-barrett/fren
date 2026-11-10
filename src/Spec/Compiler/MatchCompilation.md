@@ -29,9 +29,9 @@ constructor is the open claim.
 pub mod spec::lowering
 
 use spec::names::{ArmF, Ctx, ItemId, ItemKind, Symb, Ty, entry, symb_ok?}
+use spec::patterns::{match_admitted?, select}
 use spec::surface::Snoc
 use spec::types::Typing
-use spec::patterns::{match_admitted?, select}
 
 pub fn lowering_pick(Snoc<ArmF<Typing>>, ItemId): Option<ArmF<Typing>>
 

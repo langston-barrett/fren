@@ -506,11 +506,14 @@ use spec::dynamics::{arm_value, value_at}
 
 use spec::types::Arm
 
-pub fn selected_value(prior: Snoc<Option<Value>>, arms: Snoc<Arm>, constructor: ItemId): Option<Value> :=
-    match select(arms, constructor) {
-        Option::Some(found) => value_at(prior, found.body),
-        Option::None => Option::None,
-    }
+pub fn selected_value(
+    prior: Snoc<Option<Value>>,
+    arms: Snoc<Arm>,
+    constructor: ItemId
+): Option<Value> := match select(arms, constructor) {
+    Option::Some(found) => value_at(prior, found.body),
+    Option::None => Option::None,
+}
 
 set_option fren.evidence "random" in
 pub proc dynamics_selection(
@@ -610,12 +613,9 @@ pub fn prog_admitted?(symb: Symb, decls: Snoc<Decl>) :=
     prog_ok?(symb, decls) and decls_admitted?(symb, decls)
 
 set_option fren.evidence "random" in
-pub proc program_admission(
-    symb: Symb,
-    earlier: Snoc<Decl>,
-    item: ItemId,
-    body: Snoc<Row>,
-): (holds?) {
+pub proc program_admission(symb: Symb, earlier: Snoc<Decl>, item: ItemId, body: Snoc<Row>): (
+    holds?,
+) {
     ensure output: holds?
     ensure typed: when prog_admitted?(symb, Extend(earlier, Decl::Function(item, body))),
         prog_ok?(symb, Extend(earlier, Decl::Function(item, body)))
@@ -680,7 +680,12 @@ set_option fren.evidence "random" in
 pub proc pattern_examples(): (holds?) {
     ensure output: holds?
     ensure valid: match_admitted?(SYMB, Empty, SCRUTINEE, LIGHT_ARMS, Ty::Integer)
-        and select(LIGHT_ARMS, LIGHT_RED) = Option::Some(ArmF { constructor := LIGHT_RED, body := INT })
+        and select(LIGHT_ARMS, LIGHT_RED) = Option::Some(
+            ArmF {
+                constructor := LIGHT_RED,
+                body := INT,
+            }
+        )
         and reachable?(LIGHT_ARMS)
         and not covered?(SYMB, LIGHT, MISSING_ARMS)
         and uncovered(inventory(SYMB, LIGHT), MISSING_ARMS) = one(LIGHT_GREEN)
@@ -690,7 +695,12 @@ pub proc pattern_examples(): (holds?) {
         and not reachable?(REPEATED_ARMS)
         and match_rule?(SYMB, Empty, SCRUTINEE, REPEATED_ARMS, Ty::Integer)
         and not match_admitted?(SYMB, Empty, SCRUTINEE, REPEATED_ARMS, Ty::Integer)
-        and select(REPEATED_ARMS, LIGHT_RED) = Option::Some(ArmF { constructor := LIGHT_RED, body := INT })
+        and select(REPEATED_ARMS, LIGHT_RED) = Option::Some(
+            ArmF {
+                constructor := LIGHT_RED,
+                body := INT,
+            }
+        )
         and not arm_patterns?(SYMB, FOREIGN_ARMS, LIGHT)
         and not covered?(SYMB, LIGHT, FOREIGN_ARMS)
         and not match_admitted?(SYMB, Empty, SCRUTINEE, FOREIGN_ARMS, Ty::Integer)

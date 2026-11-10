@@ -469,11 +469,13 @@ repeated targets are `repeats`.
 
 ```fren
 use spec::names::{ArmF, ItemId}
+use spec::patterns::{repeats, uncovered}
 use spec::surface::Snoc
 use spec::types::Typing
-use spec::patterns::{repeats, uncovered}
 
-pub fn production_missing(constructors: Snoc<ItemId>, arms: Snoc<ArmF<Typing>>): (missing: Snoc<ItemId>) {
+pub fn production_missing(constructors: Snoc<ItemId>, arms: Snoc<ArmF<Typing>>): (
+    missing: Snoc<ItemId>,
+) {
     ensure agrees: missing = uncovered(constructors, arms)
 }
 
