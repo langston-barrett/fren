@@ -336,7 +336,9 @@ commuting square with OIR condition generation, is open
 
 The three chapters are a skeleton. Of their rules, only those whose
 `r[...]` line names a Fren definition are stated in Fren: the mention
-relation and the integer domains of the static semantics, the values and
+relation, the distinct arms of one match, the integer domains and, for
+one layer, the sizes and guarded arguments of the termination check, in
+the static semantics, the values and
 operator meanings of the denotational semantics, and the table evaluator
 of the dynamic semantics. Every judgment and every property of the three
 chapters is prose.
@@ -346,12 +348,13 @@ chapters is prose.
   termination check. An expectation declaration passes. A function
   declaration passes when it has not opted out and its function is in
   no recursive group, or when it has not opted out and its recursive
-  group is structurally recursive (`statics.termination.structural`). A
-  declaration that has opted out does not pass, recursive or not. Each function of the group has one
-  decreasing parameter, and every call of the group that is written in a
-  body of the group passes a local of size `smaller` at the callee's
-  decreasing parameter. The check reads sizes from the text and uses no
-  entailment, so it is decidable.
+  group is structurally recursive (`statics.termination.structural`):
+  each function of the group has one decreasing parameter, and every
+  call of the group that is written in a body of the group passes a
+  local of size `smaller` at the callee's decreasing parameter. A
+  declaration that has opted out does not pass, recursive or not. The
+  check reads sizes from the text and has no premise of entailment.
+  Not passing it is not a static error (`statics.scope`).
 - [ ] The Core cannot express the case that the termination check
   exists for. A local gets the size `smaller` only as a field that a
   match arm binds (`statics.termination.fields`), and the Core has no
@@ -361,6 +364,14 @@ chapters is prose.
   `f(x) := if false then f(x) else 0` does not pass, and a recursive
   function without parameters never does. Add algebraic data types with
   fields to the Core, then give the rule its forms and its Fren.
+- [ ] Known artifact: a group that is recursive through conditions only
+  is judged by whether its functions have parameters. `f(x: Int)` with
+  the precondition `g(x) = 0` and the body `0`, and `g(x: Int)` with the
+  precondition `f(x) = 0` and the body `0`, pass the termination check;
+  the same two without parameters do not, though no body makes a call.
+  Both programs are not defined, by `statics.condition.group`, and the
+  soundness of the check is unaffected. `statics.termination.structural`
+  is left as it is.
 - [ ] The termination check has no measure on integers: a function such
   as `f(n) := if n = 0 then 0 else f(n - 1)` with the precondition
   `n >= 0` does not pass and must opt out. A check by a stated decreasing

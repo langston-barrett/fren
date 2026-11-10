@@ -236,8 +236,8 @@ A function f denotes the function that maps each argument tuple v̄ of its
 tuple. It has no value at any other tuple. The equation is a definition by
 recursion on
 [call order](StaticSemantics.md#r-statics.call-order.instances), with the
-decreasing parameters under which f's group
-[terminates](StaticSemantics.md#r-statics.termination).
+decreasing parameters under which f's group is
+[structurally recursive](StaticSemantics.md#r-statics.termination.structural).
 
 r[denotation.program]
 The denotation of a program gives each of its functions that
@@ -303,7 +303,7 @@ verified reads no denotation, and whether its assumptions are true reads
 the denotations of earlier strata only, since
 [no assumption or precondition mentions a function of its own group](StaticSemantics.md#r-statics.condition.group).
 A group whose functions have denotations is verified and
-[terminates](StaticSemantics.md#r-statics.termination), and so does
+[passes the termination check](StaticSemantics.md#r-statics.termination), and so does
 every declaration that it depends on, so at an
 argument tuple of its domain the body reads the group's denotations only
 at preceding call instances; call order is

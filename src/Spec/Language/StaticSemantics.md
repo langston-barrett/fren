@@ -66,10 +66,23 @@ matches, with the declarations of a program. It is declarative: a judgment
 depends on the written form of an expression and never on an order of
 evaluation. What a solver's answer establishes, the evidence for a judgment
 and the diagnostics that report a failure belong to the
-[tooling part](../Tooling/index.md). A *static error* is a failure of a
-condition that this chapter states of the written program and that no
-hypothesis can discharge. A program with a static error has no judgment
-of this chapter other than typing. It may still be well typed, and the
+[tooling part](../Tooling/index.md). A *static error* is a failure of
+[distinct arms](#r-statics.match.distinct): a match with two arms for
+one constructor. This chapter states no other static error. A program
+with a static error has no judgment of this chapter other than typing.
+A condition that is a premise of one judgment is not a static error
+when it fails, also where it reads the written program alone and no
+hypothesis can discharge it: the judgment then does not hold, and every
+other judgment of this chapter is still made of the program. So a
+declaration that does not
+[pass the termination check](#r-statics.termination) is not verified,
+and a declaration with a condition that
+[mentions its own recursive group](#r-statics.condition.group) against
+that rule, or
+[a function that does not pass the check hereditarily](#r-statics.condition.terminating)
+against that one, is not defined; none of the three is a static error, and such a
+declaration may still be well typed, be defined where the failed premise
+is not one of definedness, and meet its contract. It may still be well typed, and the
 [dynamic semantics](DynamicSemantics.md#r-dynamics.scope) evaluates
 every well-typed program.
 
@@ -494,8 +507,8 @@ the others. An expectation declaration has no mark and does not opt
 out. A declaration that has opted out does not pass the check: no rule
 of [`Σ ⊢ d passes`](#r-statics.termination) concludes it, whether or
 not the function is recursive and whether or not its group is
-structurally recursive. Opting out switches off the check for the
-declaration and nothing else: the declaration may be well typed, be
+structurally recursive. Opting out changes no other judgment of the
+declaration: the declaration may be well typed, be
 defined and meet its contract, as
 [independence](#r-statics.property.independence) states. It is not
 [verified](#r-statics.program.verified), neither its function nor a
@@ -514,8 +527,8 @@ proper subterm of one. *Call order*, `Σ ⊢ (g, w̄) ≺ (f, v̄)`, is a relati
 on call instances. It is relative to a choice of one parameter of each
 recursive function that has a parameter, its *decreasing parameter*. A
 recursive function with no parameters has no decreasing parameter, and
-the second case below holds of no call instance of it or of a caller of
-it. `(g, w̄) ≺ (f, v̄)` holds in two cases: when f reaches g and g does
+the second case below holds of no pair of call instances of which one
+is an instance of it. `(g, w̄) ≺ (f, v̄)` holds in two cases: when f reaches g and g does
 not reach f; and when f and g are in one recursive group, each has a
 decreasing parameter, and the value that w̄ gives g's decreasing
 parameter is a proper subterm of the value that v̄ gives f's.
@@ -818,9 +831,10 @@ function to end, and it is not necessary. Passing the check is not
 sufficient by itself: the declaration of a function in no recursive
 group passes it where it has not opted out, and the function
 [may call a function that diverges](#r-statics.property.check-local).
-The check rejects every recursive group in which some call
-of the group is written with an argument that is not a local of size
-`smaller`, whether or not an evaluation reaches that call and whether or
+The check rejects every recursive group in which, under every choice of
+decreasing parameters, some call of the group that is written in a body
+of the group has, at the callee's decreasing parameter, an argument that
+is not a local of size `smaller`, whether or not an evaluation reaches that call and whether or
 not the argument's value decreases. A declaration whose function's
 calls all end may so be stated, marked `checked`, and not pass the
 check, as [a call that no evaluation reaches](#r-statics.examples.unreachable-call)
@@ -916,7 +930,17 @@ body calls itself through others, and f and g are one recursive group of
 this chapter: the asserted fact
 [mentions a function of its own group](#r-statics.condition.group), so
 the declaration of f is not defined here, and the group does not pass
-the termination check. So the correspondence has three conditions on the
+the termination check. The two conditions on recursion compare as
+follows. In the present Core the termination check admits no recursion
+through bodies:
+[no recursive group whose bodies call it passes](#r-statics.property.subterms),
+so a program all of whose declarations pass the check meets that
+condition. The check admits structural recursion, which that condition
+excludes, only once the Core has constructors with arguments. That
+condition does not include the check: the program just given has no
+recursion through bodies and its group, which is recursive through a
+condition and holds functions without parameters, does not pass; nor
+does a declaration marked `unchecked`. So the correspondence has three conditions on the
 program: no function reaches itself in this chapter's call order, bodies
 and conditions other than expectations together; its postconditions are all `true`; and no
 declaration opts out of the termination check. For such a program one
@@ -989,8 +1013,9 @@ mark `unchecked` the declaration
 [opts out](#r-statics.termination.optional). Marked or not, it is
 defined and meets its contract: the call in the body is defined, since
 the hypotheses `n >= 0` and `not (n = 0)` entail `n - 1 >= 0`. It is not
-verified and f has no denotation, so no precondition, postcondition or
-assumption of another declaration mentions f. A function `h()` with the
+verified and f has no denotation. Since it does not pass the check, no
+precondition, postcondition or assumption of a defined declaration
+[mentions f](#r-statics.condition.terminating). A function `h()` with the
 body `f(3)`, marked `checked`, is in no recursive group and its
 declaration is verified;
 h has no denotation, since it depends on f. With true assumptions f and

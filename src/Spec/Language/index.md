@@ -51,13 +51,19 @@ opted out and its recursive group is
 [structurally recursive](StaticSemantics.md#r-statics.termination.structural):
 each function of the group has a decreasing parameter, and every call of
 the group in a body of the group passes, at the callee's decreasing
-parameter, a local that a match has bound to a part of the caller's. An
+parameter, a
+[local of size `smaller`](StaticSemantics.md#r-statics.termination.size). An
 expectation declaration passes. The check reads the text of the
-bodies and proves nothing, so it is decidable, and it rejects some
+bodies and has no premise of entailment; that it is
+[decidable](StaticSemantics.md#r-statics.property.decidable) is argued
+and not yet proved. It rejects some
 functions whose every call ends. A declaration opts out
 with a mark, which covers its function's whole recursive group; a
 declaration that has opted out does not pass the check, and a
-declaration that has not passed it is not verified. The present
+declaration that has not passed it is not verified. Not passing the
+check is not a
+[static error](StaticSemantics.md#r-statics.scope): the declaration may
+still be defined and meet its contract. The present
 Core has no constructor with arguments, so
 [no group whose bodies call it passes](StaticSemantics.md#r-statics.property.subterms). A
 contract is a precondition and a postcondition

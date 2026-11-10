@@ -31,10 +31,27 @@ example :
     spec.statics.form_size Int (.Extend (.Extend .Empty .Same) .Unknown) (.Local 0) = .Same := by
   decide
 
--- A form other than a local has the size `unknown`, whatever its parts are.
+-- A unary operator has the size `unknown`, though its operand's level is `smaller`.
 open spec.names spec.surface in
 example :
     spec.statics.form_size Int (.Extend .Empty .Smaller) (.Unary .Neg 0) = .Unknown := by
+  decide
+
+-- A local whose level is outside the size context has the size `unknown`.
+open spec.names spec.surface in
+example :
+    spec.statics.form_size Int (.Extend .Empty .Smaller) (.Local 1) = .Unknown := by
+  decide
+
+-- A call and a let have the size `unknown`, even over a `smaller` level.
+open spec.names spec.types spec.surface in
+example :
+    spec.statics.form_size Int (.Extend .Empty .Smaller) (.Call F (.Extend .Empty 0)) = .Unknown := by
+  decide
+
+open spec.names spec.surface in
+example :
+    spec.statics.form_size Int (.Extend .Empty .Smaller) (.Let .None 0 0) = .Unknown := by
   decide
 
 -- An argument is guarded only when it is a local of size `smaller`.

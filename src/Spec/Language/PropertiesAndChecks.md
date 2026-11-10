@@ -938,8 +938,12 @@ keyword of each member is the one that P states, which nothing here ties
 to the source. The conditions cover a function that nothing calls. Coverage and the absence
 of recursion yield no obligations. The absence of recursion is not the
 [termination check](StaticSemantics.md#r-statics.termination) of the
-static semantics, and neither includes the other. It is narrower in that
-the check admits structural recursion. It is wider in that it reads the
+static semantics. The static semantics
+[compares the two](StaticSemantics.md#r-statics.property.tables): in the
+present Core every program whose declarations all pass the check has no
+recursion through bodies, and the check admits structural recursion only
+once the Core has constructors with arguments. The absence of recursion
+does not include the check, since it reads the
 calls in bodies only: the
 [call order](StaticSemantics.md#r-statics.call-order.relation) of the
 static semantics also reads the functions that a `require`, `assume`

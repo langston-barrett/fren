@@ -668,10 +668,14 @@ r[types.program.nonrecursive]
 A Core program that the present check admits has no recursive call
 cycles: no function's body calls itself, directly or through other
 functions. This is a static condition separate from typing; the
-[THIR chapter](../Compiler/Thir.md) states its check. It is narrower than
+[THIR chapter](../Compiler/Thir.md) states its check. It is not
 the [termination check](StaticSemantics.md#r-statics.termination) of the
-static semantics in that the check admits structural recursion. It does
-not include that check: this condition reads the calls in bodies, and the
+static semantics, which
+[compares the two](StaticSemantics.md#r-statics.property.tables): in the
+present Core every program whose declarations all pass the check meets
+this condition, and the check admits structural recursion only once the
+Core has constructors with arguments. This condition does
+not include that check: it reads the calls in bodies, and the
 [call order](StaticSemantics.md#r-statics.call-order.relation) of the
 static semantics also reads the functions that a condition other than
 an expectation mentions, so

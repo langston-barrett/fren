@@ -247,8 +247,8 @@ A call whose arguments are values steps to the callee's body, loaded at
 the assignment that lists the argument values, without the caller's
 locals. The step reads no contract and bounds no recursion: it is taken
 whether or not the arguments meet the callee's precondition, and whether
-or not the callee
-[terminates](StaticSemantics.md#r-statics.termination).
+or not the callee's declaration
+[passes the termination check](StaticSemantics.md#r-statics.termination).
 
 ## Big-step evaluation
 
@@ -589,7 +589,9 @@ The call of a function that
 [has a denotation](DenotationalSemantics.md#r-denotation.domain), at an
 argument tuple that meets its precondition, ends: this is the part
 of [adequacy](#r-dynamics.theorem.adequacy) that excludes divergence, and
-it has adequacy's conditions. The termination check of the function's
+it has adequacy's conditions. Of these it uses only that the function
+passes the termination check hereditarily, by the
+[soundness of the check](StaticSemantics.md#r-statics.property.termination). The termination check of the function's
 own declaration does not give it. A function whose body is a call of a
 function that has opted out of the check, and that does not reach it, is
 in no recursive group and, where its own declaration has not opted out,
