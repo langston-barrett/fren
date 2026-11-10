@@ -544,7 +544,7 @@ def primitiveBinary : spec.thir.BinaryTag → FrenAst.BinaryOp
   | .Lt => .lt | .Le => .le | .Gt => .gt | .Ge => .ge
   | .And => .and | .Or => .or | .Iff => .iff | .Eq => .eq | .Ne => .ne
 
-impl compatibility: compatible for
+impl compatibility: thir::compatible for
     (left right : spec.thir.ValueKind) (left_id right_id : Int) {
   left := left, right := right, left_id := left_id, right_id := right_id,
   same? := (primitiveType left left_id).compatible (primitiveType right right_id)
@@ -553,7 +553,7 @@ impl compatibility: compatible for
   cases left <;> cases right <;>
     simp [fren_spec, primitiveType, FrenExpr.ValueType.compatible, beq_iff_eq]
 
-impl unary: unary for (op : spec.thir.UnaryTag) (operand : spec.thir.ValueKind) {
+impl unary: thir::unary for (op : spec.thir.UnaryTag) (operand : spec.thir.ValueKind) {
   op := op, operand := operand,
   accepted? := (FrenExpr.unary (primitiveUnary op) (primitiveType operand 0)).isSome,
   result := primitiveKind ((FrenExpr.unary (primitiveUnary op) (primitiveType operand 0)).getD .bool)
@@ -563,7 +563,7 @@ impl unary: unary for (op : spec.thir.UnaryTag) (operand : spec.thir.ValueKind) 
     simp [fren_spec, primitiveUnary, primitiveType, primitiveKind, FrenExpr.unary,
       FrenExpr.unaryOperand, FrenExpr.ValueType.compatible]
 
-impl binary: binary for
+impl binary: thir::binary for
     (op : spec.thir.BinaryTag) (left right : spec.thir.ValueKind) (left_id right_id : Int) {
   op := op, left := left, right := right, left_id := left_id, right_id := right_id,
   accepted? := (FrenExpr.binary (primitiveBinary op) (primitiveType left left_id)
@@ -714,7 +714,468 @@ end TypedModule
 #print axioms typed_module_sound
 #print axioms typed_module_unique
 
+section Algorithmic
+open spec.surface spec.names spec.types spec.algorithmic
+open Spec.Language.NamesAndScope (lookup_bound)
+
+/-- `thir.algorithmic.first-arm`: bodies typed alike agree with the first. -/
+theorem first_arm_typed (arms : Snoc (ArmF Typing)) (ctx : Snoc Ty) (ty : Ty)
+    (hne : arms ≠ .Empty) (h : arm_bodies? arms ctx ty = true) :
+    first_body arms = some ⟨ctx, ty⟩ := by
+  induction arms with
+  | Empty => exact absurd rfl hne
+  | Extend earlier arm ih =>
+    simp only [arm_bodies?, decide_eq_true_eq] at h
+    cases earlier with
+    | Empty =>
+      rcases arm with ⟨c, ⟨bc, bt⟩⟩
+      simp only at h
+      simp [first_body, h.1.1, h.1.2]
+    | Extend e a => simp only [first_body] at ih ⊢; rw [ih (by simp) h.2]
+
+theorem first_body_nonempty (arms : Snoc (ArmF Typing)) (first : Typing)
+    (h : first_body arms = some first) : arms ≠ .Empty := by
+  intro e; subst e; simp [first_body] at h
+
+/-- `thir.algorithmic.sound`, for the lift. -/
+theorem synth_core_sound (symb : Snoc Entry) (ctx : Snoc Ty) (form : CoreF Typing) (ty : Ty)
+    (h : synth_core symb ctx form = some ty) : rule? symb ctx form ty = true := by
+  cases form with
+  | Unary op operand =>
+    cases op <;> simp [synth_core, provided, checked?, unary_operand, fren_spec] at h <;>
+      simp [rule?, unary_rule?, unary_type?, fren_spec] <;> simp_all
+  | Binary op left right =>
+    cases op <;> simp [synth_core, provided, checked?, synthesized?, binary_operand, binary_output,
+      integer_binary?, comparison?, boolean_binary?, fren_spec] at h <;>
+      simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?, boolean_binary?,
+        fren_spec] <;> simp_all
+  | Constructor item =>
+    cases hE : entry symb item with
+    | none => simp [synth_core, hE, fren_spec] at h
+    | some kind =>
+      cases kind <;> simp [synth_core, hE, fren_spec] at h <;>
+        simp [rule?, constructor_rule?, hE, fren_spec] <;> simp_all
+  | Call item args =>
+    cases hE : entry symb item with
+    | none => simp [synth_core, hE, fren_spec] at h
+    | some kind =>
+      cases kind <;> simp [synth_core, provided, hE, fren_spec] at h <;>
+        simp [rule?, call_rule?, hE, fren_spec] <;> simp_all
+  | Match scrutinee arms =>
+    rcases scrutinee with ⟨sc, sty⟩
+    cases hf : first_body arms with
+    | none => cases sty <;> simp [synth_core, hf, fren_spec] at h
+    | some first =>
+      have hne := first_body_nonempty arms first hf
+      cases sty <;> simp [synth_core, provided, synthesized?, hf, fren_spec] at h
+      obtain ⟨⟨⟨hs, hp⟩, hb⟩, ht⟩ := h
+      subst ht
+      simp [rule?, match_rule?, fren_spec, hs, hp, hb, hne]
+  | Let annotation value body =>
+    cases annotation <;>
+      simp [synth_core, provided, value_typed?, checked?, synthesized?, fren_spec] at h <;>
+      simp [rule?, let_rule?, let_annotated_rule?, fren_spec] <;> simp_all
+  | _ =>
+    simp [synth_core, provided, checked?, synthesized?, fren_spec] at h <;>
+      simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?, fren_spec] <;> simp_all
+
+/-- `thir.algorithmic.complete`, for the lift. -/
+theorem synth_core_complete (symb : Snoc Entry) (ctx : Snoc Ty) (form : CoreF Typing) (ty : Ty)
+    (h : rule? symb ctx form ty = true) : synth_core symb ctx form = some ty := by
+  cases form with
+  | Unary op operand =>
+    cases op <;> simp [rule?, unary_rule?, unary_type?, fren_spec] at h <;>
+      simp [synth_core, provided, checked?, unary_operand, fren_spec] <;> simp_all
+  | Binary op left right =>
+    cases op <;> simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?,
+      boolean_binary?, fren_spec] at h <;>
+      simp [synth_core, provided, checked?, synthesized?, binary_operand, binary_output,
+        integer_binary?, comparison?, boolean_binary?, fren_spec] <;> simp_all
+  | Constructor item =>
+    cases hE : entry symb item with
+    | none => simp [rule?, constructor_rule?, hE, fren_spec] at h
+    | some kind =>
+      cases kind <;> simp [rule?, constructor_rule?, hE, fren_spec] at h <;>
+        simp [synth_core, hE, fren_spec] <;> simp_all
+  | Call item args =>
+    cases hE : entry symb item with
+    | none => simp [rule?, call_rule?, hE, fren_spec] at h
+    | some kind =>
+      cases kind <;> simp [rule?, call_rule?, hE, fren_spec] at h <;>
+        simp [synth_core, provided, hE, fren_spec] <;> simp_all
+  | Match scrutinee arms =>
+    rcases scrutinee with ⟨sc, sty⟩
+    cases sty <;> simp [rule?, match_rule?, fren_spec] at h
+    have hf := first_arm_typed arms ctx ty h.1.1.2 h.1.2
+    simp [synth_core, provided, synthesized?, hf, fren_spec]
+    simp_all
+  | Let annotation value body =>
+    cases annotation <;> simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at h <;>
+      simp [synth_core, provided, value_typed?, checked?, synthesized?, fren_spec] <;> simp_all
+  | _ =>
+    simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?, fren_spec] at h <;>
+      simp [synth_core, provided, checked?, synthesized?, fren_spec] <;> simp_all
+
+/-! ### The lift to tables -/
+
+theorem lookup_grow {α : Type} [Inhabited α] (xs : Snoc α) (x y : α) (p : Int)
+    (h : lookup _ xs p = some y) : lookup _ (.Extend xs x) p = some y := by
+  have hb := lookup_bound xs p y h
+  simp only [lookup]
+  split
+  · omega
+  · exact h
+
+theorem typing_at_grow (rows : Snoc Row) (r : Row) (p : Int) (t : Typing)
+    (h : typing_at rows p = some t) : typing_at (.Extend rows r) p = some t := by
+  simp only [typing_at] at h ⊢
+  cases hl : lookup _ rows p with
+  | none => simp [hl] at h
+  | some row => rw [lookup_grow rows r row p hl]; simpa [hl] using h
+
+theorem annotate_arguments_grow (rows : Snoc Row) (r : Row) (args : Snoc Int) (ts : Snoc Typing)
+    (h : annotate_arguments rows args = some ts) :
+    annotate_arguments (.Extend rows r) args = some ts := by
+  induction args generalizing ts with
+  | Empty => simpa [annotate_arguments] using h
+  | Extend earlier arg ih =>
+    simp only [annotate_arguments] at h ⊢
+    cases h1 : annotate_arguments rows earlier with
+    | none => simp [h1] at h
+    | some typed =>
+      cases h2 : typing_at rows arg with
+      | none => simp [h1, h2] at h
+      | some c => rw [ih typed h1, typing_at_grow rows r arg c h2]; simpa [h1, h2] using h
+
+theorem annotate_arms_grow (rows : Snoc Row) (r : Row) (arms : Snoc (ArmF Int))
+    (ts : Snoc (ArmF Typing)) (h : annotate_arms rows arms = some ts) :
+    annotate_arms (.Extend rows r) arms = some ts := by
+  induction arms generalizing ts with
+  | Empty => simpa [annotate_arms] using h
+  | Extend earlier arm ih =>
+    simp only [annotate_arms] at h ⊢
+    cases h1 : annotate_arms rows earlier with
+    | none => simp [h1] at h
+    | some typed =>
+      cases h2 : typing_at rows arm.body with
+      | none => simp [h1, h2] at h
+      | some c => rw [ih typed h1, typing_at_grow rows r arm.body c h2]; simpa [h1, h2] using h
+
+/-- A layer annotated over a table is annotated alike over a longer one. -/
+theorem annotate_grow (rows : Snoc Row) (r : Row) (form : CoreF Int) (typed : CoreF Typing)
+    (h : annotate rows form = some typed) : annotate (.Extend rows r) form = some typed := by
+  cases form with
+  | Unary op a =>
+    simp only [annotate] at h ⊢
+    cases h1 : typing_at rows a with
+    | none => simp [h1] at h
+    | some c => rw [typing_at_grow rows r a c h1]; simpa [h1] using h
+  | Binary op a b =>
+    simp only [annotate] at h ⊢
+    cases h1 : typing_at rows a with
+    | none => simp [h1] at h
+    | some c =>
+      cases h2 : typing_at rows b with
+      | none => simp [h1, h2] at h
+      | some d =>
+        rw [typing_at_grow rows r a c h1, typing_at_grow rows r b d h2]; simpa [h1, h2] using h
+  | Call item args =>
+    simp only [annotate] at h ⊢
+    cases h1 : annotate_arguments rows args with
+    | none => simp [h1] at h
+    | some ts => rw [annotate_arguments_grow rows r args ts h1]; simpa [h1] using h
+  | Let annotation a b =>
+    simp only [annotate] at h ⊢
+    cases h1 : typing_at rows a with
+    | none => simp [h1] at h
+    | some c =>
+      cases h2 : typing_at rows b with
+      | none => simp [h1, h2] at h
+      | some d =>
+        rw [typing_at_grow rows r a c h1, typing_at_grow rows r b d h2]; simpa [h1, h2] using h
+  | If a b c =>
+    simp only [annotate] at h ⊢
+    cases h1 : typing_at rows a with
+    | none => simp [h1] at h
+    | some x =>
+      cases h2 : typing_at rows b with
+      | none => simp [h1, h2] at h
+      | some y =>
+        cases h3 : typing_at rows c with
+        | none => simp [h1, h2, h3] at h
+        | some z =>
+          rw [typing_at_grow rows r a x h1, typing_at_grow rows r b y h2,
+            typing_at_grow rows r c z h3]
+          simpa [h1, h2, h3] using h
+  | Match a arms =>
+    simp only [annotate] at h ⊢
+    cases h1 : typing_at rows a with
+    | none => simp [h1] at h
+    | some x =>
+      cases h2 : annotate_arms rows arms with
+      | none => simp [h1, h2] at h
+      | some ts =>
+        rw [typing_at_grow rows r a x h1, annotate_arms_grow rows r arms ts h2]
+        simpa [h1, h2] using h
+  | _ => simpa [annotate] using h
+
+/-- Every row of a valid Core table satisfies its rule over the whole table. -/
+theorem core_rows_layer (symb : Snoc Entry) (rows : Snoc Row)
+    (hv : rows_valid? symb rows = true) :
+    ∀ p r, lookup _ rows p = some r →
+      ∃ typed, annotate rows r.form = some typed ∧ rule? symb r.ctx typed r.ty = true := by
+  induction rows with
+  | Empty => intro p r h; simp [lookup] at h
+  | Extend earlier last ih =>
+    simp only [rows_valid?, decide_eq_true_eq] at hv
+    intro p r h
+    simp only [lookup] at h
+    split at h
+    · have := Option.some.inj h; subst this
+      have hl := hv.2
+      cases ha : annotate earlier last.form with
+      | none => simp [ha] at hl
+      | some form =>
+        simp only [ha] at hl
+        exact ⟨form, annotate_grow earlier last last.form form ha, hl⟩
+    · obtain ⟨t, h1, h2⟩ := ih hv.1.1 p r h
+      exact ⟨t, annotate_grow earlier last r.form t h1, h2⟩
+
+/-- The valid part of `thir.algorithmic.preservation`. -/
+theorem desugar_valid (symb : Snoc Entry) (rows : Snoc HirRow)
+    (hv : hir_rows_valid? symb rows = true) :
+    ∃ core, desugar_rows rows = some core ∧ rows_valid? symb core = true := by
+  induction rows with
+  | Empty => exact ⟨.Empty, by simp [desugar_rows], by simp [rows_valid?]⟩
+  | Extend earlier row ih =>
+    simp only [hir_rows_valid?, decide_eq_true_eq] at hv
+    obtain ⟨core, hd, hc⟩ := ih hv.1.1
+    have h2 := hv.2
+    have hctx := hv.1.2
+    simp only [hd] at h2
+    rcases row with ⟨form, rc, rt⟩
+    simp only at h2 hctx
+    cases form with
+    | Core f =>
+      simp only [hir_annotate] at h2
+      cases ha : annotate core f with
+      | none => simp [ha] at h2
+      | some typed =>
+        simp only [ha, check_layer?, synth_layer, decide_eq_true_eq] at h2
+        have hr := synth_core_sound symb rc typed rt h2
+        exact ⟨.Extend core ⟨f, rc, rt⟩, by simp [desugar_rows, core_row, hd],
+          by simp [rows_valid?, hc, hctx, ha, hr]⟩
+    | Paren body =>
+      simp only [hir_annotate] at h2
+      cases hl : lookup _ core body with
+      | none => simp [typing_at, hl] at h2
+      | some d =>
+        simp [typing_at, hl, check_layer?, synth_layer, provided, synthesized?, fren_spec] at h2
+        obtain ⟨typed, ha, hr⟩ := core_rows_layer symb core hc body d hl
+        rw [h2.1, h2.2] at hr
+        exact ⟨.Extend core ⟨d.form, rc, rt⟩, by simp [desugar_rows, core_row, hd, hl],
+          by simp [rows_valid?, hc, hctx, ha, hr]⟩
+
+/-- Desugaring keeps each row's context and type. -/
+theorem desugar_extend (rows : Snoc HirRow) (core : Snoc Row) (base : Snoc Ty)
+    (hd : desugar_rows rows = some core) (h : hir_rows_extend? rows base = true) :
+    rows_extend? core base = true := by
+  induction rows generalizing core with
+  | Empty => simp [desugar_rows] at hd; subst hd; simp [rows_extend?]
+  | Extend earlier row ih =>
+    simp only [hir_rows_extend?, decide_eq_true_eq] at h
+    simp only [desugar_rows] at hd
+    cases hd' : desugar_rows earlier with
+    | none => simp [hd'] at hd
+    | some c =>
+      rcases row with ⟨form, rc, rt⟩
+      cases form with
+      | Core f =>
+        simp [hd', core_row] at hd; subst hd
+        simp [rows_extend?, ih c hd' h.2]; exact h.1
+      | Paren body =>
+        cases hl : lookup _ c body with
+        | none => simp [hd', hl] at hd
+        | some d =>
+          simp [hd', hl, core_row] at hd; subst hd
+          simp [rows_extend?, ih c hd' h.2]; exact h.1
+
+theorem desugar_root (earlier : Snoc HirRow) (row : HirRow) (core : Snoc Row)
+    (hd : desugar_rows (.Extend earlier row) = some core) :
+    ∃ c f, core = .Extend c ⟨f, row.ctx, row.ty⟩ := by
+  simp only [desugar_rows] at hd
+  cases hd' : desugar_rows earlier with
+  | none => simp [hd'] at hd
+  | some c =>
+    rcases row with ⟨form, rc, rt⟩
+    cases form with
+    | Core f => simp [hd', core_row] at hd; exact ⟨c, f, hd.symm⟩
+    | Paren body =>
+      cases hl : lookup _ c body with
+      | none => simp [hd', hl] at hd
+      | some d => simp [hd', hl, core_row] at hd; exact ⟨c, d.form, hd.symm⟩
+
+/-- `thir.algorithmic.preservation`. -/
+theorem desugaring_preserves_typing (symb : Snoc Entry) (rows : Snoc HirRow) (ctx : Snoc Ty)
+    (ty : Ty) (h : synthesis? symb rows ctx ty = true) :
+    desugared_derivation? symb rows ctx ty = true := by
+  cases rows with
+  | Empty => simp [synthesis?, fren_spec] at h
+  | Extend earlier root =>
+    simp only [synthesis?, decide_eq_true_eq] at h
+    obtain ⟨core, hd, hc⟩ := desugar_valid symb _ h.1.1.2
+    have he := desugar_extend _ core ctx hd h.1.2
+    obtain ⟨c, f, hcore⟩ := desugar_root earlier root core hd
+    have hroot := h.2
+    simp [fren_spec] at hroot
+    subst hcore
+    simp only [desugared_derivation?, hd, derivation?, decide_eq_true_eq]
+    exact ⟨⟨⟨⟨h.1.1.1.1, h.1.1.1.2⟩, hc⟩, he⟩, by simp [fren_spec, hroot]⟩
+
+/-- `thir.algorithmic.reflection`. -/
+theorem desugaring_reflects_typing (symb : Snoc Entry) (rows : Snoc HirRow) (core : Snoc Row)
+    (hp : parens_faithful? rows = true) (hd : desugar_rows rows = some core)
+    (hc : rows_valid? symb core = true) : hir_rows_valid? symb rows = true := by
+  induction rows generalizing core with
+  | Empty => simp [hir_rows_valid?]
+  | Extend earlier row ih =>
+    simp only [parens_faithful?, decide_eq_true_eq] at hp
+    simp only [desugar_rows] at hd
+    cases hd' : desugar_rows earlier with
+    | none => simp [hd'] at hd
+    | some c =>
+      have hp2 := hp.2
+      rcases row with ⟨form, rc, rt⟩
+      cases form with
+      | Core f =>
+        simp [hd', core_row] at hd; subst hd
+        simp only [rows_valid?, decide_eq_true_eq] at hc
+        have hl := hc.2
+        cases ha : annotate c f with
+        | none => simp [ha] at hl
+        | some typed =>
+          simp only [ha] at hl
+          have hs := synth_core_complete symb rc typed rt hl
+          have hctx : ctx_ok? symb rc = true := hc.1.2
+          simp [hir_rows_valid?, ih c hp.1 hd' hc.1.1, hd', hir_annotate, ha, check_layer?,
+            synth_layer, hs, hctx]
+      | Paren body =>
+        cases hl : lookup _ c body with
+        | none => simp [hd', hl] at hd
+        | some d =>
+          simp [hd', hl, core_row] at hd; subst hd
+          simp only [rows_valid?, decide_eq_true_eq] at hc
+          have hctx : ctx_ok? symb rc = true := hc.1.2
+          simp [hd'] at hp2
+          simp [hir_rows_valid?, ih c hp.1 hd' hc.1.1, hd', hir_annotate, hp2, check_layer?,
+            synth_layer, provided, synthesized?, hctx, fren_spec]
+
+/-- `thir.algorithmic.unique`. -/
+theorem hir_table_unique (symb : Snoc Entry) (left right : Snoc HirRow)
+    (hl : hir_rows_valid? symb left = true) (hr : hir_rows_valid? symb right = true)
+    (shape : hir_same_shape? left right = true) : left = right := by
+  induction left generalizing right with
+  | Empty =>
+    cases right with
+    | Empty => rfl
+    | Extend _ _ => simp [hir_same_shape?] at shape
+  | Extend earlier l ih =>
+    cases right with
+    | Empty => simp [hir_same_shape?] at shape
+    | Extend rearlier r =>
+      simp only [hir_same_shape?, decide_eq_true_eq] at shape
+      obtain ⟨⟨hform, hcontext⟩, hrest⟩ := shape
+      simp only [hir_rows_valid?, decide_eq_true_eq] at hl hr
+      have heq := ih rearlier hl.1.1 hr.1.1 hrest
+      subst heq
+      rcases l with ⟨lf, lc, lt⟩
+      rcases r with ⟨rf, rc, rt⟩
+      simp only at hform hcontext
+      subst hform; subst hcontext
+      have hl2 := hl.2
+      have hr2 := hr.2
+      simp only at hl2 hr2
+      cases hd : desugar_rows earlier with
+      | none => simp [hd] at hl2
+      | some core =>
+        cases ha : hir_annotate core lf with
+        | none => simp [hd, ha] at hl2
+        | some form =>
+          simp only [hd, ha, check_layer?, decide_eq_true_eq] at hl2 hr2
+          have := hl2.symm.trans hr2
+          simp at this
+          rw [this]
+
+/-! ### The production operator modes -/
+
+theorem algorithmic_unary_operand (op : UnaryOp) :
+    coreType (unary_operand op) = FrenExpr.unaryOperand (coreUnary op) := by
+  cases op <;> simp [coreType, coreUnary, FrenExpr.unaryOperand, fren_spec]
+
+theorem algorithmic_binary_operand (op : BinaryOp) (left : Ty) :
+    coreType (binary_operand op left) = FrenExpr.binaryOperand (coreBinary op) (coreType left) := by
+  cases op <;> simp [coreType, coreBinary, binary_operand, FrenExpr.binaryOperand, integer_binary?,
+    comparison?, boolean_binary?, fren_spec]
+
+theorem algorithmic_binary_output (op : BinaryOp) :
+    coreType (binary_output op) = FrenExpr.binaryResult (coreBinary op) := by
+  cases op <;> simp [coreType, coreBinary, binary_output, FrenExpr.binaryResult, integer_binary?,
+    fren_spec]
+
+end Algorithmic
+
 end Spec.Compiler.Thir
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl first_arm_proof: first_arm for (arms : Snoc (ArmF Typing)) (ctx : Snoc Ty) (ty : Ty) {
+  arms := arms, ctx := ctx, ty := ty, holds? := true
+} by
+  intro arms ctx ty _
+  simp only [first_arm.ensures, first_arm.ensure.output, first_arm.ensure.typed]
+  refine ⟨trivial, ?_⟩
+  by_cases hne : arms = .Empty
+  · simp [first_typed?, hne]
+  · cases hb : arm_bodies? arms ctx ty with
+    | false => simp [first_typed?, hb]
+    | true => simp [first_typed?, Spec.Compiler.Thir.first_arm_typed arms ctx ty hne hb]
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl desugaring_preserves_proof: desugaring_preserves for (symb : Snoc Entry)
+    (rows : Snoc HirRow) (ctx : Snoc Ty) (ty : Ty) {
+  symb := symb, rows := rows, ctx := ctx, ty := ty, holds? := true
+} by
+  intro symb rows ctx ty _
+  simp only [desugaring_preserves.ensures, desugaring_preserves.ensure.output,
+    desugaring_preserves.ensure.typed]
+  exact ⟨trivial, Spec.Compiler.Thir.desugaring_preserves_typing symb rows ctx ty⟩
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl desugaring_reflects_proof: desugaring_reflects for (symb : Snoc Entry)
+    (rows : Snoc HirRow) {
+  symb := symb, rows := rows, holds? := true
+} by
+  intro symb rows _
+  simp only [desugaring_reflects.ensures, desugaring_reflects.ensure.output,
+    desugaring_reflects.ensure.typed]
+  refine ⟨trivial, ?_⟩
+  intro h
+  cases hd : desugar_rows rows with
+  | none => simp [desugared_valid?, hd] at h
+  | some core =>
+    exact Spec.Compiler.Thir.desugaring_reflects_typing symb rows core h.1 hd
+      (by simpa [desugared_valid?, hd] using h.2)
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl synthesis_unique_proof: synthesis_unique for (symb : Snoc Entry)
+    (left right : Snoc HirRow) {
+  symb := symb, left := left, right := right, holds? := true
+} by
+  intro symb left right _
+  simp only [synthesis_unique.ensures, synthesis_unique.ensure.output,
+    synthesis_unique.ensure.equal]
+  refine ⟨trivial, ?_⟩
+  intro h
+  exact Spec.Compiler.Thir.hir_table_unique symb left right h.1.1 h.1.2 h.2
 
 set_option fren.requireEvidence "trusted" in
 #fren_trace

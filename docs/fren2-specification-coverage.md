@@ -148,7 +148,13 @@ compiler is specified later.
 | `types.judgment.adequacy`, `types.judgment.decidability`, `types.symbols.resolution`, `types.safety`, `expressions.value.denotation` | Open, stated in prose: Fren cannot state them |
 | `thir.core.levels`, `thir.core.unary`, `thir.core.binary` | Lean theorems named in the rules' prose |
 | `thir.primitive.compatibility`, `thir.primitive.unary`, `thir.primitive.binary` | Procedures bound by `impl` in the THIR wrapper |
-| `thir.core.derivation` | Open, stated in prose |
+| `thir.algorithmic.modes`, `thir.algorithmic.operators`, `thir.algorithmic.synthesis`, `thir.algorithmic.layer`, `thir.algorithmic.table`, `thir.algorithmic.judgment` | Definitions |
+| `thir.algorithmic.checking`, `thir.algorithmic.sound`, `thir.algorithmic.complete`, `thir.algorithmic.parens` | Fren expectations, one layer at a time; completeness assumes `thir.algorithmic.first-arm` for a match |
+| `thir.algorithmic.first-arm`, `thir.algorithmic.preservation`, `thir.algorithmic.reflection`, `thir.algorithmic.unique` | Procedures bound by `impl` in the THIR wrapper: `proved` |
+| `thir.algorithmic.primitive` | Fren expectations against the primitive contracts, and Lean theorems named in the rule's prose |
+| `thir.algorithmic.decidable` | Stated in prose; follows from the definitions being total functions and from `thir.algorithmic.unique` |
+| `thir.core.derivation` | Half proved by the `thir.algorithmic` rules; the production half is open |
+| `thir.algorithmic.production` | Open, stated in prose |
 
 Definitions carry no evidence; they are not implementation proofs. Open
 laws remain normative obligations. Existing production `FrenHirToThir.HasValue`

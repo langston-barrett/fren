@@ -80,17 +80,23 @@ sample. The output's printed form is the input's with only its parentheses
 removed. Typing the parenthesis-free erasure of the input gives the output,
 so desugaring commutes with typing. Added parentheses do not change the
 output's bodies. The node count falls by one for each parenthesis, and
-scoping is unchanged. Only the tests cover the last four; no theorem states
-that desugaring preserves typing, scoping or evaluation.
+scoping is unchanged. Only the tests cover the last four for the pass
+itself. For typing derivations, the THIR chapter proves that desugaring
+preserves and reflects typing (`thir.algorithmic.preservation`,
+`thir.algorithmic.reflection`); no theorem states that desugaring preserves
+scoping or evaluation.
 
 Parentheses are concrete syntax. The [Language](../Language/Types.md)
 states its typing and evaluation rules over the Core, which has no
 parenthesis form, so a parenthesised expression has the type, value and
 definedness of its body. This is the argument for why removing parentheses
 should preserve each of these and remove no division or remainder site,
-branch or member. It is an argument, not a proven result. The wrapper proves
-none of these preservations. The tests above check typing and scoping over a
-bounded sample, and nothing yet checks value or definedness.
+branch or member. For typing it is proved over derivation tables in the
+[THIR chapter](Thir.md#algorithmic-typing), whose table desugaring is not
+yet bound to this pass. For the rest it is an argument, not a proven result:
+this wrapper proves none of these preservations. The tests above check
+typing and scoping over a bounded sample, and nothing yet checks value or
+definedness.
 
 A later form of surface sugar must be defined by its Language semantics. Its
 desugaring must relate the complete input and output, preserve typing in the
