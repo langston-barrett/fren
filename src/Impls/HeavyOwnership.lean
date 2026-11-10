@@ -758,6 +758,16 @@ impl compile_deadline: testing::heavy_compile_deadline for (clockError now limit
   intro clockError now limit _
   simp [fren_spec, Heavy.Budget.deadline, or_assoc]
 
+impl compile_admission_timeout: testing::heavy_compile_admission_timeout
+    for (gateError decision stage : Int) {
+  gate_error := gateError,
+  decision := decision,
+  stage := stage,
+  wait := Heavy.Budget.timedOutWait gateError decision stage,
+} by
+  intro gateError decision stage _
+  simp [fren_spec, Heavy.Budget.timedOutWait, and_assoc]
+
 impl compile_lifecycle: testing::heavy_compile_lifecycle
     for (actionError handler flags autoReapBit previousWaitError waitError observed expected reaped : Int) {
   action_error := actionError,

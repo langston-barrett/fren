@@ -197,7 +197,14 @@ the actual Std-only ownership/charge/fit functions and publishing running
 state. Only the oldest held waiter may start; after it starts, another
 fitting request may start too. There is no concurrency cap. Intrinsically
 oversized requests fail promptly. Lock contention and capacity waits retry
-until the fixed caller deadline. Read, lock and write failures fail closed.
+until the fixed caller deadline. A deadline check that finds it expired
+fails that compiler without starting it, exit 125, and reports
+`admission timed out after N ms (limit L ms, the session's admission wait) waiting for ...`,
+naming the registry lock, the compiler budget (with the reserved, available
+and requested KiB and the ticket) or grant publication; the record's
+`admission_timeout_wait` is 1, 2 or 3 accordingly and 0 otherwise. Other gate
+failures report `budget control failed (errno N)`. Read, lock and write
+failures fail closed.
 A held malformed or independently mismatched owner fails the snapshot;
 unlocked residual metadata contributes nothing. Reservations do not age.
 
@@ -489,7 +496,9 @@ the path again, so the name is not a stable file identity. Keep the file
 available for the invocation. Requests are explicit operator
 configuration and matching entries take precedence over automatic estimates.
 Defaults are 1,300,000 KiB allowance, 100,000 KiB headroom, 600,000 KiB fallback and a
-30,000 ms wait. For ordinary Heavy dispatch the allowance is at most the smaller
+600,000 ms admission wait, the longest a session accepts. Held reservations do
+not expire, so a compiler fails when enough budget and its turn do not become
+free within the wait. For ordinary Heavy dispatch the allowance is at most the smaller
 of Heavy's launch-time memory cap and visible cgroup-v2 ancestor `memory.max`
 limits, minus 100,000 KiB for the outer monitor, and never above 1,300,000 KiB.
 An unreadable advertised hierarchy fails setup. This is a configuration ceiling,
@@ -518,7 +527,7 @@ scripts/heavy --offline scripts/heavy-lean-build \
   --state /absolute/owned/new-state \
   --real-lean /absolute/toolchain/bin/lean \
   --allowance-kib 1300000 --headroom-kib 100000 \
-  --fallback-kib 600000 --timeout-ms 30000 \
+  --fallback-kib 600000 --timeout-ms 600000 \
   --requests /absolute/owned/requests.tsv -- \
   /absolute/toolchain/bin/lake --no-cache --verbose build +FrenSexp.Codec
 ```

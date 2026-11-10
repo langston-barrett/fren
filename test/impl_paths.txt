@@ -21,6 +21,7 @@ unbound: Fren.Impls.HeavyAdmission.queue_turn ahead
 unbound: Fren.Impls.HeavyAdmission.queue_turn turn?
 unbound: Fren.Impls.HeavyOwnership.admission_total total
 unbound: Fren.Impls.HeavyOwnership.cleanup_trigger cleanup?
+unbound: Fren.Impls.HeavyOwnership.compile_admission_timeout wait
 unbound: Fren.Impls.HeavyOwnership.compile_budget decision
 unbound: Fren.Impls.HeavyOwnership.compile_deadline decision
 unbound: Fren.Impls.HeavyOwnership.compile_lifecycle signal?

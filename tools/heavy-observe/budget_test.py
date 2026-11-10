@@ -146,7 +146,27 @@ def producer(case, work, shim):
                 path.write_text("\n".join(rows) + "\n")
             a = launch("A"); evidence["a"] = result(a, 125)
             assert not (events / "A.start").exists()
+            if case == "registry":
+                report = evidence["a"]["stderr"]
+                assert "admission timed out" in report and "waiting for the registry lock" in report, report
+                assert "limit 200 ms" in report and "budget control failed" not in report, report
+            else:
+                assert "admission timed out" not in evidence["a"]["stderr"], evidence["a"]
             if held: held.close()
+        elif case == "capacity-timeout":
+            # A holds the whole budget beyond the admission deadline. B's wait
+            # must end at that deadline with a report naming the budget wait,
+            # never as an unexplained control errno, and must not start B.
+            a = launch("A"); started("A")
+            b = launch("B"); ticket(2)
+            evidence["b"] = result(b, 125)
+            assert not (events / "B.start").exists(), "expired waiter started"
+            assert not (events / "A.end").exists(), "holder ended before the waiter expired"
+            report = evidence["b"]["stderr"]
+            assert "admission timed out" in report and "waiting for compiler budget" in report, report
+            assert "limit 300 ms" in report and "reserved 7 of 9 KiB" in report and "requested 7 KiB" in report, report
+            assert "budget control failed" not in report, report
+            release("A"); evidence["a"] = result(a)
         elif case in ("exec-error", "exit", "fallback"):
             if case == "exec-error":
                 (shim.parent.parent / "real-lean.path").write_text(str(work / "missing-executable"))
@@ -203,7 +223,7 @@ def main():
     (cpu_work / "results.json").write_text(json.dumps(cpu_results, indent=2))
     cases = ["serial-fifo", "unequal", "cancel", "wait-cancel", "unknown", "pid-reuse", "namespace", "partial", "raw-stale",
              "unlocked", "oversize", "bad-config", "bad-counter", "registry", "write-error", "missing-manifest", "preexec-error",
-             "exec-error", "exit", "fallback", "zero-request", "fork-lease", "observer-death", "owner-death", "bypass"]
+             "exec-error", "exit", "fallback", "zero-request", "fork-lease", "observer-death", "owner-death", "bypass", "capacity-timeout"]
     feedback = subprocess.run([sys.executable, "-I", str(HERE / "feedback_test.py")], capture_output=True, timeout=30)
     assert feedback.returncode == 0, (feedback.stdout, feedback.stderr)
     pure = subprocess.run([str(BIN / "budget_tests")], capture_output=True, timeout=3)
@@ -229,7 +249,7 @@ def main():
             lines.append(f"{source}\tlean-bytearray64:{source.stat().st_size}:{digest}\t{demand}\n")
         manifest.write_text("".join(lines))
         allowance = 6 if case == "oversize" else 10
-        wait_ms = 200 if case == "registry" else 2500
+        wait_ms = 200 if case == "registry" else 300 if case == "capacity-timeout" else 2500
         command = [str(BIN / "budget_session"), str(directory / "session"), str(allowance), "1", "9", str(wait_ms),
                    str(manifest), "--", "/usr/bin/python3", "-I", str(Path(__file__).resolve()), "--producer", case,
                    str(directory), str(overlay / "bin/lean")]
@@ -272,6 +292,15 @@ def main():
             assert rows[0]["request_excess_kib"] is None
         if case == "fallback":
             assert rows[0]["request_provenance"] == "explicit-unknown-fallback" and rows[0]["requested_reservation_kib"] == 9
+        if case == "capacity-timeout":
+            expired = [r for r in rows if r["gate_errno"] != 0]
+            assert len(rows) == 2 and len(expired) == 1, rows
+            assert expired[0]["admission_timeout_wait"] == 2 and not expired[0]["child_present"], expired
+            assert expired[0]["admission_wait_ns"] >= 300000000 and expired[0]["held_before_kib"] == 7, expired
+            assert expired[0]["wrapper_code"] == 125 and expired[0]["shell_code"] is None, expired
+            assert all(r["admission_timeout_wait"] == 0 for r in rows if r["gate_errno"] == 0), rows
+        if case == "registry":
+            assert [r["admission_timeout_wait"] for r in rows] == [1], rows
         if case == "zero-request": assert not rows
         if case == "bypass": assert all("gate_errno" not in r for r in rows)
         if case == "owner-death":

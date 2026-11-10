@@ -37,6 +37,14 @@ def deadline (clockError now limit : Int) : Int :=
   if clockError ≠ 0 ∨ now < 0 ∨ limit < 0 then 2
   else if now < limit then 0 else 1
 
+/-- The admission wait that a failed gate reports as timed out: 0 none,
+1 the registry lock, 2 budget or the caller's turn, 3 grant publication.
+`decision` is the last raw `deadline` decision and `stage` the wait then in
+progress. The errno is not consulted beyond being a failure: an OS error may
+itself be ETIMEDOUT, and such a failure is not an expired deadline. -/
+def timedOutWait (gateError decision stage : Int) : Int :=
+  if gateError ≠ 0 ∧ decision = 1 ∧ 1 ≤ stage ∧ stage ≤ 3 then stage else 0
+
 /-- Narrow Linux policy: only SIG_DFL without SA_NOCLDWAIT is supported.
 `autoReapBit` is the actual OS bit constant (only 2 is supported); the
 adapter supplies sa_flags. A different ABI fails closed. -/

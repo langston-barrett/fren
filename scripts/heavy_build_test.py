@@ -599,6 +599,9 @@ def main():
          mock.patch.object(build.Path, 'is_dir', return_value=True), \
          mock.patch.object(build.Path, 'exists', return_value=True):
         assert build.outer_allowance(2000000) == 300000
+    # The default admission wait is the longest a session accepts: a shorter
+    # one failed waiters behind compilers that held the budget for minutes.
+    assert build.ADMISSION_WAIT_MS == '600000', build.ADMISSION_WAIT_MS
     fake = work / 'bin'; fake.mkdir()
     (fake / 'lean').symlink_to(real)
     lake = fake / 'lake'
