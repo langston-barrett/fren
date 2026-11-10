@@ -353,8 +353,8 @@ accept desugars to a Core table that the declarative rules accept
 (`thir.algorithmic.preservation`), and a HIR table whose desugaring the
 declarative rules accept is itself accepted, provided each of its
 parenthesis rows has the context and type of its body's row
-(`thir.algorithmic.reflection`). That every Core derivation of a desugared
-expression arises from such a HIR table is open
+(`thir.algorithmic.reflection`). That a HIR expression synthesizes a type
+whenever its desugaring has that type in the Core is open
 (`thir.algorithmic.expression-complete`). The second half, that the
 production traversal is that judgment, is open, as
 `thir.algorithmic.production` states.
@@ -501,7 +501,21 @@ whose callee is a local has no layer and no type.
 ```fren
 pub mod spec::algorithmic
 
-use spec::names::{ArmF, CoreF, Ctx, Form, ItemKind, Symb, Ty, ctx_ok?, entry, lookup, symb_ok?}
+use spec::names::{
+    ArmF,
+    CoreF,
+    Ctx,
+    Form,
+    ItemKind,
+    Symb,
+    Ty,
+    ctx_ok?,
+    entry,
+    length,
+    lookup,
+    symb_ok?,
+}
+
 use spec::surface::{BinaryOp, Snoc, UnaryOp}
 use spec::surface::Snoc::{Empty, Extend}
 use spec::thir
@@ -740,7 +754,7 @@ expect paren_layer(symb: Symb, ctx: Ctx, body: Typing, ty: Ty) {
 }
 ```
 
-r[thir.algorithmic.table] spec::algorithmic::{HirRow, core_row, desugar_rows, hir_annotate, hir_rows_valid?}
+r[thir.algorithmic.table] spec::algorithmic::{HirRow, core_row, desugar_rows, desugaring_keeps_rows::same, hir_annotate, hir_rows_valid?}
 A *HIR table* is a snoc sequence of rows, each a HIR layer whose children
 are levels of earlier rows, a context and a type. Its *desugaring* is the
 Core table with a row for each of its rows, at the same level and with the
@@ -748,7 +762,11 @@ same context and type. The row of a Core layer keeps its layer. The row of a
 parenthesis takes the layer of its body's desugared row, so it unfolds to
 what the body's row unfolds to, and a parenthesis whose body names no
 earlier row has no desugaring. A child's typing is read at its level, which
-is the same in a table and its desugaring. A HIR table is valid in Σ when
+is the same in a table and its desugaring. Desugaring therefore keeps the
+number of rows, so the desugaring of a table with a parenthesis row has
+more rows than the smallest Core table for the same expression, and a Core
+table is in general not the desugaring of any HIR table. A HIR table is
+valid in Σ when
 every row's context is well formed and every row's layer, with each child
 replaced by its typing, checks against the row's type in the row's context.
 
@@ -770,6 +788,17 @@ pub fn desugar_rows(rows: Snoc<HirRow>): Option<Snoc<Row>> := match rows {
         },
         None => None,
     },
+}
+
+-- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
+-- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
+set_option fren.evidence "random" in
+pub proc desugaring_keeps_rows(rows: Snoc<HirRow>): (holds?) {
+    ensure output: holds?
+    ensure same: match desugar_rows(rows) {
+        Some(core) => length(core) = length(rows),
+        None => true,
+    }
 }
 
 pub fn hir_annotate(core: Snoc<Row>, form: HirF<Int>): Option<HirF<Typing>> := match form {
@@ -964,23 +993,37 @@ would carry them to expressions given as trees. None is proved, and no Fren
 definition states them yet.
 
 r[thir.algorithmic.tree-lift]
-A HIR expression e has a HIR table in a context Γ that is built bottom-up:
-its rows are e's subexpressions in postorder, each in the context that the
-rule of its parent prescribes, and each row's type is what `synth_layer`
-synthesizes from its children's rows. `Σ; Γ ⊢ e ⇒ τ` holds exactly when
-this table exists and its root has type τ, and the desugaring of this table
-unfolds to the desugaring `|e|` of the expression
+Building a table for a HIR expression e in a context Γ is a partial
+construction. It visits e's subexpressions in postorder, each in the
+context that the rule of its parent prescribes, and gives each a row whose
+type is what `synth_layer` synthesizes from its children's rows. It fails at
+the first layer for which `synth_layer` gives no type, so an expression that
+is not typable, such as a conditional whose condition is an integer, has no
+such table. `Σ; Γ ⊢ e ⇒ τ` holds exactly when the construction succeeds and
+the root of its table has type τ. When it succeeds, the desugaring of its
+table unfolds to the desugaring `|e|` of the expression
 (`desugaring.pass.parens`). This is open: the chapter defines no
 construction of a table from a tree and no unfolding of a HIR table.
 
 r[thir.algorithmic.expression-complete]
 Synthesis is complete for expressions: when `Σ; Γ ⊢ |e| : τ` holds in the
 Core for the desugaring of a HIR expression e, `Σ; Γ ⊢ e ⇒ τ` holds. This
-is open. `thir.algorithmic.reflection` gives it only for a supplied HIR
-table whose parenthesis rows have the contexts and types of their bodies'
-rows; it remains to show that every Core table for `|e|` is the desugaring
-of such a HIR table for e, which needs `thir.algorithmic.tree-lift` and the
-Core chapter's `types.derivation.unique-expression`.
+is open. `thir.algorithmic.reflection` does not give it: that rule starts
+from a supplied HIR table and reflects only the validity of that table's own
+desugaring. A Core table for `|e|` need not be the desugaring of any HIR
+table for e, because desugaring keeps the number of rows: for e = `(true)`
+the Core has a table of one row for `true`, and every HIR table for e has a
+row for the literal and a row for the parenthesis. So the statement is one
+of existence, across tables of different shapes: from any Core table whose
+root unfolds to `|e|` with type τ in Γ, some valid HIR table for e with a
+root of type τ in Γ exists. The intended route is by induction on e, read
+as a tree. The Core's tree reading (`types.judgment.adequacy`, which is
+open) gives each subexpression of `|e|` its typing in the context its
+parent's rule prescribes, whatever the shape of the given table. The
+per-layer rule `thir.algorithmic.complete` then synthesizes that type at
+each Core layer of e, and `thir.algorithmic.parens` gives each parenthesis
+the typing of its body, so the construction of `thir.algorithmic.tree-lift`
+succeeds with that root.
 
 r[thir.algorithmic.inference]
 An expression's typing is decidable: an algorithm, given Σ, Γ and a HIR
@@ -1066,5 +1109,5 @@ items are canonical identities rather than paths, and a production `let`
 carries a `?` suffix where the Core carries an annotation. No theorem yet
 states that `step` accepts a layer exactly when `synth_layer` does, for
 calls, matches, constructors, locals and `let` in particular, nor that the
-production traversal of a tree yields a valid HIR table
+successful production traversal of a tree yields a valid HIR table
 (`thir.algorithmic.tree-lift`). Both are open.

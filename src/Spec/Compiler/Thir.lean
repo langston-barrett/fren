@@ -1000,6 +1000,27 @@ theorem desugar_extend (rows : Snoc HirRow) (core : Snoc Row) (base : Snoc Ty)
           simp [hd', hl, core_row] at hd; subst hd
           simp [rows_extend?, ih c hd' h.2]; exact h.1
 
+theorem desugar_length (rows : Snoc HirRow) (core : Snoc Row)
+    (hd : desugar_rows rows = some core) : length _ core = length _ rows := by
+  induction rows generalizing core with
+  | Empty => simp [desugar_rows] at hd; subst hd; simp [length]
+  | Extend earlier row ih =>
+    simp only [desugar_rows] at hd
+    cases hd' : desugar_rows earlier with
+    | none => simp [hd'] at hd
+    | some c =>
+      rcases row with ⟨form, rc, rt⟩
+      cases form with
+      | Core f =>
+        simp [hd', core_row] at hd; subst hd
+        simp [length, ih c hd']
+      | Paren body =>
+        cases hl : lookup _ c body with
+        | none => simp [hd', hl] at hd
+        | some d =>
+          simp [hd', hl, core_row] at hd; subst hd
+          simp [length, ih c hd']
+
 theorem desugar_root (earlier : Snoc HirRow) (row : HirRow) (core : Snoc Row)
     (hd : desugar_rows (.Extend earlier row) = some core) :
     ∃ c f, core = .Extend c ⟨f, row.ctx, row.ty⟩ := by
@@ -1148,6 +1169,22 @@ impl desugaring_preserves_proof: desugaring_preserves for (symb : Snoc Entry)
   simp only [desugaring_preserves.ensures, desugaring_preserves.ensure.output,
     desugaring_preserves.ensure.typed]
   exact ⟨trivial, Spec.Compiler.Thir.desugaring_preserves_typing symb rows ctx ty⟩
+
+open spec.surface spec.names spec.types spec.algorithmic in
+impl desugaring_keeps_rows_proof: desugaring_keeps_rows for (rows : Snoc HirRow) {
+  rows := rows, holds? := true
+} by
+  intro rows _
+  simp only [desugaring_keeps_rows.ensures, desugaring_keeps_rows.ensure.output,
+    desugaring_keeps_rows.ensure.same]
+  refine ⟨trivial, ?_⟩
+  cases hd : desugar_rows rows with
+  | none => simp
+  | some core =>
+    simp
+    intro h
+    rw [← h]
+    exact Spec.Compiler.Thir.desugar_length rows core hd
 
 open spec.surface spec.names spec.types spec.algorithmic in
 impl desugaring_reflects_proof: desugaring_reflects for (symb : Snoc Entry)

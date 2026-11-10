@@ -148,7 +148,7 @@ compiler is specified later.
 | `types.judgment.adequacy`, `types.judgment.decidability`, `types.symbols.resolution`, `types.safety`, `expressions.value.denotation` | Open, stated in prose: Fren cannot state them |
 | `thir.core.levels`, `thir.core.unary`, `thir.core.binary` | Lean theorems named in the rules' prose |
 | `thir.primitive.compatibility`, `thir.primitive.unary`, `thir.primitive.binary` | Procedures bound by `impl` in the THIR wrapper |
-| `thir.algorithmic.modes`, `thir.algorithmic.operators`, `thir.algorithmic.synthesis`, `thir.algorithmic.layer`, `thir.algorithmic.table`, `thir.algorithmic.judgment` | Definitions |
+| `thir.algorithmic.modes`, `thir.algorithmic.operators`, `thir.algorithmic.synthesis`, `thir.algorithmic.layer`, `thir.algorithmic.table`, `thir.algorithmic.judgment` | Definitions; `thir.algorithmic.table` also has the `desugaring_keeps_rows` procedure, bound by `impl` in the THIR wrapper: `proved` |
 | `thir.algorithmic.checking`, `thir.algorithmic.sound`, `thir.algorithmic.complete`, `thir.algorithmic.parens` | Fren expectations, one layer at a time; completeness assumes `thir.algorithmic.first-arm` for a match |
 | `thir.algorithmic.first-arm`, `thir.algorithmic.preservation`, `thir.algorithmic.reflection`, `thir.algorithmic.unique` | Procedures bound by `impl` in the THIR wrapper: `proved`, for supplied tables; reflection carries the `parens_faithful?` hypothesis, and the `unfaithful_paren` procedure, proved by evaluation, shows it is needed |
 | `thir.algorithmic.primitive` | Fren expectations against the primitive contracts, and Lean theorems named in the rule's prose |
