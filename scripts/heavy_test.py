@@ -2527,9 +2527,25 @@ def test_command_forecast_real_rows():
         for i in range(30):
             heavy.append_log({"command": "lake build Other", "job_kind": "heavy", "ended_at": now,
                               "peak_rss_kb": 100}, state, {})
+        # The killed job's peak is a lower bound, not a forecast, until a
+        # job with the same command finishes.
         for row in rows:
             command = row["command"].removeprefix("--offline ")
-            assert heavy.command_forecast(command, state, {}, now) == (row["peak_rss_kb"], 1)
+            failed = row.get("exit_status", 0) != 0
+            assert heavy.command_forecast(command, state, {}, now) == (
+                (None, 0) if failed else (row["peak_rss_kb"], 1))
+        heavy.append_log({"command": "lake test", "job_kind": "heavy", "ended_at": now - 2,
+                          "peak_rss_kb": 9000000, "exit_status": 0}, state, {})
+        assert heavy.command_forecast("lake test", state, {}, now) == (17911340, 2)
+        # The recorded miss: an early failure at 60 MB was the whole history
+        # of a test that then peaked at 1.9 GB.
+        missed = "python3 -I scripts/heavy_admission_test.py"
+        heavy.append_log({"command": missed, "job_kind": "test", "ended_at": now - 2,
+                          "peak_rss_kb": 60576, "exit_status": 1}, state, {})
+        assert heavy.command_forecast(missed, state, {}, now) == (None, 0)
+        heavy.append_log({"command": missed, "job_kind": "test", "ended_at": now - 1,
+                          "peak_rss_kb": 1928260, "exit_status": 0}, state, {})
+        assert heavy.command_forecast(missed, state, {}, now) == (1928260, 2)
         # Full commands distinguish build targets and shell wrappers, including
         # shell bodies containing paths that the old job-kind normalizer dropped.
         for command in ("lake build fren-dev fren_dev_test", "bash -c 'lake test /tmp/a'"):

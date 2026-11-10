@@ -1500,8 +1500,15 @@ history; this does not generalize across changed worktrees or wrappers.
 prediction is the maximum positive measured peak among the latest 20
 completed jobs with the same command in the preceding seven days, ordered by
 completion time and excluding future completions. The lower cutoff is inclusive;
-larger peaks win completion-time ties. Failed jobs' observed peaks count too,
-though a killed job's peak does not show how much memory it needed to finish.
+larger peaks win completion-time ties. A job failed when its record has an
+`exit_status` other than 0; a record with none, as old logs have, is not
+known to have failed. A failed job's peak is only a lower bound: a test
+that fails before it starts its compiler, or a job killed at the cap, does
+not show how much memory its command needs to finish. So there is a forecast
+only when some job with the same command in those seven days did not fail.
+Failed jobs' peaks then count too, and can only raise it. Without one the
+forecast is `null` and uses no jobs: one early failure at 60 MB was once the
+whole history of a test that then peaked at 1.9 GB.
 `prediction_jobs` records the number used, and `prediction_method` is
 `"max_last_20_same_command_7d"`. Before each forecast, the standalone Lean
 adviser verifies that its embedded adapter, kernel, toolchain selection and
@@ -2637,6 +2644,7 @@ pub struct MemoryObservation {
     key: Option<String>,
     ended: Option<Int>,
     peak: Option<Int>,
+    failed?,
 }
 
 pub enum MemoryHistory { Nil, Cons(MemoryObservation, MemoryHistory) }
@@ -2648,6 +2656,15 @@ pub fn memory_eligible?(o: MemoryObservation, key: String, cutoff: Int, now: Int
         Option::Some(t), Option::Some(p) => cutoff <= t <= now and p > 0,
         _, _ => false,
     })
+
+-- Some eligible job is not known to have failed. A failed job's peak is
+-- only a lower bound on what its command needs.
+pub fn memory_finished?(hs: MemoryHistory, key: String, cutoff: Int, now: Int) := match hs {
+    MemoryHistory::Nil => false,
+    MemoryHistory::Cons(o, rest) =>
+        (memory_eligible?(o, key, cutoff, now) and not o.failed?)
+        or memory_finished?(rest, key, cutoff, now),
+}
 
 pub fn memory_take(n: Int, ps: MemoryPeaks): MemoryPeaks := match ps {
     MemoryPeaks::Nil => MemoryPeaks::Nil,
@@ -2709,14 +2726,30 @@ pub proc heavy_memory_prediction(
     now: Int,
     n: Nat,
 ): (det prediction: Option<Int>, det jobs: Nat) {
-    ensure rule: prediction = memory_max(memory_recent(history, key, cutoff, now, n))
-    ensure count: jobs = memory_count(memory_recent(history, key, cutoff, now, n))
+    ensure rule: prediction =
+        if memory_finished?(history, key, cutoff, now)
+        then memory_max(memory_recent(history, key, cutoff, now, n))
+        else Option::None
+    ensure count: jobs =
+        if memory_finished?(history, key, cutoff, now)
+        then memory_count(memory_recent(history, key, cutoff, now, n))
+        else 0
 
-    expect covers_observation: memory_head_covered?(
-        memory_recent(history, key, cutoff, now, n),
-        prediction
-    )
+    expect covers_observation: when memory_finished?(history, key, cutoff, now),
+        memory_head_covered?(memory_recent(history, key, cutoff, now, n), prediction)
     expect empty: when history = MemoryHistory::Nil, prediction = Option::None and jobs = 0
+    -- The case that misled: the only job on record failed early, with a small peak.
+    expect failed_only: when history = MemoryHistory::Cons(
+        MemoryObservation {
+            event := Option::Some("job"),
+            key := Option::Some(key),
+            ended := Option::Some(now),
+            peak := Option::Some(60576),
+            failed? := true,
+        },
+        MemoryHistory::Nil
+    ),
+        prediction = Option::None and jobs = 0
 }
 ```
 
