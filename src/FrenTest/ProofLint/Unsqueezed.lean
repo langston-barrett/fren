@@ -14,7 +14,8 @@ purely syntactic: it reads the parsed source and never elaborates a proof.
 A tactic is terminal when it is the last of its sequence and the sequence is
 terminal. The sequence of a `by`, `·`, `case`, `next`, `{ }`, `decreasing_by`,
 a `match`, `induction` or `cases` alternative, or a branch of a tactic `if` is
-terminal, since each must close its goal. `try`, `first`, `all_goals`,
+terminal, since each must close its goal; so is the sequence after the `by`
+of any other syntax, such as the project's `impl ... by` command. `try`, `first`, `all_goals`,
 `any_goals`, `repeat`, `iterate`, `focus`, parentheses and a few wrappers pass
 on what they have, as does the right of `<;>`; the left of `<;>` is never
 terminal. Inside every other tactic nothing is terminal, so an unknown
@@ -120,7 +121,13 @@ private partial def visit (terminal : Bool) (stx : Syntax) (found : Array Syntax
       visit terminal stx[2] (visit false stx[0] found)
     else
       let inner := closing.contains kind || (inheriting.contains kind && terminal)
-      args.foldl (fun found arg => visit inner arg found) found
+      (List.range args.size).foldl (init := found) fun found i =>
+        -- The sequence after a `by` proves an obligation in any syntax, such
+        -- as the project's `impl ... by` command.
+        let afterBy := i > 0 && (match args[i - 1]! with
+          | .atom _ word => word.trimAscii.toString == "by"
+          | _ => false)
+        visit (inner || afterBy) args[i]! found
   | _ => found
 
 /-- The unsqueezed `simp` and `grind` calls of a file's commands. -/

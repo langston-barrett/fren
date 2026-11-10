@@ -40,7 +40,8 @@ private def expected : List (String × String) :=
    ("simpLoop", "mix_comm"), ("simpLoop", "up_eq"), ("simpLoop", "next_eq")]
 
 /-- Cases of the unsqueezed linter that no compiled proof can hold: a `grind`
-that leaves its goal open does not compile. They are parsed only. -/
+that leaves its goal open does not compile, and the proof of an `impl` needs
+a spec to check. They are parsed only. -/
 private def parsedCases : String := "module
 example (p : Prop) (h : p) : p := by
   grind -- unsqueezed
@@ -55,13 +56,24 @@ example (p : Prop) (h : p) : p ∧ p := by
   constructor
   simp -- unsqueezed
   simp
+open Fren.Lang
+impl closes: double for (n : Int) { n := n } by
+  intro n
+  simp
+impl continues: double for (n : Int) { n := n } by
+  simp -- unsqueezed
+  rfl
 "
 
-/-- The inventory's files that are lint targets, with their module names.
+/-- The lint targets with their module names: the layering inventory's files
+and the Lean files of the spec under `src/Spec`, which hold the proofs about
+Fren2's chapters although the inventory's rules for modules leave them out.
 The cases must be reported, so they are no target. -/
 private def targets : IO (Array (Name × System.FilePath)) := do
+  let spec := (← System.FilePath.walkDir "src/Spec").filter (·.extension == some "lean")
+  let paths := (← FrenTest.Layering.inventory).map (·.2) ++ spec.qsort (·.toString < ·.toString)
   let mut found := #[]
-  for (_, path) in ← FrenTest.Layering.inventory do
+  for path in paths do
     let parts := (path.withExtension "").components.drop 1
     let module := parts.foldl (fun name part => Name.str name part) Name.anonymous
     if module != casesModule then found := found.push (module, path)

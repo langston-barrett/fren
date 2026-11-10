@@ -7,3 +7,15 @@ unsqueezed src/FrenAstToHir/Resolve.lean 1
 unsqueezed src/FrenBase/Identity.lean 4
 unsqueezed src/FrenExpr/Core.lean 1
 unsqueezed src/FrenOirToSmt/Confirm.lean 2
+unsqueezed src/Spec/Compiler/AstAndParsing.lean 2
+unsqueezed src/Spec/Compiler/Desugaring.lean 1
+unsqueezed src/Spec/Compiler/Mir.lean 1
+unsqueezed src/Spec/Compiler/Oir.lean 5
+unsqueezed src/Spec/Compiler/Thir.lean 55
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean 6
+unsqueezed src/Spec/Compiler/Walking.lean 1
+unsqueezed src/Spec/Language/DynamicSemantics.lean 2
+unsqueezed src/Spec/Language/NamesAndScope.lean 35
+unsqueezed src/Spec/Language/PropertiesAndChecks.lean 8
+unsqueezed src/Spec/Language/Types.lean 87
+unsqueezed src/Spec/Support/Core.lean 2
