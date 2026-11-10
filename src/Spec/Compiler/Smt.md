@@ -521,51 +521,44 @@ nonzero exit, invalid UTF-8 and all other bounded failures remain unconfirmed.
 r[smt.model.confirmation]
 `confirmAssignment` regenerates the program from the original admitted source
 and selects its exact question index. `solveModels` applies the same source
-check to decoded assignments. Confirmation supports assumption Sat, validity
-refutations and divisor-nonzero definedness sites. Readiness must be ready,
-every referenced definition must exist, and every prerequisite must exist, be
-ready and be a definedness question. Dependencies are not discharged by a raw
-Unsat token.
+check to decoded assignments. The answer for a question and an assignment is
+one of four statuses, read against the `SourceCandidate` relation of
+`r[smt.model.candidate]`:
 
-Assignments have the exact source arity and types and real enum membership.
-Every retained hypothesis is evaluated as true on its original source body.
-A Sat search then yields a concrete witness. A validity refutation
-additionally evaluates its retained source goal as false and yields a concrete
-counterexample. Each such observation evaluates the body under the assignment
-by the interpreter, which follows runtime demand, and must yield a Boolean.
-When the body or a function that it transitively calls mentions division or
-remainder, the observation also needs a strict evaluation that yields the same
-Boolean. Strict evaluation follows the retained verification tree of
-`r[lir.walking.demand]`: it evaluates both ordinary operands,
-including those of `and` and `or`, every let value even if unused, and every
-call argument followed by the callee body; it evaluates only the selected
-branch of an `if` or `match`. A division or remainder by zero has no value, so any
-undefined step, like exhaustion, fails strict evaluation. One budget is shared
-across all consumed premises and the goal; successful calls are memoized by
-callee, argument values and remaining depth. A body that reaches no division
-or remainder has no undefined primitive step, so the interpreter alone
-evaluates it and confirmation costs no more than the interpreter. A consumed
-body may contain division anywhere; only its evaluation at the model decides.
+- *witness*: the question asks whether the assumptions are satisfiable, and
+  the question and the assignment are a `SourceCandidate` with the answer
+  witness.
+- *counterexample*: the question is a validity or definedness question, and
+  the question and the assignment are a `SourceCandidate` with the answer
+  counterexample.
+- *rejected*: confirmation decided against the candidate. The assignment has
+  the wrong arity, a wrong type or a value outside its enum; or a hypothesis
+  is false; or the goal of a validity question is true; or, for a definedness
+  question, an unselected branch encloses the site or the divisor is not zero.
+- *unconfirmed*: confirmation decided nothing.
 
-A definedness refutation evaluates no goal. Its question must retain a
-division or remainder as its origin and ask that the divisor differ from zero.
-After the hypotheses, the path to that site in its source body is evaluated:
-the value of each `let` whose body encloses the site, and the condition or
-scrutinee of each `if` or `match` whose branch encloses it. An operand, a call
-argument, a let value, a condition or a scrutinee that itself encloses the
-site is entered without evaluation. If an unselected branch encloses the site,
-the candidate is rejected as unreachable. Otherwise the divisor is evaluated
-in the environment of the site: zero yields a concrete counterexample, and any
-other value rejects the candidate. Each term on the path, and the divisor, is
-evaluated both by the interpreter and strictly, whether or not it mentions
-division or remainder, and the two values must be equal. The strict
-evaluations draw on the budget that the hypotheses share. If a term has no
-strict value, the candidate is unconfirmed. The division itself is never
-evaluated.
+A rejected or unconfirmed status carries its reason.
 
-A false premise or true goal rejects the candidate; unsupported forms and
-evaluation failures are unconfirmed. No per-question confirmation is an
-aggregate verified-program verdict.
+Witness and counterexample are the confirmed answers. `r[smt.model.bridges]`
+requires each of them to be a `SourceCandidate` at every evaluation depth, so
+a smaller depth bound never changes what a confirmed answer means. No contract
+binds a rejected answer: like an unconfirmed one, it confirms nothing, and
+`r[smt.checker.verdict]` reports both as unconfirmed.
+
+A question is unconfirmed unless it is ready, every definition that it
+references exists, and every prerequisite question exists, is ready and is a
+definedness question. Dependencies are not discharged by a raw Unsat token.
+A definedness question is unconfirmed unless it retains a division or
+remainder as its origin and asks that the divisor differ from zero. A body
+that a candidate consumes may contain division anywhere; only its value at the
+assignment decides. An observation that has no value by the strict judgment,
+that exhausts the evaluation depth or budget, or on which the interpreter and
+the strict evaluation differ is unconfirmed. No per-question confirmation is
+an aggregate verified-program verdict.
+
+The procedure that computes these statuses is not part of this rule. The
+[checker guide](../../../docs/fren2-checker.md) describes it under "How a
+model is confirmed".
 
 r[smt.model.candidate]
 A confirmed answer is specified through the judgments of the earlier

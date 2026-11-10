@@ -87,33 +87,98 @@ The command uses no shell interpolation or solver-command override.
 Verification remains conditional on the current trusted solver, encoding,
 physical transport and source evaluator. Universal source/encoding soundness,
 model existence, confirmation adequacy and `CheckerContract` remain unproved.
-Divisor definedness counterexamples are confirmed by evaluating the source
-assumptions, lexical bindings, conditional guards and divisor at the retained
-site. The bindings and guards on the path to the site, and the divisor, are
-each evaluated twice, by the demand-driven interpreter and strictly, and the
-two values must agree; a term with no strict value, such as a let value
-`false and (1 div x = 1)` at `x = 0`, leaves the row unconfirmed. Terms off
-the path are not evaluated. That confirmation never evaluates the site's `div`
-or `%` itself.
+The next section describes how a model is confirmed. This command adds no
+soundness claim to the production checker.
+
+## How a model is confirmed
+
+`src/Spec/Compiler/Smt.md` states what a confirmed answer means: rule
+`smt.model.candidate` defines the `SourceCandidate` relation, and rule
+`smt.model.confirmation` reads the four statuses against it. This section
+describes the procedure, `FrenOirToSmt.confirmAssignment`, that computes a
+status. The correspondence between the two is the unproved
+`ConfirmationContract`.
+
+### Gates before evaluation
+
+Confirmation regenerates the program from the original admitted source and
+selects the question by its index. It evaluates nothing, and the row is
+unconfirmed, unless all of the following hold:
+
+- the question is ready;
+- every definition that the question depends on exists; and
+- every prerequisite question exists, is ready and is a definedness question.
+
+The assignment must then have the exact source arity, the type of each
+parameter and real enum membership. Otherwise the candidate is rejected.
+
+### Hypotheses and goals
+
+Every retained hypothesis is evaluated on its original source body and must be
+true. A false hypothesis rejects the candidate. A satisfiability question then
+yields a concrete witness. A validity question also evaluates its retained
+source goal: false yields a concrete counterexample, and true rejects the
+candidate.
+
+Each such observation evaluates the body under the assignment by the
+demand-driven interpreter, and must yield a Boolean. A consumed assumption or
+goal may divide, directly or through called functions. When the body or a
+function that it transitively calls mentions `div` or `%`, the body is also
+evaluated strictly, and the strict value must equal the interpreter's. A body
+that reaches no `div` or `%` has no undefined primitive step, so it skips
+strict evaluation: the demand-driven value alone decides, and confirmation
+costs no more than the interpreter.
+
+Strict evaluation follows the retained verification tree of rule
+`lir.walking.demand`. It evaluates:
+
+- both operands of every operator, including `and` and `or`;
+- every let value, even if unused;
+- every call argument, followed by the callee body; and
+- only the selected branch of an `if` or `match`.
+
+A `div` or `%` by zero has no value, so any undefined step fails strict
+evaluation and leaves the row unconfirmed. One 10,000-step budget is shared
+across the consumed premises and the goal of each confirmation. Exhausting it
+leaves the row unconfirmed with an evaluation budget reason. Successful calls
+are memoized by callee, argument values and remaining depth, so a shallower
+call cannot reuse a result that needed more recursion.
+
+### Definedness sites
+
+A definedness counterexample evaluates no goal. Its question must retain a
+`div` or `%` as its origin and ask that the divisor differ from zero; any
+other form is unconfirmed. After the hypotheses, confirmation follows the path
+to that site in its source body:
+
+- A `let` whose body encloses the site has its value evaluated and bound.
+- An `if` or `match` whose branch encloses the site has its condition or
+  scrutinee evaluated. If the selected branch does not enclose the site, the
+  candidate is rejected as unreachable.
+- An operand, a call argument, a let value, a condition or a scrutinee that
+  itself encloses the site is entered without evaluation.
+
+Terms off the path are not evaluated. The divisor is then evaluated in the
+environment of the site: zero yields a concrete counterexample, and any other
+integer rejects the candidate. The site's `div` or `%` itself is never
+evaluated.
+
+Each term on the path, and the divisor, is evaluated twice, by the
+demand-driven interpreter and strictly, whether or not it mentions `div` or
+`%`. The two values must be equal. The strict evaluations draw on the budget
+that the hypotheses share. A term with no strict value, such as a let value
+`false and (1 div x = 1)` at `x = 0`, leaves the row unconfirmed.
+
+### What the static inventory still covers
+
 Both Boolean operands and unused lets retain static obligations; `if` and
 `match` guard their branches. An unrelated partial expression does not prevent
 a nonvacuity witness or counterexample in another body from being confirmed.
 The complete inventory still includes every function's definedness checks.
-Assumptions and goals that a witness or counterexample consumes may divide,
-directly or through called functions. Each is evaluated under the model's
-assignment by the demand-driven interpreter. When its body or a function that
-it transitively calls mentions `div` or `%`, it is also evaluated strictly:
-both Boolean operands, unused let values and callee bodies are evaluated, and
-only an `if` or `match` selects a branch. Any `div` or `%` by zero there
-leaves the row unconfirmed, and the demand-driven interpreter's value must
-agree with the strict one. A body that reaches no `div` or `%` skips strict
-evaluation, and the demand-driven value alone decides. Strict evaluation
-shares a 10,000-step budget across consumed premises and the goal for each
-confirmation; exhausting it leaves the row unconfirmed with an evaluation
-budget reason. Unsupported sites, undefined
-or exhausted prefix evaluation, dependency cycles and absent nonvacuity
-witnesses remain explicit incomplete outcomes. This command adds no soundness
-claim to the production checker.
+Unsupported sites, undefined or exhausted prefix evaluation, dependency cycles
+and absent nonvacuity witnesses remain explicit incomplete outcomes.
+
+## Tests
 
 Build and run the focused normal test job with:
 
