@@ -29,13 +29,13 @@ The chapter's judgments, and the Fren definitions that state them:
 | `⊢ (Σ, ds) admitted` | the program is typed and every match in it is admitted | `prog_admitted?` |
 
 In outline, `select` gives, for a constructor c, the first arm written for c.
-The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection) is
-stated for matches with
-[distinct arms](StaticSemantics.md#r-statics.match.distinct), where the
-arm of c is unique and is the one that `select` gives. Its
-[table evaluator](DynamicSemantics.md#r-dynamics.table.differences) also
-gives a value to a typed match with a repeated arm, and runs the last arm
-written for c, so the two [agree](#r-patterns.matching.dynamics)
+The step relation of the
+[dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection)
+selects the same arm in every typed match, with
+[distinct arms](StaticSemantics.md#r-statics.match.distinct) or not. Its
+[table evaluator](DynamicSemantics.md#r-dynamics.table.differences) runs
+the last arm
+written for c, so `select` and the table evaluator [agree](#r-patterns.matching.dynamics)
 when no arm is repeated and can disagree on a typed match whose scrutinee's
 constructor has a repeated arm. Such a match is a static error, so the
 disagreement is reached by no admitted program; that the two functions
@@ -128,8 +128,10 @@ r[patterns.matching.select] spec::patterns::{select, occurrences}
 The arms of a match are a snoc sequence in written order, so the newest entry
 is the last arm written. For a constructor c, `select` gives the first arm
 written for c, if there is one: it consults the earlier arms before the
-newest. This is the selection of this chapter and of the production
-`FrenHirToThir.selectArm`; it is proved to be the selection of the
+newest. This is the selection of this chapter, of the production
+`FrenHirToThir.selectArm` and of the
+[step relation](DynamicSemantics.md#r-dynamics.match.selection) of the
+dynamic semantics; it is proved to be the selection of the
 [dynamic semantics' table evaluator](#r-patterns.matching.dynamics) when no arm is repeated,
 and can differ from it for a constructor that has a repeated arm. `occurrences` counts the arms written for c.
 
@@ -484,28 +486,29 @@ pub proc admitted_selects_typed(
 
 r[patterns.matching.dynamics] spec::patterns::{selected_value, dynamics_selection::{agrees, runs_last, selects_first}}
 The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection) is
-defined for the typed programs with
-[distinct arms](StaticSemantics.md#r-statics.match.distinct), where at
-most one arm has the scrutinee's constructor. Its
+defined for every typed program, and its step relation runs the arm
+written first when several arms have the scrutinee's constructor, which
+is the arm that `select` gives. Its
 [table evaluator](DynamicSemantics.md#r-dynamics.table.differences) is
-defined for every typed program, and it runs the arm written last when
-several arms have the scrutinee's constructor: its `arm_value`
+also defined for every typed program, and it runs the arm written last
+when several arms have the scrutinee's constructor: its `arm_value`
 consults the newest arm first. `select` takes the arm written first.
 `selected_value` is the value that the arm `select` gives would have, read
 from the same row values as `arm_value` reads.
 
 When no arm repeats the pattern of an earlier arm, the two agree: `arm_value`
 is `selected_value` for every constructor, whether or not an arm is written
-for it. When the scrutinee's constructor has a repeated arm they can
+for it. When the scrutinee's constructor has a repeated arm `select`
+and the table evaluator can
 disagree. For two arms with the one constructor, `arm_value` is the value of the second arm's body and
 `selected_value` the value of the first's, and these differ whenever the
 bodies' values do. Such a match can be typed, since
 [typing ignores repeated arms](Types.md#r-types.judgment.coverage-separate),
 and the table evaluator gives it a value. This chapter
 [rejects](#r-patterns.coverage.repeated) the match, as the static
-semantics does, and the step relation of the dynamic semantics is not
-stated of it, so no admitted program reaches the disagreement; the table
-evaluator does not use that check.
+semantics does, so no admitted program reaches the disagreement; the table
+evaluator does not use that check, and neither does the step relation,
+which agrees with `select` there.
 
 That the two functions differ is open. `select`, and with it the production
 `FrenHirToThir.selectArm` that the evaluator and confirmation call, is not

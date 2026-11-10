@@ -12,9 +12,11 @@ which is the arm that
 constructor that has no arm, the chain runs its fallback, where `select`
 names none, so the two agree only on a match whose arms
 [cover](../Language/Patterns.md#r-patterns.coverage.covered) the constructor.
-`select` in turn is the selection of the dynamic semantics, which is
-stated for matches in which
-[no arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics).
+`select` in turn is the
+[selection of the dynamic semantics](../Language/DynamicSemantics.md#r-dynamics.match.selection),
+whose step relation takes the first arm written for a constructor in
+every typed match, whether or not
+[an arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics).
 It can differ from the selection of that semantics' table evaluator for a
 constructor that has a repeated arm, in a match that is a static error.
 

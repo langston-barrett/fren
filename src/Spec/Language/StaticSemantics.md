@@ -14,7 +14,7 @@ a meaning to a function only when its declaration and the declaration of
 every function that it depends on are verified and their assumptions are
 true. The
 [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
-program with distinct arms, verified or not.
+program, verified or not.
 
 A rule whose `r[...]` line names no Fren definition is stated in prose
 only. [Definedness and verification](PropertiesAndChecks.md) states
@@ -66,7 +66,9 @@ and the diagnostics that report a failure belong to the
 [tooling part](../Tooling/index.md). A *static error* is a failure of a
 condition that this chapter states of the written program and that no
 hypothesis can discharge. A program with a static error has no judgment
-of this chapter other than typing, and no evaluation.
+of this chapter other than typing. It may still be well typed, and the
+[dynamic semantics](DynamicSemantics.md#r-dynamics.scope) evaluates
+every well-typed program.
 
 r[statics.declaration]
 A program's declarations are function declarations and expectation
@@ -153,7 +155,12 @@ conditions other than an expectation mentions g, or mentions a function
 that reaches g. So the declaration of a function f depends on exactly
 the functions that f reaches, and f is said to depend on them too. An
 expectation depends on the functions that it mentions and on those that
-they reach; its declaration does not depend on them for that.
+they reach; its declaration does not depend on them for that. An
+expectation is outside the static semantics. It is typed, and its arms
+are [distinct](#r-statics.match.distinct), as those of every written
+expression are. Beyond that no judgment of this chapter is of an
+expectation: definedness, entailment, admissibility and the termination
+check have no premise about one.
 
 ## Distinct arms
 
@@ -166,10 +173,12 @@ arms for one constructor is a static error. Typing does not establish the
 condition: a well-typed match stays well typed when an arm is
 [repeated](Types.md#r-types.judgment.coverage-separate). Every judgment
 that this chapter defines after this rule is stated of expressions with
-distinct arms only, and the
-[dynamic semantics](DynamicSemantics.md#r-dynamics.scope) evaluates no
-other expression. So a match has at most one arm for a constructor, and
-no rule of the three semantics chooses among several. The compiler
+distinct arms only, and so are the denotations. So a match has at most
+one arm for a constructor there, and no rule of this chapter or of the
+denotational semantics chooses among several. The
+[dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection) is
+defined for every well-typed expression, with distinct arms or not: for a
+constructor with several arms it selects the first one written. The compiler
 rejects a match that repeats a constructor in its
 [coverage validation](../Compiler/Thir.md#r-thir.validation.coverage).
 
@@ -276,7 +285,11 @@ that same declaration, selected by keyword and never by position, as the
 states. The *hypotheses of a declaration* d, Φ_d, are its preconditions
 and its assumptions. A precondition and an assumption have no hypotheses.
 The body, the postcondition's entailment and each asserted fact have Φ_d.
-An expectation has Φ_d and the asserted facts. No condition of another
+An expectation has Φ_d and the asserted facts where a
+[check](PropertiesAndChecks.md#r-verification.keyword.scope) reads it.
+[Its truth](DenotationalSemantics.md#r-denotation.truth) is read under
+Φ_d, and no judgment of this chapter is made of it. No
+condition of another
 declaration is a hypothesis, and an expectation is a hypothesis of
 nothing. In particular an assumption is a hypothesis only within its own
 declaration: a caller of f does not have f's assumptions among its
@@ -292,7 +305,9 @@ it. A precondition and an assumption are
 [hypotheses](#r-statics.condition.scope) of the body and of the other
 conditions. The postcondition is what a caller knows of the function's
 value, and what the body knows of a call into its own group. An asserted
-fact is a hypothesis of the declaration's expectations. A function's
+fact is [entailed](#r-statics.declaration.defined) by the declaration's
+hypotheses, and a check of the declaration's expectations takes it as a
+hypothesis. A function's
 body may call the function's group, and these conditions may not. Since
 a function [calls](#r-statics.call-order.relation) what these conditions
 mention, the rule also excludes a cycle that passes through one of them:
@@ -330,15 +345,22 @@ meet their contracts and have true assumptions, as
 r[statics.declaration.defined]
 A function declaration is defined, `Σ ⊢ d defined`, when its contract is
 well formed, each assumption is defined under no hypotheses, its body is
-defined under Φ_d, each asserted fact is defined under Φ_d and entailed
-by it, and each expectation is defined under Φ_d and the asserted facts.
+defined under Φ_d, and each asserted fact is defined under Φ_d and
+entailed by it.
 An expectation declaration is defined by the same rule without the
 contract and the body: its Φ_d is its assumptions. In both cases
 [no condition of d other than an expectation mentions a function of d's own recursive group](#r-statics.condition.group),
 and every function that an assumption of d mentions
 [passes the termination check hereditarily](#r-statics.condition.terminating). The rule
-asks for the definedness of an expectation and never for its truth. It
-has no premise about the postcondition's truth, and none about whether d
+has no premise about an expectation, neither about its truth nor about
+its definedness: an expectation is outside the static semantics. Whether
+an expectation has a value and whether it is true are read
+[through the denotations](DenotationalSemantics.md#r-denotation.truth),
+and a tool
+[reports them as verdicts](PropertiesAndChecks.md#r-verification.program.verified).
+So a declaration is defined or not whatever expectations it states. The
+rule has no premise about the postcondition's truth either, and none
+about whether d
 itself or d's recursive group passes the termination check.
 
 ```text
@@ -347,7 +369,6 @@ itself or d's recursive group passes the termination check.
   every function that A mentions passes the check hereditarily
   Σ; Δ; Φ ⊢ e def
   Σ; Δ; Φ ⊢ φ def        Σ; Δ; Φ ⊨ φ      for each asserted fact φ
-  Σ; Δ; Φ, φ₁, …, φₘ ⊢ ψ def              for each expectation ψ
   no A and no φ mentions a function of f's recursive group
   ──────────────────────────────────────────────────────────────
   Σ ⊢ function f with body e defined
@@ -365,9 +386,11 @@ expectation declaration has no contract to meet.
 r[statics.entailment]
 `Σ; Γ; Φ ⊨ φ` is a judgment of one declaration d, about Boolean
 expressions typed in Γ. The notation leaves d out: it is the declaration
-in whose body or condition the expression is written, and
+in whose body, or in whose condition other than an expectation, the
+expression is written, and
 [definedness](#r-statics.definedness.rules) is of that declaration in
-the same way. An expression that is written in no declaration, as where
+the same way. Neither judgment is made of an expectation or of a part of
+one. An expression that is written in no declaration, as where
 another chapter speaks of an expression defined under Φ, is judged as
 the body of a declaration that is in no recursive group and has the
 hypotheses Φ: it depends on the functions that it or Φ mentions and on
@@ -394,10 +417,9 @@ second is on contracts: for every function g that d depends on, those of
 d's own recursive group included, and every tuple w̄ at which I gives g a value
 u, if g's precondition is true at w̄ under I, then g's postcondition is
 not false at w̄ and u under I. Both conditions read the call order and
-no order chosen among the [strata](#r-statics.stratification). Where an
-expectation of d is judged, a function that the expectation depends on
-is constrained as well: by both conditions when it does not reach d's
-function, and by the second alone when it does. Admissibility asks
+no order chosen among the [strata](#r-statics.stratification). A
+function that only an expectation of d mentions is not constrained: no
+expectation is judged. Admissibility asks
 nothing about the tuples at which I gives no value, nothing about a
 function that is not named here, and nothing about the termination
 check.
@@ -411,8 +433,7 @@ Several orders may do, and no judgment depends on the choice.
 An interpretation admissible for a declaration is constrained by the
 bodies of the functions that the declaration depends on outside its
 group and by the contracts of those functions and of the declaration's
-own group, which are of earlier strata or of its own. A function that
-only an expectation mentions may be of a later stratum.
+own group, which are of earlier strata or of its own.
 
 ## Termination
 
@@ -514,7 +535,7 @@ its declarations is. A program is verified, `⊢ (Σ, ds) verified`, when it
 is [well typed](Types.md#r-types.program.typing), it has distinct arms
 and each of its declarations is verified: it is typed, it
 is defined, it meets its contracts and it passes the termination check.
-The truth of an expectation is no part of it:
+Neither the truth of an expectation nor its definedness is part of it:
 [a verified program may state a false expectation](DenotationalSemantics.md#r-denotation.truth).
 Being verified is a property of one declaration. It does not state that
 the function's evaluation ends: the body of a verified declaration may
@@ -618,7 +639,16 @@ function that d depends on
 [have a denotation](DenotationalSemantics.md#r-denotation.domain). If
 `Σ; Γ; Φ ⊨ φ` holds in d and φ is defined under Φ, then every assignment
 at which each hypothesis of Φ denotes true is one at which φ denotes
-true. The property asks nothing of a declaration that d does not depend
+true. Here φ and the hypotheses of Φ are written in d's body or in
+conditions of d other than expectations, as
+[entailment](#r-statics.entailment) is stated of no other expression. So
+every function that φ or Φ mentions is one that d depends on, and has a
+denotation. The property says nothing of an expectation: a function that
+only an expectation of d mentions may have no denotation while d is
+verified, and
+[the truth of an expectation](DenotationalSemantics.md#r-denotation.truth)
+is asked only where the functions that it mentions have denotations. The
+property asks nothing of a declaration that d does not depend
 on, and nothing of d's own assumptions beyond what Φ holds, unless d is
 recursive and so depends on its own function.
 
@@ -723,4 +753,8 @@ With an enum of the constructors `A` and `B`, the match
 `match e { A => 1, A => 2, B => 3 }` is well typed and has an arm for
 each constructor. Its arms are not
 [distinct](#r-statics.match.distinct), so a program that writes it is in
-error: it is not defined, and it has no evaluation.
+error, and it is not defined. It is still well typed, so the dynamic
+semantics evaluates it:
+[selection](DynamicSemantics.md#r-dynamics.match.selection) takes the
+first arm written for a constructor, and where e ends in `A` the match
+ends in 1.

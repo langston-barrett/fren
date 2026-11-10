@@ -2,10 +2,10 @@
 
 The dynamic semantics evaluates an expression. It is operational and
 small-step: a one-step relation rewrites a configuration, and an
-evaluation is a run of steps. It is defined for every well-typed program
-with [distinct arms](StaticSemantics.md#r-statics.match.distinct),
-whether or not the program is
-[verified](StaticSemantics.md#r-statics.program.verified). A run has one
+evaluation is a run of steps. It is defined for every well-typed
+program, whether or not the program is
+[verified](StaticSemantics.md#r-statics.program.verified) and whether or
+not it has a [static error](StaticSemantics.md#r-statics.scope). A run has one
 of three results: it ends in a value, it ends in an error state, or it
 diverges. Evaluation contexts fix one order of evaluation. An operation
 outside its domain steps to an error state, and never to an arbitrary
@@ -63,17 +63,18 @@ only. What this chapter states in Fren is
 
 The values v are those of the
 [denotational semantics](DenotationalSemantics.md#values). P is a
-well-typed program with
-[distinct arms](StaticSemantics.md#r-statics.match.distinct).
+well-typed program.
 
 ## Scope
 
 r[dynamics.scope]
-The dynamic semantics is defined for every well-typed program with
-[distinct arms](StaticSemantics.md#r-statics.match.distinct), and for the
-well-typed expressions with distinct arms over it. A program in which a
-match has two arms for one constructor is in error statically, and this
-chapter gives it no evaluation. The dynamic semantics reads no contract,
+The dynamic semantics is defined for every well-typed program, and for
+the well-typed expressions over it. A program in which a match has two
+arms for one constructor is
+[in error statically](StaticSemantics.md#r-statics.match.distinct) and is
+still well typed, so this chapter evaluates it:
+[selection](#r-dynamics.match.selection) takes the first of the arms. The
+dynamic semantics reads no contract,
 no hypothesis, no result of the termination check and no solver's answer:
 a run depends only on the program, the expression and the assignment. It
 evaluates the bodies of functions and never their conditions, unless a
@@ -92,15 +93,13 @@ newest local has none until the let's value is known. So the pair is a
 closure, and a let is the one place where the replacement of locals is
 delayed. A *state* is a configuration
 or an error state `error(k)`. An error state is not a configuration: no
-context holds one, and no operator or call takes one as an operand. The
-arms of every match in a configuration are
-[distinct](StaticSemantics.md#r-statics.match.distinct):
-[loading](#r-dynamics.configuration.loading) keeps the constructors of a
-match's arms, and so does every step.
+context holds one, and no operator or call takes one as an operand.
+[Loading](#r-dynamics.configuration.loading) keeps the arms of a match in
+the order in which they are written, and so does every step.
 
 r[dynamics.configuration.loading]
 *Loading* gives the configuration `⟨e, ρ⟩` of an expression e, well typed
-in a context Γ and with distinct arms, at an assignment ρ of Γ. It is
+in a context Γ, at an assignment ρ of Γ. It is
 defined by recursion on e
 and evaluates nothing. A literal and a constructor load to their
 [leaf values](DenotationalSemantics.md#r-denotation.leaf), and the local
@@ -220,11 +219,16 @@ not follow the order: it requires both operands of `and` and of `or` to
 be defined, under the same hypotheses.
 
 r[dynamics.match.selection]
-A match selects, for a scrutinee value that is the constructor c, the arm
-whose constructor is c. The arms of a match are
-[distinct](StaticSemantics.md#r-statics.match.distinct), so at most one
-arm has that constructor, and selection chooses among none. When no arm
-has it, the match selects no arm and steps to `error(no-arm)`.
+A match selects, for a scrutinee value that is the constructor c, the
+first arm written whose constructor is c. So selection gives exactly one
+arm or none, in every well-typed match. Where the arms of the match are
+[distinct](StaticSemantics.md#r-statics.match.distinct), at most one arm
+has that constructor, and it is the arm selected. Where several arms
+have it, the match is a static error; it is still well typed, and
+selection takes the first of them and never an arm written after it.
+This is the arm that [`select`](Patterns.md#r-patterns.matching.select)
+gives. When no arm has the constructor, the match selects no arm and
+steps to `error(no-arm)`.
 
 r[dynamics.operators.total]
 `op(v) = r` and `op(v₁, v₂) = r` give an operator's outcome at operand
@@ -352,9 +356,10 @@ the rows before it. A literal, a local and a constructor have their
 [leaf values](DenotationalSemantics.md#r-denotation.leaf). An
 operator row has the result of `unary_value` or `binary_value` at its
 operands' values. A conditional has the value of the branch that its
-condition selects, and a match the value of the arm that
-[selection](#r-dynamics.match.selection) gives for its scrutinee's
-constructor. A let row is evaluated in two steps: its value v in ρ, then
+condition selects, and a match the value of the arm that `arm_value`
+takes for its scrutinee's constructor: the last arm written for it, which
+is the arm that [selection](#r-dynamics.match.selection) gives when no
+arm of the match is repeated. A let row is evaluated in two steps: its value v in ρ, then
 its body in the assignment that keeps the levels of the let's own context
 and appends v. `eval(t, r, ρ)` is the value of row r.
 
@@ -439,7 +444,7 @@ pub fn eval(rows: Snoc<Row>, pos: Int, env: Snoc<Value>): Option<Value> :=
 r[dynamics.table.differences]
 The table evaluator is not the step relation, and it differs from it in
 six ways. The compiler's evaluator is a third function, and the
-[evaluator chapter](../Compiler/Evaluator.md) lists the five ways in
+[evaluator chapter](../Compiler/Evaluator.md) lists the four ways in
 which it differs from the step relation; the two lists are of different
 evaluators and are kept apart. It computes a row's value in one pass over the rows before
 it, and has no configurations, steps or runs. It has no error state: a
@@ -449,13 +454,14 @@ relation reduces each. It needs the second operand of `and` and of `or`
 even where the first decides the result, so a row has no value when that
 operand has none, where the step relation never evaluates it. It cannot
 diverge. And for a match with two arms for its scrutinee's constructor,
-`arm_value` takes the arm written last, where the step relation is not
-defined. Such a match is a
+`arm_value` takes the arm written last, where the
+[step relation](#r-dynamics.match.selection) takes the arm written
+first, so the two can give different values. Such a match is a
 [static error](StaticSemantics.md#r-statics.match.distinct), so this last
-difference is not reachable on a program that the static semantics
-accepts.
-[Where it gives a value](#r-dynamics.theorem.table-agreement) in a
-program with distinct arms, the step relation gives the same one.
+difference is reached only in a program that has that error; the unit
+that aligns the evaluators removes it.
+[Where it gives a value](#r-dynamics.theorem.table-agreement) to an
+expression with distinct arms, the step relation gives the same one.
 
 r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, evaluation_examples::{bound, unbound, uncomputed}}
 `let d := 2 in 10 - d` has this table; row 4 is the let.
@@ -509,35 +515,38 @@ A configuration takes at most one step. A configuration that is not a
 value decomposes in exactly one way into an evaluation context E and a
 configuration m that is not a value and whose evaluated children are all
 values, and m has at most one [reduction](#r-dynamics.step.reductions).
-For a match this is because its arms are
-[distinct](#r-dynamics.match.selection): selection gives one arm or
-none. Every derivation of a step of `E[m]` ends in that reduction: the
+For a match this is because
+[selection](#r-dynamics.match.selection) gives the first arm written for
+the scrutinee's constructor, which is one arm or none, whether or not the
+arms are distinct. Every derivation of a step of `E[m]` ends in that reduction: the
 context rules, applied through E or through the contexts that compose to
 E, derive the same step. So a run from a configuration is unique, and an
 evaluation has exactly one of the three results, or it reaches a stuck
 configuration.
 
 r[dynamics.theorem.progress]
-In a well-typed program with distinct arms, a configuration that has a
+In a well-typed program, a configuration that has a
 type is a value or takes a step, to a configuration or to an error state
 of one of the
 [two kinds](#r-dynamics.error.kinds). It is not stuck.
 
 r[dynamics.theorem.preservation]
-In a well-typed program with distinct arms, a step keeps the type: if
+In a well-typed program, a step keeps the type: if
 `P ⊢ m : τ` and `P ⊢ m → m′`, then `P ⊢ m′ : τ`. The initial
-configuration of an expression of type τ with distinct arms, at an
+configuration of an expression of type τ, at an
 assignment of its context, has the type τ.
 
 r[dynamics.theorem.type-safety]
 Type safety is [progress](#r-dynamics.theorem.progress) and
 [preservation](#r-dynamics.theorem.preservation) together. In a
-well-typed program with distinct arms, a well-typed expression of type τ
-with distinct arms, at an assignment of its context, ends in a valid
+well-typed program, a well-typed expression of type τ, at an assignment
+of its context, ends in a valid
 value of type τ, or ends in an error of
 one of the two kinds, or [diverges](#r-dynamics.divergence). It never
 reaches a stuck configuration. The theorem does not say that evaluation
-ends, and it needs neither definedness nor termination.
+ends, and it needs neither definedness nor termination. None of the
+three needs distinct arms: every arm of a well-typed match has the
+match's type, whichever arm selection takes.
 
 r[dynamics.theorem.big-step]
 The derived judgment agrees with the runs that end:
@@ -596,7 +605,7 @@ and it diverges at every argument.
 
 r[dynamics.theorem.partial-correctness]
 A function need not pass the termination check to be partially
-correct. Let f be a function of a well-typed program with distinct arms,
+correct. Let f be a function of a well-typed program,
 and let the declaration of f and of every function that f depends on be
 [defined](StaticSemantics.md#r-statics.declaration.defined) and
 [meet its contract](StaticSemantics.md#r-statics.contract.meets), with
@@ -616,8 +625,9 @@ The theorem needs all of these conditions and not the termination check
 of the mentioned functions alone.
 
 r[dynamics.theorem.table-agreement]
-Let P be a [well-typed](Types.md#r-types.program.typing) program with
-distinct arms, let the table be a derivation of `Γ ⊢ e : τ` in it, and
+Let P be a [well-typed](Types.md#r-types.program.typing) program, let
+the table be a derivation of `Γ ⊢ e : τ` in it in which the arms of every
+match are [distinct](StaticSemantics.md#r-statics.match.distinct), and
 let ρ be an assignment of Γ. Where the
 [table evaluator](#the-table-evaluator) gives the table's last row a
 value v at ρ, the expression e has that outcome: `P ⊢ ⟨e, ρ⟩ →* v`. The
@@ -625,6 +635,14 @@ same holds of each earlier row with the expression and the context that
 the row derives. The premises are needed: loading is defined only for a
 well-typed expression at an assignment of its context, and the table
 evaluator also gives values to rows of a table that is no derivation.
+This is the one theorem of the chapter that asks for distinct arms. The
+step relation is defined without them, but for a constructor with
+several arms the table evaluator
+[takes the last arm written](#r-dynamics.table.differences) and the step
+relation the first, so without the premise the two can give different
+values. The premise is on the expression only, since the table evaluator
+gives no value to a call and so reads no other declaration. It goes when
+the evaluators are aligned.
 
 r[dynamics.theorem.implementation]
 An implementation that evaluates in another order, that leaves an unused
@@ -632,7 +650,7 @@ let's value unevaluated, that evaluates in one pass and not by steps, or
 that omits a check which verification has discharged, agrees with this
 chapter where [adequacy](#r-dynamics.theorem.adequacy) applies: on the
 expressions, and at the assignments, of that theorem, in a well-typed
-program with distinct arms. The property is not yet stated formally, and
+program. The property is not yet stated formally, and
 its formal statement will name those premises for each implementation. The
 [evaluator chapter](../Compiler/Evaluator.md) states how the compiler's
 evaluator differs from this chapter elsewhere.

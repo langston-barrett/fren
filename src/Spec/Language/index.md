@@ -23,7 +23,7 @@ verified. The
 set-theoretic meaning to each function that is verified together with
 the functions that it depends on, where their assumptions are true. The
 [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
-program whose matches have distinct arms by a small-step relation, with error states and one fixed order
+program by a small-step relation, with error states and one fixed order
 of evaluation; a run ends in a value, ends in an error, or diverges.
 [Definedness and verification](PropertiesAndChecks.md) defines the obligations
 of a typed expression, the hypotheses under which each must be proved, and
@@ -65,7 +65,7 @@ assumptions are true; the function then
 [has a denotation](DenotationalSemantics.md#r-denotation.domain). It
 assigns no meaning to an undefined
 operation and prescribes no evaluation order. The dynamic semantics is
-defined for every well-typed program with distinct arms: an undefined operation evaluates to
+defined for every well-typed program: an undefined operation evaluates to
 an error, in one fixed order, and unbounded recursion diverges.
 [Adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy) states where
 the two agree: an expression over functions that have denotations,

@@ -54,7 +54,7 @@ denotational semantics gives a meaning only to a function whose
 declaration is verified together with those that it depends on, with
 true assumptions, and
 prescribes no evaluation order. The dynamic semantics is small-step and is
-defined for every well-typed program with distinct arms, with error states, divergence and
+defined for every well-typed program, with error states, divergence and
 one fixed evaluation order, given by evaluation contexts. Source constructs are defined
 by derived forms translating to the typed Core, and a source program is
 well typed exactly when its translation is.

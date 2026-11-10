@@ -19,7 +19,7 @@ function that depends on it. The chapter proceeds
 denotation is total on its domain: it has no undefined result, no error
 value and no case for a zero divisor, and it has no order of evaluation.
 The [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
-program with distinct arms, and
+program, and
 [adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy) states where
 the two agree.
 

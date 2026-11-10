@@ -364,19 +364,15 @@ chapters is prose.
   `thir.validation.coverage`, which `coverageCases` in
   `src/FrenHirToThirTests/Walking.lean` and the coverage examples of
   `src/Spec/Compiler/Mir.lean` test, but no `impl` binds that check to
-  the rule. The table evaluator takes the last of two such arms and the
-  compiler's evaluator the first; the evaluators are not yet aligned.
+  the rule. Such a match is still well typed, and the step relation
+  selects the first of two such arms (`dynamics.match.selection`), as
+  the compiler's evaluator does. The table evaluator takes the last; the
+  evaluators are not yet aligned, and `dynamics.theorem.table-agreement`
+  carries a distinct-arms premise until they are.
   The rule also has two Fren definitions whose agreement is not proved:
   `arms_distinct?` in the static semantics and `reachable?` with
   `repeats` in the Patterns chapter. One of them should own the rule and
   the other cite it.
-- [ ] An expectation makes no call in the static call order, and
-  `statics.condition.group` does not restrict it. Its definedness is
-  still a premise of its declaration's, judged under interpretations
-  that constrain a function reaching the declaration's own function by
-  its contract only (`statics.entailment.admissible`). Whether the
-  definedness of an expectation belongs to the static semantics at all
-  is open.
 - [ ] `statics.condition.group` and `statics.condition.terminating` are
   prose: no checker enforces them yet.
 - [ ] Write the definedness rules, the denotational equations and the

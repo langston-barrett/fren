@@ -9,7 +9,7 @@ evaluation. This evaluator agrees with it where
 [adequacy](../Language/DynamicSemantics.md#r-dynamics.theorem.adequacy)
 applies, as its
 [implementation property](../Language/DynamicSemantics.md#r-dynamics.theorem.implementation)
-states, and differs from it elsewhere in five ways. The table evaluator
+states, and differs from it elsewhere in four ways. The table evaluator
 of the dynamic semantics is another function, with
 [six differences of its own](../Language/DynamicSemantics.md#r-dynamics.table.differences).
 It is a recursive
@@ -20,15 +20,17 @@ semantics evaluates every let's value. It has one undefined outcome,
 where the dynamic semantics has two kinds of error. It evaluates only
 the admitted nonrecursive programs, so it always ends, where an
 evaluation of the dynamic semantics may
-[diverge](../Language/DynamicSemantics.md#r-dynamics.divergence). For a
-match with two arms for its scrutinee's constructor it takes the arm
-written first, where the
+[diverge](../Language/DynamicSemantics.md#r-dynamics.divergence). Arm
+selection is not among the differences: for a
+match with two arms for its scrutinee's constructor this evaluator takes
+the arm written first, as the
+[step relation](../Language/DynamicSemantics.md#r-dynamics.match.selection)
+does. The
 [table evaluator](../Language/DynamicSemantics.md#r-dynamics.table.differences)
-of the dynamic semantics takes the one written last and the step
-relation is not defined. Such a match is a
+of the dynamic semantics takes the one written last. Such a match is a
 [static error](../Language/StaticSemantics.md#r-statics.match.distinct),
 which [coverage validation](Thir.md#r-thir.validation.coverage) rejects,
-so this difference is not reachable on an accepted program. The
+so this evaluator, which runs only accepted programs, meets none. The
 [static semantics](../Language/StaticSemantics.md) separately defines
 declarative source verification.
 
@@ -210,19 +212,19 @@ names. The evaluator's walk selects it with `FrenHirToThir.selectArm`, the
 function that confirmation also calls, and the Thir wrapper proves that
 function equal to `select`.
 
-`select` takes the first arm written for a constructor, where the
+`select` takes the first arm written for a constructor, and so does the
+[step relation](../Language/DynamicSemantics.md#r-dynamics.match.selection)
+of the dynamic semantics, on every well-typed match. The
 [table evaluator](../Language/DynamicSemantics.md#r-dynamics.table.differences)
-of the dynamic semantics takes the last. The two
+of the dynamic semantics takes the last. `select` and the table evaluator
 [agree when no arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics),
 so on a typed match whose scrutinee's constructor has a repeated arm this
 evaluator can run an arm other than the one that the table evaluator
 runs. Such a match is a
 [static error](../Language/StaticSemantics.md#r-statics.match.distinct),
-and the
-[step relation](../Language/DynamicSemantics.md#r-dynamics.match.selection)
-is not stated of it, so no admitted program reaches the difference.
-Bringing the two evaluators to one choice is open and belongs
-to the unit that aligns the evaluators.
+so no admitted program reaches the difference.
+Bringing the table evaluator to the choice of the other two is open and
+belongs to the unit that aligns the evaluators.
 
 r[evaluator.selection.arm] spec::evaluator::evaluator_pick::agrees
 The arm that the evaluator selects for a constructor is the arm `select`

@@ -928,7 +928,12 @@ its scrutinee's constructors; both are conditions separate from typing
 chapter does not yet state either in Fren. No function in it calls itself, directly or through others
 ([Core typing](Types.md#r-types.program.nonrecursive)). Every
 [obligation of every declaration](#r-verification.member.obligations) is
-valid, except the `Asserted` obligation of an `expect` member. The
+valid, except the obligations of an `expect` member: its `Asserted`
+obligation and every obligation of its expression, such as a divisor's
+or a callee's `require`. An `expect` is
+[outside the static semantics](StaticSemantics.md#r-statics.declaration.defined),
+so neither its truth nor the definedness of its expression is a
+condition of a defined program. The
 keyword of each member is the one that P states, which nothing here ties
 to the source. The conditions cover a function that nothing calls. Coverage and the absence
 of recursion yield no obligations. The absence of recursion is not the
@@ -949,12 +954,34 @@ error to an operation outside its domain, and
 defined program reaches none.
 
 r[verification.program.verified]
-A defined program *meets its expectations* when the `Asserted`
-obligation of every `expect` member is valid too. Which programs are
+A defined program *meets its expectations* when every obligation of
+every `expect` member is valid too: the `Asserted` obligation and the
+obligations of the member's expression. Which programs are
 *verified* is defined by the
 [static semantics](StaticSemantics.md#r-statics.program.verified), and
-the truth of an expectation is no part of it: an `expect` is a hypothesis
-of nothing.
+neither the truth of an expectation nor the definedness of its
+expression is part of it: an `expect` is a hypothesis of nothing.
+
+What is known of an expectation is a report of tooling, read through the
+[denotations](DenotationalSemantics.md#r-denotation.truth). A check
+answers a
+[verdict](#r-verification.verdict.discharge) for each obligation of the
+`expect` member, and the member is reported in one of three ways. Where
+its expression or one of its hypotheses mentions a function that
+[has no denotation](DenotationalSemantics.md#r-denotation.domain), it is
+*not established*, whatever the checks of its obligations answer: the
+expectation has no truth value to report, and the report names the
+function. A function has no denotation where its declaration, or that of
+a function it depends on, is not verified, has opted out of the
+termination check or has a false assumption. Where all those functions
+have denotations, the member is *met* when every one of its obligations
+is discharged, and *refuted* when the check of one of them answers
+`Refuted(ρ)`. The report of a refuted member names the obligation, so an
+expression that has no value at ρ, as at a zero divisor or where a
+callee's `require` fails, is told apart from one that is false there.
+With an obligation left `Unknown` and none refuted, the member is again
+not established. None of the three reports makes a declaration
+undefined or unverified, and none changes a verdict of another member.
 
 r[verification.program.assumptions]
 Both notions are relative to assumptions, each within its own
@@ -1343,15 +1370,23 @@ of them, and let the
 [true](DenotationalSemantics.md#r-denotation.truth), that is, true at
 every argument tuple that meets their function's `require` members. Then
 every function that d depends on
-[has a denotation](DenotationalSemantics.md#r-denotation.domain), and an
-expression of d denotes a value at every assignment that makes its
+[has a denotation](DenotationalSemantics.md#r-denotation.domain), and the
+body of d and the expression of each member of d other than an `expect`
+denote a value at every assignment that makes their
 hypotheses true. That is less than every assignment that
 [satisfies](#r-verification.assignment.fact) them in this chapter's
 sense, which asks only that none be refuted. The evaluation of the
 expression there ends in that value by
 [adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy), and a
 function that d depends on is
-[totally correct](DynamicSemantics.md#r-dynamics.theorem.total-correctness). The
+[totally correct](DynamicSemantics.md#r-dynamics.theorem.total-correctness).
+The statement is not of an `expect` member: the
+obligations of one are no part of a defined program, and a function that
+only an `expect` mentions is not one that d depends on. The expression
+of an `expect` member denotes a value at the assignments that make its
+hypotheses true under two
+further premises: every obligation of the member is valid, and every
+function that the member mentions has a denotation. The
 `assume` members of d itself are among the hypotheses, and those of a
 declaration that d does not depend on are not asked to be true. Without
 the condition on opting out the statement fails as written: where `g()`

@@ -11,8 +11,7 @@ with, and supplies identities, and
 [Definedness and verification](PropertiesAndChecks.md) defines the
 obligations that verification proves. The
 [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
-program whose matches have
-[distinct arms](StaticSemantics.md#r-statics.match.distinct), and the
+program, and the
 [denotational semantics](DenotationalSemantics.md) gives
 a meaning to the functions that are
 [verified together with the functions that they depend on](DenotationalSemantics.md#r-denotation.domain). Typing alone establishes neither definedness nor logical truth.
@@ -1063,8 +1062,7 @@ pub proc judgment_weakening(symb: Symb, rows: Snoc<Row>, ctx: Ctx, ty: Ty, extra
 ```
 
 r[types.safety]
-Typing is sound for the dynamic semantics: in a well-typed program with
-[distinct arms](StaticSemantics.md#r-statics.match.distinct),
+Typing is sound for the dynamic semantics: in a well-typed program,
 evaluating a well-typed expression under values of its context's types
 ends in a value of its type, or ends in an error, or diverges, and is
 never stuck. The
