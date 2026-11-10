@@ -44,7 +44,7 @@ derived type is well formed. The [interface](#r-types.overview.interface)
 at the end of the chapter states these as a contract of uninterpreted
 functions, which the chapter's wrapper interprets by the detailed
 definitions. That an *expression* has at most one type, whatever
-derivation types it, is the open [uniqueness of an expression's
+derivation types it, is the [uniqueness of an expression's
 type](#r-types.derivation.unique-expression); two tables with the same rows
 have the same types by [determinism for a table](#r-types.derivation.unique).
 The other headline laws are stated with the detailed definitions:
@@ -53,6 +53,8 @@ formed; [weakening](#r-types.judgment.weakening), that a derivation
 survives extending its context; [inference for a
 layer](#r-types.layer.inference), that a layer's type can be computed; and,
 open, [decidability of the judgment](#r-types.judgment.decidability).
+That the tables mean what the rules mean read as trees is
+[adequacy](#r-types.judgment.adequacy), which is proved in Lean.
 `fren trace` reports the evidence for each law stated as a procedure.
 
 ## Semantic objects
@@ -1127,14 +1129,21 @@ pub fn alike?(
 
 r[types.judgment.adequacy]
 The judgment agrees with the inductive reading of the rules: `Σ; Γ ⊢ e : τ`
-holds exactly when a finite tree of rule instances concludes it. Fren cannot
-state the tree reading, so this is stated here and open.
+holds exactly when Σ and Γ are well formed and a finite tree of rule
+instances concludes it. Each node of the tree is an instance of the rule for
+its form, with one subtree for each written child of the form, in the
+context that the rule gives that child. The two well-formedness conditions
+are part of the reading and do not follow from the tree: the [rule for a
+Boolean literal](#r-types.expression.boolean) has an instance under any Σ
+and Γ. Fren cannot state the tree reading, so no procedure states this law;
+it is proved in Lean beside the chapter's wrapper. By it, [regularity](#r-types.judgment.regularity),
+[weakening](#r-types.judgment.weakening) and the uniqueness below hold of an
+expression and its trees as they do of tables.
 
 r[types.derivation.unique-expression] spec::types::expression_uniqueness::unique
 Typing is deterministic for an expression: if `derivation?(Σ, l, Γ, τ)` and
 `derivation?(Σ, r, Γ, υ)` and their roots unfold alike, then τ = υ, whatever
-the two tables' sharing of rows and extra rows. This is open: its
-procedure has no `impl`, and a `trusted` claim says so.
+the two tables' sharing of rows and extra rows.
 
 ```fren
 -- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
@@ -1154,8 +1163,6 @@ pub proc expression_uniqueness(
         and alike?(left, length(left) - 1, right, length(right) - 1, pairs),
         a = b
 }
-
-trusted expression_uniqueness: "open: lifting table_uniqueness across tables whose roots unfold alike is not yet proved"
 ```
 
 r[types.judgment.decidability]
