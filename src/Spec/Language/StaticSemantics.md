@@ -10,7 +10,9 @@ and of contracts. It names the judgment of termination, which a chapter
 of its own will define. A program that satisfies all of them is
 *verified*: it is typed, it is defined, it meets its contracts and it
 terminates. The [denotational semantics](DenotationalSemantics.md) gives
-a meaning to verified declarations only. The
+a meaning to a function only when its declaration and the declaration of
+every function that it depends on are verified and their assumptions are
+true. The
 [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
 program with distinct arms, verified or not.
 
@@ -283,16 +285,22 @@ Every function that a precondition, the postcondition or an assumption
 of a declaration mentions
 [terminates hereditarily](#r-statics.termination): its declaration
 passes the termination check, and so does the declaration of every
-function that it reaches. The rule is about the declarations that the
+function that it reaches, so that none of them opts out. The rule is
+about the declarations that the
 condition depends on, which are of earlier strata, and not about the
 termination of the declaration that states the condition. A declaration
 that [opts out](#r-statics.termination.optional) of the termination
 check has not passed it, so no precondition, postcondition or assumption
 mentions its function or a function that reaches it. An asserted fact
 and an expectation are not so restricted. The rule asks for more than
-the check of the mentioned function alone: a function g with the body
-`h(0)` is in no recursive group and passes the check whatever h does,
-and its evaluation diverges where that of `h(0)` does.
+the check of the mentioned function alone: a function g whose body is
+`h(0)`, where h does not reach g, is in no recursive group and passes
+the check even when h has opted out, and its evaluation diverges where
+that of `h(0)` does. The rule is a premise about the termination check
+and about nothing else. It does not by itself give a condition a truth
+value: the functions that the condition depends on must also be defined,
+meet their contracts and have true assumptions, as
+[the property of conditions](#r-statics.property.conditions) states.
 
 r[statics.declaration.defined]
 A function declaration is defined, `Σ ⊢ d defined`, when its contract is
@@ -376,9 +384,19 @@ defines the judgment. Until it does, the judgment is the placeholder
 below: a declaration terminates when it has not
 [opted out](#r-statics.termination.optional) of the check and either it
 is in no recursive group or its recursion is
-[structural](#r-statics.call-order.structural). A function *terminates
+[structural](#r-statics.call-order.structural). The judgment is of one
+declaration and reads no other declaration's check: a declaration that
+is in no recursive group passes it whether or not the functions that it
+calls do. A function *terminates
 hereditarily* when its declaration terminates and so does the declaration
-of every function that it reaches.
+of every function that it [reaches](#r-statics.call-order.relation):
+each of them passes the check, and none has opted out. Neither notion
+alone states that an evaluation ends. A function's evaluation is stated
+to end only where the function
+[has a denotation](DenotationalSemantics.md#r-denotation.domain): it
+terminates hereditarily, and its declaration and the declaration of
+every function that it reaches are defined, meet their contracts and
+have true assumptions.
 
 r[statics.termination.optional]
 The termination check need not be applied to every declaration. A
@@ -387,9 +405,11 @@ a declaration is marked so, and this chapter states only what follows. A
 declaration that opts out has not passed the check: `Σ ⊢ d terminates`
 does not hold of it, whether or not it is recursive. Such a declaration
 may be well typed, be defined and meet its contract. It is not
-[verified](#r-statics.program.verified), its function has no denotation,
-and
-[no precondition, postcondition or assumption mentions its function](#r-statics.condition.terminating).
+[verified](#r-statics.program.verified), neither its function nor a
+function that reaches its function has a denotation, and
+[no precondition, postcondition or assumption mentions its function or a function that reaches it](#r-statics.condition.terminating).
+A declaration whose body calls its function may still be verified, since
+the termination check of that declaration does not read it.
 
 r[statics.call-order.instances]
 A *call instance* is a pair `(f, v̄)` of a function and a tuple of values of
@@ -431,6 +451,15 @@ is well typed and each of its declarations is verified: it is typed, it
 is defined, it meets its contracts and it passes the termination check.
 The truth of an expectation is no part of it:
 [a verified program may state a false expectation](DenotationalSemantics.md#r-denotation.truth).
+Being verified is a property of one declaration. It does not state that
+the function's evaluation ends: the body of a verified declaration may
+call a function whose declaration is not verified, such as one that has
+opted out of the termination check and diverges. The theorems about
+evaluation are stated of a function that
+[has a denotation](DenotationalSemantics.md#r-denotation.domain), whose
+declaration is verified together with the declaration of every function
+that it depends on. In a verified program every declaration is verified,
+so there the two differ only by the truth of the assumptions.
 
 ## Properties
 
@@ -465,17 +494,26 @@ otherwise; opting out can change those judgments only for the
 declarations whose contract or assumptions depend on it.
 
 r[statics.property.conditions]
-The conditions of a contract and the assumptions are total. Let d be a
-[defined](#r-statics.declaration.defined) declaration, and let every
-function that its preconditions, its postcondition and its assumptions
-depend on be defined, meet its contract and have
-[true assumptions](DenotationalSemantics.md#r-denotation.truth). Those
-functions terminate hereditarily, so each
+The conditions of a contract and the assumptions are total where the
+functions that they depend on are verified and have true assumptions.
+Let d be a
+[defined](#r-statics.declaration.defined) declaration, and let the
+declaration of every function that its preconditions, its postcondition
+and its assumptions mention, and of every function that such a function
+reaches, be defined, meet its contract and have
+[true assumptions](DenotationalSemantics.md#r-denotation.truth). Since d
+is defined, each function that those conditions mention
+[terminates hereditarily](#r-statics.condition.terminating), so each of
+the declarations just named passes the termination check too and is
+verified, and each function that the conditions mention
 [has a denotation](DenotationalSemantics.md#r-denotation.domain). Then
 each precondition and each assumption of d has a truth value at every
 assignment of d's parameters, and the postcondition has one at every
 assignment of the parameters and the result at which the precondition is
-true. This holds whether or not d itself terminates.
+true. This holds whether or not d itself terminates. The termination
+premise alone does not give it: a function that terminates hereditarily
+and whose body is `1 div 0` has no value anywhere, and a condition that
+calls it has no truth value.
 
 r[statics.property.call-order]
 Call order is well founded for every choice of decreasing parameters: no
@@ -520,9 +558,12 @@ Its evaluation there ends in that value: the function is
 Evaluation agrees with the denotation as
 [adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy) states: only
 at an assignment that makes true the hypotheses under which the evaluated
-expression is defined. A function that is defined and meets its contract
-without passing the termination check has no denotation; the dynamic
-semantics states its
+expression is defined. None of this is stated of a declaration that is
+verified while a declaration that it depends on is not: its function has
+no denotation. A function that is defined and meets its contract
+without passing the termination check has no denotation either; where
+the declarations that it depends on are defined and meet their contracts
+too, with true assumptions, the dynamic semantics states its
 [partial correctness](DynamicSemantics.md#r-dynamics.theorem.partial-correctness).
 
 r[statics.property.tables]
@@ -535,8 +576,10 @@ states no postcondition and admits no recursion. For a program without
 recursion whose postconditions are all `true` and in which no declaration
 opts out of the termination check, one direction holds: when its tables
 are [defined](PropertiesAndChecks.md#r-verification.program.defined)
-there, the program is defined by this chapter. Such a program meets its
-contracts and terminates, so it is then verified. The converse fails.
+there, the program is defined by this chapter. Each declaration of such
+a program meets its contract and, being in no recursive group and not
+opted out, passes the termination check, so each is then verified. The
+converse fails.
 The tables give
 [no value](PropertiesAndChecks.md#r-verification.validity.uncomputed) to
 a call, a product, a quotient or a remainder, so a goal that depends on

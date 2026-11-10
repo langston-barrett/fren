@@ -9,10 +9,14 @@ whether or not the program is
 of three results: it ends in a value, it ends in an error state, or it
 diverges. Evaluation contexts fix one order of evaluation. An operation
 outside its domain steps to an error state, and never to an arbitrary
-value. The [denotational semantics](DenotationalSemantics.md) is defined
-for verified declarations only;
-[adequacy](#r-dynamics.theorem.adequacy) states that there a run ends in
-a value, which is the denotation.
+value. The [denotational semantics](DenotationalSemantics.md) gives a
+meaning only to a function that
+[has a denotation](DenotationalSemantics.md#r-denotation.domain): its
+declaration and the declaration of every function that it depends on are
+verified, and their assumptions are true.
+[Adequacy](#r-dynamics.theorem.adequacy) states that an expression over
+such functions, evaluated where its hypotheses are true, ends in a
+value, which is the denotation.
 
 A rule whose `r[...]` line names no Fren definition is stated in prose
 only. What this chapter states in Fren is
@@ -554,19 +558,33 @@ u, and the postcondition is true at v̄ and u. The call does not end in an
 error and it does not diverge. This is
 [adequacy](#r-dynamics.theorem.adequacy) with
 [the contract theorem](DenotationalSemantics.md#r-denotation.theorem.contract).
-The precondition and the postcondition have truth values there, since
-[the functions that they mention terminate hereditarily](StaticSemantics.md#r-statics.condition.terminating).
+The precondition and the postcondition have truth values there: f
+depends on the functions that they mention and on every function that
+those reach, so each of them has a denotation too. The theorem is not
+stated of a function whose declaration is verified while a declaration
+that it depends on is not.
 
 r[dynamics.theorem.termination]
-Evaluation ends where the termination check has passed: this is the part
+The call of a function that
+[has a denotation](DenotationalSemantics.md#r-denotation.domain), at an
+argument tuple that meets its precondition, ends: this is the part
 of [adequacy](#r-dynamics.theorem.adequacy) that excludes divergence, and
-it has adequacy's conditions. Without the check it fails. A well-typed
-function whose body is a call of itself at its own parameters is
+it has adequacy's conditions. The termination check of the function's
+own declaration does not give it. A function whose body is a call of a
+function that has opted out of the check, and that does not reach it, is
+in no recursive group and
+[passes the check](StaticSemantics.md#r-statics.termination), and its
+call diverges where the callee's does. Nor does
+[hereditary termination](StaticSemantics.md#r-statics.termination) alone
+give a value: the call may end in an error where a declaration is not
+defined or an assumption is false. Without the check the theorem fails.
+A well-typed function whose body is a call of itself at its own
+parameters is
 [defined and meets its contract](StaticSemantics.md#r-statics.examples.recursion),
 and it diverges at every argument.
 
 r[dynamics.theorem.partial-correctness]
-A function that has not passed the termination check is partially
+A function need not pass the termination check to be partially
 correct. Let f be a function of a well-typed program with distinct arms,
 and let the declaration of f and of every function that f depends on be
 [defined](StaticSemantics.md#r-statics.declaration.defined) and
@@ -576,11 +594,15 @@ be a tuple of values of f's parameters' types at which the precondition
 of f is true. Then the call of f at v̄ reaches no error state, and if it
 ends in a value u, the postcondition of f is true at v̄ and u. The call
 may diverge, and the theorem says nothing more of one that does. The
-conditions have truth values where the theorem reads them:
-[the functions that a contract or an assumption mentions terminate hereditarily](StaticSemantics.md#r-statics.condition.terminating),
-and by the theorem's own conditions they are verified with true
+conditions have truth values where the theorem reads them. The
+declarations of f and of the functions that f depends on are defined, so
+[each function that one of their contracts or assumptions mentions terminates hereditarily](StaticSemantics.md#r-statics.condition.terminating).
+By the theorem's own conditions such a function and every function that
+it reaches are also defined and meet their contracts, with true
 assumptions, so
 [each has a denotation](StaticSemantics.md#r-statics.property.conditions).
+The theorem needs all of these conditions and not the termination of the
+mentioned functions alone.
 
 r[dynamics.theorem.table-agreement]
 In a program with distinct arms, where the

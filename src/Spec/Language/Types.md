@@ -14,7 +14,8 @@ obligations that verification proves. The
 program whose matches have
 [distinct arms](StaticSemantics.md#r-statics.match.distinct), and the
 [denotational semantics](DenotationalSemantics.md) gives
-a meaning to the verified ones. Typing alone establishes neither definedness nor logical truth.
+a meaning to the functions that are
+[verified together with the functions that they depend on](DenotationalSemantics.md#r-denotation.domain). Typing alone establishes neither definedness nor logical truth.
 
 ## Overview
 

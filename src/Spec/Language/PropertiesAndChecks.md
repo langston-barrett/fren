@@ -936,8 +936,9 @@ than the
 [termination check](StaticSemantics.md#r-statics.termination) of the
 static semantics, which admits structural recursion. The
 [dynamic semantics](DynamicSemantics.md#r-dynamics.error.kinds) gives an
-error to an operation outside its domain, and in a defined program no
-operation is outside its domain.
+error to an operation outside its domain, and
+[soundness](#r-verification.soundness) states where an evaluation in a
+defined program reaches none.
 
 r[verification.program.verified]
 A defined program *meets its expectations* when the `Asserted`
@@ -1314,17 +1315,32 @@ pub proc context_weakening(rows: Snoc<Row>, cutoff: Int, extra: Ty): (holds?) {
 ```
 
 r[verification.soundness]
-Verification is sound for the dynamic semantics: in a
-[defined](#r-verification.program.defined) program, an expression of a
-declaration d denotes a value at every assignment that satisfies its
-hypotheses, when the `assume` members of every function that d
-[depends on](StaticSemantics.md#r-statics.call-order.relation) are
+Verification is sound for the dynamic semantics under conditions that
+this chapter's definedness does not itself give. Let the program be
+[defined](#r-verification.program.defined), let each of its
+postconditions be `true`, and let none of its declarations have
+[opted out](StaticSemantics.md#r-statics.termination.optional) of the
+termination check. A defined program has no recursion, so by the
+[correspondence with the static semantics](StaticSemantics.md#r-statics.property.tables)
+each of its declarations is then
+[verified](StaticSemantics.md#r-statics.program.verified). Let d be one
+of them, and let the
+`assume` members of every function that d
+[depends on](StaticSemantics.md#r-statics.call-order.relation) be
 [true](DenotationalSemantics.md#r-denotation.truth), that is, true at
-every argument tuple that meets their function's `require` members. The
+every argument tuple that meets their function's `require` members. Then
+every function that d depends on
+[has a denotation](DenotationalSemantics.md#r-denotation.domain), and an
+expression of d denotes a value at every assignment that satisfies its
+hypotheses. The
 `assume` members of d itself are among the hypotheses, and those of a
-declaration that d does not depend on are not asked to be true. The
+declaration that d does not depend on are not asked to be true. Without
+the condition on opting out the statement fails as written: where `g()`
+has the body `1` and has opted out and `f()` has the body `g()`, the
+program is defined, no assumption is false, and g has no denotation, so
+the body of f has none. The
 [denotational semantics](DenotationalSemantics.md#r-expressions.value.denotation)
-states this. It is open: the evaluator gives no value to a product, a
+states the property. It is open: the evaluator gives no value to a product, a
 quotient, a remainder or a call, so the statement cannot yet be written
 for the whole Core. The laws above are its local parts: generation omits
 no partial operation, the divisor goal is the operator's domain, strict

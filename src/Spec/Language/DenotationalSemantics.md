@@ -4,10 +4,16 @@ The denotational semantics gives each function whose declaration is
 [verified](StaticSemantics.md#r-statics.program.verified), with the
 declarations that it depends on, and each defined expression over such
 functions, a value, as a set-theoretic function of the values of its free
-locals. It gives a meaning to verified Core only. A verified declaration
-has passed the termination check, so no denotation has to account for an
+locals. It gives a meaning to no other function. The termination check
+is of one declaration, and a verified declaration may call a function
+whose declaration has not passed it, so a function
+[has a denotation](#r-denotation.domain) only when its own declaration
+and the declaration of every function that it depends on are verified,
+and their assumptions are true. Each of those declarations has then
+passed the termination check, so no denotation has to account for an
 evaluation that does not end; a function that is defined and meets its
-contract without that check has no denotation. The chapter proceeds
+contract without that check has no denotation, and neither has a
+function that depends on it. The chapter proceeds
 [stratum by stratum](StaticSemantics.md#r-statics.stratification). A
 denotation is total on its domain: it has no undefined result, no error
 value and no case for a zero divisor, and it has no order of evaluation.
@@ -250,7 +256,10 @@ precondition. This is asked only where every function that A or the
 precondition mentions [has a denotation](#r-denotation.domain); those
 functions are of
 [strata before f's](StaticSemantics.md#r-statics.condition.group), and
-they [terminate hereditarily](StaticSemantics.md#r-statics.condition.terminating).
+where f's declaration is defined they
+[terminate hereditarily](StaticSemantics.md#r-statics.condition.terminating),
+which is necessary for them to have denotations and
+[not sufficient](StaticSemantics.md#r-statics.property.conditions).
 An assumption is a hypothesis
 [only within its own declaration](StaticSemantics.md#r-statics.condition.scope),
 and it is asked to be true only by a theorem about a function that
@@ -290,8 +299,9 @@ The domain is not defined in terms of itself. Whether a declaration is
 verified reads no denotation, and whether its assumptions are true reads
 the denotations of earlier strata only, since
 [no assumption or precondition mentions a function of its own group](StaticSemantics.md#r-statics.condition.group).
-A verified group
-[terminates](StaticSemantics.md#r-statics.termination), so at an
+A group whose functions have denotations is verified and
+[terminates](StaticSemantics.md#r-statics.termination), and so does
+every declaration that it depends on, so at an
 argument tuple of its domain the body reads the group's denotations only
 at preceding call instances; call order is
 [well founded](StaticSemantics.md#r-statics.property.call-order), so the

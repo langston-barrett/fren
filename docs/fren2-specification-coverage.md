@@ -393,9 +393,13 @@ entailment alone the body of `f` would be defined, since its hypothesis
 `g(x)` is true nowhere, and the call in `h` would be defined, since the
 precondition goal `g(0)` is false nowhere, while `h()` evaluates
 `1 div 0`. The rule now rejects the declaration of `f`: its precondition
-mentions `g`, which does not terminate. With it, a precondition has a
-truth value wherever a theorem reads it, and partial correctness states
-that a call reaches no error state. That statement is open, as every
+mentions `g`, which does not terminate. The rule requires hereditary
+termination: the mentioned function and every function that it reaches
+pass the check, and none opts out. That alone gives a precondition no
+truth value. It has one where those functions are also defined and meet
+their contracts, with true assumptions, and under those conditions
+partial correctness states that a call reaches no error state. That
+statement is open, as every
 property of the three chapters is. It still rests on entailment being
 read over partial interpretations: a diverging function with the
 postcondition `false` meets its contract, and its callers' goals after
