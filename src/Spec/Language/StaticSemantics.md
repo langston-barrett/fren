@@ -652,7 +652,7 @@ of its body, a conditional those of its condition and branches, and a
 match those of its scrutinee and arms. A literal, a local and a
 constructor have none. `written_calls` gives the written calls of the
 expression that a table derives, row by row as
-[typing reads the table](Types.md#r-types.table.rows).
+[typing reads the table](Types.md#r-types.derivation.table).
 
 ```fren
 pub enum Calls { Leaf, Both(Calls, Calls), Call(ItemId, Snoc<Option<Int>>), Let(Option<Int>, Calls) }
@@ -707,8 +707,10 @@ pub fn layer_calls(rows: Snoc<Row>, prior: Snoc<Calls>, form: Form): Calls := ma
 
 pub fn table_calls(rows: Snoc<Row>): Snoc<Calls> := match rows {
     Empty => Empty,
-    Extend(earlier, row) =>
-        Extend(table_calls(earlier), layer_calls(earlier, table_calls(earlier), row.form)),
+    Extend(earlier, row) => Extend(
+        table_calls(earlier),
+        layer_calls(earlier, table_calls(earlier), row.form)
+    ),
 }
 
 pub fn written_calls(rows: Snoc<Row>): Calls := match table_calls(rows) {
@@ -776,22 +778,33 @@ pub fn choice_guarded?(choice: Snoc<Chosen>, group: Snoc<Function>) := match gro
         body_guarded?(choice, function) and choice_guarded?(choice, earlier),
 }
 
-pub fn extended_choices(onto: Snoc<Snoc<Chosen>>, choices: Snoc<Snoc<Chosen>>, entry: Chosen): Snoc<Snoc<Chosen>> :=
-    match choices {
-        Empty => onto,
-        Extend(earlier, choice) =>
-            Extend(extended_choices(onto, earlier, entry), Extend(choice, entry)),
-    }
+pub fn extended_choices(
+    onto: Snoc<Snoc<Chosen>>,
+    choices: Snoc<Snoc<Chosen>>,
+    entry: Chosen
+): Snoc<Snoc<Chosen>> := match choices {
+    Empty => onto,
+    Extend(earlier, choice) => Extend(
+        extended_choices(onto, earlier, entry),
+        Extend(choice, entry)
+    ),
+}
 
-pub fn parameter_choices(choices: Snoc<Snoc<Chosen>>, item: ItemId, candidates: Ctx): Snoc<Snoc<Chosen>> :=
-    match candidates {
-        Empty => Empty,
-        Extend(fewer, _) => extended_choices(
-            parameter_choices(choices, item, fewer),
-            choices,
-            Chosen { function := item, parameter := length(fewer) }
-        ),
-    }
+pub fn parameter_choices(
+    choices: Snoc<Snoc<Chosen>>,
+    item: ItemId,
+    candidates: Ctx
+): Snoc<Snoc<Chosen>> := match candidates {
+    Empty => Empty,
+    Extend(fewer, _) => extended_choices(
+        parameter_choices(choices, item, fewer),
+        choices,
+        Chosen {
+            function := item,
+            parameter := length(fewer),
+        }
+    ),
+}
 
 pub fn choices(group: Snoc<Function>): Snoc<Snoc<Chosen>> := match group {
     Empty => Extend(Empty, Empty),

@@ -245,6 +245,11 @@ exactly once in each match, rejecting repeated and missing constructors.
 r[thir.validation.nonrecursive]
 The separate `WalkingNonrecursive` obligation requires the function call
 graph to have no self cycle or mutually recursive strongly connected component.
+Validation judges the recursive group of a function on a cycle by the
+[termination check](../Language/StaticSemantics.md#termination) and reports
+a group that does not pass as a termination failure. A group that passes is
+still rejected, as a cycle, since no later pass accepts recursion; in the
+present Core no group with a call between its members passes.
 
 r[thir.validation.boundary]
 Whole static acceptance requires admitted input, successful typing,
@@ -279,7 +284,15 @@ callee occurrences. The source grammar currently admits adjacent named
 calls only. Names in other positions and local values create no edge. `validateNonrecursive` searches
 from every declared function, even unused ones. Each breadth-first search
 enqueues each canonical function once, with a bound from the actual
-signature count, and detects a path back to its root. Declaration order,
+signature count, and detects a path back to its root. For the first
+function on a cycle, `judgeRecursion` takes its recursive group, the declared
+functions that reach it and that it reaches, in declaration order. It reads
+each member's written calls from its body, with each argument's local level
+where the argument is a local, possibly in parentheses, and judges the group
+by `Termination.groupPassesNow`, which the
+[termination correspondence](#termination-correspondence) binds. Every
+declaration counts as checked, since the source has no form for the opt-out
+mark. Declaration order,
 body postorder and written child order decide failure order; hash iteration
 and display names never decide identity. Calls inside check members do not
 create function edges because checks cannot be called.
@@ -293,9 +306,11 @@ output. Successful results preserve the complete typed value, syntax and
 references. `StaticFailure.typing` retains existing diagnostics, including
 `F0201` and `F0304`. Validation failures are structured data without invented
 catalogue codes: coverage includes the owner, missing and repeated IDs; a
-cycle includes a closed canonical function path. Missing cases point at the
-match keyword, repetitions at the first repeated pattern, and cycles at the
-closing call's callee. These are the positions of today's checker; the Language
+cycle includes a closed canonical function path, and a termination failure
+includes the recursive group and its reason: a member without a parameter,
+or a call that no choice of decreasing parameters guards. Missing cases point at the
+match keyword, repetitions at the first repeated pattern, and cycles and
+termination failures at the closing call's callee. These are the positions of today's checker; the Language
 chapter on [patterns](../Language/Patterns.md) does not state them. Metadata failures also carry the actual source span.
 These validation failures are structured data; they have no new catalogue codes.
 
