@@ -277,9 +277,12 @@ def priority_class(label):
     return label if label in PRIORITY_CLASSES else "exploratory"
 
 
-def aging_ms(environ=None, state=STATE, warn=None):
-    """The wait that outweighs one priority class, in milliseconds."""
-    seconds = setting("HEAVY_AGING_SECONDS", "aging_seconds", float, environ, state, warn)
+def aging_ms(state=STATE, warn=None):
+    """The wait that outweighs one priority class, in milliseconds. It is
+    one value for everyone who queues in `state`, never a caller's own:
+    waiters that ordered the queue by different steps could each yield to
+    the other for ever."""
+    seconds = setting("HEAVY_AGING_SECONDS", "aging_seconds", float, {}, state, warn)
     return round((DEFAULT_AGING_SECONDS if seconds is None else seconds) * 1000)
 
 
@@ -445,6 +448,19 @@ def cgroup_outsiders(directory, parent=parent_pid, own=None):
     except (OSError, ValueError):
         return None
     return sum(1 for member in members if member not in family)
+
+
+def nice_before_exec(nice):
+    """What the job's first process does before it runs the command: raise
+    its own niceness, never lower it. Everything the command forks then
+    inherits it, whatever group or session it moves to."""
+    def apply():
+        try:
+            if nice > os.getpriority(os.PRIO_PROCESS, 0):
+                os.setpriority(os.PRIO_PROCESS, 0, nice)
+        except OSError:
+            pass
+    return apply
 
 
 def raise_nice(group, nice):
@@ -1889,7 +1905,9 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
             return 125
     helper_started = time.monotonic()
     try:
-        child = subprocess.Popen(command, start_new_session=True)
+        # Heavy has no threads, so running Python between fork and exec is safe.
+        child = subprocess.Popen(command, start_new_session=True,
+                                 preexec_fn=nice_before_exec(record["cpu_nice"]) if record.get("cpu_nice") else None)
     except OSError as e:
         print(f"heavy: cannot run `{shown}`: {e.strerror}", file=sys.stderr)
         return 127
@@ -2231,7 +2249,7 @@ def admit(waiting, command, shown, kind, record, queued, initial, state, environ
         wait_message = f"heavy: all {slots} slots busy, waiting (see {state})"
         # A slot goes first to the waiters ahead of this job that could take
         # it now. One load reading serves every comparison of this poll.
-        others, now, step, reading = waiting.others(), monotonic_ms(), aging_ms(environ, state), []
+        others, now, step, reading = waiting.others(), monotonic_ms(), aging_ms(state), []
         def one_load():
             if not reading:
                 reading.append(load_reader())

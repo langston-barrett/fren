@@ -76,16 +76,38 @@ def finished [DecidableEq Key] (history : List (Observation Key)) (key : Key)
   | [] => false
   | o :: rest => (eligible o key cutoff now && !o.failed) || finished rest key cutoff now
 
-/-- The forecast from a selection. Without a finished job in the window the
-peaks are lower bounds only, so the forecast is unknown and uses no jobs.
-With one, failed jobs' peaks can only raise it. -/
-def forecast (seen : Bool) (ps : Peaks) : Option Int × Nat :=
-  if seen then (maximum ps, ps.length) else (none, 0)
+/-- The latest eligible job not known to have failed, selected as `recent`
+selects: none, or that one job. -/
+def latestFinished [DecidableEq Key] (history : List (Observation Key)) (key : Key)
+    (cutoff now : Int) : Peaks :=
+  match history with
+  | [] => []
+  | o :: rest =>
+    let ps := latestFinished rest key cutoff now
+    match o.ended, o.peak with
+    | some t, some p => if eligible o key cutoff now && !o.failed then insert t p 1 ps else ps
+    | _, _ => ps
+
+/-- A forecast is never below the floor, when there is one. -/
+def raise (prediction floor : Option Int) : Option Int :=
+  match prediction, floor with
+  | none, _ => none
+  | some m, none => some m
+  | some m, some f => some (max m f)
+
+/-- The forecast from a selection `ps` and the latest finished job `ok`.
+Without a finished job in the window the peaks are lower bounds only, so the
+forecast is unknown and uses no jobs. With one, the forecast is never below
+the latest finished job's peak, however many later failures fill the
+selection; failed jobs' peaks can only raise it. -/
+def forecast (seen : Bool) (ok ps : Peaks) : Option Int × Nat :=
+  if seen then (raise (maximum ps) (maximum ok), ps.length) else (none, 0)
 
 /-- The frozen forecast and its sample count. Limits and keys are caller
 policy; the legacy scheduler uses 20 samples of one job kind in seven days. -/
 def predict [DecidableEq Key] (history : List (Observation Key)) (key : Key)
     (cutoff now : Int) (n : Nat) : Option Int × Nat :=
-  forecast (finished history key cutoff now) (recent history key cutoff now n)
+  forecast (finished history key cutoff now) (latestFinished history key cutoff now)
+    (recent history key cutoff now n)
 
 end Heavy.Forecast

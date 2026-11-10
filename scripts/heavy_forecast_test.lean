@@ -33,6 +33,10 @@ open Lean Heavy.Forecast
 #guard predict
   [{ key := some "k", ended := some 2, peak := some 9, failed := true },
    { key := some "k", ended := some 1, peak := some 7 }] "k" 0 2 20 == (some 9, 2)
+-- Twenty early failures after a full run do not hide its peak.
+#guard predict
+  ((List.range 20).map (fun i => { key := some "k", ended := some (2 + (i : Int)), peak := some 60576, failed := true })
+    ++ [{ key := some "k", ended := some 1, peak := some 1928260 }]) "k" 0 30 20 == (some 1928260, 20)
 -- A finished job outside the window or under another key gives no forecast.
 #guard predict
   [{ key := some "k", ended := some 2, peak := some 9, failed := true },

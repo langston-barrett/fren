@@ -127,6 +127,7 @@ def run (path nowText command secondsText countText : String) : IO Unit := do
   let cutoff := now - seconds * 1000000000000000000
   let mut ps : Heavy.Forecast.Peaks := []
   let mut seen := false
+  let mut ok : Heavy.Forecast.Peaks := []
   try
     let f ← IO.FS.Handle.mk path IO.FS.Mode.read
     repeat
@@ -138,8 +139,9 @@ def run (path nowText command secondsText countText : String) : IO Unit := do
           seen := seen || !o.failed
           if let (some t, some p) := (o.ended, o.peak) then
             ps := Heavy.Forecast.insert t p count ps
+            if !o.failed then ok := Heavy.Forecast.insert t p 1 ok
   catch _ => pure ()
-  IO.println (toJson (Heavy.Forecast.forecast seen ps)).compress
+  IO.println (toJson (Heavy.Forecast.forecast seen ok ps)).compress
 
 end JobForecast
 

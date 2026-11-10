@@ -1198,9 +1198,10 @@ a file takes effect without a restart:
   the load, since the load includes unrelated work and decays slowly;
   it still needs a slot and memory. An unavailable load reading lets it
   start too. `HEAVY_MAX_LOAD=off` disables even a value in the file.
-- **Aging:** `HEAVY_AGING_SECONDS`, else the number in
-  `~/.cache/heavy/aging_seconds`, else 300: the wait that outweighs one
-  priority class ([Admission order](#admission-order)).
+- **Aging:** the number in `~/.cache/heavy/aging_seconds`, else 300: the
+  wait that outweighs one priority class
+  ([Admission order](#admission-order)). No environment variable sets it:
+  it is one value for the whole queue.
 
 A setting that is set but is not a positive finite number is ignored,
 with a warning.
@@ -1512,11 +1513,14 @@ larger peaks win completion-time ties. A job failed when its record has an
 known to have failed. A failed job's peak is only a lower bound: a test
 that fails before it starts its compiler, or a job killed at the cap, does
 not show how much memory its command needs to finish. So there is a forecast
-only when some job with the same command in those seven days did not fail.
-Failed jobs' peaks then count too, and can only raise it. Without one the
+only when some job with the same command in those seven days did not fail,
+and it is never below the peak of the latest job that did not fail, wherever
+in the seven days it lies: twenty early failures after one full run do not
+push that run's peak out of the forecast. Failed jobs' peaks among the latest
+20 count too, and can only raise it. Without a job that did not fail the
 forecast is `null` and uses no jobs: one early failure at 60 MB was once the
 whole history of a test that then peaked at 1.9 GB.
-`prediction_jobs` records the number used, and `prediction_method` is
+`prediction_jobs` records the number of the latest 20 used, and `prediction_method` is
 `"max_last_20_same_command_7d"`. Before each forecast, the standalone Lean
 adviser verifies that its embedded adapter, kernel, toolchain selection and
 Lake configuration match this checkout. Heavy builds it from this checkout
@@ -2704,6 +2708,13 @@ pub fn memory_finished?(hs: MemoryHistory, key: String, cutoff: Int, now: Int) :
         or memory_finished?(rest, key, cutoff, now),
 }
 
+pub fn memory_raise(prediction: Option<Int>, floor: Option<Int>): Option<Int> :=
+    match prediction, floor {
+        Option::None, _ => Option::None,
+        Option::Some(m), Option::None => Option::Some(m),
+        Option::Some(m), Option::Some(f) => Option::Some(m.max(f)),
+    }
+
 pub fn memory_take(n: Int, ps: MemoryPeaks): MemoryPeaks := match ps {
     MemoryPeaks::Nil => MemoryPeaks::Nil,
     MemoryPeaks::Cons(t, p, rest) =>
@@ -2730,6 +2741,19 @@ pub fn memory_recent(hs: MemoryHistory, key: String, cutoff: Int, now: Int, n: I
             match o.ended, o.peak {
                 Option::Some(t), Option::Some(p) => if memory_eligible?(o, key, cutoff, now) then
                     memory_insert(t, p, n, ps) else ps,
+                _, _ => ps,
+            }),
+    }
+
+-- The latest eligible job not known to have failed: none, or that one.
+pub fn memory_latest_finished(hs: MemoryHistory, key: String, cutoff: Int, now: Int): MemoryPeaks :=
+    match hs {
+        MemoryHistory::Nil => MemoryPeaks::Nil,
+        MemoryHistory::Cons(o, rest) => (let ps := memory_latest_finished(rest, key, cutoff, now) in
+            match o.ended, o.peak {
+                Option::Some(t), Option::Some(p) =>
+                    if memory_eligible?(o, key, cutoff, now) and not o.failed? then
+                    memory_insert(t, p, 1, ps) else ps,
                 _, _ => ps,
             }),
     }
@@ -2766,7 +2790,10 @@ pub proc heavy_memory_prediction(
 ): (det prediction: Option<Int>, det jobs: Nat) {
     ensure rule: prediction =
         if memory_finished?(history, key, cutoff, now)
-        then memory_max(memory_recent(history, key, cutoff, now, n))
+        then memory_raise(
+            memory_max(memory_recent(history, key, cutoff, now, n)),
+            memory_max(memory_latest_finished(history, key, cutoff, now))
+        )
         else Option::None
     ensure count: jobs =
         if memory_finished?(history, key, cutoff, now)
@@ -2788,6 +2815,27 @@ pub proc heavy_memory_prediction(
         MemoryHistory::Nil
     ),
         prediction = Option::None and jobs = 0
+    -- A later failure that fills the selection does not hide a finished job's peak.
+    expect failure_after_success: when n = 1 and cutoff < now and history = MemoryHistory::Cons(
+        MemoryObservation {
+            event := Option::Some("job"),
+            key := Option::Some(key),
+            ended := Option::Some(now),
+            peak := Option::Some(60576),
+            failed? := true,
+        },
+        MemoryHistory::Cons(
+            MemoryObservation {
+                event := Option::Some("job"),
+                key := Option::Some(key),
+                ended := Option::Some(cutoff),
+                peak := Option::Some(1928260),
+                failed? := false,
+            },
+            MemoryHistory::Nil
+        )
+    ),
+        prediction = Option::Some(1928260) and jobs = 1
 }
 ```
 
@@ -3512,11 +3560,16 @@ and everything else). A missing or unknown label is `exploratory`, so a
 misspelt label never jumps the queue.
 
 Waiting jobs start in the order of a key: the time the job was enqueued
-plus one aging step, `HEAVY_AGING_SECONDS` (300 by default), for each class
-below the most urgent. A job's key never changes while later arrivals' keys
-grow with the clock, so an exploratory job that has waited more than four
-steps goes before every newcomer, and nothing starves. Jobs of one class
-start in the order they were enqueued. The step is a policy guess; the
+plus one aging step (300 seconds by default) for each class below the most
+urgent. Every waiter reads the step from the shared state directory, never
+from its own environment, so all of them order the queue by the same step;
+waiters that used different steps could each yield to the other for ever.
+While the step stays the same, a job's key never changes and later
+arrivals' keys grow with the clock, so an exploratory job that has waited
+more than four steps goes before every newcomer, and no waiter is passed
+over for ever. A change to the file reaches each waiter at its next poll,
+and until then two waiters may disagree. Jobs of one class start in the
+order they were enqueued. The step is a policy guess; the
 waits that `--stats` reports for each class are the evidence for changing it.
 
 A waiting job yields a free slot only to a waiter that could take that slot
@@ -3530,7 +3583,9 @@ memory rule alone would refuse.
 When a job starts, heavy also sets its share of the CPU from its class.
 Jobs in separate cgroups compete by `cpu.weight`, and niceness matters only
 among the processes of one cgroup, so heavy does both. It raises the job's
-niceness to the class's value, and never lowers it; where the kernel
+niceness to the class's value, and never lowers it. The job's first process
+does that before it runs the command, so every process of the job has it
+from the start, whatever group or session it moves to. Where the kernel
 groups each session for scheduling (`sched_autogroup`), it raises the
 niceness of the job's session group as well, since that is what then
 competes with other sessions. Heavy's own monitor keeps its niceness: it

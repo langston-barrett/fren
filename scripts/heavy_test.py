@@ -328,7 +328,6 @@ def tiny_job(state, command, overrides=None, timeout=30, script=None, offline=Fa
     environ.pop("HEAVY_LOG", None)
     environ.pop("FREN_JOB_KIND", None)
     environ.pop("HEAVY_PRIORITY", None)
-    environ.pop("HEAVY_AGING_SECONDS", None)
     environ.update(overrides or {})
     return subprocess.run([sys.executable, "-I", "-B", "-c", code,
                            script or os.path.join(HERE, "heavy"), state] +
@@ -2911,8 +2910,11 @@ def test_priority_order():
     assert ahead([waiter("main-repair", 1000, updated=now - heavy.WAITER_STALE_MS)]) == 1
     assert ahead([waiter("main-repair", 1000, updated=now - heavy.WAITER_STALE_MS - 1)]) == 0  # Stopped.
     assert ahead([waiter("main-repair", 1000, updated=now + 1)]) == 0  # Another clock.
-    assert heavy.aging_ms({}, "/nonexistent") == 300000
-    assert heavy.aging_ms({"HEAVY_AGING_SECONDS": "1.5"}, "/nonexistent") == 1500
+    assert heavy.aging_ms("/nonexistent") == 300000
+    with tempfile.TemporaryDirectory() as state:
+        with open(os.path.join(state, "aging_seconds"), "w") as f:
+            f.write("1.5")
+        assert heavy.aging_ms(state) == 1500
 
 
 def test_waiting_registry():
@@ -2991,10 +2993,21 @@ def test_priority_admission():
         started, said = attempt(state, {"HEAVY_PRIORITY": "merge-blocking"})  # Later in the same class.
         assert not started and behind in said
         assert attempt(state, {"HEAVY_PRIORITY": "main-repair"}) == (True, "")
-        # With an aging step shorter than the wait, arrival order decides.
+        # The aging step is the queue's, not a caller's: two callers whose
+        # environments name different steps order the queue alike, so they
+        # never each yield to the other.
         time.sleep(0.02)
-        started, said = attempt(state, {"HEAVY_PRIORITY": "main-repair", "HEAVY_AGING_SECONDS": "0.001"})
+        assert attempt(state, {"HEAVY_PRIORITY": "main-repair", "HEAVY_AGING_SECONDS": "0.001"}) == (True, "")
+        started, said = attempt(state, {"HEAVY_PRIORITY": "exploratory", "HEAVY_AGING_SECONDS": "100000"})
         assert not started and behind in said
+        # With the queue's step shorter than the wait, arrival order decides
+        # for every caller, whatever its environment says.
+        with open(os.path.join(state, "aging_seconds"), "w") as f:
+            f.write("0.001")
+        for own in ("0.001", "100000"):
+            started, said = attempt(state, {"HEAVY_PRIORITY": "main-repair", "HEAVY_AGING_SECONDS": own})
+            assert not started and behind in said
+        os.unlink(os.path.join(state, "aging_seconds"))
         # A waiter with fewer slots leaves the others to anyone.
         other.beat(1, GB, None)
         assert attempt(state, {"HEAVY_PRIORITY": "exploratory"}) == (True, "")
@@ -3072,6 +3085,15 @@ def test_cpu_share():
         finally:
             child.kill()
             child.wait()
+    # The job's first process is nice before it runs the command, so a
+    # process that it forks at once into a session of its own is nice too.
+    base = os.getpriority(os.PRIO_PROCESS, 0)
+    early = ("import os\nif os.fork() == 0:\n    os.setsid()\n"
+             "    print(os.getpriority(os.PRIO_PROCESS, 0), flush=True)\nelse:\n    os.wait()")
+    for nice in (7, 0):
+        out = subprocess.run([sys.executable, "-c", early], preexec_fn=heavy.nice_before_exec(nice),
+                             capture_output=True, text=True, check=True).stdout
+        assert int(out) == max(base, nice), out
     # End to end: the job runs at its class's niceness, heavy's monitor does
     # not, and the record names the class.
     with tempfile.TemporaryDirectory() as state:

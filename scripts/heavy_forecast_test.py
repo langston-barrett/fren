@@ -81,9 +81,17 @@ def main():
     add([job(94, 60576, exit_status=1), job(95, 1928260, exit_status=0)],
         expected=(1928260, 2))
     add([job(95, 9, exit_status=137), job(94, 7)], expected=(9, 2))
-    # The finished job may lie outside the latest N, but not outside the
-    # window, under another key, or among records that are not jobs.
+    # A finished job outside the latest N still bounds the forecast from
+    # below: later early failures never hide the peak of a full run.
     add([job(95, 9, exit_status=1), job(94, 7)], n=1, expected=(9, 1))
+    add([job(95, 9, exit_status=1), job(94, 700)], n=1, expected=(700, 1))
+    add([job(90 + i / 4, 60576, exit_status=1) for i in range(1, 21)] + [job(90, 1928260, exit_status=0)],
+        expected=(1928260, 20))
+    add([job(95, 9, exit_status=1), job(94, 700, exit_status=1), job(93, 7)], n=1, expected=(9, 1))
+    # Only the latest finished job counts beyond the latest N, not an older larger one.
+    add([job(95, 9, exit_status=1), job(94, 70), job(93, 700)], n=1, expected=(70, 1))
+    # It does not count outside the window, under another key, or among
+    # records that are not jobs.
     add([job(95, 9, exit_status=1), job(89, 7)], expected=(None, 0))
     add([job(95, 9, exit_status=1), job(95, 7, event="sample"), job(95, 0)],
         expected=(None, 0))

@@ -129,8 +129,9 @@ theorem ahead_nonneg (own : Waiter) (others : List Waiter) (slot : Int) (rss : O
   | nil => simp [ahead]
   | cons w rest ih => simp only [ahead]; split <;> omega
 
-/-- The order is irreflexive and asymmetric: two waiters never each yield
-to the other. -/
+/-- The order is irreflexive and asymmetric: two waiters that compare by the
+same `step` never each yield to the other. The executable gives every waiter
+of one queue the same step, read from the shared state directory. -/
 theorem before_asymm (a b : Waiter) (step : Int) : before a b step = true → before b a step = false := by
   intro h
   have h' : key a step < key b step ∨ (key a step = key b step ∧ a.sequence < b.sequence) := by

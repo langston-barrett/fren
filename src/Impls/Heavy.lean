@@ -94,6 +94,30 @@ theorem finished_eq (hs : List (Observation String)) (key : String) (cutoff now 
     rw [Bool.eq_iff_iff]
     simp
 
+theorem latestFinished_eq (hs : List (Observation String)) (key : String) (cutoff now : Int) :
+    testing.memory_latest_finished (history hs) key cutoff now = peaks (latestFinished hs key cutoff now) := by
+  induction hs with
+  | nil => rfl
+  | cons o rest ih =>
+    obtain ⟨event, key', ended, peak, failed⟩ := o
+    have he := eligible_eq (Observation.mk event key' ended peak failed) key cutoff now
+    simp only [observation] at he
+    cases ended <;> cases peak <;>
+      simp only [history, testing.memory_latest_finished, observation, latestFinished, ih]
+    all_goals first | rfl | skip
+    rw [he]
+    have hi : ∀ t p : Int, testing.memory_insert t p 1 (peaks (latestFinished rest key cutoff now)) =
+        peaks (Heavy.Forecast.insert t p 1 (latestFinished rest key cutoff now)) :=
+      fun t p => insert_eq _ t p 1
+    cases failed <;> simp only [hi, Bool.not_true, Bool.not_false, Bool.and_true, Bool.and_false,
+      Bool.false_eq_true, and_false, and_true, not_false_eq_true, not_true_eq_false, if_false] <;>
+      (try split) <;> rfl
+
+theorem raise_eq (prediction floor : Option Int) :
+    testing.memory_raise prediction floor = raise prediction floor := by
+  cases prediction <;> cases floor <;>
+    simp [testing.memory_raise, raise, Int.max_def] <;> (repeat' split) <;> omega
+
 theorem maximum_eq (ps : Peaks) : testing.memory_max (peaks ps) = maximum ps := by
   induction ps with
   | nil => rfl
@@ -140,7 +164,8 @@ impl memory_prediction: testing::heavy_memory_prediction
   jobs := (predict hs key cutoff now n).2,
 } by
   intro hs key cutoff now n _
-  simp only [fren_spec, predict, forecast, recent_eq, maximum_eq, count_eq, finished_eq]
+  simp only [fren_spec, predict, forecast, recent_eq, maximum_eq, count_eq, finished_eq,
+    latestFinished_eq, raise_eq]
   split <;> simp
 
 end Fren.Impls.Heavy
