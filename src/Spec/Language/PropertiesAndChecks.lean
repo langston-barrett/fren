@@ -258,51 +258,5 @@ impl represented_proof: represented for (symb : Snoc Entry) (decls : Snoc Decl)
       cases h : found.body <;> simp [represents?, all_tabled?, tabled?, has_body?, hd, h, fren_spec]
   · simp [represents?, all_tabled?, tabled?, declaration_of, fren_spec]
 
-/-! ## The interface: validity is satisfaction by every assignment -/
-
-pub mod spec::validity
-
-open Classical in
-interp valid? := fun symb prog rows obligation =>
-  decide (∀ env, spec.verification.assignment? symb rows obligation env = true →
-    spec.verification.satisfied? prog rows env obligation = true)
-open Classical in
-interp counterexample := fun symb prog rows obligation =>
-  if h : ∃ env, spec.verification.assignment? symb rows obligation env = true ∧
-      spec.verification.satisfied? prog rows env obligation = false
-  then Classical.choose h else spec.types.Snoc.Empty
-interp check := fun _ _ _ _ => spec.verification.Verdict.Unknown
-
-impl verdicts_proof: verdicts for (symb : spec.types.Snoc spec.types.Entry)
-    (prog : spec.types.Snoc spec.verification.Declared) (rows : spec.types.Snoc spec.types.Row)
-    (obligation : spec.verification.Obligation) (env : spec.types.Snoc spec.expressions.Value) {
-  symb := symb, prog := prog, rows := rows, obligation := obligation, env := env, holds? := true
-} by
-  intro symb prog rows obligation env _
-  simp only [spec.validity.verdicts.ensures, spec.validity.verdicts.ensure.output,
-    spec.validity.verdicts.ensure.satisfied, spec.validity.verdicts.ensure.invalid,
-    spec.validity.verdicts.ensure.proved,
-    spec.validity.verdicts.ensure.refuted]
-  refine ⟨trivial, ?_, ?_, ?_, ?_⟩
-  · simp [fren_spec, spec.validity.valid?]
-    intro h hassign
-    exact h env hassign
-  · simp only [spec.validity.valid?, spec.validity.counterexample]
-    intro hinvalid
-    by_cases h : ∃ env, spec.verification.assignment? symb rows obligation env = true ∧
-        spec.verification.satisfied? prog rows env obligation = false
-    · rw [dif_pos h]
-      have hspec := Classical.choose_spec h
-      exact ⟨hspec.1, by rw [hspec.2]; exact Bool.false_ne_true⟩
-    · have hall : ∀ env, spec.verification.assignment? symb rows obligation env = true →
-          spec.verification.satisfied? prog rows env obligation = true := by
-        intro env hassign
-        cases hsat : spec.verification.satisfied? prog rows env obligation
-        · exact absurd ⟨env, hassign, hsat⟩ h
-        · rfl
-      exact absurd (@decide_eq_true _ (Classical.propDecidable _) hall) hinvalid
-  · simp [fren_spec, spec.validity.check]
-  · simp [fren_spec, spec.validity.check]
-
 set_option fren.requireEvidence "trusted" in
 #fren_trace

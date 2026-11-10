@@ -35,11 +35,12 @@ obligations are valid:
   obligations : Table × Hyps → Obligation*
   satisfied?  : Program × Table × Assignment × Obligation → Bool
   valid?      : Symb × Program × Table × Obligation → Bool
-  check       : Symb × Program × Table × Obligation → {Proved, Refuted(ρ), Unknown}
+  sound?      : Symb × Program × Table × Obligation × {Proved, Refuted(ρ), Unknown} → Bool
 
-  valid?(Σ, P, t, o)            implies  satisfied?(P, t, ρ, o) for every assignment ρ of o
-  check(Σ, P, t, o) = Proved    implies  valid?(Σ, P, t, o)
-  check(Σ, P, t, o) = Refuted(ρ) implies  ρ is an assignment of o and not satisfied?(P, t, ρ, o)
+  valid?(Σ, P, t, o)               iff  satisfied?(P, t, ρ, o) for every assignment ρ of o
+  sound?(Σ, P, t, o, Proved)       iff  valid?(Σ, P, t, o)
+  sound?(Σ, P, t, o, Refuted(ρ))   iff  ρ is an assignment of o and not satisfied?(P, t, ρ, o)
+  sound?(Σ, P, t, o, Unknown)      always
 ```
 
 Generating obligations is decidable: it is a structural function of the
@@ -2010,19 +2011,18 @@ pub proc tables(): (holds?) {
 
 ## Interface
 
-r[verification.validity.interface] spec::validity::{valid?, counterexample, check, verdicts::{satisfied, invalid, proved, refuted}}
+r[verification.validity.interface] spec::validity::{valid?, sound?}
 `valid?` is the [validity](#r-verification.validity.meaning) of an
-obligation of a table, and `check` is any function that answers a verdict.
-Four laws relate them to satisfaction. A valid obligation is satisfied by
-every assignment of it. Conversely, an obligation that is not valid has an
-assignment that does not satisfy it, which `counterexample` names. The two
-together make `valid?` exactly satisfaction by every assignment. `check` answers `Proved` only for a valid
-obligation, and `Refuted(ρ)` only with an assignment ρ of the obligation
-that does not satisfy it; `Unknown` establishes nothing. A solver
-implements `check`. The chapter's wrapper interprets `valid?` as
-satisfaction by every assignment and `counterexample` as a choice of an
-assignment that does not satisfy, and shows the laws of `check`
-satisfiable by the function that always answers `Unknown`.
+obligation of a table, defined outright: an obligation is valid when every
+assignment of it satisfies it. The definition quantifies over all
+assignments, so it is not computable. `sound?` says when a verdict is a
+sound answer for an obligation: `Proved` only when the obligation is
+valid, `Refuted(ρ)` only when ρ is an assignment of the obligation that
+does not satisfy it, and `Unknown` always, since it establishes nothing. A
+check is any function from obligations to verdicts all of whose answers
+are sound, and a solver implements one. The function that always answers
+`Unknown` is a check, so the definition does not ask for a decision
+procedure.
 
 ```fren
 pub mod spec::validity
@@ -2031,40 +2031,22 @@ use spec::expressions::Value
 use spec::types::{Row, Snoc, Symb}
 use spec::verification::{Declared, Obligation, Verdict, assignment?, satisfied?}
 
-pub fn valid?(Symb, Snoc<Declared>, Snoc<Row>, Obligation)
+-- Every assignment of the obligation satisfies it.
+set_option fren.lint.undecidable "allow" in
+pub fn valid?(symb: Symb, prog: Snoc<Declared>, rows: Snoc<Row>, obligation: Obligation) :=
+    forall (env: Snoc<Value>), when assignment?(symb, rows, obligation, env), satisfied?(prog, rows, env, obligation)
 
-pub fn counterexample(Symb, Snoc<Declared>, Snoc<Row>, Obligation): Snoc<Value>
-
-pub fn check(Symb, Snoc<Declared>, Snoc<Row>, Obligation): Verdict
-
-set_option fren.evidence "random" in
-pub proc verdicts(
+-- The verdict is a sound answer for the obligation.
+pub fn sound?(
     symb: Symb,
     prog: Snoc<Declared>,
     rows: Snoc<Row>,
     obligation: Obligation,
-    env: Snoc<Value>,
-): (holds?) {
-    ensure output: holds?
-    ensure satisfied: when valid?(symb, prog, rows, obligation)
-        and assignment?(symb, rows, obligation, env),
-        satisfied?(prog, rows, env, obligation)
-    ensure invalid: when not valid?(symb, prog, rows, obligation),
-        assignment?(
-            symb,
-            rows,
-            obligation,
-            counterexample(symb, prog, rows, obligation)
-        )
-        and not satisfied?(
-            prog,
-            rows,
-            counterexample(symb, prog, rows, obligation),
-            obligation
-        )
-    ensure proved: when check(symb, prog, rows, obligation) = Verdict::Proved,
-        valid?(symb, prog, rows, obligation)
-    ensure refuted: when check(symb, prog, rows, obligation) = Verdict::Refuted(env),
-        assignment?(symb, rows, obligation, env) and not satisfied?(prog, rows, env, obligation)
+    verdict: Verdict
+) := match verdict {
+    Verdict::Proved => valid?(symb, prog, rows, obligation),
+    Verdict::Refuted(found) =>
+        assignment?(symb, rows, obligation, found) and not satisfied?(prog, rows, found, obligation),
+    Verdict::Unknown => true,
 }
 ```

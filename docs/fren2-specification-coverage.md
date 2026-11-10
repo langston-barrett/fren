@@ -196,10 +196,10 @@ verified programs. Satisfaction reads row values from the evaluator of the
 [expressions chapter](../src/Spec/Language/Expressions.md#evaluation).
 Its wrapper's `#fren_trace` reports the following; 13 of the proved
 procedures, the six tested and one trusted belong to the chapters it
-imports, and 16 proved and one trusted are its own:
+imports, and 15 proved and one trusted are its own:
 
 ```text
-evidence: 29 proved, 0 solver, 6 tested, 2 trusted, 0 missing
+evidence: 28 proved, 0 solver, 6 tested, 2 trusted, 0 missing
 tested: `spec::lexical::division`, `spec::surface::accepted_trees_well_formed`, `spec::surface::extent`, `spec::surface::grammar_terminals`, `spec::surface::print_parse`, `spec::surface::reserved_names`
 trusted: `spec::types::expression_uniqueness`, `spec::verification::complete`
 ```
@@ -208,7 +208,7 @@ trusted: `spec::types::expression_uniqueness`, `spec::verification::complete`
 | --- | --- |
 | `verification.generation.strict`, `verification.generation.guarded`, `verification.generation.divisor`, `verification.obligation.hypotheses`, `verification.obligation.cut`, `verification.member.scope`, `verification.program.represented`, `verification.obligation.flattening`, `verification.generation.context-independent` | Laws for all inputs, bound by `impl` in the wrapper: `proved` |
 | `verification.examples.obligations`, `verification.examples.assignments`, `verification.examples.scopes`, `verification.examples.members`, `verification.examples.domain`, `verification.examples.tables` | Constant examples that the wrapper evaluates with `decide`: `proved` |
-| `verification.validity.interface` | The wrapper interprets `valid?` as satisfaction by every assignment of the obligation, a classical proposition, and `counterexample` as a choice of an assignment that does not satisfy it. It proves the four laws of `verdicts` from them, with `check` interpreted as the function that always answers `Unknown`: `proved`. The laws `satisfied` and `invalid` together fix `valid?` as satisfaction by every assignment; either alone admits an interpretation that is always false or always true |
+| `verification.validity.interface` | Definitions with no law of their own: `valid?` is defined as satisfaction by every assignment of the obligation, and `sound?` says when a verdict answers an obligation soundly. `fren check` reads them; nothing is tested or proved, since the definitions state the whole meaning |
 | `verification.generation.complete` | Stated as a procedure over tables, `trusted` and open |
 | `verification.program.tables` | A definition, `represents?`, with the law and the examples above. Typed tables are found in a declaration's table by position, with their row references moved. The correspondence does not count occurrences of equal conditions. That each member has its source keyword and declaration, and that every typed program has representing tables, are not stated |
 | `verification.validity.meaning`, `verification.validity.uncomputed`, `verification.program.defined`, `verification.program.verified`, `verification.program.assumptions`, `verification.generation.function`, `verification.keyword.evidence`, `verification.soundness` | Prose. Soundness is open |
@@ -261,10 +261,19 @@ What shapes the chapter:
   keyword of Fren1 is retired: `expect` takes its place. The chapter says
   nothing of `assert` or `assume` inside an expression, which the Core
   does not have.
-- **The check.** `check` is an uninterpreted function with two laws, and `valid?` one with two more. A
-  procedure with a contract could not have the output type `Verdict`,
-  which is unbounded, and the solver did not decide the realizability of a
-  function contract that mentions `satisfied?`.
+- **The check.** No function `check` is declared. `valid?` is a quantified
+  definition and `sound?` a definition over a verdict, and a check is, in
+  prose, any function whose answers are all sound. An earlier text
+  declared `valid?`, `counterexample` and `check` as uninterpreted
+  functions and stated laws about them as a procedure's guarantees.
+  `fren check` reads such a guarantee as holding for every interpretation
+  of the functions, which is false, so `ownSpec` failed: with `valid?`
+  false of an obligation that has no assignment, no counterexample
+  exists. The wrapper had proved the laws only for one `interp`, a
+  different statement. Laws that constrain an uninterpreted function
+  belong in that function's own contract, not in a procedure about it.
+  The quantifier of `valid?` has no domain, so random testing cannot
+  evaluate it, and no tested law mentions it.
 
 Production: the [LIR chapter](../src/Spec/Compiler/Lir.md) states and
 proves, in `lir.walking.demand`, what the compiler's lowering of a binary
