@@ -84,7 +84,7 @@ metadata. Unary `not`/negation print `not`/`-`. The complete binary mapping is:
 | --- | --- | --- |
 | and, or, iff | and, or, = | Bool × Bool → Bool |
 | eq, ne | =, distinct | same sort × same sort → Bool |
-| add, sub, mul, div, mod | +, -, *, div, mod | Int × Int → Int |
+| add, sub, mul, div, rem | +, -, *, div, mod | Int × Int → Int |
 | lt, le, gt, ge | <, <=, >, >= | Int × Int → Bool |
 
 `ite` requires a Bool condition and equal branch sorts. A call uses its exact
@@ -197,7 +197,7 @@ def UnaryName : UnaryOp → String
 
 def BinaryName : BinaryOp → String
   | .and => "and" | .or => "or" | .iff | .eq => "=" | .ne => "distinct"
-  | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .mod => "mod"
+  | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .rem => "mod"
   | .lt => "<" | .le => "<=" | .gt => ">" | .ge => ">="
 
 /-- Concrete-text grammar judgment on the actual LIR term, without fuel.
@@ -358,7 +358,7 @@ def ModelAssignment (p : FrenOir.Program) (q : FrenOir.Question)
 
 /-- Observation of the actual interpreter on the retained source body, which
 strict evaluation of its retained static obligations must reproduce whenever
-the body or a transitive callee mentions `div` or `mod`. -/
+the body or a transitive callee mentions division or remainder. -/
 def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
     (depth : Nat) (value : Bool) : Prop :=
   ∃ observation, FrenEval.evaluate ⟨p.input, p.typed, p.accepted⟩
@@ -517,20 +517,20 @@ Assignments have the exact source arity and types and real enum membership.
 Every retained hypothesis is evaluated as true on its original source body.
 A Sat search then yields a concrete witness. A validity refutation
 additionally evaluates its retained source goal as false and yields a concrete
-counterexample. When the body or a transitive callee mentions `div` or `mod`
+counterexample. When the body or a transitive callee mentions division or remainder
 (`divisionFree` fails), each such observation needs two agreeing evaluations
 under the assignment: `FrenEval.evaluate`, which follows runtime demand, and
 a budgeted evaluator that shares each traversal step with `strictBody`, which follows the retained verification tree of
 `r[lir.walking.demand]`. Strict evaluation evaluates both ordinary operands,
 including those of `and` and `or`, every let value even if unused, and every
 call argument followed by the callee body; it evaluates only the selected
-branch of an `if` or `match`. A `div` or `mod` by zero has no value, so any
+branch of an `if` or `match`. A division or remainder by zero has no value, so any
 undefined step, like exhaustion, fails strict evaluation. One budget is shared
 across all consumed premises and the goal; successful calls are memoized by
 callee, argument values and remaining depth. Agreement therefore
 means that every active static obligation of the consumed body and of the
 callee bodies it reaches holds at the assignment, so the demand-driven value
-is the dynamic value there. Without `div` or `mod` no primitive step is undefined,
+is the dynamic value there. Without division or remainder no primitive step is undefined,
 so demand-driven success alone suffices and confirmation costs no more than
 the interpreter. A consumed body may contain division anywhere;
 only its evaluation at the model decides. A false premise or true goal rejects

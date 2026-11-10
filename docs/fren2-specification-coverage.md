@@ -70,7 +70,7 @@ are not yet converted.
 - **Nonlinear arithmetic.** A product of two variables, or a quotient by
   one, is an error in Fren1, and a defined function cannot apply an
   uninterpreted one, so the Expressions chapter's `binary_meaning?` states
-  the result's sort for `*` and `div` and the remainder's range for `mod`,
+  the result's sort for `*` and `div` and the remainder's range for `%`,
   and its prose gives their equations.
 - **Chapter order.** The own-spec check reads `src/Spec` in the book's
   reading order, that of `SUMMARY.md` (`specReadingOrder` in
@@ -1581,10 +1581,7 @@ Decisions:
   the parser's trees to `ExprF`, checking each operator's written token
   against `unary_spelling` and `binary_spelling`.
 
-Design debt:
-
-- [ ] `BinaryOp::Mod` names the remainder, which is written `%` (S2);
-  the variant keeps its name until a change that renames it everywhere.
+`BinaryOp::Rem` names the remainder, which is written `%` (S2).
 
 Evidence of these chapters, and its bounds; the compiled `syntaxChapters`
 job of `fren_test` runs these checks in about 20 seconds, and `ruleReqs`

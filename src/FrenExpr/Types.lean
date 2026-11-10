@@ -46,7 +46,7 @@ All other binary operations require their fixed builtin operand type. -/
   | _ => .int
 
 @[expose] def binaryResult : BinaryOp → ValueType Id
-  | .add | .sub | .mul | .div | .mod => .int
+  | .add | .sub | .mul | .div | .rem => .int
   | _ => .bool
 
 @[expose] def binary [BEq Id] (op : BinaryOp) (left right : ValueType Id) : Option (ValueType Id) :=

@@ -96,7 +96,7 @@ pub fn integer_meaning?(op: BinaryOp, a: Int, b: Int, result: Value) := match op
     BinaryOp::Add => result = Value::Integer(a + b),
     BinaryOp::Sub => result = Value::Integer(a - b),
     BinaryOp::Mul | BinaryOp::Div => result is Value::Integer(_),
-    BinaryOp::Mod => match result {
+    BinaryOp::Rem => match result {
         Value::Integer(r) => b = 0 or 0 <= r < b.abs,
         _ => false,
     },
@@ -366,7 +366,7 @@ establish this condition.
 
 ```fren
 pub fn integer_domain?(op: BinaryOp, right: Int) :=
-    not op in {BinaryOp::Div, BinaryOp::Mod} or right != 0
+    not op in {BinaryOp::Div, BinaryOp::Rem} or right != 0
 ```
 
 [Definedness and verification](PropertiesAndChecks.md) defines the obligation

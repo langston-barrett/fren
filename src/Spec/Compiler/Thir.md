@@ -308,7 +308,7 @@ pub enum ValueKind { Boolean, Integer, Nominal }
 
 -- The production unary and binary operators.
 pub enum UnaryTag { Neg, Not }
-pub enum BinaryTag { Add, Sub, Mul, Div, Mod, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Iff }
+pub enum BinaryTag { Add, Sub, Mul, Div, Rem, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Iff }
 
 pub proc compatible(left: ValueKind, right: ValueKind, left_id: Int, right_id: Int): (same?) {
     ensure meaning: same? iff left = right and (left != ValueKind::Nominal or left_id = right_id)
@@ -344,7 +344,7 @@ pub fn integer_tag?(op: BinaryTag) :=
         BinaryTag::Sub,
         BinaryTag::Mul,
         BinaryTag::Div,
-        BinaryTag::Mod,
+        BinaryTag::Rem,
         BinaryTag::Lt,
         BinaryTag::Le,
         BinaryTag::Gt,
@@ -368,7 +368,7 @@ pub proc binary(op: BinaryTag, left: ValueKind, right: ValueKind, left_id: Int, 
             BinaryTag::Sub,
             BinaryTag::Mul,
             BinaryTag::Div,
-            BinaryTag::Mod,
+            BinaryTag::Rem,
         }
         then ValueKind::Integer
         else ValueKind::Boolean

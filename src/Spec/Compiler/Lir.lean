@@ -56,7 +56,7 @@ def Assigned (s : Typed) (ctx : TypeContext) (env : Slots) : Prop :=
 inductive Primitive (zero : ZeroValues) : BinaryOp → FrenEval.Value → FrenEval.Value → FrenEval.Value → Prop where
   | ordinary : FrenEval.binary op a b = .ok v → Primitive zero op a b v
   | divZero : Primitive zero .div (.int n) (.int 0) (.int (zero .div n))
-  | modZero : Primitive zero .mod (.int n) (.int 0) (.int (zero .mod n))
+  | remZero : Primitive zero .rem (.int n) (.int 0) (.int (zero .rem n))
 
 /-- Interpretation, not a compiler or a bounded execution. Tags and contexts
 are checked by Sorted/Assigned; origins do not change a term's value. -/
@@ -292,7 +292,7 @@ theorem entry_failure (file : FrenSource.FileId) (source : String) (d : FrenHirT
     (h : FrenThirDesugar.fromSource file source = .error d) :
     FrenFlatToLir.fromSource file source = .error d := FrenFlatToLir.rejected file source d h
 
-theorem ordinary_checks (op : BinaryOp) (a b : Lowered) (hd : op ≠ .div) (hm : op ≠ .mod) :
+theorem ordinary_checks (op : BinaryOp) (a b : Lowered) (hd : op ≠ .div) (hm : op ≠ .rem) :
     (Lowered.binary op a b).verification = .both a.verification b.verification :=
   FrenLir.binary_verification op a b hd hm
 
@@ -301,7 +301,7 @@ theorem division_checks (a b : Lowered) :
       .both (.both a.verification b.verification) (.check (.binary .ne b.value (.int 0))) := rfl
 
 theorem remainder_checks (a b : Lowered) :
-    (Lowered.binary .mod a b).verification =
+    (Lowered.binary .rem a b).verification =
       .both (.both a.verification b.verification) (.check (.binary .ne b.value (.int 0))) := rfl
 
 theorem branch_checks (c a b : Lowered) :

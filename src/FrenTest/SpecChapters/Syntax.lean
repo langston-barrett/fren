@@ -562,7 +562,7 @@ inductive Tree where
 
 def unaryOps : List SUnary := [.Neg, .Not]
 def binaryOps : List SBinary :=
-  [.Add, .Sub, .Mul, .Div, .Mod, .Eq, .Ne, .Lt, .Le, .Gt, .Ge, .And, .Or, .Iff]
+  [.Add, .Sub, .Mul, .Div, .Rem, .Eq, .Ne, .Lt, .Le, .Gt, .Ge, .And, .Or, .Iff]
 
 theorem all_binary (op : SBinary) : op ∈ binaryOps := by cases op <;> simp [binaryOps]
 theorem all_unary (op : SUnary) : op ∈ unaryOps := by cases op <;> simp [unaryOps]
@@ -574,7 +574,7 @@ def unaryOf : FrenAst.UnaryOp → SUnary
 
 def binaryOf (op : FrenAst.BinaryOp) : SBinary :=
   match op with
-  | .add => .Add | .sub => .Sub | .mul => .Mul | .div => .Div | .mod => .Mod | .eq => .Eq
+  | .add => .Add | .sub => .Sub | .mul => .Mul | .div => .Div | .rem => .Rem | .eq => .Eq
   | .ne => .Ne | .lt => .Lt | .le => .Le | .gt => .Gt | .ge => .Ge | .and => .And | .or => .Or
   | .iff => .Iff
 
@@ -603,7 +603,7 @@ partial def abstract : Expr → Tree
 
 def unaryName : SUnary → String | .Neg => "Neg" | .Not => "Not"
 def binaryName : SBinary → String
-  | .Add => "Add" | .Sub => "Sub" | .Mul => "Mul" | .Div => "Div" | .Mod => "Mod" | .Eq => "Eq"
+  | .Add => "Add" | .Sub => "Sub" | .Mul => "Mul" | .Div => "Div" | .Rem => "Rem" | .Eq => "Eq"
   | .Ne => "Ne" | .Lt => "Lt" | .Le => "Le" | .Gt => "Gt" | .Ge => "Ge" | .And => "And"
   | .Or => "Or" | .Iff => "Iff"
 

@@ -31,7 +31,7 @@ def unaryText : FrenAst.UnaryOp → String
   | .neg => "-" | .not => "not"
 
 def binaryText : FrenAst.BinaryOp → String
-  | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .mod => "%"
+  | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .rem => "%"
   | .eq => "=" | .ne => "!=" | .lt => "<" | .le => "<=" | .gt => ">" | .ge => ">="
   | .and => "and" | .or => "or" | .iff => "iff"
 

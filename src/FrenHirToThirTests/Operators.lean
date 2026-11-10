@@ -15,7 +15,7 @@ def runOperators : IO Unit := do
       ("Signal", "Signal::Red", .enum (key "Signal"))]
   let prelude := "mod m\nenum Light { Red, Green }\nenum Signal { Red, Green }\n"
   let ops : List (String × BinaryOp × Nat) :=
-    [("+", .add, 0), ("-", .sub, 0), ("*", .mul, 0), ("div", .div, 0), ("%", .mod, 0),
+    [("+", .add, 0), ("-", .sub, 0), ("*", .mul, 0), ("div", .div, 0), ("%", .rem, 0),
      ("<", .lt, 1), ("<=", .le, 1), (">", .gt, 1), (">=", .ge, 1),
      ("and", .and, 2), ("or", .or, 2), ("iff", .iff, 2), ("=", .eq, 3), ("!=", .ne, 3)]
   let mut accepted := 0

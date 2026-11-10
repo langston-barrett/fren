@@ -21,7 +21,7 @@ private def primitive (op : FrenAst.BinaryOp) (a b : Value) : Option Value :=
   | .mul, .int x, .int y => some (.int (x * y))
   -- Arbitrary totalized value; the domain formula must still reject zero.
   | .div, .int x, .int y => some (.int (if y == 0 then 0 else x / y))
-  | .mod, .int x, .int y => some (.int (if y == 0 then 0 else x % y))
+  | .rem, .int x, .int y => some (.int (if y == 0 then 0 else x % y))
   | .lt, .int x, .int y => some (.bool (x < y))
   | .le, .int x, .int y => some (.bool (x ≤ y))
   | .gt, .int x, .int y => some (.bool (x > y))

@@ -96,7 +96,7 @@ def binaryOperator (text : String) : Option (BinaryOp × Nat) :=
   | "<" => some (.lt, 5) | "<=" => some (.le, 5)
   | ">" => some (.gt, 5) | ">=" => some (.ge, 5)
   | "+" => some (.add, 6) | "-" => some (.sub, 6)
-  | "*" => some (.mul, 7) | "div" => some (.div, 7) | "%" => some (.mod, 7)
+  | "*" => some (.mul, 7) | "div" => some (.div, 7) | "%" => some (.rem, 7)
   | _ => none
 
 private def comparison : BinaryOp → Bool

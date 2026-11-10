@@ -142,7 +142,7 @@ pub proc question_laws(assumptions?, goal?) {
 
 r[mir.walking.partiality]
 `DomainSite` uses the shared desugaring `ScopedAt` relation, with exact body,
-lexical context, ordered guard path, operands, operator token and div/mod
+lexical context, ordered guard path, operands, operator token and division/remainder
 kind. MIR must retain these sites in both directions. Both ordinary Boolean
 operands and every unused let value remain in the incoming static scope.
 An if or match branch alone adds its explicit guard. Existing guards keep
@@ -162,7 +162,7 @@ meaning, and supplies no equation for that outside-domain value.
 visits all ordinary children independently of short-circuit execution. A let
 body extends the environment with its defined value. Explicit branch and arm
 steps require the selected guard's value in its original environment.
-`BodySafe` requires a nonzero integer divisor at every applicable div/mod
+`BodySafe` requires a nonzero integer divisor at every applicable division/remainder
 site, using that site's environment. It records a mathematical requirement;
 it does not claim that a solver has proved it.
 
@@ -279,7 +279,7 @@ def Constructs (p : Program) (t : Theory) : Prop :=
 /-- The same scoped sites as Desugaring, now rooted in real MIR declarations. -/
 def DomainSite (t : Theory) (body : TypedBody) (ctx : TypeContext)
     (guards : List Desugaring.Guard) (left : Expr) (token : Token) (op : BinaryOp) (right : Expr) : Prop :=
-  TheoryRoot t body ∧ (op = .div ∨ op = .mod) ∧
+  TheoryRoot t body ∧ (op = .div ∨ op = .rem) ∧
     Desugaring.ScopedAt t.source.resolved t.source.signatures body.context body.expression ctx
       (.binary left token op right) guards
 
@@ -354,7 +354,7 @@ def BodySafe (s : Typed) (defines : Signature → TypedBody → Prop)
     (body : TypedBody) (args : Array FrenEval.Value) : Prop :=
   ∀ ctx env guards left token op right,
     StaticAt s defines body.context body.expression args.toList.reverse ctx
-      (.binary left token op right) env guards → (op = .div ∨ op = .mod) →
+      (.binary left token op right) env guards → (op = .div ∨ op = .rem) →
     ∃ n : Int, ValueOf s defines ctx right env (.int n) ∧ n ≠ 0
 
 def AllTrue (s : Typed) (defines : Signature → TypedBody → Prop)

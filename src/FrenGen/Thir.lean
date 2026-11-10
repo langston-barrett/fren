@@ -317,7 +317,7 @@ def expr (ctx : List Ty) (t : Ty) (depth : Nat) : G m (Expr .thir) :=
       match t with
       | .int =>
         count 6
-        let op ← oneOf pick #[BinaryOp.add, .sub, .mul, .div, .mod] .add
+        let op ← oneOf pick #[BinaryOp.add, .sub, .mul, .div, .rem] .add
         let l ← fixed ctx .int d true
         let r ← fixed ctx .int d true
         return mk (← fresh) .int (.binary op l r)

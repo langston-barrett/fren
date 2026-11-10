@@ -273,7 +273,7 @@ def Assigned (s : Typed) (ctx : TypeContext) (env : Slots) : Prop :=
 inductive Primitive (zero : ZeroValues) : BinaryOp → FrenEval.Value → FrenEval.Value → FrenEval.Value → Prop where
   | ordinary : FrenEval.binary op a b = .ok v → Primitive zero op a b v
   | divZero : Primitive zero .div (.int n) (.int 0) (.int (zero .div n))
-  | modZero : Primitive zero .mod (.int n) (.int 0) (.int (zero .mod n))
+  | remZero : Primitive zero .rem (.int n) (.int 0) (.int (zero .rem n))
 
 /-- Interpretation, not a compiler or a bounded execution. Tags and contexts
 are checked by Sorted/Assigned; origins do not change a term's value. -/

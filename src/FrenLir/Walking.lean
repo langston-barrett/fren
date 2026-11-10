@@ -22,7 +22,7 @@ structure Origin where
 
 /-- A first-order vocabulary with scoped outcome lets. There is deliberately
 no global ref table: all open expressions stay under their lexical binders.
-Arithmetic values are total symbolic terms; verification retains div/mod checks.
+Arithmetic values are total symbolic terms; verification retains division/remainder checks.
 An at node preserves each written occurrence, including parentheses. -/
 inductive Term where
   | bool (value : Bool)
@@ -75,7 +75,7 @@ trace or Boolean value to decide whether an ordinary operand is checked. -/
 @[expose] def Lowered.binary (op : BinaryOp) (a b : Lowered) : Lowered :=
   let operands := Verification.both a.verification b.verification
   let checks := match op with
-    | .div | .mod => Verification.both operands (.check (.binary .ne b.value (.int 0)))
+    | .div | .rem => Verification.both operands (.check (.binary .ne b.value (.int 0)))
     | _ => operands
   ⟨.binary op a.value b.value, checks⟩
 
@@ -136,7 +136,7 @@ theorem bind_domain (binder : Token) (ty : FrenExpr.Ty) (v b : Lowered) :
       both v.defined (.letE binder ty v.value v.defined b.defined) := rfl
 
 theorem strict_domain (op : BinaryOp) (a b : Lowered)
-    (hd : op ≠ .div) (hm : op ≠ .mod) :
+    (hd : op ≠ .div) (hm : op ≠ .rem) :
     (Lowered.binary op a b).defined = both a.defined b.defined := by
   cases op <;> simp_all [Lowered.binary, Lowered.defined, Verification.formula]
 
@@ -154,7 +154,7 @@ theorem call_domain (sig : Signature) (args : List Lowered) :
   rfl
 
 theorem binary_verification (op : BinaryOp) (a b : Lowered)
-    (hd : op ≠ .div) (hm : op ≠ .mod) :
+    (hd : op ≠ .div) (hm : op ≠ .rem) :
     (Lowered.binary op a b).verification = .both a.verification b.verification := by
   cases op <;> simp_all [Lowered.binary]
 

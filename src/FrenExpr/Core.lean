@@ -315,7 +315,7 @@ open Fren (Sexp)
   | .neg => "neg" | .not => "not"
 
 @[expose] def binary : BinaryOp → String
-  | .add => "add" | .sub => "sub" | .mul => "mul" | .div => "div" | .mod => "mod"
+  | .add => "add" | .sub => "sub" | .mul => "mul" | .div => "div" | .rem => "rem"
   | .eq => "eq" | .ne => "ne" | .lt => "lt" | .le => "le" | .gt => "gt" | .ge => "ge"
   | .and => "and" | .or => "or" | .iff => "iff"
 

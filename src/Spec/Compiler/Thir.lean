@@ -503,7 +503,7 @@ def coreUnary : spec.surface.UnaryOp → FrenAst.UnaryOp
   | .Neg => .neg | .Not => .not
 
 def coreBinary : spec.surface.BinaryOp → FrenAst.BinaryOp
-  | .Add => .add | .Sub => .sub | .Mul => .mul | .Div => .div | .Mod => .mod
+  | .Add => .add | .Sub => .sub | .Mul => .mul | .Div => .div | .Rem => .rem
   | .Lt => .lt | .Le => .le | .Gt => .gt | .Ge => .ge
   | .And => .and | .Or => .or | .Iff => .iff | .Eq => .eq | .Ne => .ne
 
@@ -540,7 +540,7 @@ def primitiveUnary : spec.thir.UnaryTag → FrenAst.UnaryOp
   | .Neg => .neg | .Not => .not
 
 def primitiveBinary : spec.thir.BinaryTag → FrenAst.BinaryOp
-  | .Add => .add | .Sub => .sub | .Mul => .mul | .Div => .div | .Mod => .mod
+  | .Add => .add | .Sub => .sub | .Mul => .mul | .Div => .div | .Rem => .rem
   | .Lt => .lt | .Le => .le | .Gt => .gt | .Ge => .ge
   | .And => .and | .Or => .or | .Iff => .iff | .Eq => .eq | .Ne => .ne
 

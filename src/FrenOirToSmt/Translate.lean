@@ -69,7 +69,7 @@ SMT lets, evaluated outside the new binding's own scope. -/
       let right ← visit b
       let name := match op with
         | .and => "and" | .or => "or" | .iff | .eq => "=" | .ne => "distinct"
-        | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .mod => "mod"
+        | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .rem => "mod"
         | .lt => "<" | .le => "<=" | .gt => ">" | .ge => ">="
       return application name [left, right]
     | .ite c a b => return application "ite" [← visit c, ← visit a, ← visit b]

@@ -182,7 +182,7 @@ operators, also require a nonzero divisor.
 ```
 
 ```fren
-pub fn partial?(op: BinaryOp) := op in {BinaryOp::Div, BinaryOp::Mod}
+pub fn partial?(op: BinaryOp) := op in {BinaryOp::Div, BinaryOp::Rem}
 
 pub fn operator_condition(
     op: BinaryOp,

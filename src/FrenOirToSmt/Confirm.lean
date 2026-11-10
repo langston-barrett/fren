@@ -110,13 +110,13 @@ every branch, operand and let. Exhausted traversal counts as partial. -/
     match e with
     | .bool .. | .integer .. | .name .. => false
     | .paren _ e _ | .unary _ _ e => go e
-    | .binary a _ op b => op == .div || op == .mod || go a || go b
+    | .binary a _ op b => op == .div || op == .rem || go a || go b
     | .ifE _ c _ a _ b => go c || go a || go b
     | .letE _ _ _ a _ b => go a || go b
     | .matchE _ e _ arms _ => go e || arms.any (fun (_, _, arm, _) => go arm)
     | .call f _ args _ _ => go f || args.any go
 
-/-- Whether a body and its transitive callees are free of `div` and `mod`.
+/-- Whether a body and its transitive callees are free of division and remainder.
 Without them no primitive step is undefined, so a successful demand-driven
 evaluation already means every static obligation holds and strict evaluation
 is skipped; this bounds confirmation cost by the interpreter's. Each reachable
@@ -194,7 +194,7 @@ private def confirmDefinedness (p : FrenEval.Program) (q : FrenOir.Question)
     return .unconfirmed "source site body mismatch"
   let .binary _ _ op divisor := origin.expression
     | return .unconfirmed "source definedness site unsupported"
-  if op != .div && op != .mod then return .unconfirmed "source definedness operator unsupported"
+  if op != .div && op != .rem then return .unconfirmed "source definedness operator unsupported"
   -- The question is regenerated from admitted source. This shape restricts
   -- confirmation to the producer's divisor-nonzero leaf, never call domains.
   let .binary .ne _ (.int 0) := q.condition
@@ -359,7 +359,7 @@ theorem strict_mod_zero (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBo
     (env : FrenEval.Environment) (left right : FrenAst.Expr) (token : FrenAst.Token)
     (value : FrenEval.Value)
     (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
-    (strictWalk (n + 1) t b env (.binary left token .mod right)).isOk = false := by
+    (strictWalk (n + 1) t b env (.binary left token .rem right)).isOk = false := by
   cases value <;> simp [strictWalk, strictStep, hl, hr, Bind.bind, Except.bind, FrenEval.binary,
     Except.mapError, ofExcept, Except.isOk, Except.toBool] <;> rfl
 

@@ -110,7 +110,7 @@ def Constructs (p : Program) (t : Theory) : Prop :=
 /-- The same scoped sites as Desugaring, now rooted in real MIR declarations. -/
 def DomainSite (t : Theory) (body : TypedBody) (ctx : TypeContext)
     (guards : List Desugaring.Guard) (left : Expr) (token : Token) (op : BinaryOp) (right : Expr) : Prop :=
-  TheoryRoot t body ∧ (op = .div ∨ op = .mod) ∧
+  TheoryRoot t body ∧ (op = .div ∨ op = .rem) ∧
     Desugaring.ScopedAt t.source.resolved t.source.signatures body.context body.expression ctx
       (.binary left token op right) guards
 
@@ -185,7 +185,7 @@ def BodySafe (s : Typed) (defines : Signature → TypedBody → Prop)
     (body : TypedBody) (args : Array FrenEval.Value) : Prop :=
   ∀ ctx env guards left token op right,
     StaticAt s defines body.context body.expression args.toList.reverse ctx
-      (.binary left token op right) env guards → (op = .div ∨ op = .mod) →
+      (.binary left token op right) env guards → (op = .div ∨ op = .rem) →
     ∃ n : Int, ValueOf s defines ctx right env (.int n) ∧ n ≠ 0
 
 def AllTrue (s : Typed) (defines : Signature → TypedBody → Prop)
@@ -421,8 +421,8 @@ example (s : Typed) (defines : Signature → TypedBody → Prop) (ctx : TypeCont
 
 example (s : Typed) (defines : Signature → TypedBody → Prop) (ctx : TypeContext)
     (env : List FrenEval.Value) (left right rest : Expr) (l name assign inside op : Token) :
-    StaticAt s defines ctx (.letE l name assign (.binary left op .mod right) inside rest) env
-      ctx (.binary left op .mod right) env [] := .ordinary .root .letValue
+    StaticAt s defines ctx (.letE l name assign (.binary left op .rem right) inside rest) env
+      ctx (.binary left op .rem right) env [] := .ordinary .root .letValue
 
 -- These regressions prove a sufficient, executable non-vacuity condition for
 -- the repaired functionality clause, then check it on actual admitted roots.

@@ -334,7 +334,7 @@ pub fn integer_binary?(op: BinaryOp) :=
         BinaryOp::Sub,
         BinaryOp::Mul,
         BinaryOp::Div,
-        BinaryOp::Mod,
+        BinaryOp::Rem,
     }
 
 pub fn comparison?(op: BinaryOp) := op in {BinaryOp::Lt, BinaryOp::Le, BinaryOp::Gt, BinaryOp::Ge}

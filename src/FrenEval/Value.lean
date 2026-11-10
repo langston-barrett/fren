@@ -45,7 +45,7 @@ Int division, guarded before its totalized zero-divisor definition is reached. -
   | .sub, .int a, .int b => .ok (.int (a - b))
   | .mul, .int a, .int b => .ok (.int (a * b))
   | .div, .int a, .int b => if b == 0 then .error .undefined else .ok (.int (a / b))
-  | .mod, .int a, .int b => if b == 0 then .error .undefined else .ok (.int (a % b))
+  | .rem, .int a, .int b => if b == 0 then .error .undefined else .ok (.int (a % b))
   | .lt, .int a, .int b => .ok (.bool (a < b))
   | .le, .int a, .int b => .ok (.bool (a ≤ b))
   | .gt, .int a, .int b => .ok (.bool (a > b))
@@ -64,14 +64,14 @@ theorem binary_mul (a b : Int) : binary .mul (.int a) (.int b) = .ok (.int (a * 
 theorem binary_div (a b : Int) (h : b ≠ 0) :
     binary .div (.int a) (.int b) = .ok (.int (a / b)) := by simp [binary, h]
 theorem binary_mod (a b : Int) (h : b ≠ 0) :
-    binary .mod (.int a) (.int b) = .ok (.int (a % b)) := by simp [binary, h]
+    binary .rem (.int a) (.int b) = .ok (.int (a % b)) := by simp [binary, h]
 theorem div_zero (a : Int) : binary .div (.int a) (.int 0) = .error .undefined := rfl
-theorem mod_zero (a : Int) : binary .mod (.int a) (.int 0) = .error .undefined := rfl
+theorem mod_zero (a : Int) : binary .rem (.int a) (.int 0) = .error .undefined := rfl
 
 /-- A contract about the actual primitive results, including negative divisors. -/
 theorem euclidean (a b : Int) (h : b ≠ 0) :
     binary .div (.int a) (.int b) = .ok (.int (a / b)) ∧
-    binary .mod (.int a) (.int b) = .ok (.int (a % b)) ∧
+    binary .rem (.int a) (.int b) = .ok (.int (a % b)) ∧
     a = (a / b) * b + a % b ∧ 0 ≤ a % b ∧ a % b < b.natAbs := by
   exact ⟨binary_div a b h, binary_mod a b h, (Int.ediv_mul_add_emod a b).symm,
     Int.emod_nonneg a h, Int.emod_lt a h⟩

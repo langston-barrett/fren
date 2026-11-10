@@ -46,7 +46,7 @@ inductive UnaryOp where
   deriving Repr, BEq, DecidableEq
 
 inductive BinaryOp where
-  | add | sub | mul | div | mod | eq | ne | lt | le | gt | ge | and | or | iff
+  | add | sub | mul | div | rem | eq | ne | lt | le | gt | ge | and | or | iff
   deriving Repr, BEq, DecidableEq
 
 /-- Syntax, not a resolved or typed IR. Repeated names have distinct tokens.

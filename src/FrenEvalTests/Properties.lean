@@ -77,7 +77,7 @@ private def primitives (a b : Int) : Bool :=
   (match binary .add (.int a) (.int b) with
     | .ok (.int sum) => sum == a + b
     | _ => false) &&
-  match binary .sub (.int a) (.int b), binary .div (.int a) (.int b), binary .mod (.int a) (.int b) with
+  match binary .sub (.int a) (.int b), binary .div (.int a) (.int b), binary .rem (.int a) (.int b) with
   | .ok (.int difference), q, r =>
     difference == a - b &&
     if b == 0 then (match q, r with | .error .undefined, .error .undefined => true | _, _ => false)

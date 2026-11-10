@@ -48,7 +48,7 @@ def UnaryName : UnaryOp → String
 
 def BinaryName : BinaryOp → String
   | .and => "and" | .or => "or" | .iff | .eq => "=" | .ne => "distinct"
-  | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .mod => "mod"
+  | .add => "+" | .sub => "-" | .mul => "*" | .div => "div" | .rem => "mod"
   | .lt => "<" | .le => "<=" | .gt => ">" | .ge => ">="
 
 /-- Concrete-text grammar judgment on the actual LIR term, without fuel.
@@ -209,7 +209,7 @@ def ModelAssignment (p : FrenOir.Program) (q : FrenOir.Question)
 
 /-- Observation of the actual interpreter on the retained source body, which
 strict evaluation of its retained static obligations must reproduce whenever
-the body or a transitive callee mentions `div` or `mod`. -/
+the body or a transitive callee mentions division or remainder. -/
 def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
     (depth : Nat) (value : Bool) : Prop :=
   ∃ observation, FrenEval.evaluate ⟨p.input, p.typed, p.accepted⟩
@@ -291,7 +291,7 @@ theorem strict_division_by_zero (n : Nat) (t : Typed) (b : TypedBody) (env : Fre
 theorem strict_remainder_by_zero (n : Nat) (t : Typed) (b : TypedBody) (env : FrenEval.Environment)
     (left right : Expr) (token : Token) (value : FrenEval.Value)
     (hl : strictWalk n t b env left = .ok value) (hr : strictWalk n t b env right = .ok (.int 0)) :
-    (strictWalk (n + 1) t b env (.binary left token .mod right)).isOk = false :=
+    (strictWalk (n + 1) t b env (.binary left token .rem right)).isOk = false :=
   FrenOirToSmt.strict_mod_zero n t b env left right token value hl hr
 
 theorem wrong_model_sort (p : FrenOir.Program) :

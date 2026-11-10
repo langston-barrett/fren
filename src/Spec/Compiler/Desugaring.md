@@ -156,7 +156,7 @@ inductive ScopedAt (r : Resolved) (sigs : Array Signature) :
 The body includes owner, full member, type, occurrences and source tokens. -/
 def DomainSite (p : Program) (body : TypedBody) (ctx : TypeContext)
     (guards : List Guard) (left : Expr) (token : Token) (op : BinaryOp) (right : Expr) : Prop :=
-  body ∈ p.typed.bodies.toList ∧ (op = .div ∨ op = .mod) ∧
+  body ∈ p.typed.bodies.toList ∧ (op = .div ∨ op = .rem) ∧
     ScopedAt p.input p.typed.signatures body.context body.expression ctx
       (.binary left token op right) guards
 

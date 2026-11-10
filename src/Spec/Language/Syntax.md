@@ -336,7 +336,7 @@ which of their values are well formed.
 ```fren
 pub enum UnaryOp { Neg, Not }
 
-pub enum BinaryOp { Add, Sub, Mul, Div, Mod, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Iff }
+pub enum BinaryOp { Add, Sub, Mul, Div, Rem, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Iff }
 
 -- A path, as its identifiers in order.
 pub type Path := Seq<String>
@@ -491,7 +491,7 @@ pub fn binary_spelling(op: BinaryOp): String := match op {
     BinaryOp::Sub => "-",
     BinaryOp::Mul => "*",
     BinaryOp::Div => "div",
-    BinaryOp::Mod => "%",
+    BinaryOp::Rem => "%",
     BinaryOp::Eq => "=",
     BinaryOp::Ne => "!=",
     BinaryOp::Lt => "<",
@@ -517,7 +517,7 @@ A::B::c -- (Name A::B::c)
 ((x)) -- (Name x)
 f(g(x), (y),) -- (Call f (Call g (Name x)) (Name y))
 a - b - c -- (Binary Sub (Binary Sub (Name a) (Name b)) (Name c))
-x % 2 -- (Binary Mod (Name x) (Integer 2))
+x % 2 -- (Binary Rem (Name x) (Integer 2))
 if b then let x := 1 in x else 2 -- (If (Name b) (Let x (Integer 1) (Name x)) (Integer 2))
 match f(l) { E::A => not a, E::B => 1, } -- (Match (Call f (Name l)) (Arm E::A (Unary Not (Name a))) (Arm E::B (Integer 1)))
 match l {} -- (Match (Name l))
@@ -642,7 +642,7 @@ pub fn binary_category(op: BinaryOp): Category := match op {
     BinaryOp::Sub => Category::Sum,
     BinaryOp::Mul => Category::Product,
     BinaryOp::Div => Category::Product,
-    BinaryOp::Mod => Category::Product,
+    BinaryOp::Rem => Category::Product,
     _ => Category::Comparison,
 }
 

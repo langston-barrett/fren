@@ -66,7 +66,7 @@ inductive ScopedAt (r : Resolved) (sigs : Array Signature) :
 The body includes owner, full member, type, occurrences and source tokens. -/
 def DomainSite (p : Program) (body : TypedBody) (ctx : TypeContext)
     (guards : List Guard) (left : Expr) (token : Token) (op : BinaryOp) (right : Expr) : Prop :=
-  body ∈ p.typed.bodies.toList ∧ (op = .div ∨ op = .mod) ∧
+  body ∈ p.typed.bodies.toList ∧ (op = .div ∨ op = .rem) ∧
     ScopedAt p.input p.typed.signatures body.context body.expression ctx
       (.binary left token op right) guards
 
@@ -281,8 +281,8 @@ example (p : Program) (body : TypedBody) (left right : Expr) (b andTok divTok : 
 
 example (p : Program) (body : TypedBody) (left right rest : Expr)
     (l name assign inside op : Token) (hb : body ∈ p.typed.bodies.toList)
-    (he : body.expression = .letE l name assign (.binary left op .mod right) inside rest) :
-    DomainSite p body body.context [] left op .mod right := by
+    (he : body.expression = .letE l name assign (.binary left op .rem right) inside rest) :
+    DomainSite p body body.context [] left op .rem right := by
   refine ⟨hb, Or.inr rfl, ?_⟩
   rw [he]
   exact .child .root .letValue
