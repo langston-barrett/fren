@@ -25,10 +25,12 @@ in four ways, and each stays for the reason given.
   that returns an outcome has no steps; the
   [derived judgment](../Language/DynamicSemantics.md#r-dynamics.evaluation.rules)
   is its counterpart.
-- It leaves a let's definition unread where the body does not read it,
-  where the step relation evaluates every let's value. So where an
-  unread definition has an error or diverges, this evaluator gives the
-  body's outcome and the step relation does not. This is the value
+- It evaluates a let's definition but does not raise the definition's
+  failure where the body does not read the local, where the step
+  relation ends in the error of every let's value that has one. So
+  where the definition of a local that the body does not read has an
+  error, this evaluator gives the body's outcome and the step relation
+  gives the error. This is the value
   strategy of [the walk](#r-evaluator.expression.walk), which the
   debugger shows, and the implementation property permits it: under its
   premises every definition has a value.

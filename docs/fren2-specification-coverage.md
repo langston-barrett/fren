@@ -454,7 +454,11 @@ chapters is prose.
   (`expressions.meaning.values`) and selection
   (`patterns.matching.dynamics`). That errors pass through each form in
   the order of evaluation is stated by the evaluator's definition and
-  the examples only.
+  the examples only. A proof's induction on the justified record must
+  be over the entries whose arguments are valid values of the callee's
+  parameter types: `justified?` does not restrict the others, loading is
+  undefined for them, and it remains to show that a well-typed table at
+  an assignment of its context reads only well-typed entries.
 - [ ] `dynamics.theorem.implementation` is restated as a conditional
   claim: under the premises of adequacy and the typing premises of table
   agreement, each value that an implementation gives is the step

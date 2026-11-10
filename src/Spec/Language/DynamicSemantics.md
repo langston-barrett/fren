@@ -426,13 +426,17 @@ A call record is *justified* in a program when each of its calls names a
 function that has a body in the program, and the call's outcome is the
 one that the evaluator gives the last row of that body, at the
 assignment that lists the call's arguments and with the calls listed
-before it as the call record. So a justified record is a finite
+before it as the call record. `body_of` takes the last declaration of
+the callee's name, which is the step relation's lookup in a
+[well-typed program](Types.md#r-types.program.typing), since that
+declares each function once. So a justified record is a finite
 derivation of its calls' outcomes, oldest first, and it plays the part
 of fuel: each call that the evaluation of a body reaches must be listed
-earlier. A call that
-[diverges](#r-dynamics.divergence) is listed in no justified record, so
-the evaluator gives it no outcome, whatever justified record it is
-given. This rests on no result of the
+earlier. By [table agreement](#r-dynamics.theorem.table-agreement),
+which is open, a call of a well-typed program at valid argument values
+that [diverges](#r-dynamics.divergence) is listed in no justified
+record, so the evaluator gives it no outcome, whatever justified record
+it is given. The record rests on no result of the
 [termination check](StaticSemantics.md#r-statics.termination).
 
 ```fren
@@ -503,9 +507,9 @@ Where no error passes to it in this way, a row has no outcome when a
 child that it needs has none, when a local is not in ρ, when an operator
 has no result at its operands' values, or when it is a call whose
 arguments have values and which C does not list at them. So a row that
-needs the value of a product whose operands have values, of a quotient
-or a remainder at a nonzero divisor, or of a call that C does not list
-at its arguments' values has none. A conditional needs only its condition
+needs the value of a product, of a quotient or of a remainder whose
+operands have values, the divisor not zero, or of a call that C does
+not list at its arguments' values, has none. A conditional needs only its condition
 and the selected branch, a match only its scrutinee and the selected
 arm, and `and` and `or` need their second operand only where the first
 does not decide them. A let needs its value's outcome, whether or not
@@ -649,7 +653,9 @@ remain.
   of its parameters, and a callee's body is no part of the caller's
   table, so the evaluator cannot enter it; the justified record is the
   finite derivation that stands for the run. The evaluator is total, so
-  it cannot diverge, and a call that diverges has no outcome at any
+  it cannot diverge. By
+  [table agreement](#r-dynamics.theorem.table-agreement), which is open,
+  a call that diverges in a well-typed program has no outcome at any
   justified record.
 
 Where it gives an outcome at a justified record,
@@ -659,7 +665,7 @@ The compiler's evaluator is a third function, and the
 lists the ways in which it differs from the step relation; the two lists
 are of different evaluators and are kept apart.
 
-r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, QUOTIENT_ROWS, DOUBLE, DOUBLE_ROWS, CALL_ROWS, ERROR_ROWS, doubled, DOUBLED, evaluation_examples::{bound, unbound, uncomputed, zero_divisor, decided, propagated, uncalled, product_propagated, call_propagated, called, justified, unjustified}}
+r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, QUOTIENT_ROWS, DOUBLE, DOUBLE_ROWS, CALL_ROWS, ERROR_ROWS, doubled, DOUBLED, evaluation_examples::{bound, unbound, uncomputed, zero_divisor, decided, propagated, uncalled, product_propagated, call_propagated, quotient_propagated, remainder_propagated, called, justified, unjustified}}
 `let d := 2 in 10 - d` has this table; row 4 is the let.
 
 | Row | Layer | Context |
@@ -671,8 +677,9 @@ r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, QUOTIENT_RO
 | 4 | `let d := row 0 in row 3` | `·` |
 
 In the empty assignment the let has the value 8. Its body's row 3 has
-no outcome there, since the local is not in the assignment. A quotient
-has no computed value at a nonzero divisor, even of 10 and 2.
+no outcome there, since the local is not in the assignment. The
+quotient of the values 10 and 2 has no computed value, as at every
+nonzero divisor.
 
 `false and 1 div 0 = 1` has the table below, with the outcome of each
 row in the empty assignment. The quotient's row 2 has the error
@@ -698,10 +705,12 @@ outcome 4; with it the call has the value 4. `DOUBLED` is justified in
 the program that declares `double`, and the record that lists the
 outcome 5 is not.
 
-An operand's error passes to a product and to a call that the record
-does not list. The table `ERROR_ROWS` has the rows `1`, `0`,
-`row 0 div row 1`, `row 2 * row 0` and `double(row 2)`. With the empty
-call record the product's row 3 and the call's row 4 both have
+An operand's error passes to a product, to a quotient and a remainder
+at a nonzero divisor, and to a call that the record does not list. The
+table `ERROR_ROWS` has the rows `1`, `0`, `row 0 div row 1`,
+`row 2 * row 0`, `double(row 2)`, `row 2 div row 0` and
+`row 2 % row 0`. With the empty call record the product's row 3, the
+call's row 4, the quotient's row 5 and the remainder's row 6 all have
 `error(zero-divisor)`, the outcome of row 2.
 
 ```fren
@@ -751,13 +760,19 @@ pub const CALL_ROWS: Snoc<Row> := Extend(
 )
 
 pub const ERROR_ROWS: Snoc<Row> := Extend(
-    four(
-        typed(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
-        typed(CoreF::IntegerLiteral(0), Empty, Ty::Integer),
-        typed(CoreF::Binary(BinaryOp::Div, 0, 1), Empty, Ty::Integer),
-        typed(CoreF::Binary(BinaryOp::Mul, 2, 0), Empty, Ty::Integer)
+    Extend(
+        Extend(
+            four(
+                typed(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+                typed(CoreF::IntegerLiteral(0), Empty, Ty::Integer),
+                typed(CoreF::Binary(BinaryOp::Div, 0, 1), Empty, Ty::Integer),
+                typed(CoreF::Binary(BinaryOp::Mul, 2, 0), Empty, Ty::Integer)
+            ),
+            typed(CoreF::Call(DOUBLE, one(2)), Empty, Ty::Integer)
+        ),
+        typed(CoreF::Binary(BinaryOp::Div, 2, 0), Empty, Ty::Integer)
     ),
-    typed(CoreF::Call(DOUBLE, one(2)), Empty, Ty::Integer)
+    typed(CoreF::Binary(BinaryOp::Rem, 2, 0), Empty, Ty::Integer)
 )
 
 pub fn doubled(result: Int): Snoc<Call> := one(
@@ -787,6 +802,10 @@ pub proc evaluation_examples(): (holds?) {
     ensure product_propagated: outcome(Empty, ERROR_ROWS, 3, Empty)
         = Some(Outcome::Error(ErrorKind::ZeroDivisor))
     ensure call_propagated: outcome(Empty, ERROR_ROWS, 4, Empty)
+        = Some(Outcome::Error(ErrorKind::ZeroDivisor))
+    ensure quotient_propagated: outcome(Empty, ERROR_ROWS, 5, Empty)
+        = Some(Outcome::Error(ErrorKind::ZeroDivisor))
+    ensure remainder_propagated: outcome(Empty, ERROR_ROWS, 6, Empty)
         = Some(Outcome::Error(ErrorKind::ZeroDivisor))
     ensure called: outcome(DOUBLED, CALL_ROWS, 1, Empty) = Some(Outcome::Value(Value::Integer(4)))
     ensure justified: justified?(one(Decl::Function(DOUBLE, DOUBLE_ROWS)), DOUBLED)
@@ -927,9 +946,10 @@ each earlier row i, with the expression eᵢ, the context Γᵢ and the type
 τᵢ that the row derives, at every assignment of Γᵢ. So where the
 evaluator gives a value, e does not diverge and does not end in an
 error, and where it gives an error, e ends in the error of that kind.
-The converse does not hold: the evaluator gives no outcome to a row that
-reads a [product or a nonzero quotient](#r-dynamics.table.differences),
-or a call that C does not list.
+The converse does not hold: the evaluator gives no outcome to a
+[product, or to a quotient or a remainder at a nonzero divisor](#r-dynamics.table.differences),
+whose operands have values, or to a call whose arguments have values
+and which C does not list at them.
 
 The premises are needed. Loading is defined only for a well-typed
 expression at an assignment of its context, and the evaluator also
@@ -943,9 +963,14 @@ reads. The theorem does not ask for
 evaluator and the step relation both take the first arm written for
 the scrutinee's constructor. It asks for no result of the
 [termination check](StaticSemantics.md#r-statics.termination) either:
-by induction on a justified record, each call that it lists has a
-finite run to the listed outcome, since the evaluation of the callee's
-body reads only calls listed earlier.
+by induction on a justified record, each call that it lists at valid
+values of its callee's parameter types has a finite run to the listed
+outcome, since the evaluation of the callee's body reads only calls
+listed earlier. The induction is over those entries only: `justified?`
+does not ask that an entry's arguments be of the callee's parameter
+types or of their number, loading is not defined for an entry where
+they are not, and a table that is a derivation, at an assignment of its
+context, reads only entries where they are.
 
 The theorem is open. Its parts that are proved in Lean are local: the
 [operator results](#r-expressions.meaning.values) are those of the
