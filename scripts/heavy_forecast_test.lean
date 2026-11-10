@@ -23,6 +23,26 @@ open Lean Heavy.Forecast
     peak := some 13566436}]
   (predictionKey (some "/home/ubuntu/coord/out/fd-soft-overlap/phases/001-author-d29e0ab6-83f7-4138-914d-b7f457b0fac3/overlap-controls.sh") "test") 0 2 20 == (some 13566436, 1)
 
+-- A failed job's peak is a lower bound, never a forecast by itself: the
+-- recorded miss was one early failure at 60576 KB before a 1928260 KB run.
+#guard predict [{ key := some "k", ended := some 1, peak := some 60576, failed := true }]
+  "k" 0 2 20 == (none, 0)
+#guard predict
+  [{ key := some "k", ended := some 1, peak := some 60576, failed := true },
+   { key := some "k", ended := some 2, peak := some 1928260 }] "k" 0 2 20 == (some 1928260, 2)
+#guard predict
+  [{ key := some "k", ended := some 2, peak := some 9, failed := true },
+   { key := some "k", ended := some 1, peak := some 7 }] "k" 0 2 20 == (some 9, 2)
+-- Twenty early failures after a full run do not hide its peak.
+#guard predict
+  ((List.range 20).map (fun i => { key := some "k", ended := some (2 + (i : Int)), peak := some 60576, failed := true })
+    ++ [{ key := some "k", ended := some 1, peak := some 1928260 }]) "k" 0 30 20 == (some 1928260, 20)
+-- A finished job outside the window or under another key gives no forecast.
+#guard predict
+  [{ key := some "k", ended := some 2, peak := some 9, failed := true },
+   { key := some "other", ended := some 2, peak := some 7 },
+   { key := some "k", ended := some (-1), peak := some 7 }] "k" 0 2 20 == (none, 0)
+
 -- Future module/input keys need no changes to the kernel.
 #guard predict
   [{ key := some ("Module", "fingerprint"), ended := some 10, peak := some 7 },
@@ -33,7 +53,8 @@ def observation (j : Json) : Observation String :=
   { event := (j.getObjValAs? String "event").toOption
     key := (j.getObjValAs? String "key").toOption
     ended := (j.getObjValAs? Int "ended").toOption
-    peak := (j.getObjValAs? Int "peak").toOption }
+    peak := (j.getObjValAs? Int "peak").toOption
+    failed := (j.getObjValAs? Bool "failed").toOption.getD false }
 
 def forecast (j : Json) : Except String Json := do
   let rows ← j.getObjValAs? (Array Json) "history"

@@ -4640,7 +4640,7 @@ def jobs : IO (Array (List String)) := do
   return #[["ownSpec"]] ++ (List.range mutationSlices).toArray.map (["mutation", "0", toString ·, toString mutationSlices])
     ++ batches ++ #["uiMisread" :: misread.toList.map toString, "uiAskAgain" :: askAgain.toList.map toString] ++ (corpora.map (["conformance", ·.1])).toArray
     ++ #[["oracleGuards"], ["expansion"], ["snapshots"], ["queryCache"], ["solverLifetime"], ["ownSpecProgress"], ["formatting"], ["errorCodes"], ["manualExamples"], ["ruleIds"], ["ruleReqs"], ["markdownFences"], ["printing"], ["fixing"], ["libraries"], ["layering"], ["proofLint", "simp"], ["proofLint", "unsqueezed"], ["syntaxChapters"], ["fren2Deadlines"], ["fren2", "resolver"], ["fren2", "resolverProperties"], ["fren2", "walking"], ["fren2", "walkingProperties"], ["fren2", "typing"], ["fren2", "typingOperators"], ["fren2", "typingProperties"], ["fren2", "evaluator"], ["fren2", "evaluatorProperties"], ["fren2", "desugaring"], ["lintChapters"], ["leanTokens"], ["laterFiles"], ["backjumping", "reqs"], ["backjumping", "ui"],
-      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["heavyProcess", "publisher"], ["heavyProcess", "forecast"], ["heavyProcess", "entrypoint"], ["heavyProcess", "cohort"], ["heavyProcess", "core"], ["heavyProcess", "automatic"], ["heavyProcess", "automaticEvidence"], ["heavyProcess", "automaticStore"], ["heavyProcess", "automaticIO"], ["heavyProcess", "automaticOwnership"], ["heavyProcess", "tmpState"], ["heavyBudget"], ["heavyBudgetBoundaries"], ["heavyMissingSource"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
+      ["enumeration"], ["heavyPrediction"], ["heavyOwnership"], ["heavyAdmission"], ["heavyProcess", "publisher"], ["heavyProcess", "forecast"], ["heavyProcess", "entrypoint"], ["heavyProcess", "cohort"], ["heavyProcess", "core"], ["heavyProcess", "automatic"], ["heavyProcess", "automaticEvidence"], ["heavyProcess", "automaticStore"], ["heavyProcess", "automaticIO"], ["heavyProcess", "automaticOwnership"], ["heavyProcess", "tmpState"], ["heavyBudget"], ["heavyBudgetBoundaries"], ["heavyMissingSource"], ["smtAgreement"], ["obligationsAgreement"], ["panicGuard"], ["smallValues"], ["renderedSets"]]
     ++ frontendFuzzDriverCases.map (["frontendFuzzDriver", ·])
     ++ FrenTest.FuzzFrontends.corpusJobs.toArray
     ++ ((List.range (← mutationCorpus).size).drop 1).toArray.map (["mutation", toString ·, "0", "1"]) ++ #[["solverStats"]]
@@ -4722,6 +4722,10 @@ unsafe def runJob (bless : Bool) : List String → IO (Array String)
     -- Build the Std-only module loaded by the test transport.
     let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_ownership_test.py"] }
     return if out.exitCode == 0 then #[] else #[s!"heavy ownership differential check failed:\n{out.stdout}{out.stderr}"]
+  | ["heavyAdmission"] => do
+    -- Heavy's start rule, classes and queue order against the Std-only kernel.
+    let out ← IO.Process.output { cmd := "python3", args := #["-I", "scripts/heavy_admission_test.py"] }
+    return if out.exitCode == 0 then #[] else #[s!"heavy admission differential check failed:\n{out.stdout}{out.stderr}"]
   | "heavyProcess" :: mode => do
     unless mode == [] || mode == ["controls"] ||
         (match mode with

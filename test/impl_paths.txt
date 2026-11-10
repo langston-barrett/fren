@@ -11,6 +11,14 @@ unbound: Fren.Impls.Heavy.memory_prediction jobs
 unbound: Fren.Impls.Heavy.memory_prediction prediction
 unbound: Fren.Impls.Heavy.prediction_key key
 unbound: Fren.Impls.Heavy.prediction_key uses_command?
+unbound: Fren.Impls.HeavyAdmission.start start?
+unbound: Fren.Impls.HeavyAdmission.priority_class priority
+unbound: Fren.Impls.HeavyAdmission.priority_class rank
+unbound: Fren.Impls.HeavyAdmission.cpu_weight nice
+unbound: Fren.Impls.HeavyAdmission.cpu_weight weight
+unbound: Fren.Impls.HeavyAdmission.queue_order before?
+unbound: Fren.Impls.HeavyAdmission.queue_turn ahead
+unbound: Fren.Impls.HeavyAdmission.queue_turn turn?
 unbound: Fren.Impls.HeavyOwnership.admission_total total
 unbound: Fren.Impls.HeavyOwnership.cleanup_trigger cleanup?
 unbound: Fren.Impls.HeavyOwnership.compile_budget decision
@@ -434,3 +442,4 @@ unbound: Fren.Impls.HeavyOwnership.direct_lean_file file?
 unbound: Fren.Impls.HeavyOwnership.module_memory_limit limit
 unbound: Fren.Impls.HeavyOwnership.module_memory_applied applied
 unbound: Fren.Impls.HeavyOwnership.module_memory_applied effective
+unbound: Fren.Impls.HeavyProcStat.process_sample sample

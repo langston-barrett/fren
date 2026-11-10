@@ -37,9 +37,11 @@ def transport(lines, key, now, seconds, n):
         except OverflowError:
             valid_time = False
         peak = row.get("peak_rss_kb")
+        status = row.get("exit_status", 0)
         rows.append({"event": row.get("event", "job"), "key": row.get("job_kind"),
                      "ended": ended if valid_time else None,
-                     "peak": peak if type(peak) is int else None})
+                     "peak": peak if type(peak) is int else None,
+                     "failed": not (type(status) is int and status == 0)})
     times = [now, now - seconds] + [r["ended"] for r in rows if r["ended"] is not None]
     scale = max(t.as_integer_ratio()[1] for t in times)
 
@@ -68,7 +70,31 @@ def main():
     add([job(90, 7), job(100, 8), job(89.99999999999999, 999),
          job(100.00000000000001, 999)], expected=(8, 2))
     add([job(89, 999), job(101, 999)], expected=(None, 0))
+    # Only `exit_status` decides failure; a record without it did not fail.
     add([job(95, 10, exit_code=137)], expected=(10, 1))
+    add([job(95, 10, exit_status=0)], expected=(10, 1))
+    # A failed job's peak is a lower bound: no forecast from failures alone.
+    add([job(95, 60576, exit_status=1)], expected=(None, 0))
+    add([job(95, 10, exit_status=137), job(96, 12, exit_status=-9)], expected=(None, 0))
+    for status in (True, False, None, "0", 0.5, [], 2 ** 70):
+        add([job(95, 10, exit_status=status)], expected=(None, 0))
+    add([job(94, 60576, exit_status=1), job(95, 1928260, exit_status=0)],
+        expected=(1928260, 2))
+    add([job(95, 9, exit_status=137), job(94, 7)], expected=(9, 2))
+    # A finished job outside the latest N still bounds the forecast from
+    # below: later early failures never hide the peak of a full run.
+    add([job(95, 9, exit_status=1), job(94, 7)], n=1, expected=(9, 1))
+    add([job(95, 9, exit_status=1), job(94, 700)], n=1, expected=(700, 1))
+    add([job(90 + i / 4, 60576, exit_status=1) for i in range(1, 21)] + [job(90, 1928260, exit_status=0)],
+        expected=(1928260, 20))
+    add([job(95, 9, exit_status=1), job(94, 700, exit_status=1), job(93, 7)], n=1, expected=(9, 1))
+    # Only the latest finished job counts beyond the latest N, not an older larger one.
+    add([job(95, 9, exit_status=1), job(94, 70), job(93, 700)], n=1, expected=(70, 1))
+    # It does not count outside the window, under another key, or among
+    # records that are not jobs.
+    add([job(95, 9, exit_status=1), job(89, 7)], expected=(None, 0))
+    add([job(95, 9, exit_status=1), job(95, 7, event="sample"), job(95, 0)],
+        expected=(None, 0))
     add([job(95, 10)], n=0, expected=(None, 0))
     add([job(95, 10)], key="unknown", expected=(None, 0))
     # Unsorted log order, an old large peak, duplicates and ties at last-N.

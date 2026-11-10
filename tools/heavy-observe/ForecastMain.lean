@@ -110,8 +110,12 @@ def observation (j : Json) : Heavy.Forecast.Observation (Bool × String) :=
     | .ok x => x.getStr?.toOption
   let kind := (j.getObjValAs? String "job_kind").toOption
   let key := kind.map (Heavy.Forecast.predictionKey (loggedCommand j))
+  -- Only a record that carries a status other than the integer 0 failed.
+  let failed := match j.getObjVal? "exit_status" with
+    | .error _ => false
+    | .ok x => x != Json.num 0
   { event, key, ended := (j.getObjVal? "ended_at").toOption.bind ticks
-    peak := (j.getObjValAs? Int "peak_rss_kb").toOption }
+    peak := (j.getObjValAs? Int "peak_rss_kb").toOption, failed }
 
 def run (path nowText command secondsText countText : String) : IO Unit := do
   let now ← IO.ofExcept (Json.parse nowText)
@@ -122,6 +126,8 @@ def run (path nowText command secondsText countText : String) : IO Unit := do
   let key := Heavy.Forecast.predictionKey (some command) ""
   let cutoff := now - seconds * 1000000000000000000
   let mut ps : Heavy.Forecast.Peaks := []
+  let mut seen := false
+  let mut ok : Heavy.Forecast.Peaks := []
   try
     let f ← IO.FS.Handle.mk path IO.FS.Mode.read
     repeat
@@ -130,10 +136,12 @@ def run (path nowText command secondsText countText : String) : IO Unit := do
       if let .ok j := Json.parse line then
         let o := observation j
         if Heavy.Forecast.eligible o key cutoff now then
+          seen := seen || !o.failed
           if let (some t, some p) := (o.ended, o.peak) then
             ps := Heavy.Forecast.insert t p count ps
+            if !o.failed then ok := Heavy.Forecast.insert t p 1 ok
   catch _ => pure ()
-  IO.println (toJson (Heavy.Forecast.maximum ps, ps.length)).compress
+  IO.println (toJson (Heavy.Forecast.forecast seen ok ps)).compress
 
 end JobForecast
 

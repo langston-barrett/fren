@@ -327,6 +327,7 @@ def tiny_job(state, command, overrides=None, timeout=30, script=None, offline=Fa
     environ = dict(os.environ, HEAVY_SLOTS="1", HEAVY_MEM_GB="1", HEAVY_MAX_LOAD="off")
     environ.pop("HEAVY_LOG", None)
     environ.pop("FREN_JOB_KIND", None)
+    environ.pop("HEAVY_PRIORITY", None)
     environ.update(overrides or {})
     return subprocess.run([sys.executable, "-I", "-B", "-c", code,
                            script or os.path.join(HERE, "heavy"), state] +
@@ -1386,6 +1387,18 @@ def test_policy_comparison():
         assert fast[8]["run_ratio_vs_off"] == 0.25 and fast[8]["successful_jobs"] == 1
         assert summary["by_kind"]["only-on"][0]["run_ratio_vs_off"] is None
         assert (99, 2) not in policies
+        # Records from before the priority classes are reported apart.
+        assert [(p["priority"], p["jobs"]) for p in summary["by_priority"]] == [("unrecorded", 34)]
+    with tempfile.TemporaryDirectory() as state:
+        for label, wait in (("main-repair", 1), ("exploratory", 30), ("typo", 50), ("main-repair", 3), (None, 7)):
+            heavy.append_log({"event": "job", "max_load": "off", "slots": 2, "job_kind": "k",
+                              "started_at": 90, "ended_at": 100, "exit_status": 0, "wait_seconds": wait,
+                              "run_seconds": 10, "load_samples": [],
+                              **({} if label is None else {"priority": label})}, state, {})
+        classes = heavy.stats(1, state, {}, now=100)["by_priority"]
+        assert [(p["priority"], p["jobs"], p["jobs_per_hour"], p["wait_seconds"]["p50"], p["max_wait_seconds"])
+                for p in classes] == [("main-repair", 2, 2, 2, 3), ("exploratory", 2, 2, 40, 50),
+                                      ("unrecorded", 1, 1, 7, 7)]
 
 
 def test_partial_policy_coverage():
@@ -2244,6 +2257,26 @@ def test_process_readings():
     assert row["pid"] == 123 and row["pgrp"] == 7 and row["start"] == 100
     for text in ("", "123 (short) R", proc_line(user=-1)):
         assert raises(lambda: heavy.process_stat(text), (ValueError, IndexError))
+    # fren-covers: testing::heavy_process_sample
+    # A reaped process that the kernel is releasing shows state X with no
+    # parent, group or session. It has vanished, whatever else the sample
+    # says; a zombie is a process still; a name is never read as a state.
+    dead = "123 (lean) X 0 -1 -1 0 -1 " + " ".join(["0"] * 44)
+    for text in (dead, proc_line(state="X"), proc_line(state="X", user=-1), "123 (short) X"):
+        assert raises(lambda: heavy.process_stat(text), ProcessLookupError)
+    assert raises(lambda: heavy.process_stat(proc_line(state="Z", user=-1)), ValueError)
+    assert heavy.process_stat(proc_line(state="Z"))["state"] == "Z"
+    assert heavy.process_stat(proc_line(name="a ) X 0", state="S"))["state"] == "S"
+    assert [heavy.process_sample(s, *n) for s in "XZR" for n in ((1, 0, 0), (1, 0, -1), (0, 0, 0))] == [
+        "vanished"] * 3 + ["process", "rejected", "rejected"] * 2
+    with tempfile.TemporaryDirectory() as proc:
+        # A scan skips the dead member and keeps the zombie's final counters.
+        for pid, text in ((123, proc_line(state="Z")), (124, dead.replace("123", "124", 1))):
+            os.mkdir(os.path.join(proc, str(pid)))
+            with open(os.path.join(proc, str(pid), "stat"), "w") as f:
+                f.write(text)
+        found = heavy.group_processes(7, proc)
+        assert [(r["pid"], r["state"]) for r in found] == [(123, "Z")], found
     assert heavy.process_switches("voluntary_ctxt_switches: 99\nnonvoluntary_ctxt_switches: 7\n") == 7
     assert heavy.process_switches("nonvoluntary_ctxt_switches: -1\n") is None
     assert heavy.process_switches("voluntary_ctxt_switches: 99\n") is None
@@ -2513,9 +2546,25 @@ def test_command_forecast_real_rows():
         for i in range(30):
             heavy.append_log({"command": "lake build Other", "job_kind": "heavy", "ended_at": now,
                               "peak_rss_kb": 100}, state, {})
+        # The killed job's peak is a lower bound, not a forecast, until a
+        # job with the same command finishes.
         for row in rows:
             command = row["command"].removeprefix("--offline ")
-            assert heavy.command_forecast(command, state, {}, now) == (row["peak_rss_kb"], 1)
+            failed = row.get("exit_status", 0) != 0
+            assert heavy.command_forecast(command, state, {}, now) == (
+                (None, 0) if failed else (row["peak_rss_kb"], 1))
+        heavy.append_log({"command": "lake test", "job_kind": "heavy", "ended_at": now - 2,
+                          "peak_rss_kb": 9000000, "exit_status": 0}, state, {})
+        assert heavy.command_forecast("lake test", state, {}, now) == (17911340, 2)
+        # The recorded miss: an early failure at 60 MB was the whole history
+        # of a test that then peaked at 1.9 GB.
+        missed = "python3 -I scripts/heavy_admission_test.py"
+        heavy.append_log({"command": missed, "job_kind": "test", "ended_at": now - 2,
+                          "peak_rss_kb": 60576, "exit_status": 1}, state, {})
+        assert heavy.command_forecast(missed, state, {}, now) == (None, 0)
+        heavy.append_log({"command": missed, "job_kind": "test", "ended_at": now - 1,
+                          "peak_rss_kb": 1928260, "exit_status": 0}, state, {})
+        assert heavy.command_forecast(missed, state, {}, now) == (1928260, 2)
         # Full commands distinguish build targets and shell wrappers, including
         # shell bodies containing paths that the old job-kind normalizer dropped.
         for command in ("lake build fren-dev fren_dev_test", "bash -c 'lake test /tmp/a'"):
@@ -2809,8 +2858,271 @@ def test_subreaper_outside_parent():
                     pass  # Its parent already waited for it.
 
 
+def test_start_rule_exact():
+    # fren-covers: testing::heavy_start
+    assert heavy.can_start(0, 6, 10, None) and not heavy.can_start(0, 7, 10, None)
+    # One KB over 60% of a cap that a float cannot tell from the boundary.
+    cap = 5 * 2 ** 60
+    assert float(3 * 2 ** 60 + 1) == 0.6 * cap
+    assert heavy.can_start(0, 3 * 2 ** 60, cap, None) and not heavy.can_start(0, 3 * 2 ** 60 + 1, cap, None)
+    assert not heavy.can_start(10 ** 6, math.inf, cap, None)  # Unknown memory is never waived.
+    assert heavy.can_start(0, 0, cap, 7, lambda: None) and not heavy.can_start(0, 0, cap, 7, lambda: 7)
+    assert heavy.can_start(heavy.LOAD_GRACE_SECONDS, 0, cap, 7, lambda: 99)
+
+
+def waiter(label, enqueued, sequence=1, slots=1, cap=GB, updated=None, limit=None):
+    return {"version": 1, "sequence": sequence, "priority": label, "enqueued_ms": enqueued,
+            "updated_ms": enqueued if updated is None else updated, "slots": slots, "cap_kb": cap,
+            "max_load": limit}
+
+
+def test_priority_order():
+    # fren-covers: testing::heavy_priority_class, testing::heavy_queue_order, testing::heavy_queue_turn
+    for label in heavy.PRIORITY_CLASSES:
+        assert heavy.priority_class(label) == label
+    for label in (None, "", "urgent", "Main-Repair", "main-repair "):
+        assert heavy.priority_class(label) == "exploratory"
+    step = 300000
+    urgent, routine, idle = (waiter(label, 1000) for label in ("main-repair", "merge-blocking", None))
+    assert heavy.queue_before(urgent, routine, step) and heavy.queue_before(routine, idle, step)
+    assert not heavy.queue_before(idle, urgent, step)
+    # Arrival order within a class; the sequence breaks an exact tie one way.
+    assert heavy.queue_before(waiter("edit-loop", 5), waiter("edit-loop", 6), step)
+    first, second = waiter("edit-loop", 5, 1), waiter("edit-loop", 5, 2)
+    assert heavy.queue_before(first, second, step) and not heavy.queue_before(second, first, step)
+    assert not heavy.queue_before(first, first, step)
+    # Aging: each class step is worth one aging step of waiting, so nothing
+    # waits behind later arrivals for more than four steps.
+    old = waiter(None, 0)
+    assert not heavy.queue_before(old, waiter("main-repair", 4 * step), step)
+    assert heavy.queue_before(old, waiter("main-repair", 4 * step + 1), step)
+    assert heavy.queue_before(old, waiter("merge-blocking", 2 * step + 1), step)
+    assert heavy.queue_before(old, waiter("main-repair", 1), 0)  # No aging step: arrival order.
+    # Only a waiter that could take the slot now is ahead.
+    own, now, load = waiter(None, 2000), 3000, lambda: 5.0
+    ahead = lambda others, slot=0, rss=0: heavy.queue_ahead(own, others, slot, rss, load, now, step)
+    assert ahead([]) == 0 and ahead([urgent]) == 1 and ahead([urgent, routine, waiter(None, 2500)]) == 2
+    assert ahead([urgent], slot=1) == 0                       # Not one of its slots.
+    assert ahead([waiter("main-repair", 1000, cap=10)], rss=7) == 0   # Its own memory rule refuses it.
+    assert ahead([waiter("main-repair", 1000, cap=10)], rss=6) == 1
+    assert ahead([waiter("main-repair", 1000, limit=5.0)]) == 0       # Its load limit holds it.
+    assert ahead([waiter("main-repair", 1000, limit=5.5)]) == 1
+    assert ahead([waiter("main-repair", 1000, updated=now - heavy.WAITER_STALE_MS)]) == 1
+    assert ahead([waiter("main-repair", 1000, updated=now - heavy.WAITER_STALE_MS - 1)]) == 0  # Stopped.
+    assert ahead([waiter("main-repair", 1000, updated=now + 1)]) == 0  # Another clock.
+    assert heavy.aging_ms("/nonexistent") == 300000
+    with tempfile.TemporaryDirectory() as state:
+        with open(os.path.join(state, "aging_seconds"), "w") as f:
+            f.write("1.5")
+        assert heavy.aging_ms(state) == 1500
+        # The largest finite floats are accepted settings: they count as the
+        # largest step rather than overflowing in milliseconds.
+        for text in ("1e308", "1.7976931348623157e308", "1e10"):
+            with open(os.path.join(state, "aging_seconds"), "w") as f:
+                f.write(text)
+            assert heavy.aging_ms(state) == heavy.MAX_AGING_SECONDS * 1000
+        with open(os.path.join(state, "aging_seconds"), "w") as f:
+            f.write("inf")
+        assert heavy.aging_ms(state, lambda m: None) == 300000
+
+
+def test_waiting_registry():
+    # fren-covers: testing::heavy_queue_turn
+    with tempfile.TemporaryDirectory() as state:
+        first, second = heavy.Waiting(state, "main-repair"), heavy.Waiting(state, None)
+        assert first.others() == []  # Nothing is published before the first beat.
+        first.beat(3, 7 * GB, 6.5)
+        second.beat(1, GB, None)
+        (seen,) = second.others()
+        assert seen == first.entry and (seen["slots"], seen["cap_kb"], seen["max_load"]) == (3, 7 * GB, 6.5)
+        assert first.others() == [second.entry]
+        directory = os.path.join(state, "waiters")
+        # Unlocked, torn and foreign files count for nothing; only an old
+        # unlocked file is removed, since a new owner locks right after creating.
+        fresh, old, torn = (os.path.join(directory, name) for name in ("fresh.json", "old.json", "torn.json"))
+        for path in (fresh, old):
+            with open(path, "w") as f:
+                json.dump(first.entry, f)
+        os.utime(old, (time.time() - 2 * heavy.WAITER_ABANDONED_SECONDS,) * 2)
+        with open(torn, "w") as held:
+            held.write('{"version": 1, "seq')
+            held.flush()
+            heavy.fcntl.flock(held, heavy.fcntl.LOCK_EX | heavy.fcntl.LOCK_NB)
+            assert second.others() == [first.entry]
+        assert os.path.exists(fresh) and not os.path.exists(old)
+        for wrong in ({**first.entry, "version": 2}, {**first.entry, "slots": "3"},
+                      {**first.entry, "max_load": math.nan}, {**first.entry, "priority": 3}, [1]):
+            assert not heavy.valid_waiter(wrong), wrong
+        first.close()
+        first.close()
+        assert second.others() == [] and not os.path.exists(first.path)
+        second.close()
+        # A job that cannot publish still starts, by the memory rule alone.
+        with open(os.path.join(state, "file"), "w"):
+            pass
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            alone = heavy.Waiting(os.path.join(state, "file"), None)
+        assert "cannot join the waiting jobs" in stderr.getvalue()
+        alone.beat(1, GB, None)
+        assert alone.others() == []
+        alone.close()
+
+
+def test_priority_admission():
+    # fren-covers: testing::heavy_queue_turn, testing::heavy_queue_order
+    class Blocked(Exception):
+        pass
+
+    def attempt(state, environ, rss=0):
+        """Whether main admits the job on its first poll, and what it said."""
+        stderr, admitted = io.StringIO(), mock.Mock(return_value=0)
+        with contextlib.redirect_stderr(stderr), \
+             mock.patch.object(heavy, "heavy_rss_kb", return_value=rss), \
+             mock.patch.object(heavy.time, "sleep", side_effect=Blocked), \
+             mock.patch.object(heavy, "run", admitted):
+            try:
+                heavy.main([sys.executable, "-c", "pass"], state,
+                           {"HEAVY_SLOTS": "2", "HEAVY_MEM_GB": "1", "HEAVY_MAX_LOAD": "off", **environ})
+            except Blocked:
+                pass
+        # Whatever happened, the job left the queue and holds no slot.
+        assert len(os.listdir(os.path.join(state, "waiters"))) == len(live)
+        return admitted.called, stderr.getvalue()
+
+    behind = "waiting behind 1 more urgent or earlier jobs"
+    with tempfile.TemporaryDirectory() as state:
+        live = []
+        assert attempt(state, {}) == (True, "")
+        other = heavy.Waiting(state, "merge-blocking")
+        live.append(other)
+        other.beat(2, GB, None)
+        started, said = attempt(state, {"HEAVY_PRIORITY": "exploratory"})
+        assert not started and behind in said
+        started, said = attempt(state, {"HEAVY_PRIORITY": "merge-blocking"})  # Later in the same class.
+        assert not started and behind in said
+        assert attempt(state, {"HEAVY_PRIORITY": "main-repair"}) == (True, "")
+        # The aging step is the queue's, not a caller's: two callers whose
+        # environments name different steps order the queue alike, so they
+        # never each yield to the other.
+        time.sleep(0.02)
+        assert attempt(state, {"HEAVY_PRIORITY": "main-repair", "HEAVY_AGING_SECONDS": "0.001"}) == (True, "")
+        started, said = attempt(state, {"HEAVY_PRIORITY": "exploratory", "HEAVY_AGING_SECONDS": "100000"})
+        assert not started and behind in said
+        # With the queue's step shorter than the wait, arrival order decides
+        # for every caller, whatever its environment says.
+        with open(os.path.join(state, "aging_seconds"), "w") as f:
+            f.write("0.001")
+        for own in ("0.001", "100000"):
+            started, said = attempt(state, {"HEAVY_PRIORITY": "main-repair", "HEAVY_AGING_SECONDS": own})
+            assert not started and behind in said
+        os.unlink(os.path.join(state, "aging_seconds"))
+        # A waiter with fewer slots leaves the others to anyone.
+        other.beat(1, GB, None)
+        assert attempt(state, {"HEAVY_PRIORITY": "exploratory"}) == (True, "")
+        # One whose own memory rule refuses it holds nobody back: priority
+        # never keeps a slot empty for a job that could not use it.
+        other.beat(2, 1000, None)
+        assert attempt(state, {"HEAVY_PRIORITY": "exploratory"}, rss=601) == (True, "")
+        started, said = attempt(state, {"HEAVY_PRIORITY": "exploratory"}, rss=600)
+        assert not started and behind in said
+        # The job's own memory rule is unchanged by its class.
+        started, said = attempt(state, {"HEAVY_PRIORITY": "main-repair"}, rss=GB)
+        assert not started and "waiting for memory" in said
+        # An aged waiter goes before a newcomer of any class.
+        other.entry["enqueued_ms"] -= 4 * 300000 + 1
+        other.entry["priority"] = None
+        other.beat(2, GB, None)
+        started, said = attempt(state, {"HEAVY_PRIORITY": "main-repair"})
+        assert not started and behind in said
+        other.close()
+        live.clear()
+        assert attempt(state, {"HEAVY_PRIORITY": "exploratory"}) == (True, "")
+
+
+def test_cpu_share():
+    # fren-covers: testing::heavy_cpu_weight, testing::heavy_priority_class
+    nice = [heavy.PRIORITY_NICE[c] for c in heavy.PRIORITY_CLASSES]
+    weight = [heavy.PRIORITY_WEIGHT[c] for c in heavy.PRIORITY_CLASSES]
+    assert nice == sorted(set(nice)) and 0 <= nice[0] and nice[-1] <= 19
+    assert weight == sorted(set(weight), reverse=True) and 1 <= weight[-1] and weight[0] <= 10000
+    assert heavy.cpu_weight("main-repair", True, 0) == 250 and heavy.cpu_weight("typo", True, 0) == 25
+    assert heavy.cpu_weight("main-repair", True, 1) is None and heavy.cpu_weight("main-repair", False, 0) is None
+    assert heavy.own_cgroup(lambda: "1:name=x:/a\n0::/user.slice/job.scope\n") == "/sys/fs/cgroup/user.slice/job.scope"
+    assert heavy.own_cgroup(lambda: "1:cpu:/legacy\n") is None
+    with tempfile.TemporaryDirectory() as group:
+        procs, file = os.path.join(group, "cgroup.procs"), os.path.join(group, "cpu.weight")
+        parents = {10: 9, 9: 1, 1: 0}
+        def members(*pids):
+            with open(procs, "w") as f:
+                f.write("".join(f"{pid}\n" for pid in pids))
+            return heavy.cgroup_outsiders(group, parents.get, 10)
+        assert members(10) == 0 and members(9, 10, 1) == 0
+        assert members(9, 10, 11) == 1 and members(0, 10) == 1  # Pid 0 is outside heavy's namespace.
+        os.unlink(procs)
+        assert heavy.cgroup_outsiders(group, parents.get, 10) is None
+        if heavy.platform.system() != "Linux":
+            return
+        def share(label, *pids):
+            with open(file, "w") as f:
+                f.write("100\n")
+            with open(procs, "w") as f:
+                f.write("".join(f"{pid}\n" for pid in pids))
+            record = {}
+            made = heavy.CpuShare(label, record, lambda: group)
+            with open(file) as f:
+                during = f.read()
+            made.restore()
+            made.restore()
+            with open(file) as f:
+                assert f.read() == ("100" if record["cpu_weight"] else "100\n")
+            return record, during
+        assert share("edit-loop", os.getpid(), os.getppid()) == (
+            {"priority": "edit-loop", "cpu_nice": 7, "cpu_weight": 50}, "50")
+        # Someone else's process shares the cgroup: its weight is not heavy's.
+        child = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        try:
+            assert share("main-repair", os.getpid(), child.pid) == (
+                {"priority": "main-repair", "cpu_nice": 0, "cpu_weight": None}, "100\n")
+            assert heavy.CpuShare(None, {}, lambda: None).path is None
+            # Niceness is raised on the job's process group and never lowered.
+            base = os.getpriority(os.PRIO_PGRP, child.pid)
+            heavy.raise_nice(child.pid, 7)
+            assert os.getpriority(os.PRIO_PGRP, child.pid) == max(base, 7)
+            heavy.raise_nice(child.pid, 2)
+            assert os.getpriority(os.PRIO_PGRP, child.pid) == max(base, 7)
+        finally:
+            child.kill()
+            child.wait()
+    # The job's first process is nice before it runs the command, so a
+    # process that it forks at once into a session of its own is nice too.
+    base = os.getpriority(os.PRIO_PROCESS, 0)
+    early = ("import os\nif os.fork() == 0:\n    os.setsid()\n"
+             "    print(os.getpriority(os.PRIO_PROCESS, 0), flush=True)\nelse:\n    os.wait()")
+    for nice in (7, 0):
+        out = subprocess.run([sys.executable, "-c", early], preexec_fn=heavy.nice_before_exec(nice),
+                             capture_output=True, text=True, check=True).stdout
+        assert int(out) == max(base, nice), out
+    # End to end: the job runs at its class's niceness, heavy's monitor does
+    # not, and the record names the class.
+    with tempfile.TemporaryDirectory() as state:
+        base = os.getpriority(os.PRIO_PROCESS, 0)
+        for label, expected in (("edit-loop", 7), ("main-repair", 0), ("typo", 10), (None, 10)):
+            result = tiny_job(state, [sys.executable, "-c", "import os; print(os.getpriority(os.PRIO_PROCESS, 0))"],
+                              {} if label is None else {"HEAVY_PRIORITY": label})
+            assert result.returncode == 0, result.stderr
+            assert int(result.stdout) == max(base, expected), (label, result.stdout)
+        with open(os.path.join(state, "log.jsonl")) as log:
+            rows = [json.loads(line) for line in log]
+        assert [(r["priority"], r["cpu_nice"]) for r in rows] == [
+            ("edit-loop", 7), ("main-repair", 0), ("exploratory", 10), ("exploratory", 10)]
+        assert os.listdir(os.path.join(state, "waiters")) == []
+
+
 def main():
-    tests = [test_process_lifetime_retention, test_process_group_reentry,
+    tests = [test_start_rule_exact, test_priority_order, test_waiting_registry, test_priority_admission,
+             test_cpu_share,
+             test_process_lifetime_retention, test_process_group_reentry,
              test_cpu_ticks, test_cpu_samples, test_cpu_monitor, test_monitor_group_completion,
              test_cpu_descendants, test_cpu_reaping, test_cpu_many_waits, test_cpu_signal_fold,
              test_child_subreaper, test_owned_census_skips_dead, test_process_readings,

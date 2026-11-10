@@ -108,6 +108,17 @@ PREDICTION_SECONDS = 7 * 86400
 REPORT_STALE_SECONDS = 10
 REGISTRY_WAIT_SECONDS = 0.2
 REGISTRY_RETRY_SECONDS = 0.01
+# Most urgent first; the index is the class's rank in the queue.
+PRIORITY_CLASSES = ("main-repair", "critical-path", "merge-blocking", "edit-loop", "exploratory")
+PRIORITY_NICE = dict(zip(PRIORITY_CLASSES, (0, 2, 4, 7, 10)))
+PRIORITY_WEIGHT = dict(zip(PRIORITY_CLASSES, (250, 160, 100, 50, 25)))
+DEFAULT_AGING_SECONDS = 300
+# A larger aging step counts as this one: it already never lets a wait
+# outweigh a class, and a float near the largest overflows in milliseconds.
+MAX_AGING_SECONDS = 10 ** 9
+WAITER_STALE_MS = 30000
+WAITER_ABANDONED_SECONDS = 60
+WAITER_BYTES = 512
 USAGE = ("usage: heavy [--offline] [--] <command> [args...] | heavy --stats [hours] | "
          "heavy --alternate <minutes> <value>")
 
@@ -241,9 +252,15 @@ def load_average():
         return None
 
 
-def can_start(waited, rss, cap, limit, load_reader=load_average):
+def over_start_fraction(rss, cap):
+    """Whether the charged memory is above 60% of the cap, in exact integers:
+    `0.6 * cap` rounds, so a float comparison moves the boundary."""
+    return 5 * rss > 3 * cap
+
+
+def start_rule(waited, rss, cap, limit, load_reader=load_average):
     """Admission besides the slot lock; a missing load reading fails open."""
-    if rss > START_FRACTION * cap:
+    if over_start_fraction(rss, cap):
         return False
     # Load decays slowly and includes unrelated work. Ten minutes bounds
     # that extra delay without ever bypassing the slot or memory limits.
@@ -251,6 +268,267 @@ def can_start(waited, rss, cap, limit, load_reader=load_average):
         return True
     load = load_reader()
     return load is None or load < limit
+
+
+def can_start(waited, rss, cap, limit, load_reader=load_average):
+    """This job's own admission besides the slot lock and its turn."""
+    return start_rule(waited, rss, cap, limit, load_reader)
+
+
+def priority_class(label):
+    """A missing or unknown label is exploratory: it never jumps the queue."""
+    return label if label in PRIORITY_CLASSES else "exploratory"
+
+
+def aging_ms(state=STATE, warn=None):
+    """The wait that outweighs one priority class, in milliseconds. It is
+    one value for everyone who queues in `state`, never a caller's own:
+    waiters that ordered the queue by different steps could each yield to
+    the other for ever."""
+    seconds = setting("HEAVY_AGING_SECONDS", "aging_seconds", float, {}, state, warn)
+    return round(min(DEFAULT_AGING_SECONDS if seconds is None else seconds, MAX_AGING_SECONDS) * 1000)
+
+
+def monotonic_ms():
+    return time.monotonic_ns() // 1000000
+
+
+def queue_key(waiter, step):
+    return PRIORITY_CLASSES.index(priority_class(waiter["priority"])) * step + waiter["enqueued_ms"]
+
+
+def queue_before(a, b, step):
+    """Strict queue order: the aged key, then the enqueue sequence."""
+    first, second = queue_key(a, step), queue_key(b, step)
+    return first < second or (first == second and a["sequence"] < b["sequence"])
+
+
+def queue_contends(waiter, slot, rss, load_reader, now):
+    """Whether a waiter could take this slot now, under its own settings.
+    One that could not holds nobody back. `rss` is the caller's total,
+    charged under the caller's cap, so this is the caller's estimate: where
+    the caps differ, the waiter itself may charge less and judge otherwise."""
+    return (0 <= now - waiter["updated_ms"] <= WAITER_STALE_MS and slot < waiter["slots"]
+            and start_rule((now - waiter["enqueued_ms"]) / 1000, rss, waiter["cap_kb"],
+                           waiter["max_load"], load_reader))
+
+
+def queue_ahead(own, others, slot, rss, load_reader, now, step):
+    """How many other waiters take this slot before `own`. The order is best
+    effort: it is judged from one read of the queue with the caller's memory
+    total, and is not checked again when the slot is claimed, so a caller may
+    claim a slot that a waiter ahead of it published just before."""
+    return sum(1 for waiter in others
+               if queue_before(waiter, own, step) and queue_contends(waiter, slot, rss, load_reader, now))
+
+
+def valid_waiter(waiter):
+    integer = lambda value: type(value) is int
+    limit = waiter.get("max_load") if isinstance(waiter, dict) else None
+    return (isinstance(waiter, dict) and waiter.get("version") == 1
+            and all(integer(waiter.get(k)) for k in ("sequence", "enqueued_ms", "updated_ms", "slots", "cap_kb"))
+            and (waiter.get("priority") is None or isinstance(waiter["priority"], str))
+            and (limit is None or (type(limit) in (int, float) and math.isfinite(limit) and limit > 0)))
+
+
+class Waiting:
+    """This job's entry among the waiting jobs: one file, locked for as long
+    as the job waits and rewritten in place on every poll. A file whose lock
+    is free belongs to no one, and a stale one to a stopped waiter; neither
+    counts. Publishing is best effort: a job that cannot publish still
+    starts by the memory rule, and only loses its place in the order."""
+
+    def __init__(self, state, label, queued=None):
+        now = monotonic_ms() if queued is None else int(queued * 1000)
+        self.entry = {"version": 1, "sequence": time.monotonic_ns(), "priority": label,
+                      "enqueued_ms": now, "updated_ms": now, "slots": 0, "cap_kb": 0,
+                      "max_load": None, "pid": os.getpid()}
+        self.directory = os.path.join(state, "waiters")
+        self.path = os.path.join(self.directory, uuid.uuid4().hex + ".json")
+        self.fd = None
+        try:
+            os.makedirs(self.directory, exist_ok=True)
+            self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            # A reader's probe holds a shared lock only for an instant.
+            fcntl.flock(self.fd, fcntl.LOCK_EX)
+        except OSError as error:
+            print(f"heavy: cannot join the waiting jobs ({error}); starting in arrival order", file=sys.stderr)
+            self.close()
+
+    def beat(self, slots, cap, limit):
+        """Publish the settings this job waits under, and that it is alive."""
+        self.entry.update(updated_ms=monotonic_ms(), slots=slots, cap_kb=cap, max_load=limit)
+        if self.fd is None:
+            return
+        try:
+            # One padded write in place: a reader never sees a truncated file.
+            os.pwrite(self.fd, json.dumps(self.entry).ljust(WAITER_BYTES).encode(), 0)
+        except OSError:
+            pass
+
+    def others(self):
+        """The published entries of the other live waiters."""
+        found = []
+        try:
+            names = sorted(os.listdir(self.directory))
+        except OSError:
+            return found
+        for name in names:
+            path = os.path.join(self.directory, name)
+            if path == self.path or not name.endswith(".json"):
+                continue
+            try:
+                fd = os.open(path, os.O_RDONLY)
+            except OSError:
+                continue
+            try:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    try:
+                        waiter = json.loads(os.pread(fd, WAITER_BYTES, 0))
+                    except (OSError, ValueError):
+                        continue
+                    if valid_waiter(waiter):
+                        found.append(waiter)
+                    continue
+                except OSError:
+                    continue
+                # Nobody holds it. Its owner locks it right after creating
+                # it, so only an old unlocked file is abandoned.
+                try:
+                    if time.time() - os.fstat(fd).st_mtime > WAITER_ABANDONED_SECONDS:
+                        os.unlink(path)
+                except OSError:
+                    pass
+            finally:
+                os.close(fd)
+        return found
+
+    def close(self):
+        """Leave the queue: at admission, before the job is spawned, and on
+        every other way out."""
+        fd, self.fd = self.fd, None
+        if fd is None:
+            return
+        try:
+            os.unlink(self.path)
+        except OSError:
+            pass
+        os.close(fd)
+
+
+def own_cgroup(read=None):
+    """The directory of heavy's cgroup v2 group, or None."""
+    try:
+        if read is None:
+            with open("/proc/self/cgroup") as f:
+                text = f.read()
+        else:
+            text = read()
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith("0::/"):
+            return os.path.join("/sys/fs/cgroup", line[4:])
+    return None
+
+
+def parent_pid(pid):
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return process_stat(f.read())["ppid"]
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def cgroup_outsiders(directory, parent=parent_pid, own=None):
+    """How many processes in the cgroup are neither heavy nor an ancestor of
+    it. Heavy calls this before it starts the job, so every other process
+    is someone else's work. None if the membership cannot be read."""
+    family, pid = set(), os.getpid() if own is None else own
+    while pid and pid not in family:
+        family.add(pid)
+        pid = parent(pid)
+    try:
+        with open(os.path.join(directory, "cgroup.procs")) as f:
+            members = [int(line) for line in f.read().split()]
+    except (OSError, ValueError):
+        return None
+    return sum(1 for member in members if member not in family)
+
+
+def nice_before_exec(nice):
+    """What the job's first process does before it runs the command: raise
+    its own niceness, never lower it. Everything the command forks then
+    inherits it, whatever group or session it moves to."""
+    def apply():
+        try:
+            if nice > os.getpriority(os.PRIO_PROCESS, 0):
+                os.setpriority(os.PRIO_PROCESS, 0, nice)
+        except OSError:
+            pass
+    return apply
+
+
+def raise_nice(group, nice):
+    """Raise the niceness of a new session's process group, and of its
+    autogroup where the kernel groups sessions; never lower either. Heavy's
+    own monitor keeps its niceness, since it enforces the memory cap."""
+    try:
+        if nice > os.getpriority(os.PRIO_PGRP, group):
+            os.setpriority(os.PRIO_PGRP, group, nice)
+    except OSError:
+        pass
+    try:
+        with open(f"/proc/{group}/autogroup", "r+") as f:
+            if nice > int(f.read().split()[-1]):
+                f.seek(0)
+                f.write(str(nice))
+    except (OSError, ValueError, IndexError):
+        pass
+
+
+def cpu_weight(label, writable, outsiders):
+    """The `cpu.weight` to write, if the cgroup is this job's alone."""
+    return PRIORITY_WEIGHT[priority_class(label)] if writable and outsiders == 0 else None
+
+
+class CpuShare:
+    """The kernel's share of the CPU for a job, from its priority class.
+    Jobs in separate cgroups compete by `cpu.weight`; niceness orders only
+    the processes of one cgroup. Heavy sets both and arbitrates nothing."""
+
+    def __init__(self, label, record, cgroup=own_cgroup, outsiders=cgroup_outsiders):
+        self.path, self.previous = None, None
+        self.nice = PRIORITY_NICE[priority_class(label)]
+        record.update(priority=priority_class(label), cpu_nice=self.nice, cpu_weight=None)
+        directory = cgroup() if platform.system() == "Linux" else None
+        if directory is None:
+            return
+        path = os.path.join(directory, "cpu.weight")
+        count = outsiders(directory) if os.access(path, os.W_OK) else None
+        weight = cpu_weight(label, count is not None, count)
+        if weight is None:
+            return
+        try:
+            with open(path) as f:
+                previous = f.read().strip()
+            with open(path, "w") as f:
+                f.write(str(weight))
+        except OSError:
+            return
+        self.path, self.previous = path, previous
+        record["cpu_weight"] = weight
+
+    def restore(self):
+        path, self.path = self.path, None
+        if path is not None:
+            try:
+                with open(path, "w") as f:
+                    f.write(self.previous)
+            except OSError:
+                pass
 
 
 def sample_load(record, load_reader, now, last=None):
@@ -262,14 +540,27 @@ def sample_load(record, load_reader, now, last=None):
     return now
 
 
+def process_sample(state, pid, *counters):
+    """What one stat sample shows (`heavy_process_sample`): the state X
+    decides before the identity and the counters are judged."""
+    return "vanished" if state == "X" else "rejected" if pid <= 0 or min(counters) < 0 else "process"
+
+
 def process_stat(text):
-    """Identity, group and self CPU ticks; comm may contain spaces or ')'."""
+    """Identity, group and self CPU ticks; comm may contain spaces or ')'.
+    A sample in state X is of a process that was reaped and is being
+    released: it has no parent, group or session left, so it has vanished
+    (ProcessLookupError), as if its stat file were already gone. A zombie
+    (Z) is a process still, with its final counters, until it is reaped."""
     left, right = text.index("("), text.rindex(")")
     fields = text[right + 1:].split()  # Begins at field 3 (state).
+    # A released process may lack the fields that follow its state.
+    if process_sample(fields[0], 1, 0) == "vanished":
+        raise ProcessLookupError("process is dead")
     pid, ppid, pgrp, session, user, system, start, rss = (int(v) for v in
                                               (text[:left], fields[1], fields[2], fields[3], fields[11],
                                                fields[12], fields[19], fields[21]))
-    if pid <= 0 or min(ppid, pgrp, session, user, system, start, rss) < 0:
+    if process_sample(fields[0], pid, ppid, pgrp, session, user, system, start, rss) != "process":
         raise ValueError("invalid process counters")
     return {"pid": pid, "ppid": ppid, "comm": text[left + 1:right], "state": fields[0],
             "pgrp": pgrp, "session": session, "ticks": user + system, "start": start, "rss_pages": rss}
@@ -856,8 +1147,21 @@ def stats(hours, state=STATE, environ=None, now=None):
         policy.update(matched_kinds=len(ratios), normalized_run_ratio_vs_off=(
             math.exp(sum(math.log(r) for r in ratios) / len(ratios)) if ratios else None))
         policies.append(policy)
+    # Waits by priority class are the evidence for the admission order and
+    # its aging step. Records from before the classes have no class.
+    classes = {}
+    for row in rows:
+        label = row.get("priority")
+        classes.setdefault(priority_class(label) if isinstance(label, str) else "unrecorded", []).append(row)
+    by_priority = [{"priority": name, "jobs": len(found),
+                    "jobs_per_hour": len(found) / hours if hours > 0 else None,
+                    "wait_seconds": percentiles([r["wait_seconds"] for r in found]),
+                    "max_wait_seconds": max(r["wait_seconds"] for r in found),
+                    "run_seconds": percentiles([r["run_seconds"] for r in found])}
+                   for name in (*PRIORITY_CLASSES, "unrecorded") for found in [classes.get(name)] if found]
     return {"hours": hours, **summarize(rows, sum(exposure.values()), sum(rate_counts.values())),
-            "policies": policies, "by_kind": kinds, "excluded_waits": excluded_waits}
+            "policies": policies, "by_kind": kinds, "by_priority": by_priority,
+            "excluded_waits": excluded_waits}
 
 
 _physical = []
@@ -1609,10 +1913,14 @@ def monitor_command(f, command, shown, record, state, environ, load_reader, grou
             return 125
     helper_started = time.monotonic()
     try:
-        child = subprocess.Popen(command, start_new_session=True)
+        # Heavy has no threads, so running Python between fork and exec is safe.
+        child = subprocess.Popen(command, start_new_session=True,
+                                 preexec_fn=nice_before_exec(record["cpu_nice"]) if record.get("cpu_nice") else None)
     except OSError as e:
         print(f"heavy: cannot run `{shown}`: {e.strerror}", file=sys.stderr)
         return 127
+    if record.get("cpu_nice"):
+        raise_nice(child.pid, record["cpu_nice"])
     child.heavy_subreaper = group
     reap = lambda: reap_child(child, record)
     handlers = {}
@@ -1791,11 +2099,15 @@ def run(f, command, shown, kind, record, began, state, environ, load_reader, off
     MachineSampler().finish(record)
     prediction_command = record.get("prediction_command", shlex.join(command))
     record["prediction_command"] = prediction_command
-    prediction, history_jobs, helper_status = monitored_forecast(
-        f, prediction_command, record, state, environ, load_reader, offline_wrapper or [])
-    record.update(predicted_peak_rss_kb=prediction, prediction_jobs=history_jobs,
-                  prediction_method="max_last_20_same_command_7d")
-    code = helper_status or run_command(f, command, shown, record, state, environ, load_reader)
+    share = CpuShare(environ.get("HEAVY_PRIORITY"), record)
+    try:
+        prediction, history_jobs, helper_status = monitored_forecast(
+            f, prediction_command, record, state, environ, load_reader, offline_wrapper or [])
+        record.update(predicted_peak_rss_kb=prediction, prediction_jobs=history_jobs,
+                      prediction_method="max_last_20_same_command_7d")
+        code = helper_status or run_command(f, command, shown, record, state, environ, load_reader)
+    finally:
+        share.restore()
     record.update(ended_at=time.time(), run_seconds=time.monotonic() - began, exit_status=code)
     loads = record["load_samples"]
     record.update(load_mean=sum(loads) / len(loads) if loads else None,
@@ -1905,6 +2217,16 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
     except (OSError, ValueError, subprocess.CalledProcessError) as e:
         print(f"heavy: cannot tell the physical memory ({e}); set HEAVY_MEM_GB", file=sys.stderr)
         return 2
+    waiting = Waiting(state, environ.get("HEAVY_PRIORITY"), queued)
+    try:
+        return admit(waiting, command, shown, kind, record, queued, initial, state, environ,
+                     load_reader, offline_wrapper)
+    finally:
+        waiting.close()
+
+
+def admit(waiting, command, shown, kind, record, queued, initial, state, environ, load_reader, offline_wrapper):
+    """Wait for this job's turn, a slot and memory, then run it."""
     warned = None
     registry_message = f"heavy: waiting for registry lock (see {state})"
     while True:
@@ -1914,6 +2236,7 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
         # Start no job while the running ones already use most of the cap: a
         # job that starts now would likely be the one killed when they grow.
         cap = mem_cap_kb(environ, state)
+        waiting.beat(slots, cap, limit)
         reservations = []
         try:
             rss = heavy_rss_kb(state, cap, reservations)
@@ -1925,14 +2248,25 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
             continue
         if not can_start(time.monotonic() - queued, rss,
                          cap, limit, load_reader):
-            message = memory_wait_message(state, reservations, rss > START_FRACTION * cap)
+            message = memory_wait_message(state, reservations, over_start_fraction(rss, cap))
             if message != warned:
                 print(message, file=sys.stderr)
                 warned = message
             time.sleep(5)
             continue
         wait_message = f"heavy: all {slots} slots busy, waiting (see {state})"
+        # A slot goes first to the waiters ahead of this job that could take
+        # it now. One load reading serves every comparison of this poll.
+        others, now, step, reading = waiting.others(), monotonic_ms(), aging_ms(state), []
+        def one_load():
+            if not reading:
+                reading.append(load_reader())
+            return reading[0]
         for i in range(slots):
+            ahead = queue_ahead(waiting.entry, others, i, rss, one_load, now, step) if others else 0
+            if ahead:
+                wait_message = f"heavy: waiting behind {ahead} more urgent or earlier jobs (see {state})"
+                continue
             f = open(os.path.join(state, f"slot{i}"), "a+")
             try:
                 with registry(state):
@@ -1969,9 +2303,10 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
             if not can_start(waited, rss,
                              cap, limit, load_reader):
                 release_slot(f, state)
-                wait_message = memory_wait_message(state, reservations, rss > START_FRACTION * cap)
+                wait_message = memory_wait_message(state, reservations, over_start_fraction(rss, cap))
                 break
             admitted = time.monotonic()
+            waiting.close()
             record.update(started_at=time.time(), wait_seconds=admitted - queued,
                           max_load="off" if limit is None else limit, slots=slots)
             if waited > 1:
