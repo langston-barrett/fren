@@ -44,7 +44,7 @@ derived type is well formed. The [interface](#r-types.overview.interface)
 at the end of the chapter states these as a contract of uninterpreted
 functions, which the chapter's wrapper interprets by the detailed
 definitions. That an *expression* has at most one type, whatever
-derivation types it, is the open [uniqueness of an expression's
+derivation types it, is the [uniqueness of an expression's
 type](#r-types.derivation.unique-expression); two tables with the same rows
 have the same types by [determinism for a table](#r-types.derivation.unique).
 The other headline laws are stated with the detailed definitions:
@@ -53,6 +53,8 @@ formed; [weakening](#r-types.judgment.weakening), that a derivation
 survives extending its context; [inference for a
 layer](#r-types.layer.inference), that a layer's type can be computed; and,
 open, [decidability of the judgment](#r-types.judgment.decidability).
+That the tables mean what the rules mean read as trees is
+[adequacy](#r-types.judgment.adequacy), which the wrapper proves.
 `fren trace` reports the evidence for each law stated as a procedure.
 
 ## Semantic objects
@@ -1128,13 +1130,26 @@ pub fn alike?(
 r[types.judgment.adequacy]
 The judgment agrees with the inductive reading of the rules: `Σ; Γ ⊢ e : τ`
 holds exactly when a finite tree of rule instances concludes it. Fren cannot
-state the tree reading, so this is stated here and open.
+state the tree reading, so no procedure states this law. The chapter's
+wrapper states the tree reading in Lean, as the relation `Typed` on the
+expressions that rows unfold to, and proves the law as
+`Spec.Language.Types.judgment_adequate`: a table with
+`derivation?(Σ, rows, Γ, τ)` whose root unfolds to e exists exactly when
+`Typed Σ Γ e τ`. The proof instantiates `Spec.Tables.Valid.derives` and
+`Spec.Tables.Derives.table`, which hold of any one-layer form and any
+one-layer rule, so that a later chapter that writes its derivations as
+tables proves its own adequacy the same way. With it, the wrapper proves
+of expressions the laws that this chapter states of tables: regularity as `typed_regular`, uniqueness as
+`typed_unique` and weakening, with the shifted expression e' of
+[weakening](#r-types.judgment.weakening), as `typed_weakens`.
 
 r[types.derivation.unique-expression] spec::types::expression_uniqueness::unique
 Typing is deterministic for an expression: if `derivation?(Σ, l, Γ, τ)` and
 `derivation?(Σ, r, Γ, υ)` and their roots unfold alike, then τ = υ, whatever
-the two tables' sharing of rows and extra rows. This is open: its
-procedure has no `impl`, and a `trusted` claim says so.
+the two tables' sharing of rows and extra rows. The wrapper proves it from
+[adequacy](#r-types.judgment.adequacy): rows that unfold alike unfold to the
+same expression, and the rules give an expression at most one type in a
+context.
 
 ```fren
 -- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
@@ -1154,8 +1169,6 @@ pub proc expression_uniqueness(
         and alike?(left, length(left) - 1, right, length(right) - 1, pairs),
         a = b
 }
-
-trusted expression_uniqueness: "open: lifting table_uniqueness across tables whose roots unfold alike is not yet proved"
 ```
 
 r[types.judgment.decidability]

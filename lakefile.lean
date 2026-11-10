@@ -372,6 +372,10 @@ input_file spec_language_names_and_scope_md where
   path := "src/Spec/Language/NamesAndScope.md"
   text := true
 
+-- Lean support that spec chapters share: it reads no spec of its own.
+lean_lib SpecSupport where
+  globs := #[`Spec.Support.Tables, `Spec.Support.Core]
+
 lean_lib SpecLanguageTypes where
   globs := #[`Spec.Language.Types]
   needs := #[`@/spec_language_types_md]

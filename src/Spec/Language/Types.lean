@@ -2,6 +2,7 @@ import Fren.Impl
 import Fren.Literate
 import Fren.Trace
 import Spec.Language.NamesAndScope
+import Spec.Support.Core
 
 open Fren.Lang
 
@@ -746,6 +747,716 @@ theorem judgment_weakens (symbols : Snoc Entry) (rows : Snoc Row) (context : Sno
     refine ⟨⟨⟨⟨h.1.1.1.1, (context_ok_extend _ _ _).2 ⟨hx, h.1.1.1.2⟩⟩, hv⟩, he⟩, ?_⟩
     simp [weaken, fren_spec, hroot.1, hroot.2, insert_at_end]
 
+/-! ## Adequacy: tables and trees
+
+The chapter defines `Σ; Γ ⊢ e : τ` by tables. This section reads the same
+rules as an inductive relation on `Core` expressions, `Typed`, and shows with
+`Spec.Tables` that the two agree (`judgment_adequate`). The table laws above
+then hold of expressions: regularity (`typed_regular`), uniqueness
+(`typed_unique`, `expression_unique`) and weakening (`typed_weakens`). -/
+
+section Adequacy
+open Spec.Tables
+
+/-- How `Spec.Tables` reads a row: its form, and its context and type. -/
+def rowView : View Row CoreF Typing := ⟨Row.form, fun r => ⟨r.ctx, r.ty⟩⟩
+
+/-- The one-layer rule as a relation on typings: `Σ; Γ ⊢ l ▷ τ`. -/
+def Rule (symbols : Snoc Entry) (l : CoreF Typing) (j : Typing) : Prop :=
+  rule? symbols j.ctx l j.ty = true
+
+/-- The rule that `rows_valid?` checks of a row: its context is well formed too. -/
+def RuleOk (symbols : Snoc Entry) (l : CoreF Typing) (j : Typing) : Prop :=
+  ctx_ok? symbols j.ctx = true ∧ Rule symbols l j
+
+/-- The inductive reading of `Σ; Γ ⊢ e : τ`: Σ and Γ are well formed and a
+finite tree of instances of the rules concludes it. -/
+def Typed (symbols : Snoc Entry) (context : Snoc Ty) (e : Core) (ty : Ty) : Prop :=
+  symb_ok? symbols = true ∧ ctx_ok? symbols context = true ∧
+    Derives Core.mk (Rule symbols) e ⟨context, ty⟩
+
+theorem annotate_arguments_iff (rows : Snoc Row) (args : Snoc Int) (typed : Snoc Typing) :
+    annotate_arguments rows args = some typed ↔
+      ∃ zs : Snoc (Int × Typing), mapS Prod.fst zs = args ∧ mapS Prod.snd zs = typed ∧
+        ∀ c ∈ toList zs, typing_at rows c.1 = some c.2 := by
+  induction args generalizing typed with
+  | Empty =>
+    constructor
+    · intro h
+      simp [annotate_arguments] at h
+      exact ⟨.Empty, rfl, h, fun _ hc => nomatch hc⟩
+    · rintro ⟨zs, h1, h2, -⟩
+      cases zs with
+      | Empty => simp [annotate_arguments]; exact h2
+      | Extend _ _ => simp [mapS] at h1
+  | Extend earlier arg ih =>
+    constructor
+    · intro h
+      simp only [annotate_arguments] at h
+      cases he : annotate_arguments rows earlier with
+      | none => simp [he] at h
+      | some te =>
+        cases ha : typing_at rows arg with
+        | none => simp [he, ha] at h
+        | some t =>
+          simp [he, ha] at h
+          obtain ⟨zs, h1, h2, h3⟩ := (ih te).1 he
+          refine ⟨.Extend zs (arg, t), by simp [mapS, h1], by simp [mapS, h2, h], ?_⟩
+          intro c hc
+          rcases List.mem_cons.1 hc with rfl | hc
+          · exact ha
+          · exact h3 c hc
+    · rintro ⟨zs, h1, h2, h3⟩
+      cases zs with
+      | Empty => simp [mapS] at h1
+      | Extend zs z =>
+        simp only [mapS, Snoc.Extend.injEq] at h1
+        simp only [mapS] at h2
+        have he := (ih (mapS Prod.snd zs)).2
+          ⟨zs, h1.1, rfl, fun c hc => h3 c (List.mem_cons_of_mem _ hc)⟩
+        have ha := h3 z List.mem_cons_self
+        rw [h1.2] at ha
+        simp only [annotate_arguments, he, ha]
+        rw [← h2]
+
+theorem annotate_arms_iff (rows : Snoc Row) (arms : Snoc (ArmF Int)) (typed : Snoc (ArmF Typing)) :
+    annotate_arms rows arms = some typed ↔
+      ∃ zs : Snoc (ArmF (Int × Typing)), mapS (mapArm Prod.fst) zs = arms ∧
+        mapS (mapArm Prod.snd) zs = typed ∧
+        ∀ c ∈ toList zs, typing_at rows c.body.1 = some c.body.2 := by
+  induction arms generalizing typed with
+  | Empty =>
+    constructor
+    · intro h
+      simp [annotate_arms] at h
+      exact ⟨.Empty, rfl, h, fun _ hc => nomatch hc⟩
+    · rintro ⟨zs, h1, h2, -⟩
+      cases zs with
+      | Empty => simp [annotate_arms]; exact h2
+      | Extend _ _ => simp [mapS] at h1
+  | Extend earlier arm ih =>
+    constructor
+    · intro h
+      simp only [annotate_arms] at h
+      cases he : annotate_arms rows earlier with
+      | none => simp [he] at h
+      | some te =>
+        cases ha : typing_at rows arm.body with
+        | none => simp [he, ha] at h
+        | some t =>
+          simp [he, ha] at h
+          obtain ⟨zs, h1, h2, h3⟩ := (ih te).1 he
+          refine ⟨.Extend zs ⟨arm.constructor, (arm.body, t)⟩, by simp [mapS, mapArm, h1],
+            by simp [mapS, mapArm, h2, h], ?_⟩
+          intro c hc
+          rcases List.mem_cons.1 hc with rfl | hc
+          · exact ha
+          · exact h3 c hc
+    · rintro ⟨zs, h1, h2, h3⟩
+      cases zs with
+      | Empty => simp [mapS] at h1
+      | Extend zs z =>
+        simp only [mapS, Snoc.Extend.injEq] at h1
+        simp only [mapS] at h2
+        obtain ⟨h1a, rfl⟩ := h1
+        have he := (ih (mapS (mapArm Prod.snd) zs)).2
+          ⟨zs, h1a, rfl, fun c hc => h3 c (List.mem_cons_of_mem _ hc)⟩
+        have ha := h3 z List.mem_cons_self
+        simp only [annotate_arms, he, mapArm, ha]
+        rw [← h2]; rfl
+
+/-! ### The table check is the generic validity -/
+
+theorem annotate_iff (rows : Snoc Row) (form : CoreF Int) (typed : CoreF Typing) :
+    annotate rows form = some typed ↔
+      ∃ a : CoreF (Int × Typing), mapF Prod.fst a = form ∧ mapF Prod.snd a = typed ∧
+        ∀ c ∈ childrenF a, typing_at rows c.1 = some c.2 := by
+  constructor
+  · intro h
+    cases form with
+    | BooleanLiteral b =>
+      simp [annotate] at h; exact ⟨.BooleanLiteral b, rfl, h, by simp [childrenF]⟩
+    | IntegerLiteral b =>
+      simp [annotate] at h; exact ⟨.IntegerLiteral b, rfl, h, by simp [childrenF]⟩
+    | Local b => simp [annotate] at h; exact ⟨.Local b, rfl, h, by simp [childrenF]⟩
+    | Constructor b =>
+      simp [annotate] at h; exact ⟨.Constructor b, rfl, h, by simp [childrenF]⟩
+    | Unary op x =>
+      cases hx : typing_at rows x with
+      | none => simp [annotate, hx] at h
+      | some t =>
+        simp [annotate, hx] at h
+        exact ⟨.Unary op (x, t), rfl, h, by simp [childrenF, hx]⟩
+    | Binary op x y =>
+      cases hx : typing_at rows x with
+      | none => simp [annotate, hx] at h
+      | some t =>
+        cases hy : typing_at rows y with
+        | none => simp [annotate, hx, hy] at h
+        | some u =>
+          simp [annotate, hx, hy] at h
+          exact ⟨.Binary op (x, t) (y, u), rfl, h, by simp [childrenF, hx, hy]⟩
+    | Call item args =>
+      cases hx : annotate_arguments rows args with
+      | none => simp [annotate, hx] at h
+      | some ts =>
+        simp [annotate, hx] at h
+        obtain ⟨zs, h1, h2, h3⟩ := (annotate_arguments_iff rows args ts).1 hx
+        exact ⟨.Call item zs, by simp [mapF, h1], by simp [mapF, h2, h], h3⟩
+    | Let ann x y =>
+      cases hx : typing_at rows x with
+      | none => simp [annotate, hx] at h
+      | some t =>
+        cases hy : typing_at rows y with
+        | none => simp [annotate, hx, hy] at h
+        | some u =>
+          simp [annotate, hx, hy] at h
+          exact ⟨.Let ann (x, t) (y, u), rfl, h, by simp [childrenF, hx, hy]⟩
+    | If x y z =>
+      cases hx : typing_at rows x with
+      | none => simp [annotate, hx] at h
+      | some t =>
+        cases hy : typing_at rows y with
+        | none => simp [annotate, hx, hy] at h
+        | some u =>
+          cases hz : typing_at rows z with
+          | none => simp [annotate, hx, hy, hz] at h
+          | some v =>
+            simp [annotate, hx, hy, hz] at h
+            exact ⟨.If (x, t) (y, u) (z, v), rfl, h, by simp [childrenF, hx, hy, hz]⟩
+    | Match x arms =>
+      cases hx : typing_at rows x with
+      | none => simp [annotate, hx] at h
+      | some t =>
+        cases hy : annotate_arms rows arms with
+        | none => simp [annotate, hx, hy] at h
+        | some ts =>
+          simp [annotate, hx, hy] at h
+          obtain ⟨zs, h1, h2, h3⟩ := (annotate_arms_iff rows arms ts).1 hy
+          refine ⟨.Match (x, t) zs, by simp [mapF, h1], by simp [mapF, h2, h], ?_⟩
+          intro c hc
+          simp only [childrenF, List.mem_cons, List.mem_map] at hc
+          rcases hc with rfl | ⟨c0, hc0, rfl⟩
+          · exact hx
+          · exact h3 c0 hc0
+  · rintro ⟨a, rfl, rfl, hc⟩
+    cases a with
+    | BooleanLiteral _ | IntegerLiteral _ | Local _ | Constructor _ => rfl
+    | Unary op x =>
+      have hx := hc x (by simp [childrenF])
+      simp [annotate, mapF, hx]
+    | Binary op x y =>
+      have hx := hc x (by simp [childrenF])
+      have hy := hc y (by simp [childrenF])
+      simp [annotate, mapF, hx, hy]
+    | Call item zs =>
+      have := (annotate_arguments_iff rows _ _).2 ⟨zs, rfl, rfl, hc⟩
+      simp [annotate, mapF, this]
+    | Let ann x y =>
+      have hx := hc x (by simp [childrenF])
+      have hy := hc y (by simp [childrenF])
+      simp [annotate, mapF, hx, hy]
+    | If x y z =>
+      have hx := hc x (by simp [childrenF])
+      have hy := hc y (by simp [childrenF])
+      have hz := hc z (by simp [childrenF])
+      simp [annotate, mapF, hx, hy, hz]
+    | Match x zs =>
+      have hx := hc x (by simp [childrenF])
+      have := (annotate_arms_iff rows _ _).2 ⟨zs, rfl, rfl, fun c hc' =>
+        hc c.body (by simp only [childrenF]; exact List.mem_cons_of_mem _ (List.mem_map.2 ⟨c, hc', rfl⟩))⟩
+      simp [annotate, mapF, hx, this]
+
+theorem typing_at_iff (rows : Snoc Row) (p : Int) (t : Typing) :
+    typing_at rows p = some t ↔ ∃ r, lookup Row rows p = some r ∧ rowView.concl r = t := by
+  simp only [typing_at, rowView]
+  cases lookup Row rows p with
+  | none => simp
+  | some r => simp
+
+theorem justified_iff (symbols : Snoc Entry) (earlier : Snoc Row) (row : Row) :
+    Justified rowView (RuleOk symbols) earlier (length Row earlier) row ↔
+      ctx_ok? symbols row.ctx = true ∧
+        ∃ typed, annotate earlier row.form = some typed ∧
+          rule? symbols row.ctx typed row.ty = true := by
+  constructor
+  · rintro ⟨a, hf, ⟨hok, hr⟩, hc⟩
+    exact ⟨hok, Layer.map Prod.snd a, (annotate_iff _ _ _).2
+      ⟨a, hf, rfl, fun c hcm => (typing_at_iff _ _ _).2 (hc c hcm).2⟩, hr⟩
+  · rintro ⟨hok, typed, ha, hr⟩
+    obtain ⟨a, hf, rfl, hc⟩ := (annotate_iff _ _ _).1 ha
+    refine ⟨a, hf, ⟨hok, hr⟩, fun c hcm => ?_⟩
+    obtain ⟨r, hl, hcl⟩ := (typing_at_iff _ _ _).1 (hc c hcm)
+    exact ⟨lookup_lt hl, r, hl, hcl⟩
+
+/-- `rows_valid?` is validity for the rule. -/
+theorem valid_iff (symbols : Snoc Entry) (rows : Snoc Row) :
+    rows_valid? symbols rows = true ↔ Valid rowView (RuleOk symbols) rows := by
+  induction rows with
+  | Empty => simp only [rows_valid?, true_iff]; exact Valid.empty _ _
+  | Extend earlier row ih =>
+    rw [valid_extend, justified_iff, ← ih]
+    simp only [rows_valid?, decide_eq_true_eq]
+    constructor
+    · intro h
+      refine ⟨h.1.1, h.1.2, ?_⟩
+      have h2 := h.2
+      cases ha : annotate earlier row.form with
+      | none => simp [ha] at h2
+      | some typed =>
+        simp only [ha] at h2
+        exact ⟨typed, rfl, of_decide_eq_true h2⟩
+    · rintro ⟨h1, h2, typed, ha, hr⟩
+      refine ⟨⟨h1, h2⟩, ?_⟩
+      simp only [ha]; exact decide_eq_true hr
+
+/-! ### The contexts of a rule's premises -/
+
+theorem in_context_mem (args : Snoc Typing) (context : Snoc Ty)
+    (h : in_context? args context = true) : ∀ c ∈ toList args, c.ctx = context := by
+  induction args with
+  | Empty => intro c hc; nomatch hc
+  | Extend earlier arg ih =>
+    simp only [in_context?, decide_eq_true_eq] at h
+    intro c hc
+    rcases List.mem_cons.1 hc with rfl | hc
+    · exact h.1
+    · exact ih h.2 c hc
+
+theorem arm_bodies_mem (arms : Snoc (ArmF Typing)) (context : Snoc Ty) (ty : Ty)
+    (h : arm_bodies? arms context ty = true) : ∀ c ∈ toList arms, c.body.ctx = context := by
+  induction arms with
+  | Empty => intro c hc; nomatch hc
+  | Extend earlier arm ih =>
+    simp only [arm_bodies?, decide_eq_true_eq] at h
+    intro c hc
+    rcases List.mem_cons.1 hc with rfl | hc
+    · exact h.1.1
+    · exact ih h.2 c hc
+
+/-- The contexts of a rule's premises: a let's body is typed in the context
+extended by its value's type, and every other premise in the conclusion's
+context. -/
+theorem rule_child_ctx (symbols : Snoc Entry) (context : Snoc Ty) (l : CoreF Typing) (ty : Ty)
+    (h : rule? symbols context l ty = true) :
+    match l with
+    | .Let _ value body => value.ctx = context ∧ body.ctx = .Extend context value.ty
+    | l => ∀ c ∈ childrenF l, c.ctx = context := by
+  cases l with
+  | BooleanLiteral _ | IntegerLiteral _ | Local _ | Constructor _ => intro c hc; nomatch hc
+  | Unary op x =>
+    simp [rule?, unary_rule?, fren_spec] at h
+    simp [childrenF, h.1]
+  | Binary op x y =>
+    simp [rule?, binary_rule?, fren_spec] at h
+    simp [childrenF, h.1.1, h.1.2]
+  | Call item args =>
+    simp only [rule?, call_rule?, decide_eq_true_eq] at h
+    split at h
+    · exact in_context_mem args context h.1.2
+    · nomatch h
+  | Let ann x y =>
+    cases ann with
+    | none => simp [rule?, let_rule?, fren_spec] at h; exact ⟨h.1.1, h.1.2⟩
+    | some w =>
+      simp [rule?, let_annotated_rule?, let_rule?, fren_spec] at h; exact ⟨h.2.1.1, h.2.1.2⟩
+  | If x y z =>
+    simp [rule?, if_rule?, fren_spec] at h
+    simp [childrenF, h]
+  | Match x arms =>
+    simp only [rule?, match_rule?, decide_eq_true_eq] at h
+    intro c hc
+    simp only [childrenF, List.mem_cons, List.mem_map] at hc
+    rcases hc with rfl | ⟨c0, hc0, rfl⟩
+    · exact h.1.1.1
+    · exact arm_bodies_mem arms context ty h.1.2 c0 hc0
+
+/-! ### Regularity for trees -/
+
+theorem typings_ok_iff (symbols : Snoc Entry) (xs : Snoc Typing) :
+    typings_ok? symbols xs = true ↔ ∀ c ∈ toList xs, ty_ok? symbols c.ty = true := by
+  induction xs with
+  | Empty => simp [typings_ok?, toList]
+  | Extend earlier x ih =>
+    rw [typings_ok_extend, ih]
+    simp only [toList, List.mem_cons]
+    constructor
+    · rintro ⟨h1, h2⟩ c (rfl | hc)
+      · exact h1
+      · exact h2 c hc
+    · intro h; exact ⟨h x (Or.inl rfl), fun c hc => h c (Or.inr hc)⟩
+
+theorem toList_arm_typings (arms : Snoc (ArmF Typing)) :
+    toList (arm_typings arms) = (toList arms).map (·.body) := by
+  induction arms with
+  | Empty => simp [arm_typings, toList]
+  | Extend earlier arm ih => simp [arm_typings, toList, ih]
+
+theorem mem_children_iff (l : CoreF Typing) (c : Typing) :
+    c ∈ toList (Fren.Generated.spec.types.children l) ↔ c ∈ childrenF l := by
+  cases l <;>
+    simp only [Fren.Generated.spec.types.children, childrenF, toList, toList_arm_typings,
+      List.mem_cons, List.mem_nil_iff, false_or, List.mem_map, or_comm, or_left_comm]
+
+theorem children_ok_iff (symbols : Snoc Entry) (l : CoreF Typing) :
+    children_ok? symbols l = true ↔ ∀ c ∈ childrenF l, ty_ok? symbols c.ty = true := by
+  have h : children_ok? symbols l = true
+      ↔ typings_ok? symbols (Fren.Generated.spec.types.children l) = true := by
+    simp only [children_ok?, decide_eq_true_eq]
+  rw [h, typings_ok_iff]
+  exact ⟨fun h c hc => h c ((mem_children_iff l c).2 hc),
+    fun h c hc => h c ((mem_children_iff l c).1 hc)⟩
+
+/-- Regularity for trees: over a well-formed environment and context, every
+node of a derivation has a well-formed context and the conclusion a
+well-formed type. -/
+theorem derives_regular (symbols : Snoc Entry) (hs : symb_ok? symbols = true) {e : Core}
+    {j : Typing} (h : Derives Core.mk (Rule symbols) e j) :
+    ctx_ok? symbols j.ctx = true →
+      Derives Core.mk (RuleOk symbols) e j ∧ ty_ok? symbols j.ty = true := by
+  induction h with
+  | node a j _ hra ih =>
+    intro hc
+    have hctx := rule_child_ctx symbols j.ctx (mapF Prod.snd a) j.ty hra
+    have hall : ∀ c ∈ childrenF a, ctx_ok? symbols c.2.ctx = true := by
+      cases a with
+      | Let ann v b =>
+        obtain ⟨hv, hb⟩ : v.2.ctx = j.ctx ∧ b.2.ctx = .Extend j.ctx v.2.ty := hctx
+        have hvok : ctx_ok? symbols v.2.ctx = true := by rw [hv]; exact hc
+        intro c hcm
+        simp only [childrenF, List.mem_cons, List.mem_nil_iff, or_false] at hcm
+        rcases hcm with rfl | rfl
+        · exact hvok
+        · rw [hb, context_ok_extend]
+          exact ⟨(ih v (by simp [Layer.children, childrenF]) hvok).2, hc⟩
+      | _ =>
+        intro c hcm
+        have := hctx c.2 (mem_map_of_mem (F := CoreF) Prod.snd hcm)
+        rw [this]; exact hc
+    have hty : ty_ok? symbols j.ty = true := by
+      refine layer_regular symbols j.ctx (mapF Prod.snd a) j.ty hs hc ?_ hra
+      rw [children_ok_iff]
+      intro c hcm
+      rw [show childrenF (mapF Prod.snd a) = (childrenF a).map Prod.snd from
+        Layer.children_map (F := CoreF) Prod.snd a] at hcm
+      obtain ⟨c0, hc0, rfl⟩ := List.mem_map.1 hcm
+      exact (ih c0 hc0 (hall c0 hc0)).2
+    exact ⟨Derives.node a j (fun c hcm => (ih c hcm (hall c hcm)).1) ⟨hc, hra⟩, hty⟩
+
+/-! ### Adequacy -/
+
+theorem extends_refl (context : Snoc Ty) : extends? context context = true := by
+  cases context <;> simp [extends?]
+
+theorem extends_step (context base : Snoc Ty) (t : Ty) (h : extends? context base = true) :
+    extends? (.Extend context t) base = true := by
+  rw [extends?]; simp [h]
+
+theorem rows_extend_of_lookup (rows : Snoc Row) (base : Snoc Ty)
+    (h : ∀ p r, lookup Row rows p = some r → extends? r.ctx base = true) :
+    rows_extend? rows base = true := by
+  induction rows with
+  | Empty => simp [rows_extend?]
+  | Extend earlier row ih =>
+    simp only [rows_extend?, decide_eq_true_eq]
+    refine ⟨h (length Row earlier) row (by rw [lookup_extend, if_pos rfl]), ih ?_⟩
+    exact fun p r hl => h p r (Extends.extend earlier row p r hl)
+
+theorem rule_extends (symbols : Snoc Entry) (base : Snoc Ty) (l : CoreF Typing) (j : Typing)
+    (h : RuleOk symbols l j) (hq : extends? j.ctx base = true) :
+    ∀ c ∈ childrenF l, extends? c.ctx base = true := by
+  have hctx := rule_child_ctx symbols j.ctx l j.ty h.2
+  cases l with
+  | Let ann v b =>
+    obtain ⟨hv, hb⟩ : v.ctx = j.ctx ∧ b.ctx = .Extend j.ctx v.ty := hctx
+    intro c hcm
+    simp only [childrenF, List.mem_cons, List.mem_nil_iff, or_false] at hcm
+    rcases hcm with rfl | rfl
+    · rw [hv]; exact hq
+    · rw [hb]; exact extends_step _ _ _ hq
+  | _ => intro c hcm; rw [hctx c hcm]; exact hq
+
+theorem root_position (earlier : Snoc Row) (root : Row) :
+    ((length Row (.Extend earlier root) : Nat) : Int) - 1 = length Row earlier := by
+  simp only [length]; omega
+
+/-- The expression that a table's root unfolds to. -/
+def RootUnfolds (rows : Snoc Row) (e : Core) : Prop :=
+  Unfolds rowView Core.mk rows ((length Row rows : Int) - 1) e
+
+/-- Soundness of tables: a derivation's root unfolds to an expression that
+the rules type. -/
+theorem derivation_typed (symbols : Snoc Entry) (rows : Snoc Row) (context : Snoc Ty) (ty : Ty)
+    (h : derivation? symbols rows context ty = true) :
+    ∃ e, RootUnfolds rows e ∧ Typed symbols context e ty := by
+  cases rows with
+  | Empty => simp [derivation?, fren_spec] at h
+  | Extend earlier root =>
+    simp only [derivation?, decide_eq_true_eq] at h
+    have hs : symb_ok? symbols = true := by
+      simp only [symb_ok?, decide_eq_true_eq]; exact h.1.1.1.1
+    have hroot := h.2
+    simp [fren_spec] at hroot
+    have hl : lookup Row (.Extend earlier root) (length Row earlier) = some root := by
+      rw [lookup_extend, if_pos rfl]
+    obtain ⟨t, hut, hdt⟩ := Valid.derives Core.mk ((valid_iff symbols _).1 h.1.1.2) hl
+    have hj : rowView.concl root = ⟨context, ty⟩ := by
+      rw [← hroot.1, ← hroot.2]; rfl
+    rw [hj] at hdt
+    refine ⟨t, ?_, hs, h.1.1.1.2, Derives.mono (fun _ _ hr => hr.2) hdt⟩
+    unfold RootUnfolds; rw [root_position]; exact hut
+
+/-- Adequacy: the table judgment agrees with the inductive reading of the
+rules. Some table is a derivation of `ty` in `context` whose root unfolds to
+`e` exactly when Σ and Γ are well formed and a tree of rule instances
+concludes it. -/
+theorem judgment_adequate (symbols : Snoc Entry) (context : Snoc Ty) (e : Core) (ty : Ty) :
+    (∃ rows, derivation? symbols rows context ty = true ∧ RootUnfolds rows e)
+      ↔ Typed symbols context e ty := by
+  constructor
+  · rintro ⟨rows, h, hu⟩
+    obtain ⟨t, hut, ht⟩ := derivation_typed symbols rows context ty h
+    rw [← Unfolds.unique hut hu]; exact ht
+  · rintro ⟨hs, hc, hd⟩
+    have h1 := (derives_regular symbols hs hd hc).1
+    have h2 := Derives.strengthen (F := CoreF) (fun j : Typing => extends? j.ctx context = true)
+      (fun l j hr hq => rule_extends symbols context l j hr hq) h1 (extends_refl context)
+    obtain ⟨rows', r, -, hv, hcl, hu⟩ := Derives.table (V := rowView)
+      (fun l j => (⟨l, j.ctx, j.ty⟩ : Row)) (fun _ _ => rfl) (fun _ _ => rfl) h2 .Empty
+      (Valid.empty _ _)
+    refine ⟨.Extend rows' r, ?_, ?_⟩
+    · have hcl' : r.ctx = context ∧ r.ty = ty := by
+        have := congrArg Typing.ctx hcl; have := congrArg Typing.ty hcl; constructor <;> assumption
+      have hvalid : rows_valid? symbols (.Extend rows' r) = true :=
+        (valid_iff symbols _).2 (Valid.mono (fun _ _ hr => hr.1) hv)
+      have hext : rows_extend? (.Extend rows' r) context = true :=
+        rows_extend_of_lookup _ _ (fun p r' hl => Valid.invariant hv hl)
+      have hs' : bindings_ok? symbols symbols = true := by
+        simpa only [symb_ok?, decide_eq_true_eq] using hs
+      simp only [derivation?, decide_eq_true_eq]
+      refine ⟨⟨⟨⟨hs', hc⟩, hvalid⟩, hext⟩, ?_⟩
+      simp [fren_spec, hcl'.1, hcl'.2]
+    · unfold RootUnfolds; rw [root_position]; exact hu
+
+/-! ### Uniqueness -/
+
+theorem rule_deterministic (symbols : Snoc Entry) (z : CoreF (Typing × Typing)) (j j' : Typing)
+    (hz : ∀ c ∈ childrenF z, c.1.ctx = c.2.ctx → c.1 = c.2)
+    (h : Rule symbols (mapF Prod.fst z) j) (h' : Rule symbols (mapF Prod.snd z) j')
+    (hk : j.ctx = j'.ctx) : j = j' := by
+  have hctx := rule_child_ctx symbols j.ctx _ j.ty h
+  have hctx' := rule_child_ctx symbols j'.ctx _ j'.ty h'
+  have hall : ∀ c ∈ childrenF z, c.1 = c.2 := by
+    cases z with
+    | Let ann v b =>
+      obtain ⟨hv, hb⟩ : v.1.ctx = j.ctx ∧ b.1.ctx = .Extend j.ctx v.1.ty := hctx
+      obtain ⟨hv', hb'⟩ : v.2.ctx = j'.ctx ∧ b.2.ctx = .Extend j'.ctx v.2.ty := hctx'
+      have hvv : v.1 = v.2 := hz v (by simp [childrenF]) (by rw [hv, hv', hk])
+      intro c hcm
+      simp only [childrenF, List.mem_cons, List.mem_nil_iff, or_false] at hcm
+      rcases hcm with rfl | rfl
+      · exact hvv
+      · exact hz c (by simp [childrenF]) (by rw [hb, hb', hk, hvv])
+    | _ =>
+      intro c hcm
+      refine hz c hcm ?_
+      rw [hctx c.1 (mem_map_of_mem (F := CoreF) Prod.fst hcm),
+        hctx' c.2 (mem_map_of_mem (F := CoreF) Prod.snd hcm), hk]
+  have hform : mapF Prod.fst z = mapF Prod.snd z :=
+    Layer.map_congr (F := CoreF) Prod.fst Prod.snd z hall
+  unfold Rule at h h'
+  rw [hform, hk] at h
+  have := rule_unique symbols j'.ctx _ j.ty j'.ty h h'
+  obtain ⟨c1, t1⟩ := j; obtain ⟨c2, t2⟩ := j'
+  have hk' : c1 = c2 := hk
+  have ht : t1 = t2 := this
+  rw [hk', ht]
+
+/-- Uniqueness for trees: an expression has at most one type in a context. -/
+theorem typed_unique (symbols : Snoc Entry) (context : Snoc Ty) (e : Core) (a b : Ty)
+    (ha : Typed symbols context e a) (hb : Typed symbols context e b) : a = b :=
+  congrArg Typing.ty (Derives.unique (F := CoreF) (fun _ _ h => Core.mk.inj h) Typing.ctx
+    (rule_deterministic symbols) ha.2.2 _ hb.2.2 rfl)
+
+theorem children_paired_zip (pairs : Snoc Pair) (xs : Snoc Int) :
+    ∀ ys : Snoc Int, children_paired? pairs xs ys = true →
+      ∃ zs : Snoc (Int × Int), mapS Prod.fst zs = xs ∧ mapS Prod.snd zs = ys ∧
+        ∀ c ∈ toList zs, paired? pairs c.1 c.2 = true := by
+  induction xs with
+  | Empty =>
+    intro ys h
+    cases ys with
+    | Empty => exact ⟨.Empty, rfl, rfl, fun _ hc => nomatch hc⟩
+    | Extend _ _ => simp [children_paired?] at h
+  | Extend e x ih =>
+    intro ys h
+    cases ys with
+    | Empty => simp [children_paired?] at h
+    | Extend e' y =>
+      simp only [children_paired?, decide_eq_true_eq] at h
+      obtain ⟨zs, h1, h2, h3⟩ := ih e' h.2
+      refine ⟨.Extend zs (x, y), by simp [mapS, h1], by simp [mapS, h2], ?_⟩
+      intro c hc
+      rcases List.mem_cons.1 hc with rfl | hc
+      · exact h.1
+      · exact h3 c hc
+
+theorem arms_paired_zip (pairs : Snoc Pair) (xs : Snoc (ArmF Int)) :
+    ∀ ys : Snoc (ArmF Int), arms_paired? pairs xs ys = true →
+      ∃ zs : Snoc (ArmF (Int × Int)), mapS (mapArm Prod.fst) zs = xs ∧
+        mapS (mapArm Prod.snd) zs = ys ∧
+        ∀ c ∈ toList zs, paired? pairs c.body.1 c.body.2 = true := by
+  induction xs with
+  | Empty =>
+    intro ys h
+    cases ys with
+    | Empty => exact ⟨.Empty, rfl, rfl, fun _ hc => nomatch hc⟩
+    | Extend _ _ => simp [arms_paired?] at h
+  | Extend e x ih =>
+    intro ys h
+    cases ys with
+    | Empty => simp [arms_paired?] at h
+    | Extend e' y =>
+      simp only [arms_paired?, decide_eq_true_eq] at h
+      obtain ⟨zs, h1, h2, h3⟩ := ih e' h.2
+      obtain ⟨xc, xb⟩ := x
+      obtain ⟨yc, yb⟩ := y
+      have hcn : xc = yc := h.1.1
+      subst hcn
+      refine ⟨.Extend zs ⟨xc, (xb, yb)⟩, by simp [mapS, mapArm, h1], by simp [mapS, mapArm, h2], ?_⟩
+      intro c hc
+      rcases List.mem_cons.1 hc with rfl | hc
+      · exact h.1.2
+      · exact h3 c hc
+
+/-- Paired layers have one shape: a layer of pairs projects to both. -/
+theorem layers_paired_zip (pairs : Snoc Pair) (f g : CoreF Int)
+    (h : layers_paired? pairs f g = true) :
+    ∃ z : CoreF (Int × Int), mapF Prod.fst z = f ∧ mapF Prod.snd z = g ∧
+      ∀ c ∈ childrenF z, paired? pairs c.1 c.2 = true := by
+  cases f with
+  | BooleanLiteral b =>
+    cases g <;> simp [layers_paired?, fren_spec] at h
+    subst h; exact ⟨.BooleanLiteral b, rfl, rfl, fun _ hc => nomatch hc⟩
+  | IntegerLiteral n =>
+    cases g <;> simp [layers_paired?, fren_spec] at h
+    subst h; exact ⟨.IntegerLiteral n, rfl, rfl, fun _ hc => nomatch hc⟩
+  | Local level =>
+    cases g <;> simp [layers_paired?, fren_spec] at h
+    subst h; exact ⟨.Local level, rfl, rfl, fun _ hc => nomatch hc⟩
+  | Constructor item =>
+    cases g <;> simp [layers_paired?, fren_spec] at h
+    subst h; exact ⟨.Constructor item, rfl, rfl, fun _ hc => nomatch hc⟩
+  | Unary op x =>
+    cases g <;> simp [layers_paired?, fren_spec] at h
+    rename_i op' y
+    obtain ⟨rfl, hp⟩ := h
+    exact ⟨.Unary op (x, y), rfl, rfl, by simpa [childrenF] using hp⟩
+  | Binary op x1 x2 =>
+    cases g <;> simp [layers_paired?, fren_spec] at h
+    rename_i op' y1 y2
+    obtain ⟨⟨rfl, hp1⟩, hp2⟩ := h
+    exact ⟨.Binary op (x1, y1) (x2, y2), rfl, rfl, by simp [childrenF, hp1, hp2]⟩
+  | Call item xs =>
+    cases g <;> simp [layers_paired?, fren_spec] at h
+    rename_i item' ys
+    obtain ⟨rfl, hp⟩ := h
+    obtain ⟨zs, h1, h2, h3⟩ := children_paired_zip pairs xs ys hp
+    exact ⟨.Call item zs, by simp [mapF, h1], by simp [mapF, h2], h3⟩
+  | Let ann x1 x2 =>
+    cases g <;> simp [layers_paired?, fren_spec] at h
+    rename_i ann' y1 y2
+    obtain ⟨⟨rfl, hp1⟩, hp2⟩ := h
+    exact ⟨.Let ann (x1, y1) (x2, y2), rfl, rfl, by simp [childrenF, hp1, hp2]⟩
+  | If x1 x2 x3 =>
+    cases g <;> simp [layers_paired?, fren_spec] at h
+    rename_i y1 y2 y3
+    obtain ⟨⟨hp1, hp2⟩, hp3⟩ := h
+    exact ⟨.If (x1, y1) (x2, y2) (x3, y3), rfl, rfl, by simp [childrenF, hp1, hp2, hp3]⟩
+  | Match x xs =>
+    cases g <;> simp [layers_paired?, fren_spec] at h
+    rename_i y ys
+    obtain ⟨hp, hps⟩ := h
+    obtain ⟨zs, h1, h2, h3⟩ := arms_paired_zip pairs xs ys hps
+    refine ⟨.Match (x, y) zs, by simp [mapF, h1], by simp [mapF, h2], ?_⟩
+    intro c hc
+    simp only [childrenF, List.mem_cons, List.mem_map] at hc
+    rcases hc with rfl | ⟨c0, hc0, rfl⟩
+    · exact hp
+    · exact h3 c0 hc0
+
+theorem pairs_agree_lookup (left right : Snoc Row) (pairs remaining : Snoc Pair)
+    (h : pairs_agree? left right pairs remaining = true) :
+    ∀ p q, paired? remaining p q = true → ∀ l r, lookup Row left p = some l →
+      lookup Row right q = some r → layers_paired? pairs l.form r.form = true := by
+  induction remaining with
+  | Empty => intro p q hp; simp [paired?] at hp
+  | Extend earlier pair ih =>
+    intro p q hp l r hl hr
+    simp only [pairs_agree?, decide_eq_true_eq] at h
+    simp only [paired?, decide_eq_true_eq] at hp
+    rcases hp with ⟨rfl, rfl⟩ | hp
+    · have h1 := h.1
+      rw [hl, hr] at h1
+      exact h1
+    · exact ih h.2 p q hp l r hl hr
+
+/-- A set of pairs that `pairs_agree?` accepts is a bisimulation. -/
+theorem alike_bisim (left right : Snoc Row) (pairs : Snoc Pair)
+    (h : pairs_agree? left right pairs pairs = true) :
+    Bisim rowView rowView left right (fun p q => paired? pairs p q = true) := by
+  intro p q r r' hp hl hr
+  exact layers_paired_zip pairs r.form r'.form
+    (pairs_agree_lookup left right pairs pairs h p q hp r r' hl hr)
+
+/-- Rows that unfold alike unfold to the same expression. -/
+theorem alike_unfolds (left right : Snoc Row) (pairs : Snoc Pair) (p q : Int) (e e' : Core)
+    (h : alike? left p right q pairs = true) (hu : Unfolds rowView Core.mk left p e)
+    (hu' : Unfolds rowView Core.mk right q e') : e = e' := by
+  simp only [alike?, decide_eq_true_eq] at h
+  exact Unfolds.alike (alike_bisim left right pairs h.2) hu q e' h.1 hu'
+
+/-- Uniqueness for expressions: two derivations in one context whose roots
+unfold alike have the same type. -/
+theorem expression_unique (symbols : Snoc Entry) (context : Snoc Ty) (left right : Snoc Row)
+    (pairs : Snoc Pair) (a b : Ty) (hl : derivation? symbols left context a = true)
+    (hr : derivation? symbols right context b = true)
+    (h : alike? left ((length Row left : Int) - 1) right ((length Row right : Int) - 1) pairs
+      = true) : a = b := by
+  obtain ⟨e, hu, ht⟩ := derivation_typed symbols left context a hl
+  obtain ⟨e', hu', ht'⟩ := derivation_typed symbols right context b hr
+  rw [← alike_unfolds left right pairs _ _ e e' h hu hu'] at ht'
+  exact typed_unique symbols context e a b ht ht'
+
+/-- Regularity for expressions: a typed expression has a well-formed type. -/
+theorem typed_regular (symbols : Snoc Entry) (context : Snoc Ty) (e : Core) (ty : Ty)
+    (h : Typed symbols context e ty) : ty_ok? symbols ty = true :=
+  (derives_regular symbols h.1 h.2.2 h.2.1).2
+
+/-! ### Weakening for expressions -/
+
+/-- `e'` is `e` with every local level of at least `cutoff` shifted by one. -/
+def Shifted (cutoff : Int) (e e' : Core) : Prop := Mapped (shiftF cutoff) Core.mk e e'
+
+/-- Weakening for expressions: a typed expression, its outer locals shifted
+past a new context entry, has the same type in the extended context. -/
+theorem typed_weakens (symbols : Snoc Entry) (context : Snoc Ty) (e : Core) (ty extra : Ty)
+    (hx : ty_ok? symbols extra = true) (h : Typed symbols context e ty) :
+    ∃ e', Shifted (length Ty context) e e' ∧ Typed symbols (.Extend context extra) e' ty := by
+  obtain ⟨rows, hd, hu⟩ := (judgment_adequate symbols context e ty).2 h
+  have hd' := judgment_weakens symbols rows context ty extra hx hd
+  obtain ⟨e', hu', hm⟩ := Unfolds.mapped (V := rowView) (V' := rowView) (con := Core.mk)
+    (shiftF (length Ty context)) (shiftF_natural _) (shiftF_within _)
+    (rows' := weaken rows (length Ty context) extra)
+    (fun p r hl => ⟨weakenRow (length Ty context) extra r, by rw [lookup_weaken, hl]; rfl,
+      (shiftF_form _ _).symm⟩) hu
+  refine ⟨e', hm, (judgment_adequate symbols _ e' ty).1 ⟨_, hd', ?_⟩⟩
+  unfold RootUnfolds
+  rw [length_weaken]
+  exact hu'
+
+end Adequacy
+
 /-! ## Examples -/
 
 /-- Snoc sequences of one to four entries, oldest first. -/
@@ -962,6 +1673,19 @@ impl judgment_weakening_proof: judgment_weakening for (symb : Snoc Entry)
   refine ⟨trivial, ?_⟩
   intro h
   exact Spec.Language.Types.judgment_weakens symb rows ctx ty extra h.1 h.2
+
+open spec.surface spec.names spec.types in
+impl expression_uniqueness_proof: expression_uniqueness for (symb : Snoc Entry) (ctx : Snoc Ty)
+    (left right : Snoc Row) (pairs : Snoc Pair) (a b : Ty) {
+  symb := symb, ctx := ctx, left := left, right := right, pairs := pairs, a := a, b := b,
+  holds? := true
+} by
+  intro symb ctx left right pairs a b _
+  simp only [expression_uniqueness.ensures, expression_uniqueness.ensure.output,
+    expression_uniqueness.ensure.unique]
+  refine ⟨trivial, ?_⟩
+  intro h
+  exact Spec.Language.Types.expression_unique symb ctx left right pairs a b h.1.1 h.1.2 h.2
 
 open spec.surface spec.names spec.types in
 impl worked_examples_proof: worked_examples { holds? := true } by
