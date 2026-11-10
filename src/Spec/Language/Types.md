@@ -1133,10 +1133,10 @@ holds exactly when Σ and Γ are well formed and a finite tree of rule
 instances concludes it. Each node of the tree is an instance of the rule for
 its form, with one subtree for each written child of the form, in the
 context that the rule gives that child. The two well-formedness conditions
-are part of the reading and do not follow from the tree: a rule with no
-premises has an instance under any Σ and Γ. Fren cannot state the tree
-reading, so no procedure states this law; it is proved in Lean beside the
-chapter's wrapper. By it, [regularity](#r-types.judgment.regularity),
+are part of the reading and do not follow from the tree: the [rule for a
+Boolean literal](#r-types.expression.boolean) has an instance under any Σ
+and Γ. Fren cannot state the tree reading, so no procedure states this law;
+it is proved in Lean beside the chapter's wrapper. By it, [regularity](#r-types.judgment.regularity),
 [weakening](#r-types.judgment.weakening) and the uniqueness below hold of an
 expression and its trees as they do of tables.
 
