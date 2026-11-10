@@ -1,10 +1,13 @@
 # Denotational semantics
 
-The denotational semantics gives each expression of a verified program a
-value, as a set-theoretic function of the values of its free locals. It is
-defined only for [verified](StaticSemantics.md#r-statics.program.verified)
-Core. It therefore has no undefined result and no error value, it states
-no case for a zero divisor, and it has no order of evaluation. The
+The denotational semantics gives each verified function, and each defined
+expression over verified functions, a value, as a set-theoretic function
+of the values of its free locals. It is defined only for verified Core,
+[stratum by stratum](StaticSemantics.md#r-statics.stratification): a
+function has a denotation once it and the functions it reaches are
+verified. It therefore has no undefined result and no error value, its
+intended meaning has no case for a zero divisor, and it has no order of
+evaluation. The
 [dynamic semantics](DynamicSemantics.md) is defined for every well-typed
 program, and agrees with this chapter on the verified ones.
 
@@ -18,8 +21,8 @@ under its identifier with what it will state.
 | --- | --- | --- |
 | `Σ ⊢ v ∈ ⟦τ⟧` | v is a value of type τ | `value_type`, `value_valid?` |
 | `Σ ⊢ ρ ∈ ⟦Γ⟧` | ρ assigns a value of its type to each level of Γ | open |
-| `⟦op⟧(v) = w`, `⟦op⟧(v₁, v₂) = w` | the operator op has result w | `unary_meaning?`, `binary_meaning?` |
-| `⟦e⟧ρ = v` | the verified expression e denotes v at ρ | open |
+| `⟦op⟧(v) = w`, `⟦op⟧(v₁, v₂) = w` | the operator op has result w | `unary_meaning?`, `binary_meaning?`; for `*`, `div` and `%` the relation is looser than the judgment |
+| `⟦e⟧ρ = v` | the defined expression e over verified functions denotes v at ρ | open |
 | `⟦f⟧(v₁, …, vₙ) = v` | the verified function f maps the argument tuple to v | open |
 | `ρ ⊨ φ` | the Boolean expression φ is true at ρ | open |
 | `⊨ φ` | the expectation φ is true | open |
@@ -31,7 +34,8 @@ under its identifier with what it will state.
 
   ρ ::= ·  |  ρ, v                     assignments, by de Bruijn level
 
-  ⟦e⟧ρ      is defined when  Σ; Γ; Φ ⊢ e def,  Σ ⊢ ρ ∈ ⟦Γ⟧  and  ρ ⊨ Φ
+  ⟦e⟧ρ      is defined when  Σ; Γ; Φ ⊢ e def,  Σ ⊢ ρ ∈ ⟦Γ⟧  and  ρ ⊨ Φ,
+            and every function that e reaches is verified
   ⟦f⟧(v̄)    is defined when  Σ ⊢ f verified  and  v̄ ⊨ P,  f's precondition
 ```
 
@@ -81,12 +85,21 @@ states it for the context of a table's row.
 
 r[denotation.domain]
 `⟦e⟧ρ` is defined exactly when e is
-[defined](StaticSemantics.md#definedness) under some hypotheses Φ in a
-verified program, ρ is an assignment of e's context, and ρ makes every
-hypothesis of Φ true. Nothing else has a denotation: this chapter gives no
-meaning to an ill-typed expression, to an expression that is not defined,
-or to a defined expression at an assignment that fails its hypotheses.
-This rule is open.
+[defined](StaticSemantics.md#definedness) under some hypotheses Φ, every
+function that e calls, and every function those reach, is verified, ρ is
+an assignment of e's context, and ρ makes every hypothesis of Φ true.
+`⟦f⟧(v̄)` is defined exactly when f is verified and v̄ meets f's
+precondition; a verified declaration has verified callees, so every
+function that f reaches is verified too. The domain does not wait for the
+whole program: the functions of a
+[stratum](StaticSemantics.md#r-statics.stratification) have denotations as
+soon as that stratum is verified, and the judgments of later declarations
+read them. The judgments of a declaration read no denotation of its own
+recursive group, so the domain is not defined in terms of itself. Nothing
+else has a denotation: this chapter gives no meaning to an ill-typed
+expression, to an expression that is not defined, to a function that is
+not verified, or to a defined expression at an assignment that fails its
+hypotheses. This rule is open.
 
 ## Operators
 
@@ -97,9 +110,11 @@ strictly less than the absolute divisor, and `n = (n div d) * d + n % d`.
 Comparisons use integer order; Boolean operators use their truth tables;
 equality compares values of one type, including canonical nominal identity.
 Unary minus negates an integer and `not` complements a Boolean.
-`binary_meaning?` and `unary_meaning?` state every operator's result; for `*`, `div` and `%` they
-state the result's sort and the remainder's range, and the equations above
-give the values.
+`binary_meaning?` and `unary_meaning?` state the result of every other
+operator exactly. For `*`, `div` and `%` they state only the result's
+sort, and the remainder's range at a nonzero divisor; the equations above
+give the values, and [the rule below](#r-denotation.operators.arithmetic)
+says what the relation leaves out.
 
 ```fren
 pub fn unary_meaning?(op: UnaryOp, operand: Value, result: Value) := match op, operand {
@@ -147,10 +162,17 @@ pub fn binary_meaning?(op: BinaryOp, left: Value, right: Value, result: Value) :
 ```
 
 r[denotation.operators.arithmetic]
-`binary_meaning?` determines the result of `*`, `div` and `%`: the product,
-and the Euclidean quotient and remainder at a nonzero divisor. It relates
-no result to a zero divisor. This rule is open: the relation states only
-the sort of these results and the remainder's range.
+The denotation of `*`, `div` and `%` is a function on the verified domain:
+`*` denotes the product at every pair of integers, and `div` and `%` denote
+the Euclidean quotient and remainder at every pair whose divisor is not
+zero. A zero divisor is outside the domain, and no defined expression
+reaches one. This rule is open, and `binary_meaning?` does not state it.
+The relation is a looser approximation: it accepts every integer as the
+result of `*` and of `div`, at a zero divisor too; it accepts every integer
+as the remainder by zero; and at a nonzero divisor it bounds the
+remainder's range without fixing its value. The rule will replace those
+three cases by the product and the equation `n = (n div d) * d + n % d`,
+and will relate no result to a zero divisor.
 
 ## Expressions
 
@@ -182,18 +204,23 @@ denotes a value of type τ. This is open. With
 ## Functions and programs
 
 r[denotation.function]
-A verified function f without recursion denotes the function that maps
-each argument tuple meeting f's precondition to the denotation of f's body
-at that tuple. It is not defined at any other tuple. A structurally
-recursive function denotes the unique function that satisfies its defining
-equation on the tuples that meet its precondition. This rule is open.
+A verified function f denotes the function that maps each argument tuple
+v̄ meeting f's precondition to the denotation of f's body at that tuple. It
+is not defined at any other tuple. The equation is a definition by
+recursion on
+[call order](StaticSemantics.md#r-statics.call-order.well-founded): the
+body at v̄ reads the denotations of the functions of earlier strata, and
+those of f's own recursive group only at call instances that precede
+`(f, v̄)`. For a function that is not recursive only the first kind
+occurs. Call order is well founded, so the equations of a recursive group
+have exactly one solution on the tuples that meet the preconditions. This
+rule is open.
 
 r[denotation.program]
 The denotation of a verified program gives each of its functions its
-denotation, by induction on
-[call order](StaticSemantics.md#r-statics.call-order.well-founded): a
-function's equation reads only the denotations of the functions that
-precede it. This rule is open.
+denotation, [stratum by stratum](StaticSemantics.md#r-statics.stratification).
+The denotation of a function does not change when later declarations are
+added or verified. This rule is open.
 
 ## Truth
 
@@ -222,7 +249,11 @@ on the denotations of the functions that e
 r[denotation.theorem.contract]
 Every verified function has a denotation at every argument tuple that
 meets its precondition, and its postcondition is true of that tuple and
-the denotation's value there. The proof is by induction on call order.
+the denotation's value there. The proof is by induction on call order,
+over call instances: at `(f, v̄)` the postconditions of the preceding
+instances of f's recursive group hold by the induction hypothesis, which
+is what the verification of f's declaration
+[assumed of them](StaticSemantics.md#r-statics.stratification).
 
 r[denotation.theorem.models]
 A model that a solver gives for a verified program's conditions agrees

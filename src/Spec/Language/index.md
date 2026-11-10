@@ -20,7 +20,8 @@ contracts; a program that satisfies all three is verified. The
 [denotational semantics](DenotationalSemantics.md) gives each verified
 program a set-theoretic meaning. The
 [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
-program, with error states and one fixed order of evaluation.
+program, with error states and one fixed order of evaluation; an
+evaluation ends in a value or an error, or does not end.
 [Definedness and verification](PropertiesAndChecks.md) defines the obligations
 of a typed expression, the hypotheses under which each must be proved, and
 what a solver's answer establishes. Later chapters build on these
@@ -31,8 +32,8 @@ The defined source domain has Booleans, mathematical integers, payload-free
 nominal enums, named functions, locals and lets, conditionals, constructor
 matches and global assumptions and expectations. The [source grammar](Syntax.md)
 fixes its concrete forms. Static semantics comprises resolution, typing,
-definedness and contracts, including match coverage and the absence of
-recursive call cycles. A contract is a precondition and a postcondition
+definedness and contracts, including match coverage and a well-founded
+call order, which admits structural recursion and no other. A contract is a precondition and a postcondition
 that relate a function's whole argument tuple to its result; it is not
 part of a type.
 Verification hypotheses are discharged by SMT. Passing typing does not
@@ -40,7 +41,8 @@ establish verification. The denotational semantics is defined only for
 verified programs: it assigns no meaning to an undefined operation and
 prescribes no evaluation order. The dynamic semantics is defined for every
 well-typed program: an undefined operation evaluates to an error, in one
-fixed order. On verified programs the two agree. A solver limit or unknown
+fixed order, and unbounded recursion does not end. On verified programs
+evaluation ends and the two agree. A solver limit or unknown
 result proves neither a goal nor its negation.
 
 Numbered rules state the reference requirements. Core typing uses

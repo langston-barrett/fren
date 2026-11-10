@@ -930,14 +930,18 @@ specified. No function in it calls itself, directly or through others
 valid, except the `Asserted` obligation of an `expect` member. The
 keyword of each member is the one that P states, which nothing here ties
 to the source. The conditions cover a function that nothing calls. Coverage and the absence
-of recursion yield no obligations. The dynamic semantics assigns no
-behaviour to an operation outside its domain, and in a defined program no
+of recursion yield no obligations. Excluding all recursion is the present
+condition; the static semantics' open rule on
+[call order](StaticSemantics.md#r-statics.call-order.well-founded) admits
+structural recursion. The
+[dynamic semantics](DynamicSemantics.md#r-dynamics.error.kinds) gives an
+error to an operation outside its domain, and in a defined program no
 operation is outside its domain.
 
 r[verification.program.verified]
 A program is *verified* when it is defined and the `Asserted` obligation
-of every `expect` member is valid too. The dynamic semantics applies only
-to verified programs; of the conditions of verification it relies on
+of every `expect` member is valid too. The denotational semantics applies
+only to verified programs; of the conditions of verification it relies on
 definedness alone, since an `expect` is a hypothesis of nothing.
 
 r[verification.program.assumptions]

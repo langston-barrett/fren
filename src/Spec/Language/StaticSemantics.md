@@ -23,7 +23,8 @@ statement of definedness, as obligations over derivation tables
 | --- | --- | --- |
 | `Σ; Γ ⊢ e : τ` | e has type τ in Γ | [Core typing](Types.md)'s `derivation?` |
 | `e ∋ a` | e mentions the item a | `direct_item?` for one layer; the closure is open |
-| `Σ ⊢ f ≺ g` | f precedes g in call order | open |
+| `Σ ⊢ f → g` | the body or contract of f mentions the function g | open |
+| `Σ ⊢ (g, w̄) ≺ (f, v̄)` | the call of g at the arguments w̄ precedes the call of f at v̄ in call order | open |
 | `Σ; Γ; Φ ⊨ φ` | every assignment of Γ that satisfies the hypotheses Φ satisfies φ | open |
 | `Σ; Γ; Φ ⊢ e def` | under Φ, every partial operation and call written in e is within its domain | open; `integer_domain?` for one operator |
 | `Σ ⊢ {P} f {Q}` | f has precondition P and postcondition Q | open |
@@ -104,18 +105,40 @@ structural closure uses the same children and binding depths as typing;
 it is independent of a particular evaluation trace.
 
 r[statics.call-order.relation]
-A function g *precedes* a function f in call order, `Σ ⊢ g ≺ f`, when f's
-body or contract mentions g, or mentions a function that g precedes. This
-rule is open: the relation is not yet stated in Fren, and the closure of
-[mentioned items](#r-expressions.mentions.closure) that it needs is prose.
+A function f *calls* a function g, `Σ ⊢ f → g`, when f's body or contract
+mentions g. f *reaches* g when a chain of one or more calls leads from f
+to g. A function may reach itself: f and g are in one *recursive group*
+when each reaches the other, and a function that reaches itself is
+*recursive*. A function that does not reach itself is in no group. *Call
+order* is a relation on *call instances*, the pairs `(f, v̄)` of a function
+and a tuple of values of its parameters' types, and not on functions:
+`Σ ⊢ (g, w̄) ≺ (f, v̄)` says that the call of g at w̄ precedes the call of
+f at v̄. Every instance of g precedes every instance of f when f reaches g
+and g does not reach f. Within a recursive group, which instances precede
+which is fixed by the [rule below](#r-statics.call-order.well-founded).
+This rule is open: the relations are not yet stated in Fren, and the
+closure of [mentioned items](#r-expressions.mentions.closure) that they
+need is prose.
 
 r[statics.call-order.well-founded]
-In a verified program no function precedes itself, so call order is a
-well-founded order on the program's functions. The judgments of this
-chapter and the denotation of a function are defined by induction on it.
-This rule is open. It admits no recursion; the rule for structural
-recursion, which lets a function precede itself at structurally smaller
-arguments, is open too.
+A program's call order is *well founded* when no call instance has an
+unending chain of predecessors. Calls between functions of different
+recursive groups never make such a chain, since the groups of a finite
+program are ordered by reaching. So the condition is one on the calls
+inside each recursive group: each such call, written in f at the arguments
+ā, must be *structurally decreasing*, that is, the instance of the callee
+at the values of ā precedes the instance `(f, v̄)` whenever v̄ meets the
+hypotheses at the call. A program without recursion satisfies the
+condition with nothing to check, and a recursive function or a group of
+mutually recursive functions satisfies it when every call around a cycle
+decreases. The judgments of this chapter and the denotation of a function
+are defined by induction on call order
+([stratification](#r-statics.stratification)). This rule is open. What it
+leaves to be stated is the order on argument tuples that counts as
+structural decrease, for the present types and for the recursive types to
+come, and whether a decrease is a syntactic condition or a premise of
+[entailment](#r-statics.entailment). The present check is narrower: it
+admits [no recursion at all](Types.md#r-types.program.nonrecursive).
 
 ## Definedness
 
@@ -147,8 +170,9 @@ operands of every operator, `and` and `or` included, under the incoming
 hypotheses; every argument of a call; the value of a let, used or not; and
 every branch and arm. A division or remainder adds the premise
 `Σ; Γ; Φ ⊨ d != 0` for its divisor d, and a call adds the
-[premise of its callee's precondition](#r-statics.contract.call). These
-rules are open.
+[premise of its callee's precondition](#r-statics.contract.call). A call
+inside the caller's own recursive group also needs its
+[decrease](#r-statics.call-order.well-founded). These rules are open.
 
 r[statics.definedness.declarative]
 Definedness is independent of evaluation. An operation needs its premise
@@ -175,14 +199,19 @@ r[statics.contract.call]
 A call `f(a₁, …, aₙ)` is defined when each argument is defined and the
 hypotheses entail f's precondition at the arguments. The postcondition of
 f, at the arguments and the call's value, is available as a hypothesis
-wherever the call's value is. This rule is open. Whether a caller may also
-use the callee's body is decided with it.
+wherever the call's value is. A call inside the caller's own recursive
+group is known by that postcondition alone, as an
+[induction hypothesis](#r-statics.stratification). This rule is open.
+Whether a caller outside the callee's group may also use the callee's body
+is decided with it.
 
 r[statics.contract.body]
-A function declaration is verified, `Σ ⊢ d verified`, when its contract is
-well formed, its body is defined under its precondition, and its
+A function declaration is verified, `Σ ⊢ d verified`, when every function
+that it calls outside its own recursive group is verified, its contract
+is well formed, its body is defined under its precondition, and its
 precondition entails its postcondition at the parameters and the body's
-value. This rule is open.
+value. The functions of one recursive group are verified together. This
+rule is open.
 
 r[statics.contract.facts]
 A program's assumptions are hypotheses of each of its judgments, taken
@@ -197,16 +226,35 @@ r[statics.entailment]
 `Σ; Γ; Φ ⊨ φ` holds when every assignment of values of Γ's types that
 makes every hypothesis of Φ true makes φ true. The truth of a hypothesis
 and of φ at an assignment is the
-[denotation](DenotationalSemantics.md#r-denotation.truth) of each. This
-rule is open.
+[denotation](DenotationalSemantics.md#r-denotation.truth) of each, read
+with the denotations of the functions verified
+[earlier](#r-statics.stratification) and with no other. Where Φ or φ calls
+a function of the recursive group being verified, the entailment ranges
+also over the results of those calls: it must hold for every value of the
+callee's result type that satisfies the callee's postcondition at the
+arguments. This rule is open.
 
 r[statics.stratification]
-Entailment reads denotations, and a denotation exists only for a verified
-expression, so the judgments are defined together, by induction on call
-order and, within one declaration, on the expression. A hypothesis or a
-goal is interpreted only after its own definedness is established, under
-the hypotheses that precede it, and a callee's denotation only after the
-callee is verified. This rule is open.
+Entailment reads denotations, and a function has a denotation only once it
+is verified. The judgments are therefore defined in strata and not all at
+once, and no judgment reads a denotation that depends on it. The recursive
+groups of a program, and the functions in none, are taken in an order in
+which each comes after everything it reaches outside itself. The judgments
+of a declaration read the denotations of the functions of earlier strata
+only, which are verified and so
+[have denotations](DenotationalSemantics.md#r-denotation.domain) before the
+declaration is considered. A call into the declaration's own group reads
+no denotation. Its precondition and its decrease are premises, and its
+result is known only by the callee's postcondition, which is assumed as an
+induction hypothesis because the called instance precedes the calling one.
+Once every declaration of the group is verified, the
+[denotations of its functions](DenotationalSemantics.md#r-denotation.function)
+are defined by recursion on call order, and the
+[contract theorem](DenotationalSemantics.md#r-denotation.theorem.contract)
+shows by induction on call order that they satisfy the assumed
+postconditions. Within one declaration, a hypothesis or a goal is
+interpreted only after its own definedness is established, under the
+hypotheses that precede it. This rule is open.
 
 ## Programs
 
@@ -238,7 +286,7 @@ The static semantics is sound for the other two semantics. A verified
 function has a denotation on every argument tuple that meets its
 precondition, and that denotation meets its postcondition
 ([the contract theorem](DenotationalSemantics.md#r-denotation.theorem.contract)).
-Evaluating a verified program reaches no error state and gives the
+Evaluating a verified program ends, reaches no error state and gives the
 denotation ([adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy)).
 
 ## Material that other chapters hold
@@ -248,8 +296,9 @@ over the derivation tables of Core typing: the condition of each layer,
 the obligations collected from it with their hypotheses, satisfaction at an
 assignment, validity, and defined and verified programs. Its goals cover
 the divisor of a division or remainder, a callee's `require` and an
-asserted fact. It states no postcondition. The open rules of this chapter
-restate that material as the judgments above, and add contracts.
+asserted fact. It states no postcondition, and its defined programs have
+no recursion. The open rules of this chapter restate that material as the
+judgments above, and add contracts and structural recursion.
 
 ## Examples
 

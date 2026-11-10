@@ -1,14 +1,15 @@
 # Dynamic semantics
 
-The dynamic semantics evaluates an expression to an outcome: a value or an
-error. It is operational, and it is defined for every well-typed program,
-whether or not the program is
+The dynamic semantics evaluates an expression. An evaluation that ends
+has an outcome, a value or an error; an evaluation need not end, since
+typing does not exclude recursion. The semantics is operational, and it is
+defined for every well-typed program, whether or not the program is
 [verified](StaticSemantics.md#r-statics.program.verified). It fixes one
 order of evaluation. An operation outside its domain gives an error state,
 and never an arbitrary value. The
 [denotational semantics](DenotationalSemantics.md) is defined for verified
-programs only; the adequacy theorem states that on those programs
-evaluation reaches no error and gives the denotation.
+Core only; the adequacy theorem states that there evaluation ends, reaches
+no error and gives the denotation.
 
 The evaluation rules and the theorems are open: each is listed below under
 its identifier with what it will state. What this chapter states in Fren is
@@ -20,6 +21,7 @@ has no error outcome and gives no value to `*`, `div` or `%`.
 | Judgment | Meaning | Fren |
 | --- | --- | --- |
 | `P ⊢ ⟨e, ρ⟩ ⇓ r` | in the program P, e evaluates at ρ to the outcome r | open |
+| `P ⊢ ⟨e, ρ⟩ ⇑` | in the program P, the evaluation of e at ρ does not end | open |
 | `P ⊢ f(v₁, …, vₙ) ⇓ r` | the call of f at the argument values has outcome r | open |
 | `op(v) ⇓ r`, `op(v₁, v₂) ⇓ r` | the operator op has outcome r at the operand values | open; `unary_value` and `binary_value` where they give a value |
 | `eval(t, i, ρ) = v` | row i of the call-free table t has the value v at ρ | `eval` |
@@ -44,15 +46,28 @@ r[dynamics.scope]
 The dynamic semantics is defined for every well-typed program. It reads
 no contract proof, no hypothesis and no solver's answer: an evaluation
 depends only on the program, the expression and the assignment. A program
-that is well typed and not verified has evaluations, and some of them may
-end in an error. This rule is open, with the judgment it describes.
+that is well typed and not verified has evaluations; some of them may end
+in an error, and some may not end. This rule is open, with the judgments
+it describes.
 
 ## Outcomes and errors
 
 r[dynamics.outcome]
-An evaluation ends in exactly one *outcome*: a value, or an error with its
-kind. An error is not a value: no local is bound to one, and no operator or
-call takes one as an operand. This rule is open.
+An evaluation that ends, ends in exactly one *outcome*: a value, or an
+error with its kind. An error is not a value: no local is bound to one,
+and no operator or call takes one as an operand. This rule is open.
+
+r[dynamics.divergence]
+An evaluation need not end. Typing does not exclude recursion
+([Core typing](Types.md#r-types.judgment.separate)), so a well-typed
+function may call itself without bound. Such an evaluation *diverges*,
+`P ⊢ ⟨e, ρ⟩ ⇑`. Divergence is not an outcome and not an error: `⇓` relates
+a diverging evaluation to no outcome at all. This rule is open. How
+divergence is stated is decided with the evaluation rules: as a judgment
+of its own beside `⇓`, or as an unending run of a step relation from which
+`⇓` is derived. Either way it must tell divergence apart from an
+expression that no rule applies to, which
+[type safety](#r-dynamics.theorem.type-safety) excludes.
 
 r[dynamics.error.kinds]
 A division or remainder whose divisor evaluates to zero has the outcome
@@ -62,56 +77,67 @@ false, is an error, and of which kind, is decided with it.
 
 r[dynamics.error.propagation]
 When evaluating a child that an expression needs ends in an error, the
-expression ends in that error, and no later child is evaluated. This rule
-is open.
+expression ends in that error, and no later child is evaluated. When
+evaluating such a child diverges, the expression diverges. This rule is
+open.
 
 ## Evaluation
 
 r[dynamics.order]
-Evaluation has one fixed order. The operands of an operator and the
-arguments of a call are evaluated left to right, each exactly once, before
-the operator or call itself. A let evaluates its value, then its body. A
-conditional evaluates its condition, then only the selected branch; a
-match evaluates its scrutinee, then only the selected arm. This rule is
-open. Whether `and` and `or` evaluate their second operand when the first
-decides the result is decided with it. Either way
+Evaluation has one fixed order. The arguments of a call, and the operands
+of every operator other than `and` and `or`, are evaluated left to right,
+each exactly once, before the call or operator itself. `and` and `or`
+evaluate their first operand exactly once, and first. A let evaluates its
+value, then its body. A conditional evaluates its condition, then only the
+selected branch; a match evaluates its scrutinee, then only the selected
+arm. This rule is open. Whether `and` and `or` evaluate their second
+operand when the first decides the result is decided with it; nothing in
+this chapter depends on that choice. Either way
 [definedness](StaticSemantics.md#r-statics.definedness.declarative) does not
 follow the order: it requires both operands to be defined.
 
 r[dynamics.evaluation.rules]
 `P ⊢ ⟨e, ρ⟩ ⇓ r` is defined by rules for each Core form: one for the form's
-value and one for each child whose error it propagates. A literal, a local
+value and one for each child whose error it propagates. An expression
+whose evaluation [diverges](#r-dynamics.divergence) has no derivation of
+`⇓`. A literal, a local
 and a constructor evaluate to the values that
 [the interpretation](DenotationalSemantics.md#r-expressions.meaning.context)
 gives them. These rules are open.
 
 r[dynamics.operators.total]
 Every operator has an outcome at every pair of operand values of its
-operand types. `*`, `div` and `%` evaluate to the product and to the
-Euclidean quotient and remainder that
-[their meaning](DenotationalSemantics.md#r-expressions.meaning.operators)
-states, and `div` and `%` to an error at a zero divisor. This rule is
-open: `binary_value` computes no result for these three operators.
+operand types: applying an operator to values never diverges. `*`, `div`
+and `%` evaluate to the product and to the Euclidean quotient and
+remainder that the
+[equations of their meaning](DenotationalSemantics.md#r-expressions.meaning.operators)
+state, and `div` and `%` to an error at a zero divisor. This rule is
+open: `binary_value` computes no result for these three operators, and
+`binary_meaning?` does not determine one.
 
 r[dynamics.call]
 A call evaluates its arguments, then the callee's body at the assignment
 that lists the argument values, without the caller's locals. Its outcome
-is the body's. This rule is open, with what bounds the evaluation of a
-structurally recursive function.
+is the body's, and it diverges when the body does. The rule reads no
+contract and bounds no recursion: a call is evaluated whether or not its
+callee's recursion is
+[well founded](StaticSemantics.md#r-statics.call-order.well-founded). This
+rule is open.
 
 ## The table evaluator
 
 The rules of this section are stated in Fren. They evaluate the rows of a
 call-free [derivation table](Types.md#derivations), and give no value
 where the open rules above will give an error or the value of a product, a
-quotient, a remainder or a call.
+quotient, a remainder or a call. A table has no calls and its rows are
+finite, so this evaluator always ends.
 
 r[expressions.meaning.values] spec::dynamics::{unary_value, integer_value, boolean_value, binary_value}
 `unary_value` and `binary_value` compute an operator's result from its
 operands' values. They give none for operands of the wrong sorts. They
-give none for `*`, `div` and `%` either: the values of those three are
-specified only by the relation `binary_meaning?`, which no function here
-computes.
+give none for `*`, `div` and `%` either: the relation `binary_meaning?`
+only [approximates](DenotationalSemantics.md#r-denotation.operators.arithmetic)
+the results of those three, and no function here computes them.
 
 ```fren
 pub mod spec
@@ -320,24 +346,33 @@ pub proc evaluation_examples(): (holds?) {
 The properties of this section are open: none is stated in Fren or proved.
 
 r[dynamics.theorem.determinism]
-An expression has at most one outcome at an assignment.
-
-r[dynamics.theorem.termination]
-Every well-typed expression has an outcome at every assignment of its
-context: evaluation neither diverges nor stops without an outcome.
+An expression has at most one outcome at an assignment, and an expression
+that has an outcome there does not diverge there.
 
 r[dynamics.theorem.type-safety]
-When a well-typed expression of type τ evaluates to a value, the value is
-a valid value of type τ. Together with termination, a well-typed program
-ends in a value of its type or in one of the listed errors, and in no
-other state.
+In a well-typed program, a well-typed expression of type τ, at an
+assignment of its context, either evaluates to a valid value of type τ,
+or evaluates to one of the listed errors, or diverges. It is in no other
+state: no rule is missing for a well-typed expression. In a step
+presentation this is progress and preservation. The theorem does not say
+that evaluation ends.
+
+r[dynamics.theorem.termination]
+Evaluation ends where recursion is well founded. In a well-typed program
+whose [call order is well founded](StaticSemantics.md#r-statics.call-order.well-founded),
+every well-typed expression has an outcome at every assignment of its
+context that meets the conditions under which the static semantics
+establishes the decrease of each recursive call. Without that condition
+the theorem is false: a well-typed function whose body is a call of itself
+at its own parameters diverges. The exact condition is open with the
+static rule it cites.
 
 r[dynamics.theorem.adequacy]
 In a verified program, an expression that is defined under hypotheses
-which the assignment ρ makes true evaluates to a value and not to an
-error, and that value is its denotation: `P ⊢ ⟨e, ρ⟩ ⇓ ⟦e⟧ρ`. A verified
-function called at an argument tuple that meets its precondition evaluates
-to its denotation there.
+which the assignment ρ makes true does not diverge and evaluates to a
+value and not to an error, and that value is its denotation:
+`P ⊢ ⟨e, ρ⟩ ⇓ ⟦e⟧ρ`. A verified function called at an argument tuple that
+meets its precondition evaluates to its denotation there.
 
 r[dynamics.theorem.table-agreement]
 Where the [table evaluator](#the-table-evaluator) gives a row a value, the

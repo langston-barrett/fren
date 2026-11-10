@@ -661,10 +661,13 @@ program is. The derived-forms chapter, not yet written, is to define that
 translation.
 
 r[types.program.nonrecursive]
-A Core program has no recursive call cycles: no function's body calls
-itself, directly or through other functions. This is a static condition
-separate from typing; the [THIR chapter](../Compiler/Thir.md) states its
-check.
+A Core program that the present check admits has no recursive call
+cycles: no function's body calls itself, directly or through other
+functions. This is a static condition separate from typing; the
+[THIR chapter](../Compiler/Thir.md) states its check. It is narrower than
+the condition of the static semantics, whose open rule on
+[call order](StaticSemantics.md#r-statics.call-order.well-founded) admits
+structurally decreasing recursion and will replace it.
 
 ## Properties of typing
 
@@ -1052,8 +1055,8 @@ pub proc judgment_weakening(symb: Symb, rows: Snoc<Row>, ctx: Ctx, ty: Ty, extra
 r[types.safety]
 Typing is sound for the dynamic semantics: in a well-typed program,
 evaluating a well-typed expression under values of its context's types
-ends in a value of its type or in an error, and in a verified program it
-ends in a value. The
+ends in a value of its type, or ends in an error, or does not end, and in
+a verified program it ends in a value. The
 [dynamic semantics](DynamicSemantics.md#r-dynamics.theorem.type-safety)
 lists this with its theorems. This needs the evaluation rules as a Fren
 definition and is open.
