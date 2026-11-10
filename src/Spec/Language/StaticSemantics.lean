@@ -51,7 +51,7 @@ example :
 
 open spec.names spec.surface in
 example :
-    spec.statics.form_size Int (.Extend .Empty .Smaller) (.Let .None 0 0) = .Unknown := by
+    spec.statics.form_size Int (.Extend .Empty .Smaller) (.Let .none 0 0) = .Unknown := by
   decide
 
 -- An argument is guarded only when it is a local of size `smaller`.
