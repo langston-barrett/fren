@@ -34,3 +34,4 @@ import Spec.Language.Procedures
 import Spec.Language.PropertiesAndChecks
 import Spec.Language.Syntax
 import Spec.Language.Types
+import Spec.Language.Types.Adequacy

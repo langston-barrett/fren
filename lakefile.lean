@@ -377,7 +377,7 @@ lean_lib SpecSupport where
   globs := #[`Spec.Support.Tables, `Spec.Support.Core]
 
 lean_lib SpecLanguageTypes where
-  globs := #[`Spec.Language.Types]
+  globs := #[`Spec.Language.Types, `Spec.Language.Types.Adequacy]
   needs := #[`@/spec_language_types_md]
 
 input_file spec_language_types_md where

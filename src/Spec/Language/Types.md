@@ -54,7 +54,7 @@ survives extending its context; [inference for a
 layer](#r-types.layer.inference), that a layer's type can be computed; and,
 open, [decidability of the judgment](#r-types.judgment.decidability).
 That the tables mean what the rules mean read as trees is
-[adequacy](#r-types.judgment.adequacy), which the wrapper proves.
+[adequacy](#r-types.judgment.adequacy), which is proved in Lean.
 `fren trace` reports the evidence for each law stated as a procedure.
 
 ## Semantic objects
@@ -1129,27 +1129,21 @@ pub fn alike?(
 
 r[types.judgment.adequacy]
 The judgment agrees with the inductive reading of the rules: `Σ; Γ ⊢ e : τ`
-holds exactly when a finite tree of rule instances concludes it. Fren cannot
-state the tree reading, so no procedure states this law. The chapter's
-wrapper states the tree reading in Lean, as the relation `Typed` on the
-expressions that rows unfold to, and proves the law as
-`Spec.Language.Types.judgment_adequate`: a table with
-`derivation?(Σ, rows, Γ, τ)` whose root unfolds to e exists exactly when
-`Typed Σ Γ e τ`. The proof instantiates `Spec.Tables.Valid.derives` and
-`Spec.Tables.Derives.table`, which hold of any one-layer form and any
-one-layer rule, so that a later chapter that writes its derivations as
-tables proves its own adequacy the same way. With it, the wrapper proves
-of expressions the laws that this chapter states of tables: regularity as `typed_regular`, uniqueness as
-`typed_unique` and weakening, with the shifted expression e' of
-[weakening](#r-types.judgment.weakening), as `typed_weakens`.
+holds exactly when Σ and Γ are well formed and a finite tree of rule
+instances concludes it. Each node of the tree is an instance of the rule for
+its form, with one subtree for each written child of the form, in the
+context that the rule gives that child. The two well-formedness conditions
+are part of the reading and do not follow from the tree: a rule with no
+premises has an instance under any Σ and Γ. Fren cannot state the tree
+reading, so no procedure states this law; it is proved in Lean beside the
+chapter's wrapper. By it, [regularity](#r-types.judgment.regularity),
+[weakening](#r-types.judgment.weakening) and the uniqueness below hold of an
+expression and its trees as they do of tables.
 
 r[types.derivation.unique-expression] spec::types::expression_uniqueness::unique
 Typing is deterministic for an expression: if `derivation?(Σ, l, Γ, τ)` and
 `derivation?(Σ, r, Γ, υ)` and their roots unfold alike, then τ = υ, whatever
-the two tables' sharing of rows and extra rows. The wrapper proves it from
-[adequacy](#r-types.judgment.adequacy): rows that unfold alike unfold to the
-same expression, and the rules give an expression at most one type in a
-context.
+the two tables' sharing of rows and extra rows.
 
 ```fren
 -- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
