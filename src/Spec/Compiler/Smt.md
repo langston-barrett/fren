@@ -750,9 +750,7 @@ It takes the first arm written for the constructor, which is the arm of the
 [dynamic semantics](../Language/DynamicSemantics.md#r-dynamics.match.selection)
 in every typed match, whether or not
 [an arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics).
-It can disagree with that semantics' table evaluator on a typed match
-whose scrutinee's constructor has a repeated arm, which is a static
-error; that the two functions differ there is open.
+That semantics' table evaluator selects the same arm.
 
 r[smt.selection.arm] smt_primitives::confirmation_pick::agrees
 The arm that confirmation selects for a constructor is the arm that

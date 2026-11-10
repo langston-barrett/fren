@@ -76,7 +76,7 @@ pub mod spec::verification
 
 use spec::denotation::{Value, value_type, value_valid?}
 
-use spec::dynamics::{eval, typed, value_at, values}
+use spec::dynamics::{Operands, eval, operands, outcomes, typed}
 
 use spec::statics::integer_domain?
 
@@ -541,7 +541,9 @@ An *assignment* ρ gives a value to each local level in scope. A *program*
 P is a sequence of declarations. Satisfaction reads the value of a row
 from the
 [table evaluator](DynamicSemantics.md#r-expressions.meaning.evaluation):
-`eval(t, r, ρ)`.
+`eval(t, r, ρ)`, which is the value of the row's outcome with the empty
+[call record](DynamicSemantics.md#r-dynamics.table.calls), and none
+where that outcome is an error or the evaluator gives none.
 
 r[verification.assignment.fact] spec::verification::{fact_refuted?, some_refuted?}
 An assignment *refutes* a hypothesis when the evaluator gives the
@@ -575,7 +577,7 @@ pub fn some_refuted?(rows: Snoc<Row>, env: Snoc<Value>, hyps: Hyps) := match hyp
 }
 ```
 
-r[verification.assignment.domain] spec::verification::{argument_values, requires_hold?, declaration_of, within_domain?}
+r[verification.assignment.domain] spec::verification::{requires_hold?, declaration_of, within_domain?}
 A function's *domain* is the set of argument values at which every
 `require` member of its declaration evaluates to true, in the assignment
 that gives the parameters those values. A `require` member has no
@@ -583,15 +585,6 @@ hypotheses, so its value depends on the arguments alone. A callee that the
 program does not declare has an empty domain.
 
 ```fren
-pub fn argument_values(prior: Snoc<Option<Value>>, args: Snoc<Int>): Option<Snoc<Value>> :=
-    match args {
-        Empty => Some(Empty),
-        Extend(earlier, arg) => match argument_values(prior, earlier), value_at(prior, arg) {
-            Some(found), Some(value) => Some(Extend(found, value)),
-            _, _ => None,
-        },
-    }
-
 pub fn requires_hold?(rows: Snoc<Row>, members: Snoc<Member>, env: Snoc<Value>) := match members {
     Empty => true,
     Extend(earlier, member) =>
@@ -619,7 +612,8 @@ r[verification.assignment.goal] spec::verification::goal_holds?
 `Asserted(r)` where row r is true. `Defined(r)` holds where row r is a
 call, every argument has a value, and those values are within the callee's
 domain. `NonZero` and `Asserted` do not hold of a row that has no value.
-`Defined` does not read the value of its own row, which a call never has:
+`Defined` does not read the value of its own row, which a call never has
+with the empty call record:
 it does not hold where an argument has no value, or where a `require`
 root of the callee has none.
 
@@ -632,9 +626,9 @@ pub fn goal_holds?(prog: Snoc<Declared>, rows: Snoc<Row>, env: Snoc<Value>, goal
         },
         Goal::Defined(pos) => match lookup(rows, pos) {
             Some(row) => match row.form {
-                CoreF::Call(callee, args) => match argument_values(values(rows, env), args) {
-                    Some(arguments) => within_domain?(prog, callee, arguments),
-                    None => false,
+                CoreF::Call(callee, args) => match operands(outcomes(Empty, rows, env), args) {
+                    Some(Operands::Values(arguments)) => within_domain?(prog, callee, arguments),
+                    _ => false,
                 },
                 _ => false,
             },
@@ -749,13 +743,20 @@ solver. [The interface](#r-verification.validity.interface) states it in
 Fren.
 
 r[verification.validity.uncomputed]
-A row that depends on a product, a quotient, a remainder or a call has no
-value in any assignment, since the
-[evaluator](DynamicSemantics.md#r-expressions.meaning.evaluation) computes
-none. No `NonZero` or `Asserted` goal of such a row holds, and such a
-row refutes no hypothesis. A `Defined` goal of a call row can hold, since
-it reads the arguments and the callee's `require` roots; it does not hold
-where one of those has no value. So
+A row has no value in an assignment where the
+[evaluator](DynamicSemantics.md#r-expressions.meaning.evaluation) gives
+it an error or no outcome. Satisfaction reads the evaluator with the
+empty call record, so a product, a call, and a quotient or remainder
+whose divisor is not zero have no outcome, and a quotient or remainder
+by zero has an error. A row whose evaluation reads such a row has no
+value either. The evaluation of `and` and of `or` does not read the
+second operand where the first decides the result, nor that of a
+conditional or a match the branches not taken, so such a row may have a
+value where a row that it does not read has none. No `NonZero` or
+`Asserted` goal of a row without a value holds, and such a row refutes
+no hypothesis. A `Defined` goal of a call row can hold, since it reads
+the arguments and the callee's `require` roots; it does not hold where
+one of those has no value. So
 satisfaction never counts an undefined operation as defined; it also fails
 to count a goal as holding, or a hypothesis as refuted, where that depends
 on such a row.
@@ -993,39 +994,35 @@ assumption. A `Refuted(ρ)` does not by itself make the member refuted.
 The verdict says that ρ does not
 [satisfy](#r-verification.assignment.obligation) the obligation in this
 chapter's sense, and the evaluator
-[gives no value](#r-verification.validity.uncomputed) to a row that
-depends on a product, a quotient, a remainder or a call. So a goal may
+[gives no value](#r-verification.validity.uncomputed) to a row whose
+evaluation reads a product, a quotient, a remainder or a call. So a goal may
 fail to hold at ρ because its row is uncomputed, and a hypothesis may be
 unrefuted at ρ because its row is: where `g()` is verified with the body
 `0`, the member `expect g() = 0` is true, its `Asserted` goal holds at no
 assignment, and a sound check may answer `Refuted(ρ)`.
 
-A refutation `Refuted(ρ)` of an obligation is *computed* when the arms of
-every match are
-[distinct](StaticSemantics.md#r-statics.match.distinct) in the member's
-expression, in its hypotheses and in the `require` members that its
-`Defined` goals read, and at ρ the evaluator gives every hypothesis's row
+A refutation `Refuted(ρ)` of an obligation is *computed* when at ρ the
+evaluator gives every hypothesis's row
 the value that the hypothesis states and gives the goal a value that
 contradicts it: `false` for the row of an `Asserted` goal, zero for the
 divisor of a `NonZero` goal, and `false` for a `require` root that a
-`Defined` goal reads. A row that has a value needed no uncomputed
-operation, and with distinct arms its expression has that value as its
-outcome at ρ, by
-[table agreement](DynamicSemantics.md#r-dynamics.theorem.table-agreement),
-and so as its denotation. The arms are asked to be distinct because for a
-repeated constructor the evaluator takes the last arm and the denotation
-the first.
+`Defined` goal reads. The evaluator reads a row in the order of the
+[step relation](DynamicSemantics.md#r-dynamics.order) and takes the
+first matching arm of a match, as the step relation does. So a row that
+has a value needed no uncomputed operation, and its expression has that
+value as its outcome at ρ, by
+[table agreement](DynamicSemantics.md#r-dynamics.theorem.table-agreement)
+with the empty call record, and so as its denotation. Table agreement
+is open, and this paragraph rests on it.
 
 The member is refuted only on a computed refutation of its `Asserted`
 obligation. The goal's row is the member's whole expression and the
 hypotheses are whole conditions of the declaration, so ρ makes the
 [hypotheses of the declaration](StaticSemantics.md#r-statics.condition.scope)
-true and the expectation false: the expectation is not true. That `and`
-and `or` [short-circuit](DynamicSemantics.md#r-dynamics.order) in the
-denotation does not weaken this. The evaluator needs both operands of
-each, so it gives a row a value only where every operand that the
-denotation evaluates has one, and the result of `and` and of `or` is the
-same whether or not the second operand is evaluated.
+true and the expectation false: the expectation is not true. `and` and
+`or` [short-circuit](DynamicSemantics.md#r-dynamics.order) in the
+evaluator as they do in the denotation, so the value of the row is the
+one that the denotation gives.
 
 A computed refutation of a `NonZero` or `Defined` obligation does not
 make the member refuted, and the reason is the same short-circuit.
@@ -1471,9 +1468,9 @@ has the body `0` and the member `assert g() = 0`, and `g()` has the body
 `f()`, the two are one recursive group of the static semantics, neither
 declaration is verified, and neither function has a denotation. The
 [denotational semantics](DenotationalSemantics.md#r-expressions.value.denotation)
-states the property. It is open: the evaluator gives no value to a product, a
-quotient, a remainder or a call, so the statement cannot yet be written
-for the whole Core. The laws above are its local parts: generation omits
+states the property. It is open: satisfaction reads no value of a product,
+of a quotient or remainder whose divisor is not zero, or of a call, so the
+statement cannot yet be written for the whole Core. The laws above are its local parts: generation omits
 no partial operation, the divisor goal is the operator's domain, strict
 positions require their operands, guards are the hypotheses of their
 branches, and flattening loses nothing.
@@ -1865,7 +1862,7 @@ shares the row of x between its two lets, and divides by zero:
 | 4 | `let x := row 0 in row 2` | `·` | 1 |
 | 5 | `row 3 - row 4` | `·` | 1 |
 | 6 | `row 5 - row 0` | `·` | 0 |
-| 7 | `row 0 div row 6` | `·` | none |
+| 7 | `row 0 div row 6` | `·` | none: its outcome is the zero-divisor error |
 
 Its one obligation is `· ⊢ NonZero(row 6)`, in the empty context. The two
 lets have different values, though they share a body, and the empty

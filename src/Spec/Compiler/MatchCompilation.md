@@ -17,8 +17,7 @@ names none, so the two agree only on a match whose arms
 whose step relation takes the first arm written for a constructor in
 every typed match, whether or not
 [an arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics).
-It can differ from the selection of that semantics' table evaluator for a
-constructor that has a repeated arm, in a match that is a static error.
+That semantics' table evaluator selects the same arm.
 
 r[match.lowering.selection] spec::lowering::lowering_selection::agrees
 For an [admitted](../Language/Patterns.md#r-patterns.coverage.admitted)

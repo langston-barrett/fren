@@ -31,9 +31,11 @@ only. What this chapter states in Fren is
 | `P ⊢ m →* s` | a finite run leads from m to the state s | [runs](#r-dynamics.run) | — |
 | `P ⊢ m ⇑` | m diverges: it has an infinite run | [divergence](#r-dynamics.divergence) | — |
 | `P ⊢ m : τ` | the configuration m has the type τ | [configuration typing](#r-dynamics.configuration.typing) | — |
-| `op(v) = r`, `op(v₁, v₂) = r` | the operator op has the outcome r at the operand values | [operators](#r-dynamics.operators.total) | `unary_value` and `binary_value`, where they give a value |
+| `op(v) = r`, `op(v₁, v₂) = r` | the operator op has the outcome r at the operand values | [operators](#r-dynamics.operators.total) | `unary_value` and `operator_outcome`, where they give an outcome |
 | `P ⊢ ⟨e, ρ⟩ ⇓ r` | derived: e evaluates at ρ to the outcome r | [big-step evaluation](#r-dynamics.evaluation.rules) | — |
-| `eval(t, i, ρ) = v` | row i of the table t has the value v at ρ | [the table evaluator](#r-expressions.meaning.evaluation) | `eval` |
+| `outcome(C, t, i, ρ) = r` | row i of the table t has the outcome r at ρ, with the call record C | [the table evaluator](#r-expressions.meaning.evaluation) | `outcome` |
+| `eval(t, i, ρ) = v` | that outcome is the value v, with the empty call record | [the table evaluator](#r-expressions.meaning.evaluation) | `eval` |
+| `justified?(P, C)` | each call of the record C has the outcome that its callee's body has in P | [call records](#r-dynamics.table.calls) | `justified?` |
 
 ```text
   m ::= v                              configurations: a value
@@ -279,7 +281,10 @@ r[expressions.meaning.values] spec::dynamics::{unary_value, integer_value, boole
 operands' values. They give none for operands of the wrong sorts. They
 give none for `*`, `div` and `%` either: the relation `binary_meaning?`
 only [approximates](DenotationalSemantics.md#r-denotation.operators.arithmetic)
-the results of those three, and no function here computes them.
+the results of those three, and no function here computes them. Fren1,
+in which this chapter is written, has no product of two variables and no
+quotient or remainder by a variable, and a function defined in it cannot
+apply an uninterpreted one, so none can be written.
 
 ```fren
 pub mod spec
@@ -291,7 +296,7 @@ use spec::names::{CoreF, Ctx, Form, ItemId, Ty, four, length, lookup, one}
 
 use spec::surface::{BinaryOp, Snoc, UnaryOp}
 
-use spec::types::{Arm, Row}
+use spec::types::{Arm, Decl, Row}
 
 use spec::surface::Snoc::{Empty, Extend}
 
@@ -348,122 +353,308 @@ pub proc values_agree(unop: UnaryOp, op: BinaryOp, left: Value, right: Value, re
 }
 ```
 
-r[expressions.meaning.evaluation] spec::dynamics::{value_at, arm_value, layer_value, initial, values, eval}
-The *evaluator* computes the value of every row of a
-[derivation table](Types.md#derivations) in one local assignment ρ.
-`values` works row by row, oldest first, and reads each child's value from
-the rows before it. A literal, a local and a constructor have their
-[leaf values](DenotationalSemantics.md#r-denotation.leaf). An
-operator row has the result of `unary_value` or `binary_value` at its
-operands' values. A conditional has the value of the branch that its
-condition selects, and a match the value of the arm that `arm_value`
-takes for its scrutinee's constructor: the last arm written for it, which
-is the arm that [selection](#r-dynamics.match.selection) gives when no
-arm of the match is repeated. A let row is evaluated in two steps: its value v in ρ, then
-its body in the assignment that keeps the levels of the let's own context
-and appends v. `eval(t, r, ρ)` is the value of row r.
-
-A row has no value when a child that it needs has none, when a local is
-not in ρ, when an operator has no result, when a match has no arm for
-its scrutinee's constructor, or when it is a call. So a row that depends
-on a product, a quotient, a remainder or a call has none, and the
-evaluator has no error outcome. An operator row needs both operands'
-values, `and` and `or` included, and a let needs its value's, whether or
-not the result depends on them. A conditional needs only the selected
-branch, and a match only the selected arm.
+r[dynamics.table.outcome] spec::dynamics::{ErrorKind, Outcome, valued, outcome_at, zero_divisor?, operator_outcome, binary_outcome}
+The evaluator gives a row an [outcome](#r-dynamics.outcome), a value or
+an error of one of the [two kinds](#r-dynamics.error.kinds), or it gives
+the row none. `operator_outcome` is the
+[outcome of a binary operator](#r-dynamics.operators.total) at two
+values: `error(zero-divisor)` for `div` and `%` at two integers of which
+the second is zero, and otherwise the value that `binary_value` gives,
+where it gives one. `binary_outcome` is the outcome of an operator row
+from the value of its first operand and the outcome of its second, in
+the [order of evaluation](#r-dynamics.order). `and` at false is false and
+`or` at true is true, whatever the second operand's row has, an error or
+no outcome included; `and` at true and `or` at false have the outcome of
+the second operand. Every other operator has the second operand's error
+where it has one, and otherwise the operator's outcome at the two
+values.
 
 ```fren
-pub fn value_at(prior: Snoc<Option<Value>>, pos: Int): Option<Value> := match lookup(prior, pos) {
-    Some(value) => value,
+pub enum ErrorKind { ZeroDivisor, NoArm }
+
+pub enum Outcome { Value(Value), Error(ErrorKind) }
+
+pub fn valued(value: Option<Value>): Option<Outcome> := match value {
+    Some(found) => Some(Outcome::Value(found)),
     None => None,
 }
 
-pub fn arm_value(prior: Snoc<Option<Value>>, arms: Snoc<Arm>, constructor: ItemId): Option<Value> :=
-    match arms {
-        Empty => None,
-        Extend(earlier, arm) =>
-            if arm.constructor = constructor then value_at(prior, arm.body)
-            else arm_value(prior, earlier, constructor),
+pub fn outcome_at(prior: Snoc<Option<Outcome>>, pos: Int): Option<Outcome> :=
+    match lookup(prior, pos) {
+        Some(outcome) => outcome,
+        None => None,
     }
 
-pub fn layer_value(prior: Snoc<Option<Value>>, env: Snoc<Value>, row: Row): Option<Value> :=
-    match row.form {
-        CoreF::BooleanLiteral(value?) => Some(Value::Boolean(value?)),
-        CoreF::IntegerLiteral(value) => Some(Value::Integer(value)),
-        CoreF::Local(level) => lookup(env, level),
-        CoreF::Constructor(item) => match row.ty {
-            Ty::Nominal(owner) => Some(Value::Nominal(owner, item)),
+pub fn zero_divisor?(op: BinaryOp, left: Value, right: Value) := match op, left, right {
+    BinaryOp::Div | BinaryOp::Rem, Value::Integer(_), Value::Integer(divisor) => divisor = 0,
+    _, _, _ => false,
+}
+
+pub fn operator_outcome(op: BinaryOp, left: Value, right: Value): Option<Outcome> :=
+    if zero_divisor?(op, left, right) then Some(Outcome::Error(ErrorKind::ZeroDivisor))
+    else valued(binary_value(op, left, right))
+
+pub fn binary_outcome(op: BinaryOp, left: Value, second: Option<Outcome>): Option<Outcome> :=
+    match op {
+        BinaryOp::And => match left {
+            Value::Boolean(holds?) => if holds? then second else Some(Outcome::Value(left)),
             _ => None,
         },
-        CoreF::Unary(op, operand) => match value_at(prior, operand) {
-            Some(value) => unary_value(op, value),
+        BinaryOp::Or => match left {
+            Value::Boolean(holds?) => if holds? then Some(Outcome::Value(left)) else second,
+            _ => None,
+        },
+        _ => match second {
+            Some(Outcome::Value(right)) => operator_outcome(op, left, right),
+            Some(Outcome::Error(kind)) => Some(Outcome::Error(kind)),
             None => None,
         },
-        CoreF::Binary(op, left, right) => match value_at(prior, left), value_at(prior, right) {
-            Some(l), Some(r) => binary_value(op, l, r),
-            _, _ => None,
-        },
-        CoreF::If(condition, yes, no) => match value_at(prior, condition) {
-            Some(Value::Boolean(holds?)) =>
-                if holds? then value_at(prior, yes) else value_at(prior, no),
-            _ => None,
-        },
-        CoreF::Match(scrutinee, arms) => match value_at(prior, scrutinee) {
-            Some(Value::Nominal(_, constructor)) => arm_value(prior, arms, constructor),
-            _ => None,
-        },
-        _ => None,
     }
+```
+
+r[dynamics.table.calls] spec::dynamics::{Call, called, Operands, operands, body_of, justified?}
+The evaluator does not run a callee's body where it meets a call. It
+reads the call's outcome from a *call record* C, a sequence of calls,
+each a callee, a tuple of argument values and an outcome. `called` gives
+the outcome that C lists for a callee at an argument tuple, and none
+where C lists no such call. `operands` evaluates the arguments of a call
+left to right: it gives their values, or the error of the first argument
+that has one, and none where an argument before that error has no
+outcome.
+
+A call record is *justified* in a program when each of its calls names a
+function that has a body in the program, and the call's outcome is the
+one that the evaluator gives the last row of that body, at the
+assignment that lists the call's arguments and with the calls listed
+before it as the call record. So a justified record is a finite
+derivation of its calls' outcomes, oldest first, and it plays the part
+of fuel: each call that the evaluation of a body reaches must be listed
+earlier. A call that
+[diverges](#r-dynamics.divergence) is listed in no justified record, so
+the evaluator gives it no outcome, whatever justified record it is
+given. This rests on no result of the
+[termination check](StaticSemantics.md#r-statics.termination).
+
+```fren
+pub struct Call { callee: ItemId, arguments: Snoc<Value>, outcome: Outcome }
+
+pub fn called(record: Snoc<Call>, callee: ItemId, arguments: Snoc<Value>): Option<Outcome> :=
+    match record {
+        Empty => None,
+        Extend(earlier, call) =>
+            if call.callee = callee and call.arguments = arguments then Some(call.outcome)
+            else called(earlier, callee, arguments),
+    }
+
+pub enum Operands { Values(Snoc<Value>), Error(ErrorKind) }
+
+pub fn operands(prior: Snoc<Option<Outcome>>, args: Snoc<Int>): Option<Operands> := match args {
+    Empty => Some(Operands::Values(Empty)),
+    Extend(earlier, arg) => match operands(prior, earlier) {
+        Some(Operands::Values(found)) => match outcome_at(prior, arg) {
+            Some(Outcome::Value(value)) => Some(Operands::Values(Extend(found, value))),
+            Some(Outcome::Error(kind)) => Some(Operands::Error(kind)),
+            None => None,
+        },
+        Some(Operands::Error(kind)) => Some(Operands::Error(kind)),
+        None => None,
+    },
+}
+
+pub fn body_of(decls: Snoc<Decl>, item: ItemId): Option<Snoc<Row>> := match decls {
+    Empty => None,
+    Extend(earlier, decl) => match decl {
+        Decl::Function(name, rows) => if name = item then Some(rows) else body_of(earlier, item),
+        Decl::Condition(_, _) => body_of(earlier, item),
+    },
+}
+```
+
+r[expressions.meaning.evaluation] spec::dynamics::{first_arm, arm_outcome, layer_outcome, initial, outcomes, outcome, eval, justified?}
+The *evaluator* computes the outcome of every row of a
+[derivation table](Types.md#derivations) in one local assignment ρ and
+with one [call record](#r-dynamics.table.calls) C. `outcomes` works row by
+row, oldest first, and reads each child's outcome from the rows before
+it. A literal, a local and a constructor have their
+[leaf values](DenotationalSemantics.md#r-denotation.leaf). A unary
+operator row has the result of `unary_value` at its operand's value, and
+a binary operator row the outcome that
+[`binary_outcome`](#r-dynamics.table.outcome) gives. A conditional has
+the outcome of the branch that its condition selects. A match has the
+outcome of the arm that `first_arm` takes for its scrutinee's
+constructor, which is the first arm written for it, as
+[selection](#r-dynamics.match.selection) gives; where no arm is written
+for it, the match has the outcome `error(no-arm)`. A call has the
+outcome that C lists for its callee at its arguments' values. A let row
+is evaluated in two steps: its value v in ρ, then its body in the
+assignment that keeps the levels of the let's own context and appends v.
+`outcome(C, t, r, ρ)` is the outcome of row r, and `eval(t, r, ρ)` is the
+value of row r with the empty call record, where that outcome is a
+value.
+
+A row has the error of the child that the
+[order of evaluation](#r-dynamics.order) evaluates first among its
+children with an error, where every child evaluated before that one has
+a value: an operand, a condition, a scrutinee, an argument or a let's
+value. The outcome of a branch, of an arm and of a let's body is the
+row's own, an error included.
+
+A row has no outcome when a child that it needs has none, when a local
+is not in ρ, when an operator has no result at its operands' values, or
+when it is a call that C does not list. So a row that depends on a
+product, on a quotient or a remainder at a nonzero divisor, or on a call
+that C does not list has none. A conditional needs only its condition
+and the selected branch, a match only its scrutinee and the selected
+arm, and `and` and `or` need their second operand only where the first
+does not decide them. A let needs its value's outcome, whether or not
+its body reads it.
+
+```fren
+pub fn first_arm(arms: Snoc<Arm>, constructor: ItemId): Option<Arm> := match arms {
+    Empty => None,
+    Extend(earlier, arm) => match first_arm(earlier, constructor) {
+        Some(found) => Some(found),
+        None => if arm.constructor = constructor then Some(arm) else None,
+    },
+}
+
+pub fn arm_outcome(
+    prior: Snoc<Option<Outcome>>,
+    arms: Snoc<Arm>,
+    constructor: ItemId
+): Option<Outcome> := match first_arm(arms, constructor) {
+    Some(found) => outcome_at(prior, found.body),
+    None => Some(Outcome::Error(ErrorKind::NoArm)),
+}
+
+pub fn layer_outcome(
+    record: Snoc<Call>,
+    prior: Snoc<Option<Outcome>>,
+    env: Snoc<Value>,
+    row: Row
+): Option<Outcome> := match row.form {
+    CoreF::BooleanLiteral(value?) => Some(Outcome::Value(Value::Boolean(value?))),
+    CoreF::IntegerLiteral(value) => Some(Outcome::Value(Value::Integer(value))),
+    CoreF::Local(level) => valued(lookup(env, level)),
+    CoreF::Constructor(item) => match row.ty {
+        Ty::Nominal(owner) => Some(Outcome::Value(Value::Nominal(owner, item))),
+        _ => None,
+    },
+    CoreF::Unary(op, operand) => match outcome_at(prior, operand) {
+        Some(Outcome::Value(value)) => valued(unary_value(op, value)),
+        Some(Outcome::Error(kind)) => Some(Outcome::Error(kind)),
+        None => None,
+    },
+    CoreF::Binary(op, left, right) => match outcome_at(prior, left) {
+        Some(Outcome::Value(value)) => binary_outcome(op, value, outcome_at(prior, right)),
+        Some(Outcome::Error(kind)) => Some(Outcome::Error(kind)),
+        None => None,
+    },
+    CoreF::If(condition, yes, no) => match outcome_at(prior, condition) {
+        Some(Outcome::Value(Value::Boolean(holds?))) =>
+            if holds? then outcome_at(prior, yes) else outcome_at(prior, no),
+        Some(Outcome::Error(kind)) => Some(Outcome::Error(kind)),
+        _ => None,
+    },
+    CoreF::Match(scrutinee, arms) => match outcome_at(prior, scrutinee) {
+        Some(Outcome::Value(Value::Nominal(_, constructor))) =>
+            arm_outcome(prior, arms, constructor),
+        Some(Outcome::Error(kind)) => Some(Outcome::Error(kind)),
+        _ => None,
+    },
+    CoreF::Call(callee, args) => match operands(prior, args) {
+        Some(Operands::Values(arguments)) => called(record, callee, arguments),
+        Some(Operands::Error(kind)) => Some(Outcome::Error(kind)),
+        None => None,
+    },
+    CoreF::Let(_, _, _) => None,
+}
 
 pub fn initial<T>(xs: Snoc<T>, count: Int): Snoc<T> := match xs {
     Empty => Empty,
     Extend(earlier, _) => if length(earlier) < count then xs else initial(earlier, count),
 }
 
-pub fn values(rows: Snoc<Row>, env: Snoc<Value>): Snoc<Option<Value>> := match rows {
-    Empty => Empty,
-    Extend(earlier, row) => Extend(
-        values(earlier, env),
-        match row.form {
-            CoreF::Let(_, value, body) => match value_at(values(earlier, env), value) {
-                Some(bound) => value_at(
-                    values(earlier, Extend(initial(env, length(row.ctx)), bound)),
-                    body
-                ),
-                None => None,
-            },
-            _ => layer_value(values(earlier, env), env, row),
-        }
-    ),
-}
+pub fn outcomes(record: Snoc<Call>, rows: Snoc<Row>, env: Snoc<Value>): Snoc<Option<Outcome>> :=
+    match rows {
+        Empty => Empty,
+        Extend(earlier, row) => Extend(
+            outcomes(record, earlier, env),
+            match row.form {
+                CoreF::Let(_, value, body) =>
+                    match outcome_at(outcomes(record, earlier, env), value) {
+                        Some(Outcome::Value(bound)) => outcome_at(
+                            outcomes(
+                                record,
+                                earlier,
+                                Extend(initial(env, length(row.ctx)), bound)
+                            ),
+                            body
+                        ),
+                        Some(Outcome::Error(kind)) => Some(Outcome::Error(kind)),
+                        None => None,
+                    },
+                _ => layer_outcome(record, outcomes(record, earlier, env), env, row),
+            }
+        ),
+    }
+
+pub fn outcome(record: Snoc<Call>, rows: Snoc<Row>, pos: Int, env: Snoc<Value>): Option<Outcome> :=
+    outcome_at(outcomes(record, rows, env), pos)
 
 pub fn eval(rows: Snoc<Row>, pos: Int, env: Snoc<Value>): Option<Value> :=
-    value_at(values(rows, env), pos)
+    match outcome(Empty, rows, pos, env) {
+        Some(Outcome::Value(value)) => Some(value),
+        _ => None,
+    }
+
+pub fn justified?(decls: Snoc<Decl>, record: Snoc<Call>) := match record {
+    Empty => true,
+    Extend(earlier, call) =>
+        justified?(decls, earlier)
+        and match body_of(decls, call.callee) {
+            Some(rows) =>
+                outcome(earlier, rows, length(rows) - 1, call.arguments) = Some(call.outcome),
+            None => false,
+        },
+}
 ```
 
 r[dynamics.table.differences]
-The table evaluator is not the step relation, and it differs from it in
-six ways. The compiler's evaluator is a third function, and the
-[evaluator chapter](../Compiler/Evaluator.md) lists the four ways in
-which it differs from the step relation; the two lists are of different
-evaluators and are kept apart. It computes a row's value in one pass over the rows before
-it, and has no configurations, steps or runs. It has no error state: a
-row that the step relation takes to an error has no value. It gives no
-value to a call, a product, a quotient or a remainder, where the step
-relation reduces each. It needs the second operand of `and` and of `or`
-even where the first decides the result, so a row has no value when that
-operand has none, where the step relation never evaluates it. It cannot
-diverge. And for a match with two arms for its scrutinee's constructor,
-`arm_value` takes the arm written last, where the
-[step relation](#r-dynamics.match.selection) takes the arm written
-first, so the two can give different values. Such a match is a
-[static error](StaticSemantics.md#r-statics.match.distinct), so this last
-difference is reached only in a program that has that error; the unit
-that aligns the evaluators removes it.
-[Where it gives a value](#r-dynamics.theorem.table-agreement) to an
-expression with distinct arms, the step relation gives the same one.
+The table evaluator is not the step relation. It agrees with it on
+[errors](#r-dynamics.error.kinds), on the
+[order of evaluation](#r-dynamics.order), `and` and `or` included, and on
+the [arm of a match](#r-dynamics.match.selection). Three differences
+remain.
 
-r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, evaluation_examples::{bound, unbound, uncomputed}}
+- It computes a row's outcome in one pass over the rows before it, and
+  has no configurations, steps or runs. A function of a derivation table
+  cannot have them: the [derived judgment](#r-dynamics.evaluation.rules)
+  is its counterpart, and
+  [table agreement](#r-dynamics.theorem.table-agreement) relates it to
+  the runs.
+- It gives no outcome to a product, or to a quotient or a remainder at a
+  nonzero divisor, where the step relation reduces each to a value.
+  [Fren1 cannot compute them](#r-expressions.meaning.values). The error
+  at a zero divisor is computed.
+- It does not find a call's outcome: it reads the outcome from a
+  [call record](#r-dynamics.table.calls), and gives the call none where
+  the record does not list it. The step relation reduces every call to
+  its callee's body. A function of Fren1 recurses only on a part of one
+  of its parameters, and a callee's body is no part of the caller's
+  table, so the evaluator cannot enter it; the justified record is the
+  finite derivation that stands for the run. The evaluator is total, so
+  it cannot diverge, and a call that diverges has no outcome at any
+  justified record.
+
+Where it gives an outcome at a justified record,
+[the step relation gives the same one](#r-dynamics.theorem.table-agreement).
+The compiler's evaluator is a third function, and the
+[evaluator chapter](../Compiler/Evaluator.md#differences-from-the-step-relation)
+lists the ways in which it differs from the step relation; the two lists
+are of different evaluators and are kept apart.
+
+r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, QUOTIENT_ROWS, DOUBLE, DOUBLE_ROWS, CALL_ROWS, doubled, DOUBLED, evaluation_examples::{bound, unbound, uncomputed, zero_divisor, decided, propagated, uncalled, called, justified, unjustified}}
 `let d := 2 in 10 - d` has this table; row 4 is the let.
 
 | Row | Layer | Context |
@@ -475,8 +666,32 @@ r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, evaluation_
 | 4 | `let d := row 0 in row 3` | `·` |
 
 In the empty assignment the let has the value 8. Its body's row 3 has
-none there, since the local is not in the assignment. A quotient has no
-computed value, even of 10 and 2.
+no outcome there, since the local is not in the assignment. A quotient
+has no computed value at a nonzero divisor, even of 10 and 2.
+
+`false and 1 div 0 = 1` has the table below, with the outcome of each
+row in the empty assignment. The quotient's row 2 has the error
+`error(zero-divisor)`, and so has the comparison's row 3, whose first
+operand has it. The row 5 of `and` is false: its first operand decides
+it.
+
+| Row | Layer | Outcome |
+| --- | --- | --- |
+| 0 | `1` | 1 |
+| 1 | `0` | 0 |
+| 2 | `row 0 div row 1` | `error(zero-divisor)` |
+| 3 | `row 2 = row 0` | `error(zero-divisor)` |
+| 4 | `false` | false |
+| 5 | `row 4 and row 3` | false |
+
+Let `double` be the function of one integer parameter n whose body is
+`n + n`; its table `DOUBLE_ROWS` has the two rows `#0` and
+`row 0 + row 0`. The call `double(2)` has the table `CALL_ROWS`, whose
+rows are `2` and `double(row 0)`. With the empty call record the call
+has no outcome. The record `DOUBLED` lists `double` at 2 with the
+outcome 4; with it the call has the value 4. `DOUBLED` is justified in
+the program that declares `double`, and the record that lists the
+outcome 5 is not.
 
 ```fren
 pub fn typed(form: Form, ctx: Ctx, ty: Ty): Row := Row { form, ctx, ty }
@@ -495,14 +710,62 @@ pub const LET_ROWS: Snoc<Row> := Extend(
     typed(CoreF::Let(None, 0, 3), Empty, Ty::Integer)
 )
 
+pub const QUOTIENT_ROWS: Snoc<Row> := Extend(
+    Extend(
+        four(
+            typed(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+            typed(CoreF::IntegerLiteral(0), Empty, Ty::Integer),
+            typed(CoreF::Binary(BinaryOp::Div, 0, 1), Empty, Ty::Integer),
+            typed(CoreF::Binary(BinaryOp::Eq, 2, 0), Empty, Ty::Boolean)
+        ),
+        typed(CoreF::BooleanLiteral(false), Empty, Ty::Boolean)
+    ),
+    typed(CoreF::Binary(BinaryOp::And, 4, 3), Empty, Ty::Boolean)
+)
+
+pub const DOUBLE: ItemId := ["M", "double"]
+
+pub const DOUBLE_ROWS: Snoc<Row> := Extend(
+    one(typed(CoreF::Local(0), one(Ty::Integer), Ty::Integer)),
+    typed(
+        CoreF::Binary(BinaryOp::Add, 0, 0),
+        one(Ty::Integer),
+        Ty::Integer
+    )
+)
+
+pub const CALL_ROWS: Snoc<Row> := Extend(
+    one(typed(CoreF::IntegerLiteral(2), Empty, Ty::Integer)),
+    typed(CoreF::Call(DOUBLE, one(0)), Empty, Ty::Integer)
+)
+
+pub fn doubled(result: Int): Snoc<Call> := one(
+    Call {
+        callee := DOUBLE,
+        arguments := one(Value::Integer(2)),
+        outcome := Outcome::Value(Value::Integer(result)),
+    }
+)
+
+pub const DOUBLED: Snoc<Call> := doubled(4)
+
 -- The examples are constant judgments, which the wrapper evaluates.
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "random" in
 pub proc evaluation_examples(): (holds?) {
     ensure output: holds?
     ensure bound: eval(LET_ROWS, 4, Empty) = Some(Value::Integer(8))
-    ensure unbound: eval(LET_ROWS, 3, Empty) = None
-    ensure uncomputed: binary_value(BinaryOp::Div, Value::Integer(10), Value::Integer(2)) = None
+    ensure unbound: outcome(Empty, LET_ROWS, 3, Empty) = None
+    ensure uncomputed: operator_outcome(BinaryOp::Div, Value::Integer(10), Value::Integer(2)) = None
+    ensure zero_divisor: outcome(Empty, QUOTIENT_ROWS, 2, Empty)
+        = Some(Outcome::Error(ErrorKind::ZeroDivisor))
+    ensure propagated: outcome(Empty, QUOTIENT_ROWS, 3, Empty)
+        = Some(Outcome::Error(ErrorKind::ZeroDivisor))
+    ensure decided: eval(QUOTIENT_ROWS, 5, Empty) = Some(Value::Boolean(false))
+    ensure uncalled: outcome(Empty, CALL_ROWS, 1, Empty) = None
+    ensure called: outcome(DOUBLED, CALL_ROWS, 1, Empty) = Some(Outcome::Value(Value::Integer(4)))
+    ensure justified: justified?(one(Decl::Function(DOUBLE, DOUBLE_ROWS)), DOUBLED)
+    ensure unjustified: not justified?(one(Decl::Function(DOUBLE, DOUBLE_ROWS)), doubled(5))
 }
 ```
 
@@ -546,7 +809,8 @@ one of the two kinds, or [diverges](#r-dynamics.divergence). It never
 reaches a stuck configuration. The theorem does not say that evaluation
 ends, and it needs neither definedness nor termination. None of the
 three needs distinct arms: every arm of a well-typed match has the
-match's type, whichever arm selection takes.
+match's type, whichever arm selection takes. No theorem of this chapter
+asks for them.
 
 r[dynamics.theorem.big-step]
 The derived judgment agrees with the runs that end:
@@ -627,32 +891,59 @@ The theorem needs all of these conditions and not the termination check
 of the mentioned functions alone.
 
 r[dynamics.theorem.table-agreement]
-Let P be a [well-typed](Types.md#r-types.program.typing) program, let
-the table be a derivation of `Γ ⊢ e : τ` in it in which the arms of every
-match are [distinct](StaticSemantics.md#r-statics.match.distinct), and
-let ρ be an assignment of Γ. Where the
-[table evaluator](#the-table-evaluator) gives the table's last row a
-value v at ρ, the expression e has that outcome: `P ⊢ ⟨e, ρ⟩ →* v`. The
-same holds of each earlier row with the expression and the context that
-the row derives. The premises are needed: loading is defined only for a
-well-typed expression at an assignment of its context, and the table
-evaluator also gives values to rows of a table that is no derivation.
-This is the one theorem of the chapter that asks for distinct arms. The
-step relation is defined without them, but for a constructor with
-several arms the table evaluator
-[takes the last arm written](#r-dynamics.table.differences) and the step
-relation the first, so without the premise the two can give different
-values. The premise is on the expression only, since the table evaluator
-gives no value to a call and so reads no other declaration. It goes when
-the evaluators are aligned.
+Let P be a [well-typed](Types.md#r-types.program.typing) program, let C
+be a call record that is [justified](#r-dynamics.table.calls) in P, let
+the table t be a derivation of `Γ ⊢ e : τ` in P, and let ρ be an
+assignment of Γ: a sequence of valid values of the types of Γ. Where
+the [table evaluator](#the-table-evaluator) gives the table's last row
+an outcome r at ρ with the record C, a value or an error, the
+expression e has that outcome: `P ⊢ ⟨e, ρ⟩ →* r`. The same holds of
+each earlier row i, with the expression eᵢ, the context Γᵢ and the type
+τᵢ that the row derives, at every assignment of Γᵢ. So where the
+evaluator gives a value, e does not diverge and does not end in an
+error, and where it gives an error, e ends in the error of that kind.
+The converse does not hold: the evaluator gives no outcome to a row that
+reads a [product or a nonzero quotient](#r-dynamics.table.differences),
+or a call that C does not list.
+
+The premises are needed. Loading is defined only for a well-typed
+expression at an assignment of its context, and the evaluator also
+gives outcomes to rows of a table that is no derivation. A record that
+is not justified may list any outcome for a call. The empty record is
+justified in every program, and with it the theorem is about
+[`eval`](#r-expressions.meaning.evaluation), which is what
+[verification](PropertiesAndChecks.md#r-verification.validity.uncomputed)
+reads. The theorem does not ask for
+[distinct arms](StaticSemantics.md#r-statics.match.distinct): the
+evaluator and the step relation both take the first arm written for
+the scrutinee's constructor. It asks for no result of the
+[termination check](StaticSemantics.md#r-statics.termination) either:
+by induction on a justified record, each call that it lists has a
+finite run to the listed outcome, since the evaluation of the callee's
+body reads only calls listed earlier.
+
+The theorem is open. Its parts that are proved in Lean are local: the
+[operator results](#r-expressions.meaning.values) are those of the
+operator rules, and the evaluator's
+[selection](Patterns.md#r-patterns.matching.dynamics) is the step
+relation's.
 
 r[dynamics.theorem.implementation]
-An implementation that evaluates in another order, that leaves an unused
-let's value unevaluated, that evaluates in one pass and not by steps, or
-that omits a check which verification has discharged, agrees with this
-chapter where [adequacy](#r-dynamics.theorem.adequacy) applies: on the
-expressions, and at the assignments, of that theorem, in a well-typed
-program. The property is not yet stated formally, and
-its formal statement will name those premises for each implementation. The
-[evaluator chapter](../Compiler/Evaluator.md) states how the compiler's
-evaluator differs from this chapter elsewhere.
+An implementation may evaluate in another order, leave an unused let's
+value unevaluated, evaluate in one pass and not by steps, or omit a
+check which verification has discharged. It agrees with this chapter
+under the premises of [adequacy](#r-dynamics.theorem.adequacy), with
+the typing premises of
+[table agreement](#r-dynamics.theorem.table-agreement). Let P be a
+well-typed program, let e be an expression with `Γ ⊢ e : τ` in P that
+is defined under hypotheses Φ, let every function that e or Φ mentions
+have a denotation, and let ρ be an assignment of Γ that makes each
+hypothesis of Φ true. Then the implementation, run on e at ρ, ends in
+the value v with `P ⊢ ⟨e, ρ⟩ →* v`, which is `⟦e⟧ρ`. Outside these
+premises the property says nothing: there an implementation may give a
+value where this chapter gives an error or a divergence, since a skipped
+operand or an omitted check may be the one that errs. The property is
+open. For the compiler's evaluator, the
+[evaluator chapter](../Compiler/Evaluator.md#differences-from-the-step-relation)
+lists how it differs from the step relation, and each difference is
+one that these premises make unobservable.

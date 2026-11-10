@@ -32,14 +32,11 @@ In outline, `select` gives, for a constructor c, the first arm written for c.
 The step relation of the
 [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection)
 selects the same arm in every typed match, with
-[distinct arms](StaticSemantics.md#r-statics.match.distinct) or not. Its
-[table evaluator](DynamicSemantics.md#r-dynamics.table.differences) runs
-the last arm
-written for c, so `select` and the table evaluator [agree](#r-patterns.matching.dynamics)
-when no arm is repeated and can disagree on a typed match whose scrutinee's
-constructor has a repeated arm. Such a match is a static error, so the
-disagreement is reached by no admitted program; that the two functions
-differ there is open. A match has two checks, once the typing rules have admitted the patterns of
+[distinct arms](StaticSemantics.md#r-statics.match.distinct) or not, and
+so does its
+[table evaluator](DynamicSemantics.md#r-expressions.meaning.evaluation):
+`select` and the table evaluator's selection
+[are one function](#r-patterns.matching.dynamics). A match has two checks, once the typing rules have admitted the patterns of
 the arms: every constructor of the scrutinee's enumeration is the pattern of
 at least one arm, which is the
 [coverage of the static semantics](StaticSemantics.md#r-statics.definedness.coverage),
@@ -131,9 +128,9 @@ written for c, if there is one: it consults the earlier arms before the
 newest. This is the selection of this chapter, of the production
 `FrenHirToThir.selectArm` and of the
 [step relation](DynamicSemantics.md#r-dynamics.match.selection) of the
-dynamic semantics; it is proved to be the selection of the
-[dynamic semantics' table evaluator](#r-patterns.matching.dynamics) when no arm is repeated,
-and can differ from it for a constructor that has a repeated arm. `occurrences` counts the arms written for c.
+dynamic semantics, and it is proved to be the selection of the
+[dynamic semantics' table evaluator](#r-patterns.matching.dynamics) for
+every sequence of arms, repeated or not. `occurrences` counts the arms written for c.
 
 ```text
   arms = c₀ ⇒ e₀ | … | cₘ ⇒ eₘ     k least with cₖ = c
@@ -484,71 +481,57 @@ pub proc admitted_selects_typed(
 }
 ```
 
-r[patterns.matching.dynamics] spec::patterns::{selected_value, dynamics_selection::{agrees, runs_last, selects_first}}
+r[patterns.matching.dynamics] spec::patterns::{selected_outcome, dynamics_selection::{selects, agrees, first_of_two, no_arm}}
 The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection) is
 defined for every typed program, and its step relation runs the arm
 written first when several arms have the scrutinee's constructor, which
 is the arm that `select` gives. Its
-[table evaluator](DynamicSemantics.md#r-dynamics.table.differences) is
-also defined for every typed program, and it runs the arm written last
-when several arms have the scrutinee's constructor: its `arm_value`
-consults the newest arm first. `select` takes the arm written first.
-`selected_value` is the value that the arm `select` gives would have, read
-from the same row values as `arm_value` reads.
+[table evaluator](DynamicSemantics.md#r-expressions.meaning.evaluation)
+selects with `first_arm`, and `first_arm` is `select`, for every sequence
+of arms and every constructor. `selected_outcome` is the outcome that the
+arm `select` gives would have, read from the same row outcomes as the
+table evaluator's `arm_outcome` reads, and the error `no-arm` where
+`select` gives no arm. `arm_outcome` is `selected_outcome`, whether or not
+an arm is repeated and whether or not an arm is written for the
+constructor. For two arms with the one constructor, both are the outcome
+of the first arm's body.
 
-When no arm repeats the pattern of an earlier arm, the two agree: `arm_value`
-is `selected_value` for every constructor, whether or not an arm is written
-for it. When the scrutinee's constructor has a repeated arm `select`
-and the table evaluator can
-disagree. For two arms with the one constructor, `arm_value` is the value of the second arm's body and
-`selected_value` the value of the first's, and these differ whenever the
-bodies' values do. Such a match can be typed, since
+Such a match can be typed, since
 [typing ignores repeated arms](Types.md#r-types.judgment.coverage-separate),
-and the table evaluator gives it a value. This chapter
-[rejects](#r-patterns.coverage.repeated) the match, as the static
-semantics does, so no admitted program reaches the disagreement; the table
-evaluator does not use that check, and neither does the step relation,
-which agrees with `select` there.
-
-That the two functions differ is open. `select`, and with it the production
-`FrenHirToThir.selectArm` that the evaluator and confirmation call, is not
-equal to the table evaluator's selection on a typed match with a repeated
-arm, and gives another value when the scrutinee's constructor has repeated arms whose
-bodies' values differ. This
-chapter does not change the table evaluator; bringing the two to one
-choice belongs to the unit that aligns the evaluators.
+and this chapter [rejects](#r-patterns.coverage.repeated) it, as the
+static semantics does. The table evaluator and the step relation do not
+use that check, and neither needs it to agree with `select`.
 
 ```fren
-use spec::denotation::Value
-
-use spec::dynamics::{arm_value, value_at}
+use spec::dynamics::{ErrorKind, Outcome, arm_outcome, first_arm, outcome_at}
 
 use spec::types::Arm
 
-pub fn selected_value(
-    prior: Snoc<Option<Value>>,
+pub fn selected_outcome(
+    prior: Snoc<Option<Outcome>>,
     arms: Snoc<Arm>,
     constructor: ItemId
-): Option<Value> := match select(arms, constructor) {
-    Option::Some(found) => value_at(prior, found.body),
-    Option::None => Option::None,
+): Option<Outcome> := match select(arms, constructor) {
+    Option::Some(found) => outcome_at(prior, found.body),
+    Option::None => Option::Some(Outcome::Error(ErrorKind::NoArm)),
 }
 
 set_option fren.evidence "random" in
 pub proc dynamics_selection(
-    prior: Snoc<Option<Value>>,
+    prior: Snoc<Option<Outcome>>,
     arms: Snoc<Arm>,
     first: Arm,
     second: Arm,
     constructor: ItemId,
 ): (holds?) {
     ensure output: holds?
-    ensure agrees: when reachable?(arms),
-        arm_value(prior, arms, constructor) = selected_value(prior, arms, constructor)
-    ensure runs_last: when first.constructor = constructor and second.constructor = constructor,
-        arm_value(prior, Extend(Extend(Empty, first), second), constructor) = value_at(prior, second.body)
-    ensure selects_first: when first.constructor = constructor and second.constructor = constructor,
-        selected_value(prior, Extend(Extend(Empty, first), second), constructor) = value_at(prior, first.body)
+    ensure selects: first_arm(arms, constructor) = select(arms, constructor)
+    ensure agrees: arm_outcome(prior, arms, constructor) = selected_outcome(prior, arms, constructor)
+    ensure first_of_two: when first.constructor = constructor and second.constructor = constructor,
+        arm_outcome(prior, Extend(Extend(Empty, first), second), constructor)
+        = outcome_at(prior, first.body)
+    ensure no_arm: when occurrences(arms, constructor) = 0,
+        arm_outcome(prior, arms, constructor) = Option::Some(Outcome::Error(ErrorKind::NoArm))
 }
 ```
 

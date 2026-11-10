@@ -166,7 +166,8 @@ impl hypotheses_proof: hypotheses for (prog : Snoc Declared) (rows : Snoc Row) (
     hypotheses.ensure.strengthening, hypotheses.ensure.exclusive]
   refine ⟨trivial, ?_, ?_, ?_⟩
   · simp [satisfied?, some_refuted?, fren_spec] <;> grind
-  · simp [satisfied?, some_refuted?, fren_spec] <;> grind
+  · simp only [satisfied?, some_refuted?]
+    grind
   · simp [fact_refuted?, fren_spec] <;> grind
 
 open spec.surface (BinaryOp UnaryOp Snoc)

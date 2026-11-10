@@ -187,41 +187,40 @@ theorem reachable_iff {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) :
       · rintro ⟨_, h2⟩; exact ih.1 h2
       · intro h2; exact ⟨hl.2 h0, ih.2 h2⟩
 
-theorem arm_value_eq_selected (prior : Snoc (Option spec.denotation.Value))
-    (arms : Snoc (ArmF Int)) (c : Fren.Seq String) (h : reachable? _ arms = true) :
-    spec.dynamics.arm_value prior arms c = selected_value prior arms c := by
+theorem first_arm_eq_select (arms : Snoc (ArmF Int)) (c : Fren.Seq String) :
+    spec.dynamics.first_arm arms c = select _ arms c := by
   induction arms with
-  | Empty => simp [spec.dynamics.arm_value, selected_value, select]
+  | Empty => simp [spec.dynamics.first_arm, select]
   | Extend earlier last ih =>
-    simp only [reachable?, decide_eq_true_eq] at h
-    have h0 := (first_index_last earlier last).1 h.1
-    have ih := ih h.2
-    simp only [spec.dynamics.arm_value, selected_value, select]
-    by_cases hc : last.constructor = c
-    · subst hc
-      have hs : select _ earlier last.constructor = none := by
-        cases hs : select _ earlier last.constructor with
-        | none => rfl
-        | some f => have := (select_sound earlier _ f hs).2; omega
-      simp [hs]
-    · rw [if_neg hc, ih]
-      simp only [selected_value]
-      cases select _ earlier c <;> simp [hc]
+    simp only [spec.dynamics.first_arm, select, ih]
+    cases select _ earlier c <;> rfl
+
+theorem arm_outcome_eq_selected (prior : Snoc (Option spec.dynamics.Outcome))
+    (arms : Snoc (ArmF Int)) (c : Fren.Seq String) :
+    spec.dynamics.arm_outcome prior arms c = selected_outcome prior arms c := by
+  simp only [spec.dynamics.arm_outcome, selected_outcome, first_arm_eq_select]
+  cases select _ arms c <;> rfl
 
 open spec.patterns in
-impl dynamics_selection_proof: dynamics_selection for (prior : Snoc (Option spec.denotation.Value))
+impl dynamics_selection_proof: dynamics_selection for (prior : Snoc (Option spec.dynamics.Outcome))
     (arms : Snoc (ArmF Int)) (first second : ArmF Int) (constructor : Fren.Seq String) {
   prior := prior, arms := arms, first := first, second := second, constructor := constructor,
   holds? := true
 } by
   intro prior arms first second constructor _
   simp only [dynamics_selection.ensures, dynamics_selection.ensure.output,
-    dynamics_selection.ensure.agrees, dynamics_selection.ensure.runs_last,
-    dynamics_selection.ensure.selects_first]
-  refine ⟨trivial, ?_, ?_, ?_⟩
-  · intro h; exact arm_value_eq_selected prior arms constructor h
-  · rintro ⟨_, h2⟩; simp [spec.dynamics.arm_value, h2]
-  · rintro ⟨h1, _⟩; simp [selected_value, select, h1]
+    dynamics_selection.ensure.selects, dynamics_selection.ensure.agrees,
+    dynamics_selection.ensure.first_of_two, dynamics_selection.ensure.no_arm]
+  refine ⟨trivial, first_arm_eq_select arms constructor,
+    arm_outcome_eq_selected prior arms constructor, ?_, ?_⟩
+  · rintro ⟨h1, _⟩
+    simp [spec.dynamics.arm_outcome, spec.dynamics.first_arm, h1]
+  · intro h
+    have hs : select _ arms constructor = none := by
+      cases hs : select _ arms constructor with
+      | none => rfl
+      | some f => have := (select_sound arms _ f hs).2; omega
+    simp only [arm_outcome_eq_selected, selected_outcome, hs]
 
 
 theorem select_swap {E : Type} [Inhabited E] (earlier : Snoc (ArmF E)) (a b : ArmF E)

@@ -136,7 +136,6 @@ unsqueezed src/Spec/Language/PropertiesAndChecks.lean:strictness_proof: simp [fr
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:guards_proof: simp [fren_spec, condition_holds?]
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:divisor_proof: simp [fren_spec, goal_holds?, integer_domain?, partial?]
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:hypotheses_proof: simp [satisfied?, some_refuted?, fren_spec]
-unsqueezed src/Spec/Language/PropertiesAndChecks.lean:hypotheses_proof: simp [satisfied?, some_refuted?, fren_spec] #2
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:hypotheses_proof: simp [fact_refuted?, fren_spec]
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:cut_proof: simp [satisfied?, some_refuted?, fact_refuted?, goal_holds?, fren_spec]
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:member_scope_proof: simp [some_refuted?, fren_spec]

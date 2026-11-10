@@ -245,9 +245,12 @@ What shapes the chapter:
 - **The evaluator.** `eval` of the dynamic semantics chapter gives a row its
   value in an assignment, so an assignment is only the values of the
   locals, a counterexample is checkable, and the examples' values are
-  computed. It gives no value to a product, a quotient, a remainder or a
-  call, because a defined Fren function may not multiply or divide two
-  variables or apply an uninterpreted function. Satisfaction is therefore
+  computed. `eval` is the value of the table evaluator's outcome with the
+  empty call record. It gives no value to a product, to a quotient or a
+  remainder, or to a call: a defined Fren function may not multiply or
+  divide two variables or apply an uninterpreted function, a quotient or
+  remainder by zero has an error and no value, and the empty record
+  lists no call. Satisfaction is therefore
   conservative: a `NonZero` or `Asserted` goal of such a row never holds,
   and a hypothesis that depends on one is never refuted
   (`verification.validity.uncomputed`). A `Defined` goal of a call row can
@@ -319,8 +322,15 @@ commuting square with OIR condition generation, is open
 - [ ] State as a property that each goal occurs once for each written
   path to it, with exactly the hypotheses of the enclosing branches,
   cases and bindings.
-- [ ] Give the evaluator values for products, quotients, remainders and
-  calls, then state and prove `verification.soundness`.
+- [ ] Give the evaluator values for products and for quotients and
+  remainders at a nonzero divisor, which Fren1 cannot compute, then state
+  and prove `verification.soundness`.
+- [ ] Follow-up of the evaluator alignment: satisfaction reads `eval`,
+  the table evaluator with the empty call record, so a call row still
+  has no value in verification. Reading calls needs a rule that says
+  which justified call record satisfaction uses (`dynamics.table.calls`),
+  and it changes which obligations an assignment satisfies, so it is a
+  unit of its own.
 - [ ] Give the `Decl` of Core typing each condition's keyword and owner,
   so that `represents?` states that a member has its source keyword, or
   make `Decl` and the member table one definition.
@@ -405,9 +415,8 @@ chapters is prose.
   `src/Spec/Compiler/Mir.lean` test, but no `impl` binds that check to
   the rule. Such a match is still well typed, and the step relation
   selects the first of two such arms (`dynamics.match.selection`), as
-  the compiler's evaluator does. The table evaluator takes the last; the
-  evaluators are not yet aligned, and `dynamics.theorem.table-agreement`
-  carries a distinct-arms premise until they are.
+  the compiler's evaluator and the table evaluator do
+  (`patterns.matching.dynamics`, proved for all arm sequences).
   The rule also has two Fren definitions whose agreement is not proved:
   `arms_distinct?` in the static semantics and `reachable?` with
   `repeats` in the Patterns chapter. One of them should own the rule and
@@ -418,10 +427,38 @@ chapters is prose.
   step relation, with its configurations and evaluation contexts, as
   Fren definitions.
 - [ ] The table evaluator and the compiler's evaluator are one-pass
-  evaluators, not the step relation. `dynamics.table.differences` and
-  the introduction of the evaluator chapter list their differences.
-- [ ] The table evaluator gives no value to a product, a quotient, a
-  remainder or a call. `binary_meaning?` only bounds the first three.
+  evaluators, not the step relation. `dynamics.table.differences` lists
+  the three differences of the first, and "Differences from the step
+  relation" in the evaluator chapter the four of the second; each list
+  gives the reason that the difference stays and cites the other.
+- [ ] The table evaluator gives no outcome to a product, or to a
+  quotient or a remainder at a nonzero divisor: Fren1 has no product of
+  two variables and no quotient by a variable, and a defined function
+  cannot apply an uninterpreted one. `binary_meaning?` only bounds the
+  three. The zero-divisor and no-arm errors are computed.
+- [ ] The table evaluator reads a call's outcome from a call record that
+  is justified in the program (`dynamics.table.calls`, `justified?`),
+  since a Fren1 function cannot recurse into a callee's body. Not
+  stated or proved: that a justified record gives a call at most one
+  outcome, and that a call which ends has a justified record that lists
+  it (completeness of records). The examples check one justified and
+  one unjustified record.
+- [ ] `dynamics.theorem.table-agreement` is restated with its full
+  premises (a well-typed program, a justified call record, a table that
+  is a derivation, an assignment of its context) and without the
+  distinct-arms premise. It is open: the step relation is prose. Its
+  proved local parts are the operator results
+  (`expressions.meaning.values`) and selection
+  (`patterns.matching.dynamics`). That errors pass through each form in
+  the order of evaluation is stated by the evaluator's definition and
+  the examples only.
+- [ ] `dynamics.theorem.implementation` is restated with the premises of
+  adequacy and the typing premises of table agreement. It is open, and
+  no Lean theorem relates `FrenEval.walk` to the step relation.
+- [ ] The compiler's evaluator keeps its lazy let and its single
+  undefined outcome. Making the let strict, or giving the walk a no-arm
+  failure, changes what the debugger shows and the tests in
+  `src/FrenEvalTests/Cases.lean`; it needs the owner's decision.
 - [ ] `types.program.nonrecursive` and `verification.program.defined`
   exclude all recursion through bodies, which is narrower than the
   termination check where that admits structural recursion.
