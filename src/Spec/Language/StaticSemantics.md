@@ -637,16 +637,22 @@ pub fn argument_guarded?(sizes: Snoc<Size>, arguments: Snoc<Option<Int>>, parame
         None => false,
     }
 ```
+
 r[statics.termination.written] spec::statics::{Calls, local_at, calls_at, argument_locals, argument_calls, arm_calls, layer_calls, table_calls, written_calls}
 The check reads of a body only its *written calls*: each call written
 in it, with its callee and, for each argument, the level of the argument
-where the argument is a local; and each let that encloses a call or
-not, with the level of its value where the value is a local. `Leaf` has
-no call. `Both(C, D)` has the calls of C and of D in one size context.
-`Call(g, ās)` is one call of g, where `ās` lists for each argument its
-level, or nothing where the argument is not a local. `Let(a, C)` has the
-calls C of a let's body, where `a` is the level of the let's value, or
-nothing. An operator has the calls of its operands, a call those of its
+where the argument is a local; and every let, whether or not its body
+has a call, with the level of its value where the value is a local.
+
+```text
+C ::= · | C, C | g(ā) | let a in C
+```
+
+Here `·` is no call, `C, C` the calls of both in one size context,
+`g(ā)` one call of g and `let a in C` the calls C of a let's body. Each
+`a` is the level of an argument or of a let's value, or nothing where
+that is not a local. `Calls` has a constructor for each form, in this
+order. An operator has the calls of its operands, a call those of its
 arguments and itself, a let those of its value and, under `Let`, those
 of its body, a conditional those of its condition and branches, and a
 match those of its scrutinee and arms. A literal, a local and a
@@ -728,9 +734,9 @@ when every call written in it whose callee the choice lists is
 [guarded](#r-statics.termination.guarded) in its
 [size context](#r-statics.termination.size): the size context of the
 body is that of the function's parameters under the choice, and the
-calls under a `Let` have it extended by the size of the let's value. A
-call whose callee the choice does not list is of no function of the
-group, and the condition does not read it. A function is guarded under a
+calls under a `Let` have it extended by the size of the let's value.
+Under a choice of the group, a call whose callee the choice does not
+list is of no function of the group, and the condition does not read it. A function is guarded under a
 choice when the choice lists it and its body is guarded under the
 choice, and a group is when each of its functions is. `choices`
 lists the choices of a group, each of which lists every function of the

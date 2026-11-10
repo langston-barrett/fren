@@ -409,14 +409,23 @@ chapters is prose.
     proved equal to the search over choices only because no size
     context of the present Core holds `smaller`. When a match arm binds
     fields, validation must call the search, or a closed form proved
-    for that Core.
+    for that Core. The search is exponential in the group's size: a
+    group has as many choices as the product of its members' parameter
+    counts. So whoever makes that change chooses a criterion for each
+    function, or a bound, deliberately.
   - Not bound: the recursive group that `recursiveGroup` takes from
     the call graph, and the written calls that `writtenCalls` reads
     from a typed body, against `written_calls` of the Core table. Tests
-    check them; no theorem does.
+    check them on written programs, with each form's calls and levels;
+    no theorem does.
+  - The binding is at the specification's identities with decided
+    equality, while validation compares `FrenBase.ItemId` with that
+    type's own `==`. The binding transfers to validation only if that
+    `==` is equality, which nothing states or proves. The coverage
+    correspondence has the same gap.
   - The condition rule, that a condition calls only functions that pass
     hereditarily, is implemented (`Termination.conditionTerminating`)
-    and tested on generated graphs, but no pass calls it and no Fren
+    and tested on one fixed graph, but no pass calls it and no Fren
     definition states it: the call order through conditions is prose.
     Validation's call graph has the calls in bodies only, so a group
     that is recursive through conditions alone is not judged.

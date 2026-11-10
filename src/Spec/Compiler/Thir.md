@@ -248,8 +248,9 @@ graph to have no self cycle or mutually recursive strongly connected component.
 Validation judges the recursive group of a function on a cycle by the
 [termination check](../Language/StaticSemantics.md#termination) and reports
 a group that does not pass as a termination failure. A group that passes is
-still rejected, as a cycle, since no later pass accepts recursion; in the
-present Core no group with a call between its members passes.
+still rejected, as a cycle, since no later pass accepts recursion. In the
+present Core no group with a call between its members passes, so no input
+produces a cycle failure.
 
 r[thir.validation.boundary]
 Whole static acceptance requires admitted input, successful typing,
@@ -308,7 +309,7 @@ references. `StaticFailure.typing` retains existing diagnostics, including
 catalogue codes: coverage includes the owner, missing and repeated IDs; a
 cycle includes a closed canonical function path, and a termination failure
 includes the recursive group and its reason: a member without a parameter,
-or a call that no choice of decreasing parameters guards. Missing cases point at the
+or that under every choice of decreasing parameters some call is not guarded. Missing cases point at the
 match keyword, repetitions at the first repeated pattern, and cycles and
 termination failures at the closing call's callee. These are the positions of today's checker; the Language
 chapter on [patterns](../Language/Patterns.md) does not state them. Metadata failures also carry the actual source span.
@@ -511,10 +512,12 @@ termination check: `group_passes?` decides whether a recursive group passes,
 `structural?` whether some choice of decreasing parameters guards every call
 between its members, and `passes_alone?` whether a function outside every
 recursive group passes. The production module `FrenHirToThir.Termination`
-computes the same three verdicts. `validateNonrecursive` judges the recursive
-group of a function on a cycle by `Termination.groupPassesNow`, which that
-module proves equal to `Termination.groupPasses` for the present Core, in
-which no size context holds `smaller`.
+defines the same three functions. Validation runs only the group verdict, in
+its closed form: `validateNonrecursive` judges the recursive group of a
+function on a cycle by `Termination.groupPassesNow`, which that module proves
+equal to `Termination.groupPasses` for the present Core, in which no size
+context holds `smaller`. The search and the verdict on a function outside
+every recursive group have no caller in the pass.
 
 The binding is at the specification's own identities with decidable equality,
 as in the coverage correspondence. Not bound here are the choice of the group
@@ -524,9 +527,10 @@ hereditarily, which `Termination.conditionTerminating` computes and no pass
 yet calls.
 
 r[thir.termination.judgment] spec::thir::{production_group_passes?::agrees, production_structural?::agrees, production_passes_alone?::agrees}
-The verdict that production gives a recursive group is `group_passes?`, its
+The production module's verdict on a recursive group is `group_passes?`, its
 search over the choices of decreasing parameters is `structural?`, and its
 verdict on a function outside every recursive group is `passes_alone?`.
+Validation runs the first of the three, in its closed form.
 
 ```fren
 use spec::statics::{Function, group_passes?, passes_alone?, structural?}

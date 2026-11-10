@@ -23,7 +23,7 @@ def walkingRunner : Fren.TextTests.Runner := .of
       "termination " ++ ", ".intercalate (group.toList.map (·.render)) ++ ": " ++
         match reason with
         | .noParameters function => s!"{function.render} has no parameter"
-        | .unguarded => "some call is not guarded under every choice of decreasing parameters"
+        | .unguarded => "under every choice of decreasing parameters, some call is not guarded"
     | .error (.validation (.invalidMetadata _)) => "invalid typed metadata"
 
 end FrenHirToThirTests

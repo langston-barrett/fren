@@ -1923,8 +1923,9 @@ theorem passes_alone_eq (function : Function) :
     passes_alone? function = FrenHirToThir.Termination.passesAlone (prodFunction function) := by
   simp [passes_alone?, opted_out?, FrenHirToThir.Termination.passesAlone, prodFunction]
 
-/-- The production judgment of a group, read through the adapters. `judgeRecursion`
-calls this function on the group that it extracts. -/
+/-- The production judgment of a group, read through the adapters, at the
+specification's identities with decided equality. `judgeRecursion` calls the same
+`groupPassesNow` on `FrenBase.ItemId` with that type's own `==`, not this function. -/
 def productionGroupPasses (group : Snoc Function) : Bool :=
   FrenHirToThir.Termination.groupPassesNow ((toList group).map prodFunction)
 
