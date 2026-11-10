@@ -39,6 +39,137 @@ required within an active scope; reuse in separate definitions or questions
 is harmless. Canonical declaration identities and array uniqueness come from
 the admitted source and upstream construction contracts.
 
+r[smt.names.rendering] smt_primitives::rendered::injective
+Two symbols have the same rendered name exactly when they are the same
+symbol: of the same family, with the same indices.
+
+r[smt.names.families] smt_primitives::rendered::disjoint
+The seven families are mutually disjoint: symbols of different families have
+different rendered names.
+
+r[smt.names.reserved] smt_primitives::spelled::unreserved
+No rendered name is a word of `RESERVED`: the built-in sort names, the
+Boolean literals, the operators and the keywords of the emitted text. A
+numeral is not a rendered name either, since a rendered name begins with the
+letter of its family.
+
+r[smt.names.scope] smt_primitives::active?
+The *active scope* of a term under `count` parameters, in an environment of
+`length` entries, consists of the parameter symbols with an index below
+`count` and of both components of the local symbols with an index from
+`count` up to, but not including, `length`.
+
+r[smt.names.binding] smt_primitives::binding::{pair, clash}
+A let in an environment of `length` entries binds the two components of the
+local symbol with index `length`. Their rendered names differ from each
+other. A symbol has the rendered name of one of them exactly when it is that
+component of that local symbol.
+
+r[smt.names.fresh] smt_primitives::binding::fresh
+The names that a let binds differ from the rendered name of every symbol of
+the active scope.
+
+These rules are proved of the encoder's own `Symbol.render`, for every index.
+`Symbol.render_inj` is the first two rules, and `Symbol.render_front` gives
+the third. The wrapper binds each clause to that function with an `impl`,
+through the map `symbol` from the symbols written here to the encoder's.
+`Naming.scoped` shows that the names of every environment that `Naming`
+admits are those of an active scope: the parameters, then one local pair for
+each let, at the index of the environment's length where it was bound.
+`Naming.fresh` shows that the pair a let binds next differs from every name
+of that environment, and from `true`, which stands for the domain of a
+parameter. `Naming.extend` shows that the let captures nothing: when an
+environment corresponds to the slots, the environment extended by the two
+new names corresponds to the slots extended by the bound pair, so every
+earlier name reads the value it read before.
+
+```fren
+pub mod smt_primitives
+
+pub enum Component { Value, Domain }
+
+pub enum Symbol {
+    Nominal(Nat),
+    Constructor(Nat, Nat),
+    Function(Nat, Component),
+    Parameter(Nat),
+    Local(Nat, Component),
+}
+
+pub enum Family {
+    Nominal,
+    Constructor,
+    FunctionValue,
+    FunctionDomain,
+    Parameter,
+    LocalValue,
+    LocalDomain,
+}
+
+pub fn family(symbol: Symbol): Family := match symbol {
+    Symbol::Nominal(_) => Family::Nominal,
+    Symbol::Constructor(_, _) => Family::Constructor,
+    Symbol::Function(_, component) => match component {
+        Component::Value => Family::FunctionValue,
+        Component::Domain => Family::FunctionDomain,
+    },
+    Symbol::Parameter(_) => Family::Parameter,
+    Symbol::Local(_, component) => match component {
+        Component::Value => Family::LocalValue,
+        Component::Domain => Family::LocalDomain,
+    },
+}
+
+pub const RESERVED: Set<String> := {
+    "Bool",
+    "Int",
+    "true",
+    "false",
+    "not",
+    "and",
+    "or",
+    "=",
+    "distinct",
+    "+",
+    "-",
+    "*",
+    "div",
+    "mod",
+    "<",
+    "<=",
+    ">",
+    ">=",
+    "ite",
+    "let",
+}
+
+pub fn active?(count: Nat, length: Nat, symbol: Symbol) := match symbol {
+    Symbol::Nominal(_) => false,
+    Symbol::Constructor(_, _) => false,
+    Symbol::Function(_, _) => false,
+    Symbol::Parameter(index) => index < count,
+    Symbol::Local(index, _) => count <= index < length,
+}
+
+pub proc rendered(left: Symbol, right: Symbol): (same?) {
+    ensure injective: same? iff left = right
+    expect disjoint: when same?, family(left) = family(right)
+}
+
+-- The implementation decides `rendered?` by rendering the symbol.
+set_option fren.lint.unused_variables "allow" in
+pub proc spelled(symbol: Symbol, text: String): (rendered?) {
+    ensure unreserved: when rendered?, not text in RESERVED
+}
+
+pub proc binding(count: Nat, length: Nat, bound: Symbol): (distinct?, clash?) {
+    ensure pair: distinct?
+    ensure clash: clash? iff bound = Symbol::Local(length, Component::Value)
+        or bound = Symbol::Local(length, Component::Domain)
+    expect fresh: when active?(count, length, bound), not clash?
+}
+```
+
 **Proof obligations**
 
 r[smt.encoding.admission]
@@ -427,7 +558,7 @@ def CheckerContract : Prop := ∀ p command run, Mir.AdmissionResidue p →
 
 General source preservation additionally consumes the named MIR, LIR and OIR
 contracts and their semantic/safety domains. Source-model existence, reverse
-model readback, environment freshness, full checker correspondence, evaluator
+model readback, full checker correspondence, evaluator
 adequacy and solver trust cannot be inferred from producer determinism,
 `Encoded`, finitely many examples or a raw solver status. Their exact proof
 inventory belongs in the [development coverage document](../../../docs/fren2-specification-coverage.md).
@@ -717,8 +848,6 @@ r[smt.primitive.refutation] smt_primitives::facts::refutation
 A counterexample requires true assumptions and a false condition.
 
 ```fren
-pub mod smt_primitives
-
 pub proc facts(assumption?, condition?, n: Int) {
     expect negative_dividend: when n = -9, n div 2 = -5
     expect negative_divisor: when n = -9, n div (-2) = 5

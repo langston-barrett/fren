@@ -648,8 +648,17 @@ upstream universal proof obligations are preserved in full.
   exact query polarity/context for every admitted producer result.
 - [ ] Prove `ValidationContract` and depth adequacy where appropriate; do not
   infer them from finite wrong-sort/name/arity controls.
-- [ ] Prove all rendered symbol families are injective and mutually disjoint,
+- [x] Prove all rendered symbol families are injective and mutually disjoint,
   and `Naming` preserves active-scope freshness and capture freedom.
+  `FrenOirToSmt.Symbol.render_inj` proves both halves of the first part of
+  the encoder's own `Symbol.render`, for every index, and `render_front`
+  keeps rendered names apart from the reserved words and numerals. The
+  chapter's `smt.names` rules bind them with `impl`. `Naming.scoped`,
+  `Naming.fresh` and `Naming.extend` prove the second part of the chapter's
+  `Naming` and `EnvironmentFor`. That the encoder's own `term` and
+  `parameters` build only environments that `Naming` admits is not proved
+  here: it is part of `EncodingContract` above, through `TermFor` and
+  `Names`.
 - [ ] Prove `InterpretationContract` in both directions, including function
   equations and lets, under independently justified sufficient domains.
 - [ ] Establish model existence and total typed model readback, relate the
