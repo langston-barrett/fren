@@ -89,19 +89,24 @@ physical transport and source evaluator. Universal source/encoding soundness,
 model existence, confirmation adequacy and `CheckerContract` remain unproved.
 Divisor definedness counterexamples are confirmed by evaluating the source
 assumptions, lexical bindings, conditional guards and divisor at the retained
-site. That confirmation never evaluates the site's `div` or `mod` itself.
+site. The bindings, guards and divisor are evaluated by the demand-driven
+interpreter. That confirmation never evaluates the site's `div` or `%` itself.
 Both Boolean operands and unused lets retain static obligations; `if` and
 `match` guard their branches. An unrelated partial expression does not prevent
 a nonvacuity witness or counterexample in another body from being confirmed.
 The complete inventory still includes every function's definedness checks.
 Assumptions and goals that a witness or counterexample consumes may divide,
-directly or through called functions. They are evaluated strictly under the
-model's assignment: both Boolean operands, unused let values and callee bodies
-are evaluated, and only an `if` or `match` selects a branch. Any `div` or `mod`
-by zero there leaves the row unconfirmed, and the demand-driven interpreter's
-value must agree with the strict one. Strict evaluation shares a 10,000-step
-budget across consumed premises and the goal for each confirmation; exhausting
-it leaves the row unconfirmed with an evaluation budget reason. Unsupported sites, undefined
+directly or through called functions. Each is evaluated under the model's
+assignment by the demand-driven interpreter. When its body or a function that
+it transitively calls mentions `div` or `%`, it is also evaluated strictly:
+both Boolean operands, unused let values and callee bodies are evaluated, and
+only an `if` or `match` selects a branch. Any `div` or `%` by zero there
+leaves the row unconfirmed, and the demand-driven interpreter's value must
+agree with the strict one. A body that reaches no `div` or `%` skips strict
+evaluation, and the demand-driven value alone decides. Strict evaluation
+shares a 10,000-step budget across consumed premises and the goal for each
+confirmation; exhausting it leaves the row unconfirmed with an evaluation
+budget reason. Unsupported sites, undefined
 or exhausted prefix evaluation, dependency cycles and absent nonvacuity
 witnesses remain explicit incomplete outcomes. This command adds no soundness
 claim to the production checker.
@@ -123,5 +128,5 @@ and runtime files are unchanged.
 The annotated known-verdict corpus is in `test/fren2-verdicts/`. Run it with
 `.lake/build/bin/fren2_test --job verdictCorpus`. The `definednessControls` job
 checks source-site confirmation and evidence-binding controls for both `div`
-and `mod`. Both are separate jobs in the child and parent default paths, each
+and `%`. Both are separate jobs in the child and parent default paths, each
 under its own 30-second deadline.

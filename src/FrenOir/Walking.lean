@@ -61,6 +61,11 @@ inductive Readiness where
   | unresolved (reason : String)
   deriving Repr, BEq
 
+/-- Only `ready` compares equal to `ready`. -/
+theorem Readiness.unresolved_bne_ready (reason : String) :
+    (Readiness.unresolved reason != .ready) = true := by
+  rfl
+
 structure Question where
   id : Nat
   kind : Kind

@@ -253,7 +253,8 @@ private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index
   let some entry := out.queries[index]? | return .unconfirmed "missing question"
   let q := entry.question
   if q.readiness != .ready then return .unconfirmed "unresolved question readiness"
-  -- Consumed hypotheses and goals are evaluated strictly by sourceBoolean.
+  -- sourceBoolean evaluates consumed hypotheses and goals, strictly too when
+  -- the body or a transitive callee mentions division or remainder.
   -- Definedness confirmation evaluates a source prefix instead of its body.
   for edge in q.dependencies do
     match edge with
@@ -365,5 +366,24 @@ theorem strict_mod_zero (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBo
 
 theorem model_nonzero (r : Receipt) (h : r.exitCode ≠ some 0) : modelData r = false := by
   simp [modelData, h]
+
+/-- A confirmed answer names a question of the re-run producer that is ready. -/
+theorem confirmAssignment_ready (p : FrenThirDesugar.Program) (out : Program) (hp : produce p = .ok out)
+    (index : Nat) (values : Array FrenEval.Value) (depth : Nat)
+    (h : confirmAssignment p index values depth = .witness ∨
+      confirmAssignment p index values depth = .counterexample) :
+    ∃ entry, out.queries[index]? = some entry ∧ entry.question.readiness = .ready := by
+  simp only [confirmAssignment, hp] at h
+  unfold confirmProduced at h
+  cases hq : out.queries[index]? with
+  | none => simp [hq, Id.run] at h
+  | some entry =>
+    refine ⟨entry, rfl, ?_⟩
+    cases hr : entry.question.readiness with
+    | ready => rfl
+    | unresolved reason =>
+      have : (entry.question.readiness != .ready) = true := by
+        rw [hr]; exact FrenOir.Readiness.unresolved_bne_ready reason
+      simp [hq, this, Id.run] at h
 
 end FrenOirToSmt

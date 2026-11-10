@@ -359,7 +359,8 @@ smt.response.polarity -- actual Question.interpret laws and independent model wi
 smt.response.limits -- actual bounded transport and receipt boundary; process ownership is tested, not formally bound in Fren
 smt.model.protocol -- actual two-request bounded transport, original source/question retention and raw physical receipts; process/solver identity remain IO trust boundaries
 smt.model.values -- actual strict decoder with direct Plausible and real models; universal ReadbackContract remains unproved
-smt.model.confirmation -- actual source interpreter boundary and SourceCandidate contract stated through the actual strictBody; its adequacy to Lir.SourceValue, universal ConfirmationContract and evaluator adequacy remain unproved
+smt.model.confirmation -- actual source interpreter boundary with real validity and definedness confirmation controls; correspondence to SourceCandidate is the unproved ConfirmationContract
+smt.model.candidate -- SourceCandidate stated through Lir.SourceValue and Oir.Violation; definitions only, bound by the unproved ConfirmationContract
 
 smt.checker.entry -- actual source-to-report pipeline and normal controls; IO/process identity remains trusted
 smt.checker.inventory -- actual regenerated complete inventory and receipt gates with direct Plausible; universal CheckerContract remains unproved

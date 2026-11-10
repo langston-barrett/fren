@@ -356,25 +356,29 @@ def ModelAssignment (p : FrenOir.Program) (q : FrenOir.Question)
     q.parameters[i]? = some param → values[i]? = some value →
     value.type = param.source.type ∧ value.valid p.lir.mir.source = true
 
-/-- Observation of the actual interpreter on the retained source body, which
-strict evaluation of its retained static obligations must reproduce whenever
-the body or a transitive callee mentions division or remainder. -/
+/-- The strict source judgment gives the body a Boolean value under the
+assignment. Assignments are positional; the judgment's environment is nearest first. -/
 def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
-    (depth : Nat) (value : Bool) : Prop :=
-  ∃ observation, FrenEval.evaluate ⟨p.input, p.typed, p.accepted⟩
-      ⟨body.owner, body.member.map (·.label.text)⟩ values depth = .ok observation ∧
-    observation.body = body ∧ observation.outcome = .ok (.bool value) ∧
-    (divisionFree p.typed body = true ∨ strictBody p.typed body values depth = .ok (.bool value))
+    (value : Bool) : Prop :=
+  Lir.SourceValue p body values.toList.reverse (.bool value)
+
+/-- In every model the assignment violates the definedness question: its
+hypotheses hold, its frames are active and the divisor at its site is zero. -/
+def DefinednessViolation (out : FrenOir.Program) (q : FrenOir.Question)
+    (values : Array FrenEval.Value) : Prop :=
+  ∀ symbols zero, Model out symbols zero → Oir.Violation symbols zero q values.toList.reverse
 
 /-- Concrete candidates do not discharge universal validity or domain questions. -/
 def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Question)
-    (values : Array FrenEval.Value) (depth : Nat) (answer : Confirmation) : Prop :=
+    (values : Array FrenEval.Value) (answer : Confirmation) : Prop :=
   Produces p out ∧ q ∈ out.oir.questions.toList ∧ q.readiness = .ready ∧
   ModelAssignment out.oir q values ∧
-  (∀ hypothesis ∈ q.hypotheses.toList, SourceBoolean p hypothesis.source values depth true) ∧
+  (∀ hypothesis ∈ q.hypotheses.toList, SourceBoolean p hypothesis.source values true) ∧
   ((q.kind = .assumptionsSatisfiable ∧ answer = .witness) ∨
     (q.kind = .validity ∧ answer = .counterexample ∧
-      ∃ body, q.subject = some body ∧ SourceBoolean p body values depth false))
+      ∃ body, q.subject = some body ∧ SourceBoolean p body values false) ∨
+    (q.kind ∈ [FrenOir.Kind.functionDefinedness, .assumptionDefinedness, .goalDefinedness] ∧
+      answer = .counterexample ∧ DefinednessViolation out.oir q values))
 
 /-- Decoder typing and source-observation correspondence are separate from the
 universal SMT interpretation, strict-evaluation and evaluator-adequacy bridges. -/
@@ -382,11 +386,14 @@ def ReadbackContract : Prop := ∀ p out, Produces p out → ∀ entry ∈ out.q
   ∀ text cap values, decodeModel out.oir entry.question text cap = .ok values →
     ModelAssignment out.oir entry.question values
 
-def ConfirmationContract : Prop := ∀ p out, Produces p out → ∀ index entry,
+/-- Every confirmed answer, at every evaluation depth, is a source candidate. -/
+def ConfirmationContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.oir.lir →
+  Oir.Constructs out.oir → Mir.SemanticDomain p → ∀ index entry,
   out.queries[index]? = some entry → ∀ values depth answer,
   confirmAssignment p index values depth = answer →
   (answer = .witness ∨ answer = .counterexample) →
-    SourceCandidate p out entry.question values depth answer
+    SourceCandidate p out entry.question values answer
+
 /-- Discharge names actual question checks and whole-definition safety, not
 caller-provided readiness flags. -/
 def DependenciesDischarged (out : FrenOirToSmt.Program) (report : Report) (q : FrenOir.Question) : Prop :=
@@ -404,10 +411,10 @@ def VerifiedInventory (p : Input) (report : Report) : Prop :=
     ∀ q ∈ out.oir.questions.toList, q.readiness = .ready ∧ DependenciesDischarged out report q ∧
       ∃ r ∈ report.checks.toList, r.question = q ∧ r.answerRef.isSome = true ∧
         ((q.kind = .assumptionsSatisfiable ∧ r.status = .witness ∧ r.modelRef.isSome = true ∧
-          ∃ values depth, depth ≤ 10000 ∧ SourceCandidate p out q values depth .witness) ∨
+          ∃ values, SourceCandidate p out q values .witness) ∨
          (q.kind ≠ .assumptionsSatisfiable ∧ r.status = .verified))
 
-def CheckerContract : Prop := ∀ p command run,
+def CheckerContract : Prop := ∀ p command run, Mir.SemanticDomain p →
   (summarize p command run).verdict = .verified → VerifiedInventory p (summarize p command run)
 ```
 
@@ -517,35 +524,85 @@ Assignments have the exact source arity and types and real enum membership.
 Every retained hypothesis is evaluated as true on its original source body.
 A Sat search then yields a concrete witness. A validity refutation
 additionally evaluates its retained source goal as false and yields a concrete
-counterexample. When the body or a transitive callee mentions division or remainder
-(`divisionFree` fails), each such observation needs two agreeing evaluations
-under the assignment: `FrenEval.evaluate`, which follows runtime demand, and
-a budgeted evaluator that shares each traversal step with `strictBody`, which follows the retained verification tree of
-`r[lir.walking.demand]`. Strict evaluation evaluates both ordinary operands,
+counterexample. Each such observation evaluates the body under the assignment
+by the interpreter, which follows runtime demand, and must yield a Boolean.
+When the body or a function that it transitively calls mentions division or
+remainder, the observation also needs a strict evaluation that yields the same
+Boolean. Strict evaluation follows the retained verification tree of
+`r[lir.walking.demand]`: it evaluates both ordinary operands,
 including those of `and` and `or`, every let value even if unused, and every
 call argument followed by the callee body; it evaluates only the selected
 branch of an `if` or `match`. A division or remainder by zero has no value, so any
 undefined step, like exhaustion, fails strict evaluation. One budget is shared
 across all consumed premises and the goal; successful calls are memoized by
-callee, argument values and remaining depth. Agreement therefore
-means that every active static obligation of the consumed body and of the
-callee bodies it reaches holds at the assignment, so the demand-driven value
-is the dynamic value there. Without division or remainder no primitive step is undefined,
-so demand-driven success alone suffices and confirmation costs no more than
-the interpreter. A consumed body may contain division anywhere;
-only its evaluation at the model decides. A false premise or true goal rejects
-the candidate; unsupported forms and evaluation failures are unconfirmed.
-`SourceBoolean` and `SourceCandidate` specify these observations;
-`ConfirmationContract` states correspondence of the actual API to them.
-No per-question confirmation is an aggregate verified-program verdict.
+callee, argument values and remaining depth. A body that reaches no division
+or remainder has no undefined primitive step, so the interpreter alone
+evaluates it and confirmation costs no more than the interpreter. A consumed
+body may contain division anywhere; only its evaluation at the model decides.
+
+A definedness refutation evaluates no goal. Its question must retain a
+division or remainder as its origin and ask that the divisor differ from zero.
+After the hypotheses, the let values and the conditions of the `if` and
+`match` expressions that enclose that site in its source body are evaluated by
+the interpreter. If an unselected branch encloses the site, the candidate is
+rejected as unreachable. Otherwise the divisor is evaluated by the interpreter
+in the environment of the site: zero yields a concrete counterexample, and any
+other value rejects the candidate. The division itself is never evaluated.
+
+A false premise or true goal rejects the candidate; unsupported forms and
+evaluation failures are unconfirmed. No per-question confirmation is an
+aggregate verified-program verdict.
+
+r[smt.model.candidate]
+A confirmed answer is specified through the judgments of the earlier
+chapters, not through the evaluators that compute it. `SourceBoolean` holds
+of a body, an assignment and a Boolean when the strict source judgment of
+`r[lir.meaning.symbols]` gives the body that Boolean value under the assignment.
+`DefinednessViolation` holds of a question and an assignment when, in every
+model of the program's definitions and for every choice of the values that
+division and remainder by zero take, the assignment violates the question in
+the sense of `r[oir.meaning.search]`: every hypothesis is true, every frame
+of the question is active, and its condition is false, that is, the divisor at
+its site is zero.
+
+`SourceCandidate` holds of a produced question, an assignment and an answer
+when the question is ready, the assignment has the types of the question's
+parameters, every hypothesis is `SourceBoolean` true, and one of three cases
+applies:
+
+- the question asks whether the assumptions are satisfiable, and the answer is
+  a witness;
+- the question is a validity question, the answer is a counterexample, and its
+  goal is `SourceBoolean` false; or
+- the question is a definedness question, the answer is a counterexample, and
+  the assignment is a `DefinednessViolation` of it.
+
+A definedness counterexample is stated at the question and not at the source
+site because the path to the site is evaluated by runtime demand. A let value
+or a condition on that path may have a value by demand and none by the strict
+judgment, for example when the right operand of an `and` whose left operand is
+false divides by zero. The frames of the question interpret every such term
+totally, so the violation is stated where it has a meaning.
 
 **Proof obligations**
 
 r[smt.model.bridges]
-Concrete source observations are bounded interpreter results. General decoder
-correspondence, strict evaluation's adequacy to the verification tree, evaluator adequacy,
-model existence, solver identity/trust and recursive source/SMT preservation
-require independent justification. The MIR/LIR/OIR/SMT contracts and their
+`ConfirmationContract` states that, for a produced program whose LIR and OIR
+are constructed as their chapters specify and whose source is in the semantic
+domain of `r[mir.walking.check-correspondence]`, every witness or
+counterexample that `confirmAssignment` returns, at any evaluation depth, is a
+`SourceCandidate` of the question at that index. `confirmed_ready` proves the
+part of it that does not depend on evaluation: a confirmed answer names a
+question of the regenerated program, and that question is ready. The rest is open. It needs
+three inductions that have not been done: that a value of the strict evaluator
+is a value of the strict source judgment; that the interpreter's value of a
+well-typed, nonrecursive body that reaches no division or remainder is such a
+value too; and that the interpreter's values of the terms on the path to a
+definedness site agree with the total meaning of the question's frames in
+every model.
+
+General decoder correspondence, model existence, solver identity/trust and
+recursive source/SMT preservation require independent justification. The MIR/LIR/OIR/SMT contracts and their
 semantic domains remain premises of any universal source-soundness claim.
 The nonzero-transport, wrong-model-sort, retained-operand and zero-divisor laws
 constrain actual functions without supplying those recursive bridges.
@@ -607,8 +664,10 @@ failures. An empty inventory or only nonvacuity searches reports no-checks.
 
 r[smt.checker.boundary]
 `DependenciesDischarged`, `VerifiedInventory` and `CheckerContract` state
-complete inventory, dependency discharge, polarity and actual source witness
-requirements independently of the consumer implementation. The stale-binding,
+complete inventory, dependency discharge, polarity and source witness
+requirements independently of the consumer implementation. The checker
+contract takes the semantic domain of `r[mir.walking.check-correspondence]`
+as a premise, since each witness is a `SourceCandidate`. The stale-binding,
 empty-inventory and all-positive-row laws constrain actual gates and verdicts. They are not a
 universal proof of the checker contract. Positive execution relies on trusted
 physical transport, solver identity/truth, encoding preservation, model

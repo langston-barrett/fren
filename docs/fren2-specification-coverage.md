@@ -407,8 +407,10 @@ These are finite/constrained witnesses, not universal metatheory.
 assignments. `AnswerSound` states what trusted Sat/Unsat would need to establish;
 actual `classify` is only protocol recognition. The typed readback unit adds
 `solveModels`, strict finite parameter decoding and actual source interpreter
-observations that strict evaluation of the retained static obligations must
-reproduce. The checker adds conservative
+observations. Strict evaluation of the retained static obligations must
+reproduce an observation only when its body or a function that it transitively
+calls mentions division or remainder; any other body is observed by the
+interpreter alone. The checker adds conservative
 whole-program reports; it adds no cache, selectors or incremental solver API. The previous OIR checklist's separate SMT
 chapter correction is supplied here; its remaining source-confirmation and
 upstream universal proof obligations are preserved in full.
@@ -431,14 +433,22 @@ upstream universal proof obligations are preserved in full.
   generated names, bounded cvc5 transport and both physical receipts. Retain
   the source witness and unfiltered ordered question/results envelope.
 - [x] Check concrete premise witnesses and false-goal counterexamples through
-  `FrenEval.evaluate` and an agreeing `strictBody`, with explicit rejected and
-  unconfirmed statuses. Preserve static questions and unresolved readiness;
-  a consumed body whose strict evaluation is undefined at the model remains
-  unconfirmed.
-- [ ] Prove `ReadbackContract`, `ConfirmationContract`, adequacy of
-  `strictBody` to `Lir.SourceValue`/`Mir.ValueOf` (so that `SourceBoolean`
-  can be stated through that judgment rather than the implementation) and
-  evaluator adequacy.
+  `FrenEval.evaluate` and, when the body or a transitive callee mentions
+  division or remainder, an agreeing budgeted strict evaluation, with explicit
+  rejected and unconfirmed statuses. Preserve static questions and unresolved
+  readiness; a consumed body whose strict evaluation is undefined at the model
+  remains unconfirmed. Check divisor definedness counterexamples by evaluating
+  the site's enclosing let values, guards and divisor through the interpreter.
+- [x] State `SourceBoolean` through `Lir.SourceValue`/`Mir.ValueOf` and a
+  definedness counterexample through `Oir.Violation` in every model, so that
+  `SourceCandidate` covers validity and definedness rows without naming the
+  evaluators. `confirmed_ready` proves that a confirmed answer names a ready
+  question of the regenerated program.
+- [ ] Prove `ReadbackContract` and the rest of `ConfirmationContract`:
+  adequacy of the budgeted strict evaluator to `Lir.SourceValue`/`Mir.ValueOf`,
+  adequacy of the interpreter alone on well-typed nonrecursive bodies that
+  reach no division or remainder, and agreement of the interpreter on a
+  definedness site's prefix with the total meaning of the question's frames.
   Justify mutually partial assumptions.
 - [x] Deliver a conservative actual-source checker report with complete ordered
   inventory, receipt provenance, dependency discharge and confirmed nonvacuity.
@@ -1529,8 +1539,9 @@ fixed point and confirmed owner nonvacuity gate conservative verification.
 Verified, refuted, inconsistent, inconclusive, no-checks and input-failure
 reports retain original questions, source spans, reasons and physical evidence
 references. Divisor definedness sites are confirmed at their source prefix;
-consumed bodies are confirmed only when strict evaluation at the model is
-defined and agrees with the interpreter.
+a consumed body that reaches division or remainder is confirmed only when
+strict evaluation at the model is defined and agrees with the interpreter,
+and any other consumed body by the interpreter alone.
 
 `FrenOirToSmtTests.Checker` runs through normal `smtControls` and parent dispatch.
 Real source cases cover supported verification, source-confirmed refutation,

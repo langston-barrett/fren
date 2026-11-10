@@ -207,25 +207,29 @@ def ModelAssignment (p : FrenOir.Program) (q : FrenOir.Question)
     q.parameters[i]? = some param → values[i]? = some value →
     value.type = param.source.type ∧ value.valid p.lir.mir.source = true
 
-/-- Observation of the actual interpreter on the retained source body, which
-strict evaluation of its retained static obligations must reproduce whenever
-the body or a transitive callee mentions division or remainder. -/
+/-- The strict source judgment gives the body a Boolean value under the
+assignment. Assignments are positional; the judgment's environment is nearest first. -/
 def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
-    (depth : Nat) (value : Bool) : Prop :=
-  ∃ observation, FrenEval.evaluate ⟨p.input, p.typed, p.accepted⟩
-      ⟨body.owner, body.member.map (·.label.text)⟩ values depth = .ok observation ∧
-    observation.body = body ∧ observation.outcome = .ok (.bool value) ∧
-    (divisionFree p.typed body = true ∨ strictBody p.typed body values depth = .ok (.bool value))
+    (value : Bool) : Prop :=
+  Lir.SourceValue p body values.toList.reverse (.bool value)
+
+/-- In every model the assignment violates the definedness question: its
+hypotheses hold, its frames are active and the divisor at its site is zero. -/
+def DefinednessViolation (out : FrenOir.Program) (q : FrenOir.Question)
+    (values : Array FrenEval.Value) : Prop :=
+  ∀ symbols zero, Model out symbols zero → Oir.Violation symbols zero q values.toList.reverse
 
 /-- Concrete candidates do not discharge universal validity or domain questions. -/
 def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Question)
-    (values : Array FrenEval.Value) (depth : Nat) (answer : Confirmation) : Prop :=
+    (values : Array FrenEval.Value) (answer : Confirmation) : Prop :=
   Produces p out ∧ q ∈ out.oir.questions.toList ∧ q.readiness = .ready ∧
   ModelAssignment out.oir q values ∧
-  (∀ hypothesis ∈ q.hypotheses.toList, SourceBoolean p hypothesis.source values depth true) ∧
+  (∀ hypothesis ∈ q.hypotheses.toList, SourceBoolean p hypothesis.source values true) ∧
   ((q.kind = .assumptionsSatisfiable ∧ answer = .witness) ∨
     (q.kind = .validity ∧ answer = .counterexample ∧
-      ∃ body, q.subject = some body ∧ SourceBoolean p body values depth false))
+      ∃ body, q.subject = some body ∧ SourceBoolean p body values false) ∨
+    (q.kind ∈ [FrenOir.Kind.functionDefinedness, .assumptionDefinedness, .goalDefinedness] ∧
+      answer = .counterexample ∧ DefinednessViolation out.oir q values))
 
 /-- Decoder typing and source-observation correspondence are separate from the
 universal SMT interpretation, strict-evaluation and evaluator-adequacy bridges. -/
@@ -233,11 +237,14 @@ def ReadbackContract : Prop := ∀ p out, Produces p out → ∀ entry ∈ out.q
   ∀ text cap values, decodeModel out.oir entry.question text cap = .ok values →
     ModelAssignment out.oir entry.question values
 
-def ConfirmationContract : Prop := ∀ p out, Produces p out → ∀ index entry,
+/-- Every confirmed answer, at every evaluation depth, is a source candidate. -/
+def ConfirmationContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.oir.lir →
+  Oir.Constructs out.oir → Mir.SemanticDomain p → ∀ index entry,
   out.queries[index]? = some entry → ∀ values depth answer,
   confirmAssignment p index values depth = answer →
   (answer = .witness ∨ answer = .counterexample) →
-    SourceCandidate p out entry.question values depth answer
+    SourceCandidate p out entry.question values answer
+
 /-- Discharge names actual question checks and whole-definition safety, not
 caller-provided readiness flags. -/
 def DependenciesDischarged (out : FrenOirToSmt.Program) (report : Report) (q : FrenOir.Question) : Prop :=
@@ -255,12 +262,21 @@ def VerifiedInventory (p : Input) (report : Report) : Prop :=
     ∀ q ∈ out.oir.questions.toList, q.readiness = .ready ∧ DependenciesDischarged out report q ∧
       ∃ r ∈ report.checks.toList, r.question = q ∧ r.answerRef.isSome = true ∧
         ((q.kind = .assumptionsSatisfiable ∧ r.status = .witness ∧ r.modelRef.isSome = true ∧
-          ∃ values depth, depth ≤ 10000 ∧ SourceCandidate p out q values depth .witness) ∨
+          ∃ values, SourceCandidate p out q values .witness) ∨
          (q.kind ≠ .assumptionsSatisfiable ∧ r.status = .verified))
 
-def CheckerContract : Prop := ∀ p command run,
+def CheckerContract : Prop := ∀ p command run, Mir.SemanticDomain p →
   (summarize p command run).verdict = .verified → VerifiedInventory p (summarize p command run)
 -- reference end
+
+/-- The proved part of the confirmation contract: a confirmed answer names a
+produced question that is ready. -/
+theorem confirmed_ready (p : Input) (out : FrenOirToSmt.Program) (h : Produces p out)
+    (index : Nat) (values : Array FrenEval.Value) (depth : Nat)
+    (confirmed : confirmAssignment p index values depth = .witness ∨
+      confirmAssignment p index values depth = .counterexample) :
+    ∃ entry, out.queries[index]? = some entry ∧ entry.question.readiness = .ready :=
+  FrenOirToSmt.confirmAssignment_ready p out h index values depth confirmed
 
 theorem checker_stale_receipt (r : Receipt) (command : Array String) (request binding : String)
     (limits : Limits) (h : (r.binding == binding) = false) :
@@ -524,6 +540,7 @@ theorem flipped_goal_model (p : FrenOir.Program) :
   unless pre.startsWith "(set-logic ALL)\n" do throw (IO.userError "logic prefix missing")
   IO.println "SMT contracts: admitted false-goal encoding with independent Renders/Sorted/Interprets proofs; retained real definition and later assumption; exact sort/polarity/declaration oracle; wrong operator and missing canonical references distinguished from raw printing. No solver run or source-model confirmation."
 
+#print axioms confirmed_ready
 #print axioms model_transport_nonzero
 #print axioms strict_operand_retained
 #print axioms strict_division_by_zero
