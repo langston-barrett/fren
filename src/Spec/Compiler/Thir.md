@@ -489,6 +489,46 @@ Both the [evaluator](Evaluator.md#arm-selection) and
 `FrenHirToThir.selectArm`, which this wrapper proves equal to the patterns
 chapter's `select` for the specification's identities.
 
+## Termination correspondence
+
+The [static semantics](../Language/StaticSemantics.md#termination) define the
+termination check: `group_passes?` decides whether a recursive group passes,
+`structural?` whether some choice of decreasing parameters guards every call
+between its members, and `passes_alone?` whether a function outside every
+recursive group passes. The production module `FrenHirToThir.Termination`
+computes the same three verdicts. `validateNonrecursive` judges the recursive
+group of a function on a cycle by `Termination.groupPassesNow`, which that
+module proves equal to `Termination.groupPasses` for the present Core, in
+which no size context holds `smaller`.
+
+The binding is at the specification's own identities with decidable equality,
+as in the coverage correspondence. Not bound here are the choice of the group
+from the call graph, the extraction of each member's written calls from its
+body, and the check that a condition calls only functions that pass
+hereditarily, which `Termination.conditionTerminating` computes and no pass
+yet calls.
+
+r[thir.termination.judgment] spec::thir::{production_group_passes?::agrees, production_structural?::agrees, production_passes_alone?::agrees}
+The verdict that production gives a recursive group is `group_passes?`, its
+search over the choices of decreasing parameters is `structural?`, and its
+verdict on a function outside every recursive group is `passes_alone?`.
+
+```fren
+use spec::statics::{Function, group_passes?, passes_alone?, structural?}
+
+pub fn production_group_passes?(group: Snoc<Function>): (passes?) {
+    ensure agrees: passes? = group_passes?(group)
+}
+
+pub fn production_structural?(group: Snoc<Function>): (found?) {
+    ensure agrees: found? = structural?(group)
+}
+
+pub fn production_passes_alone?(function: Function): (passes?) {
+    ensure agrees: passes? = passes_alone?(function)
+}
+```
+
 ## Algorithmic typing
 
 The Core's typing rules are declarative: `Σ; Γ ⊢ e : τ` says which types an

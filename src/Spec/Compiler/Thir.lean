@@ -7,6 +7,8 @@ import FrenExpr
 import Spec.Language.Types
 import Spec.Language.Patterns
 import FrenHirToThir.Coverage
+import Spec.Language.StaticSemantics
+import FrenHirToThir.Termination
 
 open Fren.Lang
 
@@ -1686,6 +1688,259 @@ theorem pickArm_eq_select {E : Type} [Inhabited E] (arms : Snoc (ArmF E)) (c : F
       by_cases h : last.constructor = c <;> simp [h]
 
 end CoverageCorrespondence
+
+section TerminationCorrespondence
+
+open spec.surface spec.names spec.types spec.statics Spec.Language.Patterns
+
+/-- The specification's item identities, with the equality that decides `=`. -/
+abbrev itemBEq : BEq (Fren.Seq String) := ⟨fun x y => decide (x = y)⟩
+
+attribute [local instance] itemBEq
+
+/-- A size of the specification, as production holds it. -/
+def prodSize : Size → FrenHirToThir.Termination.Size
+  | .Same => .same
+  | .Smaller => .smaller
+  | .Unknown => .unknown
+
+/-- A level of the specification is an integer; no negative level is bound. -/
+def prodLevel : Option Int → Option Nat
+  | some level => if 0 ≤ level then some level.toNat else none
+  | none => none
+
+/-- The written calls of the specification, as production holds them. -/
+def prodCalls : spec.statics.Calls → FrenHirToThir.Termination.Calls (Fren.Seq String)
+  | .Leaf => .leaf
+  | .Both left right => .both (prodCalls left) (prodCalls right)
+  | .Call callee arguments => .call callee ((toList arguments).map prodLevel)
+  | .Let value body => .bind (prodLevel value) (prodCalls body)
+
+/-- A function of the specification, as production judges it. -/
+def prodFunction (function : Function) : FrenHirToThir.Termination.Function (Fren.Seq String) Ty :=
+  ⟨function.item, toList function.parameters, decide (function.mark = .Unchecked),
+    prodCalls function.body⟩
+
+/-- A choice of decreasing parameters, as production holds it. Each chosen level of
+`choices` is nonnegative, which `choices_eq` proves. -/
+def prodChoice (choice : Snoc Chosen) : List (Fren.Seq String × Nat) :=
+  (toList choice).map fun entry => (entry.function, entry.parameter.toNat)
+
+theorem length_toList {α : Type} [Inhabited α] (xs : Snoc α) :
+    length α xs = (toList xs).length := by
+  induction xs with
+  | Empty => rfl
+  | Extend earlier last ih => simp [length, toList, ih]
+
+theorem lookup_toList {α : Type} [Inhabited α] (xs : Snoc α) (level : Nat) :
+    lookup α xs level = (toList xs)[level]? := by
+  induction xs with
+  | Empty => simp [lookup, toList]
+  | Extend earlier last ih =>
+    simp only [lookup, toList, ih, length_toList, List.getElem?_append]
+    by_cases h : level = (toList earlier).length
+    · simp [h]
+    · have : ¬ ((level : Int) = ((toList earlier).length : Nat)) := by omega
+      rw [if_neg this]
+      by_cases hl : level < (toList earlier).length
+      · simp [hl]
+      · have : level - (toList earlier).length ≠ 0 := by omega
+        simp [hl, this]
+
+theorem prodSize_eq_smaller (size : Size) : prodSize size = .smaller ↔ size = .Smaller := by
+  cases size <;> simp [prodSize]
+
+theorem local_size_eq (sizes : Snoc Size) (level : Option Int) :
+    prodSize (local_size sizes level) =
+      FrenHirToThir.Termination.localSize ((toList sizes).map prodSize) (prodLevel level) := by
+  cases level with
+  | none => rfl
+  | some index =>
+    by_cases h : 0 ≤ index
+    · obtain ⟨n, rfl⟩ := Int.eq_ofNat_of_zero_le h
+      simp only [local_size, lookup_toList, prodLevel, h, if_true, Int.toNat_natCast,
+        FrenHirToThir.Termination.localSize, List.getElem?_map]
+      cases (toList sizes)[n]? <;> rfl
+    · have := Spec.Language.NamesAndScope.lookup_none sizes index (fun hb => h hb.1)
+      simp [local_size, this, prodLevel, h, FrenHirToThir.Termination.localSize, prodSize]
+
+theorem parameter_sizes_eq (parameters : Snoc Ty) (decreasing : Nat) :
+    (toList (parameter_sizes parameters decreasing)).map prodSize =
+      FrenHirToThir.Termination.parameterSizes (toList parameters) decreasing := by
+  induction parameters with
+  | Empty => rfl
+  | Extend earlier last ih =>
+    simp only [FrenHirToThir.Termination.parameterSizes] at ih
+    simp only [parameter_sizes, toList, List.map_append, ih, FrenHirToThir.Termination.parameterSizes,
+      List.length_append, List.length_cons, List.length_nil, List.range_succ, length_toList]
+    by_cases h : (toList earlier).length = decreasing
+    · simp [h, prodSize]
+    · have : ¬ (((toList earlier).length : Int) = decreasing) := by omega
+      simp [h, this, prodSize]
+
+theorem argument_guarded_eq (sizes : Snoc Size) (arguments : Snoc (Option Int)) (parameter : Nat) :
+    argument_guarded? sizes arguments parameter =
+      FrenHirToThir.Termination.argumentGuarded ((toList sizes).map prodSize) ((toList arguments).map prodLevel)
+        parameter := by
+  simp only [argument_guarded?, lookup_toList, FrenHirToThir.Termination.argumentGuarded, List.getElem?_map]
+  cases (toList arguments)[parameter]? with
+  | none => simp
+  | some argument =>
+    simp only [Fren.Prelude.Option.some.x0, ↓reduceIte, Option.map_some, ← local_size_eq]
+    generalize local_size sizes argument = size
+    cases size <;> simp [prodSize]
+
+theorem chosen_eq (choice : Snoc Chosen) (item : Fren.Seq String)
+    (h : ∀ entry ∈ toList choice, 0 ≤ entry.parameter) :
+    chosen choice item = (FrenHirToThir.Termination.chosen (prodChoice choice) item).map Int.ofNat := by
+  induction choice with
+  | Empty => rfl
+  | Extend earlier last ih =>
+    have hl := h last (by simp [toList])
+    have := ih fun entry he => h entry (by simp [toList, he])
+    simp only [prodChoice] at this
+    simp only [chosen, prodChoice, toList, List.map_append, List.map_cons, List.map_nil,
+      FrenHirToThir.Termination.chosen_append, this]
+    by_cases hi : last.function = item
+    · simp [hi, Int.toNat_of_nonneg hl]
+    · simp [hi]
+
+theorem calls_guarded_eq (choice : Snoc Chosen) (calls : spec.statics.Calls)
+    (h : ∀ entry ∈ toList choice, 0 ≤ entry.parameter) (sizes : Snoc Size) :
+    calls_guarded? choice sizes calls =
+      FrenHirToThir.Termination.callsGuarded (prodChoice choice) ((toList sizes).map prodSize) (prodCalls calls) := by
+  induction calls generalizing sizes with
+  | Leaf => rfl
+  | Both left right ihl ihr =>
+    simp [calls_guarded?, prodCalls, FrenHirToThir.Termination.callsGuarded, ihl, ihr]
+  | Call callee arguments =>
+    simp only [calls_guarded?, prodCalls, FrenHirToThir.Termination.callsGuarded, chosen_eq choice callee h]
+    cases FrenHirToThir.Termination.chosen (prodChoice choice) callee with
+    | none => simp
+    | some parameter => simpa using argument_guarded_eq sizes arguments parameter
+  | Let value body ih =>
+    simp only [calls_guarded?, prodCalls, FrenHirToThir.Termination.callsGuarded, ih, toList, List.map_append,
+      List.map_cons, List.map_nil, local_size_eq]
+
+theorem body_guarded_eq (choice : Snoc Chosen) (function : Function)
+    (h : ∀ entry ∈ toList choice, 0 ≤ entry.parameter) :
+    body_guarded? choice function =
+      FrenHirToThir.Termination.bodyGuarded (prodChoice choice) (prodFunction function) := by
+  simp only [body_guarded?, FrenHirToThir.Termination.bodyGuarded, prodFunction, chosen_eq choice function.item h]
+  cases FrenHirToThir.Termination.chosen (prodChoice choice) function.item with
+  | none => simp
+  | some parameter =>
+    simp [calls_guarded_eq choice function.body h, parameter_sizes_eq]
+
+theorem choice_guarded_eq (choice : Snoc Chosen) (group : Snoc Function)
+    (h : ∀ entry ∈ toList choice, 0 ≤ entry.parameter) :
+    choice_guarded? choice group =
+      FrenHirToThir.Termination.choiceGuarded (prodChoice choice) ((toList group).map prodFunction) := by
+  induction group with
+  | Empty => rfl
+  | Extend earlier last ih =>
+    simp only [FrenHirToThir.Termination.choiceGuarded] at ih
+    simp only [choice_guarded?, FrenHirToThir.Termination.choiceGuarded, toList, List.map_append, List.all_append,
+      List.map_cons, List.map_nil, List.all_cons, List.all_nil, Bool.and_true, ih,
+      body_guarded_eq choice last h, Bool.decide_and, Bool.decide_eq_true]
+    exact Bool.and_comm _ _
+
+theorem extended_choices_toList (onto found : Snoc (Snoc Chosen)) (entry : Chosen) :
+    toList (extended_choices onto found entry) =
+      toList onto ++ (toList found).map (Snoc.Extend · entry) := by
+  induction found with
+  | Empty => simp [extended_choices, toList]
+  | Extend earlier last ih => simp [extended_choices, toList, ih]
+
+theorem parameter_choices_toList (found : Snoc (Snoc Chosen)) (item : Fren.Seq String)
+    (candidates : Snoc Ty) :
+    toList (parameter_choices found item candidates) =
+      (List.range (toList candidates).length).flatMap fun level =>
+        (toList found).map (Snoc.Extend · ⟨item, level⟩) := by
+  induction candidates with
+  | Empty => simp [parameter_choices, toList]
+  | Extend fewer last ih =>
+    simp [parameter_choices, toList, extended_choices_toList, ih, List.range_succ,
+      length_toList]
+
+theorem choices_eq (group : Snoc Function) :
+    (toList (choices group)).map prodChoice = FrenHirToThir.Termination.choices ((toList group).map prodFunction) ∧
+      ∀ choice ∈ toList (choices group), ∀ entry ∈ toList choice, 0 ≤ entry.parameter := by
+  induction group with
+  | Empty => simp [choices, toList, prodChoice, FrenHirToThir.Termination.choices]
+  | Extend earlier last ih =>
+    constructor
+    · simp only [choices, parameter_choices_toList, toList, List.map_append, List.map_cons,
+        List.map_nil, FrenHirToThir.Termination.choices_append, ← ih.1, List.map_flatMap, List.map_map]
+      simp [prodFunction, prodChoice, toList, Function.comp_def]
+    · intro choice hc entry he
+      simp only [choices, parameter_choices_toList, List.mem_flatMap, List.mem_map] at hc
+      obtain ⟨level, -, prior, hp, rfl⟩ := hc
+      simp only [toList, List.mem_append, List.mem_singleton] at he
+      rcases he with he | rfl
+      · exact ih.2 prior hp entry he
+      · exact Int.natCast_nonneg level
+
+theorem some_guarded_eq (candidates : Snoc (Snoc Chosen)) (group : Snoc Function)
+    (h : ∀ choice ∈ toList candidates, ∀ entry ∈ toList choice, 0 ≤ entry.parameter) :
+    some_guarded? candidates group =
+      ((toList candidates).map prodChoice).any
+        (FrenHirToThir.Termination.choiceGuarded · ((toList group).map prodFunction)) := by
+  induction candidates with
+  | Empty => rfl
+  | Extend earlier last ih =>
+    have := ih fun choice hc => h choice (by simp [toList, hc])
+    simp only [some_guarded?, toList, List.map_append, List.any_append, List.map_cons,
+      List.map_nil, List.any_cons, List.any_nil, Bool.or_false, this,
+      choice_guarded_eq last group (h last (by simp [toList])), Bool.decide_or,
+      Bool.decide_eq_true]
+    exact Bool.or_comm _ _
+
+theorem structural_eq (group : Snoc Function) :
+    structural? group = FrenHirToThir.Termination.structural ((toList group).map prodFunction) := by
+  obtain ⟨hc, hn⟩ := choices_eq group
+  simp only [structural?, some_guarded_eq (choices group) group hn, hc, FrenHirToThir.Termination.structural,
+    Bool.decide_eq_true]
+
+theorem opted_out_eq (covered : Snoc Function) :
+    opted_out? covered = FrenHirToThir.Termination.optedOut ((toList covered).map prodFunction) := by
+  induction covered with
+  | Empty => rfl
+  | Extend earlier last ih =>
+    simp only [FrenHirToThir.Termination.optedOut] at ih
+    simp only [opted_out?, FrenHirToThir.Termination.optedOut, toList, List.map_append, List.any_append,
+      List.map_cons, List.map_nil, List.any_cons, List.any_nil, Bool.or_false, ih,
+      Bool.decide_or, Bool.decide_eq_true]
+    exact Bool.or_comm _ _
+
+theorem group_passes_eq (group : Snoc Function) :
+    group_passes? group = FrenHirToThir.Termination.groupPassesNow ((toList group).map prodFunction) := by
+  rw [← FrenHirToThir.Termination.groupPasses_eq_now]
+  rw [FrenHirToThir.Termination.groupPasses, ← structural_eq, ← opted_out_eq]
+  simp [group_passes?]
+
+theorem passes_alone_eq (function : Function) :
+    passes_alone? function = FrenHirToThir.Termination.passesAlone (prodFunction function) := by
+  simp [passes_alone?, opted_out?, FrenHirToThir.Termination.passesAlone, prodFunction]
+
+/-- The production judgment of a group, read through the adapters. `judgeRecursion`
+calls this function on the group that it extracts. -/
+def productionGroupPasses (group : Snoc Function) : Bool :=
+  FrenHirToThir.Termination.groupPassesNow ((toList group).map prodFunction)
+
+interp thir::production_group_passes? := fun group => productionGroupPasses group by
+  intro group
+  simp only [spec.thir.production_group_passes?.agrees, productionGroupPasses, group_passes_eq]
+interp thir::production_structural? := fun group =>
+    FrenHirToThir.Termination.structural ((toList group).map prodFunction) by
+  intro group
+  simp only [spec.thir.production_structural?.agrees, structural_eq]
+interp thir::production_passes_alone? := fun function =>
+    FrenHirToThir.Termination.passesAlone (prodFunction function) by
+  intro function
+  simp only [spec.thir.production_passes_alone?.agrees, passes_alone_eq]
+
+end TerminationCorrespondence
 
 end Spec.Compiler.Thir
 
