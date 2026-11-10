@@ -49,7 +49,8 @@ different rendered names.
 
 r[smt.names.reserved] smt_primitives::spelled::unreserved
 No rendered name is a word of `RESERVED`: the built-in sort names, the
-Boolean literals, the operators and the keywords of the emitted text. A
+Boolean literals, the operators, `ite` and `let`, and the logic name and the
+command words of the emitted scripts, those of model readback included. A
 numeral is not a rendered name either, since a rendered name begins with the
 letter of its family.
 
@@ -73,6 +74,11 @@ These rules are proved of the encoder's own `Symbol.render`, for every index.
 `Symbol.render_inj` is the first two rules, and `Symbol.render_front` gives
 the third. The wrapper binds each clause to that function with an `impl`,
 through the map `symbol` from the symbols written here to the encoder's.
+These three results are of `Symbol.render` alone. The next three are of the
+chapter's own `Naming` and `EnvironmentFor`, not of the environments that the
+encoder builds: that the encoder's `term` and `parameters` build only
+environments that `Naming` admits is not proved, and no contract of this
+chapter states it.
 `Naming.scoped` shows that the names of every environment that `Naming`
 admits are those of an active scope: the parameters, then one local pair for
 each let, at the index of the environment's length where it was bound.
@@ -141,6 +147,15 @@ pub const RESERVED: Set<String> := {
     ">=",
     "ite",
     "let",
+    "set-logic",
+    "set-option",
+    "ALL",
+    "declare-datatype",
+    "declare-const",
+    "define-fun",
+    "assert",
+    "check-sat",
+    "get-value",
 }
 
 pub fn active?(count: Nat, length: Nat, symbol: Symbol) := match symbol {

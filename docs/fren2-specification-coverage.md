@@ -571,7 +571,10 @@ Continue the same correction objective with these separate chapter units:
    whole-pass construction, sorting, model and semantic correspondence laws.
    Keep mutually partial assumption dependencies unresolved until justified.
 5. **SMT extensions** (`SCsmt`, 1027): the core encoding and response
-   contracts below are specified. Prove universal symbol freshness, encoding
+   contracts below are specified. Injectivity and disjointness of the
+   rendered symbol families are proved of the encoder's `Symbol.render`, and
+   freshness and capture freedom of the chapter's `Naming`. Prove that the
+   encoder builds only such environments, encoding
    and environment preservation, solver adequacy and trust; implement and
    justify model decoding and static source confirmation. Raw responses
    alone do not establish source verification.
@@ -649,16 +652,21 @@ upstream universal proof obligations are preserved in full.
 - [ ] Prove `ValidationContract` and depth adequacy where appropriate; do not
   infer them from finite wrong-sort/name/arity controls.
 - [x] Prove all rendered symbol families are injective and mutually disjoint,
-  and `Naming` preserves active-scope freshness and capture freedom.
-  `FrenOirToSmt.Symbol.render_inj` proves both halves of the first part of
+  and that the chapter's `Naming` preserves active-scope freshness and
+  capture freedom. `FrenOirToSmt.Symbol.render_inj` proves the first part of
   the encoder's own `Symbol.render`, for every index, and `render_front`
   keeps rendered names apart from the reserved words and numerals. The
   chapter's `smt.names` rules bind them with `impl`. `Naming.scoped`,
-  `Naming.fresh` and `Naming.extend` prove the second part of the chapter's
-  `Naming` and `EnvironmentFor`. That the encoder's own `term` and
-  `parameters` build only environments that `Naming` admits is not proved
-  here: it is part of `EncodingContract` above, through `TermFor` and
-  `Names`.
+  `Naming.fresh` and `Naming.extend` prove the second part, but only of the
+  chapter's `Naming` and `EnvironmentFor`: they say nothing yet of the
+  environments that the encoder builds.
+- [ ] Prove that the encoder's own `term` and `parameters` build only
+  environments that `Naming` admits: `parameters` yields `Names` of the
+  parameter count, and each let of `term` binds the local pair at the length
+  of its incoming environment. No contract states this yet.
+  `EncodingContract` requires only `QueryFor` of each script, whose `TermFor`
+  and `Renders` range over chapter-defined environments, so proving it does
+  not discharge this item.
 - [ ] Prove `InterpretationContract` in both directions, including function
   equations and lets, under independently justified sufficient domains.
 - [ ] Establish model existence and total typed model readback, relate the
@@ -1383,8 +1391,11 @@ The following universal obligations remain pending:
 - Prove query correspondence in both directions with the declarative source
   obligations after independently justified applicable domains. OIR's general
   extraction/source correspondence remains pending too.
-- Prove injectivity and freshness of every rendered symbol family and
-  substitution/capture preservation over all admitted source programs.
+- Injectivity of every rendered symbol family is proved of the encoder's
+  `Symbol.render`, and freshness and capture freedom of the chapter's
+  `Naming`. Prove that the encoder's `term` and `parameters` build only
+  environments that `Naming` admits, and substitution/capture preservation
+  over all admitted source programs.
 - Establish the unresolved mutually partial assumption rule before claiming
   supported source results for that class.
 - Prove the remaining general model decoding and static source correspondence;
