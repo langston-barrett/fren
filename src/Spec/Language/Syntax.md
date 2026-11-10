@@ -10,8 +10,9 @@ in scope, and `l + 1` is valid even where `l` is not an integer.
 The abstract syntax keeps a program's names as written paths.
 [Resolution](NamesAndScope.md) takes this tree and gives the Core, the
 resolved form with items by identity and locals by index, which
-[Core typing](Types.md) types. The lossless tree, which also keeps parentheses, trivia and every token, is the subject
-of [AST and parsing](../Compiler/AstAndParsing.md).
+[Core typing](Types.md) types. The lossless tree, which also keeps
+parentheses, trivia and every token, is the subject of
+[AST and parsing](../Compiler/AstAndParsing.md).
 
 ## Notation
 
@@ -76,10 +77,14 @@ function, global expectation, parameter or member label is named `Bool` or
 `Int`, and no `let` binds either name. They are identifiers, so the
 grammar accepts such a name, and resolution rejects it.
 [`reserved?`](NamesAndScope.md#r-names.paths.reserved) defines the reserved
-names, and [Resolution](NamesAndScope.md) states where it rejects one: in
-[collection](NamesAndScope.md#r-names.collection.reserved), for a
+names. [Resolution](NamesAndScope.md) states where it rejects an
+enumeration, variant, function, parameter or `let` binder of such a name:
+in [collection](NamesAndScope.md#r-names.collection.reserved), for a
 declaration's names and a function's parameters, and in the
 [`let` layer](NamesAndScope.md#r-names.expression.layer), for a binder.
+Its judgments do not yet state the rejection of a module, a global
+expectation or a member label of such a name, which is
+[open](NamesAndScope.md#r-names.paths.reserved).
 
 > **Rationale:** A type written `Bool` or `Int` always denotes the built-in
 > type, so a declaration of that name could never be referred to as a
@@ -446,9 +451,10 @@ pub fn type_name(path: Path): TypeName :=
 r[syntax.tree.well-formed] spec::surface::{identifier?, path?, qualified?, Elided, arm_well_formed?, arms_well_formed?, node_well_formed?, type_well_formed?, parameter_well_formed?, parameters_well_formed?, declaration_well_formed?}
 A tree is *well formed* when each of its nodes, types, parameters and
 declarations is. An identifier is a word that is not a keyword, and a path
-is a path when each of its names is an identifier. An expression node is well formed when its integer
-is not negative, its path is a path, a call has at least one argument, a `let` binds an identifier,
-and each arm's path has at least two segments. A named type is well formed
+is a path when each of its names is an identifier. An expression node is
+well formed when its integer is not negative, its path is a path, a call
+has at least one argument, a `let` binds an identifier, and each arm's path
+has at least two segments. A named type is well formed
 when its path is a path other than `Bool` and `Int` alone, which
 `type_name` never names. A parameter is well formed when its name is an
 identifier and its type is well formed, and it has a type unless its name
@@ -552,8 +558,9 @@ pub fn binary_spelling(op: BinaryOp): String := match op {
 ### Examples
 
 Each line gives a text and, after `--`, its tree, written with the names of
-`SurfaceF` and `DeclarationF`; a path is written with its `::`, an arm as
-`Arm`, and the entries of a snoc sequence one after another.
+`SurfaceF` and `DeclarationF`; a path is written with its `::`, an arm,
+which is a `SurfaceArm`, as `Arm` with its path and body, and the entries
+of a snoc sequence one after another.
 
 ```fren2 trees
 -1 -- (Unary Neg (Integer 1))

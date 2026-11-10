@@ -1262,10 +1262,12 @@ def examples_agree (md : String) : Except String Unit := do
       unless lineOf body f.diagnostic.span.start == k && "expected " ++ f.diagnostic.expected == note do
         throw s!"Syntax.md:{line}: the parser says {f.diagnostic.render} on line {lineOf body f.diagnostic.span.start}"
 
--- fren-covers: spec::names::rejected
 /-- Each `fren2 unresolved` block parses, and name resolution rejects it with
 the message that its `--~ error:` annotation states on the annotated line;
-the sentence before the block names the rule it breaks. -/
+the sentence before the block names the rule it breaks. These are the
+examples of `syntax.name.reserved`, which has no Fren procedure, so this test
+covers none: it runs the implementation's resolver, not the resolution
+chapter's `collect`. -/
 def unresolved_agree (md : String) : Except String Unit := do
   let ids := ((md.splitOn "\n").filter (·.startsWith "r[")).map fun l => ((l.drop 2).takeWhile (· != ']')).toString
   let lines := (md.splitOn "\n").toArray

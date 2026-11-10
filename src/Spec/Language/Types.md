@@ -62,8 +62,9 @@ The semantic objects of typing are those that
 [resolution](NamesAndScope.md#semantic-objects) defines, and this chapter
 imports them: item identities and types
 ([`ItemId`, `Ty`](NamesAndScope.md#r-names.object.identity)), snoc sequences
+([`Snoc`](Syntax.md#r-syntax.tree.types), which the syntax chapter defines)
 with their lengths and lookups
-([`Snoc`, `length`, `lookup`](NamesAndScope.md#r-names.sequence.snoc)),
+([`length`, `lookup`](NamesAndScope.md#r-names.sequence.snoc)),
 contexts ([`Ctx`](NamesAndScope.md#r-names.context.slots)) and symbol
 environments ([`Symb`](NamesAndScope.md#r-names.symbols.environment)) with
 their well-formedness judgments

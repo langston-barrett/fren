@@ -39,8 +39,10 @@ tested: `spec::lexical::division`, `spec::surface::accepted_trees_well_formed`, 
 trusted: `spec::names::naming_order`, `spec::names::table_weakening`, `spec::types::expression_uniqueness`
 ```
 
-The one `trusted` procedure is the open `types.derivation.unique-expression`,
-whose claim's reason starts `open:`. Types.md, Expressions.md,
+Of the three `trusted` procedures, the chapter's own is the open
+`types.derivation.unique-expression`. The other two are the resolution
+chapter's open `names.expression.table-weakening` and
+`names.collection.permutation`. Each claim's reason starts `open:`. Types.md, Expressions.md,
 NamesAndScope.md, LexicalStructure.md, Syntax.md, AstAndParsing.md,
 [PropertiesAndChecks.md](#definedness-and-verification-correspondence) and the THIR
 chapter are the converted chapters: their wrappers trace with `trusted` as the required
@@ -50,7 +52,12 @@ check that moves from the solver to random testing: that shows only as an
 `fren.evidence` option in the chapter. `types.context.bound` keeps its
 solver check across the move of `Snoc` to the syntax chapter's module,
 because `lookup` states the bound as its postcondition
-(`names.sequence.snoc`), which resolution's module checks by induction. It also checks, for all of
+(`names.sequence.snoc`), which resolution's module checks by induction:
+`fren check --dump=obligations` lists it as `postcondition lookup.bound`
+with solver evidence and the hypothesis at the recursive application in
+its context, and the check passes. The limit of #669 does not apply, since
+the induction is over `lookup`'s own recursion and not one that a check
+of another procedure would have to find. The `ruleReqs` job also checks, for all of
 them but the THIR chapter, that every Fren item is linked by the nearest rule
 before it and every linking rule is followed by its Fren. The THIR
 chapter's correspondence theorems over production Lean types are named in
@@ -1254,8 +1261,18 @@ signature types.
 - [ ] Decide the `let` annotation. The Fren2 parser's `let` has no written
   type, so the syntax tree's `Let` has none and resolution gives a Core
   `let` an annotation only for a `?` binder. Core typing's annotated `let`
-  and `names.surface.annotation` still state rules for a written
-  annotation, which no source can write.
+  (`types.expression.let-annotated`, with its informative example
+  `let b: Bool := n in 0`) and the written-type case of `let_annotation?`
+  (`names.surface.suffix`) still state rules for a written annotation,
+  which no Fren2 source can write. `names.surface.suffix` records this as
+  open, and `names.expression.layer` records that `let_handoff`'s `kept`
+  and `refused` and the examples `ANNOTATED_LET` and
+  `QUESTION_LET_REFUSED` were removed with the written type.
+- [ ] State in resolution the rejection of a module, a global expectation
+  and a member label named `Bool` or `Int`. `syntax.name.reserved`
+  reserves the names for them and the implementation rejects them, but
+  resolution's domain has no expectation and `collect` does not inspect
+  the module's name (`names.paths.reserved`).
 - [ ] Let `types.examples.rejected` drop the extra fact of its call
   example, that one argument does not fit an empty parameter list. The
   solver needs it since `Snoc` moved to the syntax chapter's module: Fren

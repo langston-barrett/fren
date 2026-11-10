@@ -43,9 +43,10 @@ inputs: a name, path, written type, layer, source table or module has at
 most one resolution, and each Fren definition above computes it:
 `module_resolves?` is false, and every other one is `None`, when there is
 none. Resolution is therefore decidable. It consults no typing judgment,
-value or solver: the only types it inspects are the ones it resolves for
-a binder whose name ends in `?`, to apply the
-[suffix rule](#r-names.surface.suffix). An expression is given to these
+value or solver. It resolves the written types of parameters and results,
+and the only one it then inspects is the type of a parameter whose name
+ends in `?`, which the [suffix rule](#r-names.surface.suffix) compares
+with `Bool`. A `let` has no written type to inspect. An expression is given to these
 definitions as a source table; that two tables of one expression resolve
 alike is a [separate law](#r-names.expression.unique-expression), which is
 open.
@@ -324,9 +325,23 @@ resolution applies `let_annotation?` with no written type.
 
 r[names.surface.suffix] spec::names::{suffix_rule?, let_annotation?}
 The *`?` suffix rule*: a parameter or let binder whose name ends in `?` must
-have type `Bool`, including when it has an explicit annotation, which the
-suffix does not overwrite. A let binder `x?` without an annotation
-elaborates to a Core let annotated `Bool`.
+have type `Bool`. A parameter's explicit annotation is not overwritten by
+the suffix: `b?: Int` is an error. A let binder `x?` elaborates to a Core
+let annotated `Bool`, and any other let binder to a Core let without an
+annotation.
+
+`let_annotation?` also states the rule for a `let` with a written type:
+the annotation must satisfy the suffix rule and is kept. That case is
+open. The Fren2 parser reads no annotation on a `let`, so the [syntax
+chapter](Syntax.md#r-syntax.tree.types)'s `Let` has none, and
+[resolution](#r-names.expression.layer) applies `let_annotation?` only
+with no written type. No Fren2 source can therefore write the Core form
+`let x : τ := e₁ in e₂` with τ other than the `Bool` of a `?` binder.
+[Core typing](Types.md#r-types.expression.let-annotated) still types that
+form for every τ, and its informative example
+`let b: Bool := n in 0` is read by today's front ends, not by the Fren2
+parser. Whether Fren2's `let` gets a written type, or the Core annotation
+is restricted to `Bool`, is not decided.
 
 ```fren
 pub fn suffix_rule?(question?, ty: Ty) := not question? or ty = Ty::Boolean
@@ -698,7 +713,11 @@ which nothing that a module declares or binds takes: no enumeration,
 variant, function, parameter or `let` binder is named `Bool` or `Int`
 (`F0212`). [Collection](#r-names.collection.reserved) rejects the
 declarations, and a [`let` layer](#r-names.expression.layer) whose binder
-is reserved has no resolution.
+is reserved has no resolution. The syntax chapter also reserves these names
+for a module, a global expectation and a member's label. That is open
+here: this chapter's [domain](#r-names.overview.domain) has no expectation,
+so it has neither an expectation's name nor a member's label to reject, and
+`collect` does not inspect the module's name.
 
 ```fren
 pub fn reserved?(name: String) := name is "Bool" | "Int"
@@ -725,7 +744,14 @@ require, and the layer has no resolution when one of them has none. A
 Core annotation is `Bool` when its binder's name ends in `?` and none
 otherwise. That is the annotation which the
 [suffix rule](#r-names.surface.suffix)'s `let_annotation?` admits for a
-`let` without a written type.
+`let` without a written type, as `let_handoff` states. An earlier form of
+this rule also resolved a written annotation: `let_handoff` had two more
+guarantees, `kept` and `refused`, for an annotation that is kept and for
+one that the suffix rule refuses, and the
+[examples](#r-names.examples.positions) had `ANNOTATED_LET` and
+`QUESTION_LET_REFUSED`. They are removed, since a `SurfaceF::Let` carries
+no written type and they could no longer be stated; the annotated `let`
+is [open](#r-names.surface.suffix).
 
 ```text
   R; S ⊢ p ⇒ local i      R; S ⊢ p ⇒ item c   Σ(c) = constructor
@@ -1068,6 +1094,12 @@ written type. A `SrcDecl` is the syntax chapter's enumeration or function
 declaration with its sequences as snoc sequences, over which collection
 recurs, and with the function's body as a source table; the other fields
 of a written declaration, such as `pub`, do not affect resolution.
+
+`SrcDecl` is a second representation of a declaration, beside the syntax
+chapter's `DeclarationF`, and no function of this chapter converts one to
+the other. This is open: resolution should read the syntax chapter's
+`FunctionDeclaration` and `EnumDeclaration`, with an explicit conversion
+of their sequences to snoc sequences.
 
 ```fren
 pub enum SrcDecl {
@@ -1464,8 +1496,6 @@ pub proc rejected(
         )
     ) = None
 }
-
-tested rejected: "src/FrenTest/SpecChapters/Syntax.lean"
 ```
 
 r[names.collection.order] spec::names::collection_order::{accepted, bindings}
@@ -1884,9 +1914,12 @@ pub proc position_examples(): (holds?) {
 ## Informative source examples
 
 These source programs are checked, with the diagnostics they expect, by
-both of today's front ends. They are informative: the correspondence
-between written source text and this chapter's source tables belongs to
-the [syntax chapter](Syntax.md).
+both of today's front ends. They are informative: no rule yet relates a
+written source text to this chapter's source tables. The
+[syntax chapter](Syntax.md) gives a text its tree, and that a source table
+[denotes](#r-names.expression.unfolding) that tree's expression is stated
+here, but the front ends that check these programs are not the Fren2
+parser and are bound to neither.
 
 ```fren example
 --@ reference: names.paths.unknown
