@@ -341,24 +341,50 @@ operator meanings of the denotational semantics, and the table evaluator
 of the dynamic semantics. Every judgment and every property of the three
 chapters is prose.
 
-- [ ] Write Termination, a sub-chapter of Static semantics, which
+- [x] Write Termination, a sub-chapter of Static semantics, which
   defines `Σ ⊢ d passes`, the judgment that a declaration passes the
-  termination check.
-  The static semantics holds its placeholder: no recursive group, or
-  structural recursion on one decreasing parameter. With the present
-  types (Bool, Int and enums without payloads) no value has a proper
-  subterm, so a recursive group passes the placeholder only when no
-  evaluation reaches a recursive call of it with a value for the
-  decreasing argument: `f(x) := if false then f(x) else 0` passes.
+  termination check: its function is in no recursive group, or its
+  recursive group is structurally recursive
+  (`statics.termination.structural`). Each function of the group has one
+  decreasing parameter, and every call of the group that is written in a
+  body of the group passes a local of size `smaller` at the callee's
+  decreasing parameter. The check reads sizes from the text and uses no
+  entailment, so it is decidable.
+- [ ] The Core cannot express the case that the termination check
+  exists for. A local gets the size `smaller` only as a field that a
+  match arm binds (`statics.termination.fields`), and the Core has no
+  constructor with arguments and no arm that binds a local. The rule is
+  stated ahead of the Core and has no instance, so no recursive group
+  whose bodies call it passes the check (`statics.property.subterms`):
+  `f(x) := if false then f(x) else 0` does not pass, and a recursive
+  function without parameters never does. Add algebraic data types with
+  fields to the Core, then give the rule its forms and its Fren.
+- [ ] The termination check has no measure on integers: a function such
+  as `f(n) := if n = 0 then 0 else f(n - 1)` with the precondition
+  `n >= 0` does not pass and must opt out. A check by a stated decreasing
+  measure would need an entailment and is deferred.
+- [ ] Of the termination check only `form_size` and `guarded?` are Fren,
+  each for one layer of an expression. The size of a whole body, the
+  choice of decreasing parameters and the judgment are prose, no checker
+  implements them and no `impl` binds them. The compiler still rejects
+  every recursive program (`thir.validation.nonrecursive`).
+- [ ] `statics.property.termination`, that a call of a function that
+  passes the check hereditarily does not diverge, is argued in prose and
+  not proved. So are `statics.property.sizes`,
+  `statics.property.decidable` and `statics.property.conservative`.
 - [ ] Whether "verified", said of one declaration, should be hereditary
   is an open question for the owner. At present it is not hereditary:
   a verified declaration passes its own termination check only, and
   the theorems are stated of a function that has a denotation.
-- [ ] Define the marker by which a declaration opts out of the
-  termination check, in the Termination sub-chapter. The Core's
-  declarations have no field for it, and none for a postcondition.
-  `statics.termination.optional` states only what follows from opting
-  out.
+- [ ] `statics.declaration` gives a function declaration a termination
+  mark, `checked` or `unchecked`, and `statics.termination.optional`
+  says what it covers: the function and, when it is recursive, its whole
+  recursive group. The mark exists only in the abstract form. The Core's
+  declarations have no field for it, and none for a postcondition, and
+  the source grammar has no form for it: the owner named
+  `#[unchecked_termination]` as an example, and the Syntax chapter has
+  no attributes. So every declaration that a source program can state is
+  marked `checked`. Add the field and the surface form.
 - [ ] `statics.match.distinct` makes a match with two arms for one
   constructor a static error. The compiler rejects it in
   `thir.validation.coverage`, which `coverageCases` in

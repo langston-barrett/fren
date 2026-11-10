@@ -6,8 +6,8 @@ symbol environment, and [Core typing](Types.md) defines the typing
 judgment. This chapter defines which items an expression mentions, the
 call order of a program, when the arms of a match are distinct, when a
 partial operation is within its domain, and the judgments of definedness
-and of contracts. It names the judgment of the termination check, which
-a sub-chapter of Static semantics will define. A program that satisfies
+and of contracts. [Termination](#termination), a sub-chapter of Static
+semantics, defines the termination check. A program that satisfies
 all of them is *verified*: it is typed, it is defined, it meets its
 contracts and it passes the termination check. The [denotational semantics](DenotationalSemantics.md) gives
 a meaning to a function only when its declaration and the declaration of
@@ -35,7 +35,8 @@ definedness as obligations over derivation tables; a
 | `Σ ⊢ d defined` | the declaration d is defined | [defined declarations](#r-statics.declaration.defined) | — |
 | `Σ ⊢ d meets {P} {Q}` | the function declaration d meets its contract | [meeting a contract](#r-statics.contract.meets) | — |
 | `Σ ⊢ (g, w̄) ≺ (f, v̄)` | the call of g at the arguments w̄ precedes the call of f at v̄ | [call instances](#r-statics.call-order.instances) | — |
-| `Σ ⊢ d passes` | the declaration d passes the termination check | [termination](#r-statics.termination) | — |
+| `size(S, e) = s` | in the size context S, e has the size s | [sizes](#r-statics.termination.size) | `form_size`, for one layer |
+| `Σ ⊢ d passes` | the declaration d passes the termination check | [termination](#r-statics.termination) | `guarded?`, for one argument |
 | `⊢ (Σ, ds) defined` | the program is defined | [defined programs](#r-statics.program.defined) | — |
 | `⊢ (Σ, ds) verified` | the program is verified | [verified programs](#r-statics.program.verified) | — |
 
@@ -43,6 +44,8 @@ definedness as obligations over derivation tables; a
   Γ, Δ ::= ·  |  Γ, τ                  contexts, by de Bruijn level
   Φ    ::= ·  |  Φ, φ                  hypotheses
   P, Q, A, φ, ψ                        Core expressions of type Bool
+  s    ::= same | smaller | unknown    sizes
+  S    ::= ·  |  S, s                  size contexts, by de Bruijn level
 
   f : (x₁: τ₁, …, xₙ: τₙ) → τ          a signature of Σ
   Δ = ·, τ₁, …, τₙ                     the context of f's parameters
@@ -72,9 +75,9 @@ every well-typed program.
 
 r[statics.declaration]
 A program's declarations are function declarations and expectation
-declarations. A function declaration has a signature, a body and
-conditions. An expectation declaration has a parameter context and
-conditions, and no body. A *condition* is a Boolean expression in the
+declarations. A function declaration has a signature, a body, conditions
+and a termination mark. An expectation declaration has a parameter
+context and conditions, and neither a body nor a mark. A *condition* is a Boolean expression in the
 context Δ of its declaration's parameters, with one of the four keywords
 `require`, `assert`, `assume` and `expect`. It belongs to exactly one
 declaration. A `require` condition is a *precondition*, an `assume`
@@ -86,10 +89,14 @@ none. The postcondition counts among the conditions of its declaration:
 the [call relation](#r-statics.call-order.relation) and what a
 declaration depends on read it as they read a precondition. The Core's
 declarations have no field for a postcondition yet, so every
-postcondition of a program that the Core can state is `true`. Each
-declaration also carries a mark that says whether it has
-[opted out](#r-statics.termination.optional) of the termination check;
-the Core's declarations have no field for the mark either. The Core's
+postcondition of a program that the Core can state is `true`. The
+*termination mark* of a function declaration is `checked` or
+`unchecked`. It belongs to that one declaration, and
+[what it covers](#r-statics.termination.optional) is the declaration's
+function or, where the function is recursive, its recursive group. The
+Core's declarations have no field for the mark either, and the
+[source grammar](Syntax.md) has no form that writes it, so every
+declaration that a source program can state is marked `checked`. The Core's
 [declarations](Types.md#declarations-and-programs) hold each condition
 apart, without its keyword; this chapter reads the keyword and the owning
 declaration as the
@@ -114,7 +121,7 @@ the same written spelling.
 pub mod spec
 pub mod spec::statics
 
-use spec::names::{ArmF, CoreF, ItemId}
+use spec::names::{ArmF, CoreF, ItemId, lookup}
 
 use spec::surface::{BinaryOp, Snoc}
 
@@ -437,46 +444,59 @@ own group, which are of earlier strata or of its own.
 
 ## Termination
 
+Termination is a sub-chapter of Static semantics. It defines the
+termination check: the mark by which a declaration opts out of it, the
+order on call instances that it establishes, and the criterion,
+structural recursion on one parameter of each function, read from the
+written body alone.
+
 r[statics.termination]
 `Σ ⊢ d passes` is the judgment of the *termination check*: the
-declaration d *passes the termination check*. It is a
-judgment of the static semantics in its own right. Typing has no premise
-about it. Definedness and the meeting of contracts have no premise about
-whether the declaration that they judge, or its recursive
-group, passes the check, and each is stated of declarations that fail it.
-Definedness does have a premise about the check of other
-declarations: every function that a contract or an assumption mentions
-[passes the check hereditarily](#r-statics.condition.terminating).
-Termination, a sub-chapter of Static semantics that is not yet written,
-defines the judgment. Until it does, the judgment is the placeholder
-below: a declaration passes the check when it has not
-[opted out](#r-statics.termination.optional) of it and either it
-is in no recursive group or its recursion is
-[structural](#r-statics.call-order.structural). The judgment is of one
-declaration and reads no other declaration's check: a declaration that
-is in no recursive group passes it whether or not the functions that it
-calls do. So passing the check does not state that the declaration's
-function terminates, and this chapter does not call a declaration
-terminating. A function *passes the termination check hereditarily* when
-its declaration passes the check and so does the declaration
-of every function that it [reaches](#r-statics.call-order.relation):
-each of them passes, and none has opted out. Neither notion
-alone states that an evaluation ends. A function's evaluation is stated
-to end only where the function
-[has a denotation](DenotationalSemantics.md#r-denotation.domain): it
-passes the check hereditarily, and its declaration and the declaration of
-every function that it reaches are defined, meet their contracts and
-have true assumptions.
+declaration d *passes the termination check*. It is a judgment of the
+static semantics in its own right, with three rules. An expectation
+declaration passes. A function declaration passes when it has not
+[opted out](#r-statics.termination.optional) and its function is in no
+[recursive group](#r-statics.call-order.relation). A function
+declaration passes when it has not opted out and its function's
+recursive group is
+[structurally recursive](#r-statics.termination.structural). A function
+*passes the termination check hereditarily* when its declaration passes
+the check and so does the declaration of every function that it
+[reaches](#r-statics.call-order.relation).
+
+```text
+  d is an expectation declaration
+  ───────────────────────────────
+  Σ ⊢ d passes
+
+  d declares f     d has not opted out     f is in no recursive group
+  ───────────────────────────────────────────────────────────────────
+  Σ ⊢ d passes
+
+  d declares f     d has not opted out
+  the recursive group of f is structurally recursive
+  ──────────────────────────────────────────────────
+  Σ ⊢ d passes
+```
 
 r[statics.termination.optional]
-The termination check need not be applied to every declaration. A
-declaration may *opt out* of it. Each declaration
-[carries a mark](#r-statics.declaration) that says whether it has; the
-Termination sub-chapter will define how a declaration is written so, and
-this chapter states only what follows. A
-declaration that opts out has not passed the check: `Σ ⊢ d passes`
-does not hold of it, whether or not it is recursive. Such a declaration
-may be well typed, be defined and meet its contract. It is not
+A function declaration carries a
+[termination mark](#r-statics.declaration), `checked` or `unchecked`.
+The mark sits on one function declaration. It covers that function and,
+where the function is recursive, the whole of its recursive group: a
+declaration has *opted out* of the termination check when it is marked
+`unchecked`, or when the declaration of a function of its recursive
+group is. The mark covers the group because the check of a group is one
+check, of all the group's bodies under one choice of decreasing
+parameters, and it cannot be made of some functions of a group without
+the others. An expectation declaration has no mark and does not opt
+out. A declaration that has opted out does not pass the check: no rule
+of [`Σ ⊢ d passes`](#r-statics.termination) concludes it, whether or
+not the function is recursive and whether or not its group is
+structurally recursive. Opting out switches off the check for the
+declaration and nothing else: the declaration may be well typed, be
+defined and meet its contract, as
+[independence](#r-statics.property.independence) states. It is not
 [verified](#r-statics.program.verified), neither its function nor a
 function that reaches its function has a denotation, and
 [no precondition, postcondition or assumption mentions its function or a function that reaches it](#r-statics.condition.terminating).
@@ -491,30 +511,104 @@ its parameters' types. A value u is a *proper subterm* of a value v when v
 is a constructor applied to arguments and u is one of those arguments or a
 proper subterm of one. *Call order*, `Σ ⊢ (g, w̄) ≺ (f, v̄)`, is a relation
 on call instances. It is relative to a choice of one parameter of each
-recursive function, its *decreasing parameter*. A recursive function
-with no parameters has no decreasing parameter, and the second case
-below holds of no call instance of it. `(g, w̄) ≺ (f, v̄)` holds
-in two cases: when f reaches g and g does not reach f; and when f and g
-are in one recursive group and the value that w̄ gives g's decreasing
+recursive function that has a parameter, its *decreasing parameter*. A
+recursive function with no parameters has no decreasing parameter, and
+the second case below holds of no call instance of it or of a caller of
+it. `(g, w̄) ≺ (f, v̄)` holds in two cases: when f reaches g and g does
+not reach f; and when f and g are in one recursive group, each has a
+decreasing parameter, and the value that w̄ gives g's decreasing
 parameter is a proper subterm of the value that v̄ gives f's.
 
-r[statics.call-order.structural]
-A call `g(a₁, …, aₙ)` written in the body of f, with g in f's recursive
-group, is *decreasing* under the hypotheses Φ when the following holds at
-every assignment ρ and under every interpretation I
-[admissible for f's declaration](#r-statics.entailment.admissible): if
-every hypothesis of Φ is true at ρ under I, and the argument for g's
-decreasing parameter has a value there, then that value is a proper
-subterm of the value that ρ gives f's decreasing parameter. Where f or g
-has no parameters, and so no decreasing parameter, the call is
-decreasing only when no such ρ and I make every hypothesis of Φ true.
-So a group that holds a function with no parameters has structural
-recursion only if every call of the group that is written in that
-function's body, or that calls it, stands under hypotheses that are true
-nowhere. The recursion
-of a group is *structural* when one choice of decreasing parameters makes
-every such call in the bodies of the group decreasing under the
-hypotheses at the place where it is written.
+r[statics.termination.size] spec::statics::{Size, form_size}
+The check reads the body of a function f that has a decreasing
+parameter, and gives each local of the body a *size* relative to that
+parameter: `same`, `smaller` or `unknown`. A *size context* S of a
+context Γ gives each level of Γ a size. The size of an expression in S
+is the size that S gives its level when the expression is a local, and
+`unknown` for every other form: an operator, a call, a let, a
+conditional and a match have the size `unknown` whatever their parts
+are. Each expression written in the body of f has a size context, by
+these rules. The body has the size context of f's parameters: `same` at
+the decreasing parameter and `unknown` at every other parameter. The
+body of a let has the size context of the let, extended by the size of
+the let's value at the new level. Every other written child has the size
+context of its parent: the operands of an operator, the arguments of a
+call, the value of a let, the condition and the branches of a
+conditional, and the scrutinee and the arms of a match. An arm
+[binds no local](NamesAndScope.md#r-names.core.syntax), so it extends no
+size context. `form_size` states the size of one layer.
+
+```text
+  s ::= same | smaller | unknown       sizes
+  S ::= ·  |  S, s                     size contexts, by de Bruijn level
+
+  size(S, x) = S(x)                    x a local
+  size(S, e) = unknown                 e of any other form
+
+  S_f = ·, s₁, …, sₙ                   sᵢ = same when xᵢ is f's decreasing
+                                       parameter, and unknown otherwise
+
+  let e₁ in e₂ has S                   e₁ has S;  e₂ has S, size(S, e₁)
+```
+
+```fren
+pub enum Size { Same, Smaller, Unknown }
+
+pub fn form_size<E>(sizes: Snoc<Size>, form: CoreF<E>): Size := match form {
+    CoreF::Local(level) => match lookup(sizes, level) {
+        Some(size) => size,
+        None => Size::Unknown,
+    },
+    _ => Size::Unknown,
+}
+```
+
+r[statics.termination.fields]
+The size `smaller` is for a local that an arm of a match binds to an
+argument of its scrutinee's constructor. This rule is the criterion's
+one source of `smaller`, and it is stated ahead of the forms that it
+reads: where a constructor takes arguments and an arm binds a local to
+each, an arm of a match whose scrutinee has the size `same` or `smaller`
+gives each of those locals the size `smaller`, and an arm of any other
+match gives each the size `unknown`. The Core has
+[no constructor with arguments](NamesAndScope.md#r-names.core.syntax)
+and no arm that binds a local, so the rule has no instance in it.
+
+r[statics.termination.guarded] spec::statics::guarded?
+Let f and g be functions of one recursive group, each with a decreasing
+parameter. A call `g(a₁, …, aₙ)` written in the body of f is *guarded*
+when the argument for g's decreasing parameter has the size `smaller` in
+the size context of the call. A guarded call's argument at that position
+is therefore a local. The condition reads the written argument and its
+size context only: no hypothesis, no assignment and no interpretation.
+`guarded?` states it of the argument's layer.
+
+```text
+  g's decreasing parameter is its i-th     size(S, aᵢ) = smaller
+  ───────────────────────────────────────────────────────────────
+  g(a₁, …, aₙ), written in the body of f with the size context S, is guarded
+```
+
+```fren
+pub fn guarded?<E>(sizes: Snoc<Size>, argument: CoreF<E>) :=
+    form_size(sizes, argument) = Size::Smaller
+```
+
+r[statics.termination.structural]
+A recursive group is *structurally recursive* when one choice of a
+decreasing parameter for each of its functions makes
+[guarded](#r-statics.termination.guarded) every call of a function of
+the group that is written in the body of a function of the group. The
+choice gives every function of the group one of its own parameters. A
+group that holds a function with no parameters has no such choice, and
+it is not structurally recursive. The condition is on every such call
+that is written, in a branch that no evaluation selects as in any
+other. It reads bodies and no condition: a call
+[evaluates the callee's body](DynamicSemantics.md#r-dynamics.call) and
+never a condition. A call of the group that is written in a condition
+other than an expectation is excluded by
+[a rule of its own](#r-statics.condition.group), which is a premise of
+definedness and not of this check.
 
 ## Programs
 
@@ -564,17 +658,16 @@ r[statics.property.generation]
 The premises of the form `Σ; Γ; Φ ⊨ φ` that a derivation of
 `Σ; Γ; Φ ⊢ e def` needs are a computable function of the expression, and
 they are the only premises of that judgment that are not decidable. The
-definedness of a declaration has one more premise that is not decidable:
-that the functions which its contract and its assumptions mention
-[pass the termination check hereditarily](#r-statics.condition.terminating).
-The placeholder for that check asks that calls be
-[decreasing](#r-statics.call-order.structural) at every assignment and
-under every admissible interpretation.
+definedness of a declaration adds no other: its premise that the
+functions which its contract and its assumptions mention
+[pass the termination check hereditarily](#r-statics.condition.terminating)
+is [decidable](#r-statics.property.decidable), and so is its premise
+about [recursive groups](#r-statics.condition.group).
 
 r[statics.property.independence]
 Whether a declaration is defined and meets its contract does not depend
 on its own termination or on that of its recursive group. No rule of
-either asks that a call be decreasing or that the declaration pass the
+either asks that a call be guarded or that the declaration pass the
 termination check, and the interpretations that
 entailment ranges over are constrained at the tuples where they give a
 value and nowhere else. The interpretation that gives no function a value
@@ -611,6 +704,101 @@ The premise about the check alone does not give it: a function that
 passes the check hereditarily and whose body is `1 div 0` has no value anywhere, and a condition that
 calls it has no truth value.
 
+r[statics.property.check-local]
+The termination check is of one declaration and of its recursive group,
+and reads no other declaration's check. A declaration that is in no
+recursive group passes it whether or not the functions that it calls do.
+So passing the check does not state that the declaration's function
+terminates, and this chapter does not call a declaration terminating.
+Typing has no premise about the check. Definedness and the meeting of
+contracts have no premise about whether the declaration that they judge,
+or its recursive group, passes the check, and each is stated of
+declarations that fail it. Definedness does have a premise about the
+check of other declarations: every function that a contract or an
+assumption mentions
+[passes the check hereditarily](#r-statics.condition.terminating).
+
+r[statics.property.sizes]
+Sizes are sound for the values of an evaluation. Let f be a function
+with a decreasing parameter, let v̄ be a tuple of values of its
+parameters' types, and let v be the value that v̄ gives the decreasing
+parameter. In the run of f's body from the assignment v̄, every
+expression written in the body is
+[loaded](DynamicSemantics.md#r-dynamics.configuration.loading) only at
+assignments that give each level of size `same` the value v and each
+level of size `smaller` a proper subterm of v. The assignment v̄ does so
+for the size context of the parameters. A let keeps it: its body is
+loaded with the value of the let's value at the new level, and where
+the let's value is a local, that is the value of the local's level.
+[Arms that bind arguments](#r-statics.termination.fields) keep it too:
+an argument of a constructor value is a proper subterm of that value,
+and a proper subterm of a proper subterm of v is one of v. So where a
+[guarded](#r-statics.termination.guarded) call of g in the body of f is
+reached with the argument values w̄,
+[`(g, w̄) ≺ (f, v̄)`](#r-statics.call-order.instances) holds by the
+second case of call order.
+
+r[statics.property.termination]
+The termination check is sound for the dynamic semantics. Let P be a
+well-typed program and f a function of it that
+[passes the termination check hereditarily](#r-statics.termination).
+Then the call of f at every tuple of values of its parameters' types
+ends, in a value or in an error state: it does not
+[diverge](DynamicSemantics.md#r-dynamics.divergence). The property asks
+nothing of definedness, of contracts or of assumptions, which the
+dynamic semantics does not read; without them the call may end in an
+error. The argument is an induction on
+[call order](#r-statics.call-order.instances), which is
+[well founded](#r-statics.property.call-order), over the call instances
+of f and of the functions that f reaches, with the decreasing parameters
+under which each of their groups is structurally recursive. At an
+instance `(f, v̄)`, an inner induction on the expressions written in f's
+body shows that each has an
+[outcome](DynamicSemantics.md#r-dynamics.evaluation.rules) at every
+assignment that gives the levels of size `same` and `smaller` the
+values that the [soundness of sizes](#r-statics.property.sizes) states. An operator has an outcome at all
+operand values, a match selects an arm or has the outcome
+`error(no-arm)`, and each other form has the outcome of the children
+that it evaluates. A call written in the body, reached with the argument
+values w̄, is of a callee g that f reaches. Where g does not reach f,
+`(g, w̄) ≺ (f, v̄)` by the first case of call order. Where g reaches f,
+the two are in one group, the group is structurally recursive, the call
+is guarded, and `(g, w̄) ≺ (f, v̄)` by the soundness of sizes. In both cases g's body
+has an outcome at w̄ by the outer induction, and so has the call. So
+`P ⊢ ⟨e, v̄⟩ ⇓ r` holds of f's body e for some outcome r, the run
+[ends in r](DynamicSemantics.md#r-dynamics.theorem.big-step), and it is
+the [only run](DynamicSemantics.md#r-dynamics.theorem.determinism).
+This is what
+[total correctness](DynamicSemantics.md#r-dynamics.theorem.total-correctness)
+takes from the check. A function that
+[has a denotation](DenotationalSemantics.md#r-denotation.domain) is
+verified together with every function that it reaches, so it passes the
+check hereditarily and its calls end;
+[partial correctness](DynamicSemantics.md#r-dynamics.theorem.partial-correctness)
+states that a call at a tuple that meets the precondition reaches no
+error state and ends only in a value that meets the postcondition.
+
+r[statics.property.decidable]
+Whether a declaration passes the termination check is decidable, and so
+is whether a function passes it hereditarily. The marks and the
+recursive groups of a finite program are computed from its written
+declarations. A group has finitely many choices of decreasing
+parameters, one for each tuple of parameter positions of its functions.
+For one choice, the size context of each written expression and whether
+each call is guarded are computed from the bodies. The check has no
+premise of entailment and quantifies over no assignment and no
+interpretation.
+
+r[statics.property.conservative]
+The termination check is sufficient for the calls of a function to end,
+and not necessary. It rejects every recursive group in which some call
+of the group is written with an argument that is not a local of size
+`smaller`, whether or not an evaluation reaches that call and whether or
+not the argument's value decreases. A declaration that the check rejects
+and whose calls end can be stated only by
+[opting out](#r-statics.termination.optional), and it is then not
+verified.
+
 r[statics.property.call-order]
 Call order is well founded for every choice of decreasing parameters: no
 call instance has an unending chain of predecessors. The recursive groups
@@ -618,11 +806,22 @@ of a finite program are ordered by reaching, and a value has finitely many
 proper subterms.
 
 r[statics.property.subterms]
-A Boolean, an integer and a constructor of a payload-free enum have no
-proper subterm. In a program whose values are of those types only, a
-call inside a recursive group is decreasing only under hypotheses that no
-assignment makes true together with a value for the argument, so that the
-placeholder condition admits no recursion that an evaluation can reach.
+In the present Core, a recursive group whose bodies call a function of
+the group does not pass the termination check. A Boolean, an integer and
+a constructor of a payload-free enum have no proper subterm, and
+correspondingly no rule that has an instance in the Core gives a local
+the size `smaller`: the parameters have the sizes `same` and `unknown`,
+a let copies the size of a local, and
+[the rule that gives `smaller`](#r-statics.termination.fields) reads
+forms that the Core lacks. So no call is guarded, and a recursive group
+is structurally recursive exactly when each of its functions has a
+parameter and no body of the group calls a function of the group. Such
+a group is recursive through conditions only: some condition of one of
+its declarations, other than an expectation, mentions a function of the
+group, and that declaration is
+[not defined](#r-statics.condition.group). So in a program of the
+present Core no recursive group has all its declarations verified, and
+no recursive function has a denotation.
 
 r[statics.property.stratified]
 The strata of a finite program can be ordered as
@@ -724,17 +923,64 @@ derivations and arithmetic examples follow their shared definitions in the
 r[statics.examples.recursion]
 A function `f(x: Int)` with no conditions whose body is `f(x)` is well
 typed and defined, and it meets its contract, whose postcondition is
-`true`. Its group is f alone. Its declaration does not pass the
-termination check: the call is
-decreasing only if the value of `x` is a proper subterm of itself, and no
-value is. So the program is not verified and f has no denotation. Its
+`true`. Its group is f alone, and its decreasing parameter can only be
+`x`. Its declaration does not pass the termination check: the argument
+`x` of the call has the size `same`, so the call is not
+[guarded](#r-statics.termination.guarded). So the program is not
+verified and f has no denotation. Its
 evaluation [diverges](DynamicSemantics.md#r-dynamics.divergence) at every
 argument.
+
+r[statics.examples.unreachable-call]
+A function `f(x: Int)` whose body is `if false then f(x) else 0` does
+not pass the termination check, though its call ends in 0 at every
+argument. The call `f(x)` is written in the body and its argument has
+the size `same`. The check
+[reads every written call](#r-statics.termination.structural), and not
+only those that an evaluation reaches. The same holds of a body
+`let y := x in f(y)`: the let gives `y` the size of `x`, which is
+`same`, and the call is not guarded.
+
+r[statics.examples.no-parameter]
+A function `f()` whose body is `f()` is recursive and has no parameter,
+so its group has no choice of decreasing parameters and is not
+[structurally recursive](#r-statics.termination.structural). The same
+holds of `f()` with the body `if false then f() else 0`, and of a group
+of `f()` with the body `g(0)` and `g(x: Int)` with the body `f()`: one
+function without a parameter is enough.
+
+r[statics.examples.unchecked]
+Let `f(n: Int): Int` have the precondition `n >= 0` and the body
+`if n = 0 then 0 else f(n - 1)`. The argument `n - 1` is an operator
+and has the size `unknown`, so the declaration does not pass the
+termination check, though every call of f that meets the precondition
+ends: the check
+[is not necessary](#r-statics.property.conservative) for that. With the
+mark `unchecked` the declaration
+[opts out](#r-statics.termination.optional). Marked or not, it is
+defined and meets its contract: the call in the body is defined, since
+the hypotheses `n >= 0` and `not (n = 0)` entail `n - 1 >= 0`. It is not
+verified and f has no denotation, so no precondition, postcondition or
+assumption of another declaration mentions f. A function `h()` with the
+body `f(3)` is in no recursive group and its declaration is verified;
+h has no denotation, since it depends on f. With true assumptions f and
+h are
+[partially correct](DynamicSemantics.md#r-dynamics.theorem.partial-correctness).
+
+r[statics.examples.group-mark]
+Let `p(x: Int)` have the body `q(x)` and `q(x: Int)` the body `p(x)`,
+and let the declaration of p be marked `unchecked` and that of q
+`checked`. p and q are one recursive group, so
+[both declarations have opted out](#r-statics.termination.optional), and
+neither passes the termination check. A function `r(x: Int)` with the
+body `p(x)` is in no group and has not opted out: its declaration passes
+the check, and r does not pass it hereditarily.
 
 r[statics.examples.conditions]
 Let `g(x: Int): Bool` have the body `if g(x) then false else true`, and
 let `f(x: Int): Int` have the precondition `g(x)` and the body
-`1 div 0`. g is recursive and its recursion is not structural, so the
+`1 div 0`. g is recursive and its group is not
+[structurally recursive](#r-statics.termination.structural), so the
 declaration of g does not pass the termination check. The precondition of f mentions g, so the declaration of f
 is [not defined](#r-statics.condition.terminating). Entailment alone
 would not reject it. No admissible interpretation gives g a value, since

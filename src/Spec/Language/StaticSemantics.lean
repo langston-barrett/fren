@@ -25,6 +25,30 @@ example :
     spec.statics.arms_distinct? Int (.Extend .Empty ⟨F, 1⟩) = true := by
   decide
 
+-- A local has the size that the size context gives its level.
+open spec.names spec.surface in
+example :
+    spec.statics.form_size Int (.Extend (.Extend .Empty .Same) .Unknown) (.Local 0) = .Same := by
+  decide
+
+-- A form other than a local has the size `unknown`, whatever its parts are.
+open spec.names spec.surface in
+example :
+    spec.statics.form_size Int (.Extend .Empty .Smaller) (.Unary .Neg 0) = .Unknown := by
+  decide
+
+-- An argument is guarded only when it is a local of size `smaller`.
+open spec.names spec.surface in
+example :
+    spec.statics.guarded? Int (.Extend (.Extend .Empty .Same) .Smaller) (.Local 1) = true := by
+  decide
+
+-- The decreasing parameter itself has the size `same`, so it guards no call.
+open spec.names spec.surface in
+example :
+    spec.statics.guarded? Int (.Extend (.Extend .Empty .Same) .Smaller) (.Local 0) = false := by
+  decide
+
 end Spec.Language.StaticSemantics
 
 set_option fren.requireEvidence "trusted" in
