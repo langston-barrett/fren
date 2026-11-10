@@ -49,7 +49,7 @@ private def staticDiagnostic : FrenHirToThir.StaticFailure → FrenDiag.Diagnost
   | .typing d => d
   | .validation f =>
     let span := match f with
-      | .coverage s .. | .invalidMetadata s | .cycle s _ => s
+      | .coverage s .. | .invalidMetadata s | .cycle s _ | .termination s .. => s
     ⟨none, reprStr f, span⟩
 
 /-- Reuse the admitted source producer, then the production checker. No IR or

@@ -60,9 +60,9 @@ private def sample (n file : Nat) : Option WalkingCounts := do
           repeated != (if source == (variants[1]!).1 then #[] else #[(key "E").named "A"]) ||
           !(check r).isOk then none else pure ()
       counts := {counts with coverageRejected := counts.coverageRejected + 1}
-    | .error (.validation (.cycle _ path)) =>
-      let expectedPath := (List.range length).toArray.map (fun i => key s!"r{i}") |>.push (key "r0")
-      if expected != 2 || path != expectedPath || !(check r).isOk then none else pure ()
+    | .error (.validation (.termination _ group .unguarded)) =>
+      let expectedGroup := (List.range length).toArray.map (fun i => key s!"r{i}")
+      if expected != 2 || group != expectedGroup || !(check r).isOk then none else pure ()
       counts := {counts with cycleRejected := counts.cycleRejected + 1}
     | .error (.typing _) =>
       if expected != 3 || (check r).isOk then none else pure ()

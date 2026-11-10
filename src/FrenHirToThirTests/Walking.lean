@@ -1,6 +1,7 @@
 module
 
 public import FrenHirToThirTests.Support
+public import FrenHirToThirTests.Termination
 
 public section
 namespace FrenHirToThirTests
@@ -83,18 +84,32 @@ private def coverageCases : IO Unit := do
 private def cycleCases : IO Unit := do
   let self := "mod m\nfn f(x: Int): Int := f(x)"
   match ← fails self with
-  | .cycle span path => require (path == #[key "f", key "f"] && span.file == ⟨47⟩ &&
-      span.start == 27 && span.stop == 28) "self-cycle concrete path/span"
+  | .termination span group .unguarded => require (group == #[key "f"] && span.file == ⟨47⟩ &&
+      span.start == 27 && span.stop == 28) "self-recursion concrete group/span"
   | _ => throw (IO.userError "wrong self failure")
   let mutualSource := "mod m\nfn f(x: Int): Int := g(x)\nfn g(x: Int): Int := f(x)"
   match ← fails mutualSource with
-  | .cycle span path => require (path == #[key "f", key "g", key "f"] &&
-      span.start == 53 && span.stop == 54) "mutual concrete path/span"
+  | .termination span group .unguarded => require (group == #[key "f", key "g"] &&
+      span.start == 53 && span.stop == 54) "mutual concrete group/span"
   | _ => throw (IO.userError "wrong mutual failure")
   match ← fails ("mod m\nfn f(x: Int): Int := g(x)\nfn g(x: Int): Int := h(x)\n" ++
       "fn h(x: Int): Int := f(x)") with
-  | .cycle _ path => require (path == #[key "f", key "g", key "h", key "f"]) "long cycle"
+  | .termination _ group .unguarded =>
+    require (group == #[key "f", key "g", key "h"]) "long recursive group"
   | _ => throw (IO.userError "wrong long failure")
+  -- A group is in declaration order whichever function the cycle was found from,
+  -- and a function that only calls into it is not of it.
+  match ← fails ("mod m\nfn top(x: Int): Int := g(x)\nfn g(x: Int): Int := f(x)\n" ++
+      "fn f(x: Int): Int := g(x)") with
+  | .termination _ group .unguarded => require (group == #[key "g", key "f"]) "group members"
+  | _ => throw (IO.userError "wrong group failure")
+  -- No source form calls a function of no parameters, so `noParameters` is tested on
+  -- the deciding functions directly (`FrenHirToThirTests.Termination`).
+  -- An argument that is the parameter itself, or a let of it, has the size `same`.
+  for expr in ["f(y, x)", "let z := x in f(z, y)", "f((x), (y))", "f(x + 1, y)"] do
+    match ← fails ("mod m\nfn f(x: Int, y: Int): Int := " ++ expr) with
+    | .termination _ group .unguarded => require (group == #[key "f"]) "unguarded argument"
+    | _ => throw (IO.userError s!"wrong failure: {expr}")
   for expr in ["if true then x else f(x)", "let y := f(x) in y", "(f(x))",
       "match E::A { E::A => x, E::B => f(x) }", "g(f(x))"] do
     discard <| fails ("mod m\nenum E { A, B }\nfn g(x: Int): Int := x\nfn f(x: Int): Int := " ++ expr)
@@ -148,6 +163,7 @@ private def boundaryCases : IO Unit := do
 def runWalking : IO Unit := do
   coverageCases
   cycleCases
+  runTermination
   boundaryCases
   IO.println "walking static: coverage, actual call cycles, S1 goals and producer boundary passed"
 

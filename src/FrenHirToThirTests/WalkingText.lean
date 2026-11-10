@@ -19,6 +19,11 @@ def walkingRunner : Fren.TextTests.Runner := .of
       s!"coverage {owner.render}; missing={missing.size}; repeated={repeated.size}"
     | .error (.validation (.cycle _ path)) =>
       "cycle " ++ " -> ".intercalate (path.toList.map (·.render))
+    | .error (.validation (.termination _ group reason)) =>
+      "termination " ++ ", ".intercalate (group.toList.map (·.render)) ++ ": " ++
+        match reason with
+        | .noParameters function => s!"{function.render} has no parameter"
+        | .unguarded => "some call is not guarded under every choice of decreasing parameters"
     | .error (.validation (.invalidMetadata _)) => "invalid typed metadata"
 
 end FrenHirToThirTests
