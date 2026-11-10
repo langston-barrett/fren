@@ -931,10 +931,18 @@ chapter does not yet state either in Fren. No function in it calls itself, direc
 valid, except the `Asserted` obligation of an `expect` member. The
 keyword of each member is the one that P states, which nothing here ties
 to the source. The conditions cover a function that nothing calls. Coverage and the absence
-of recursion yield no obligations. The absence of recursion is narrower
-than the
+of recursion yield no obligations. The absence of recursion is not the
 [termination check](StaticSemantics.md#r-statics.termination) of the
-static semantics, which admits structural recursion. The
+static semantics, and neither includes the other. It is narrower in that
+the check admits structural recursion. It is wider in that it reads the
+calls in bodies only: the
+[call order](StaticSemantics.md#r-statics.call-order.relation) of the
+static semantics also reads the functions that a `require`, `assume`,
+`assert` or `expect` member mentions, so a defined program may have a
+recursive group there, which the
+[correspondence](StaticSemantics.md#r-statics.property.tables) and
+[soundness](#r-verification.soundness) exclude by a condition of their
+own. This chapter's definition does not check that condition. The
 [dynamic semantics](DynamicSemantics.md#r-dynamics.error.kinds) gives an
 error to an operation outside its domain, and
 [soundness](#r-verification.soundness) states where an evaluation in a
@@ -1317,10 +1325,13 @@ pub proc context_weakening(rows: Snoc<Row>, cutoff: Int, extra: Ty): (holds?) {
 r[verification.soundness]
 Verification is sound for the dynamic semantics under conditions that
 this chapter's definedness does not itself give. Let the program be
-[defined](#r-verification.program.defined), let each of its
-postconditions be `true`, and let none of its declarations have
+[defined](#r-verification.program.defined), let no function of it
+reach itself in the
+[call order](StaticSemantics.md#r-statics.call-order.relation) of the
+static semantics, which reads conditions as well as bodies, let each of
+its postconditions be `true`, and let none of its declarations have
 [opted out](StaticSemantics.md#r-statics.termination.optional) of the
-termination check. A defined program has no recursion, so by the
+termination check. By the
 [correspondence with the static semantics](StaticSemantics.md#r-statics.property.tables)
 each of its declarations is then
 [verified](StaticSemantics.md#r-statics.program.verified). Let d be one
@@ -1338,7 +1349,11 @@ declaration that d does not depend on are not asked to be true. Without
 the condition on opting out the statement fails as written: where `g()`
 has the body `1` and has opted out and `f()` has the body `g()`, the
 program is defined, no assumption is false, and g has no denotation, so
-the body of f has none. The
+the body of f has none. Without the condition on the call order it fails
+too: a defined program has no recursion through bodies, and where `f()`
+has the body `0` and the member `expect g() = 0`, and `g()` has the body
+`f()`, the two are one recursive group of the static semantics, neither
+declaration is verified, and neither function has a denotation. The
 [denotational semantics](DenotationalSemantics.md#r-expressions.value.denotation)
 states the property. It is open: the evaluator gives no value to a product, a
 quotient, a remainder or a call, so the statement cannot yet be written

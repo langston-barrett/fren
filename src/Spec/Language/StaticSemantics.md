@@ -376,9 +376,13 @@ the declaration's own group, and by nothing of a later stratum.
 
 r[statics.termination]
 `Σ ⊢ d terminates` is the judgment of the *termination check*. It is a
-judgment of the static semantics in its own right: typing, definedness
-and the meeting of contracts have no premise about it, and each is stated
-of declarations that fail it. The Termination chapter, which follows this
+judgment of the static semantics in its own right. Typing has no premise
+about it. Definedness and the meeting of contracts have no premise about
+the termination of the declaration that they judge or of its recursive
+group, and each is stated of declarations that fail the check.
+Definedness does have a premise about the termination of other
+declarations: every function that a contract or an assumption mentions
+[terminates hereditarily](#r-statics.condition.terminating). The Termination chapter, which follows this
 one among the chapters of static semantics and is not yet written,
 defines the judgment. Until it does, the judgment is the placeholder
 below: a declaration terminates when it has not
@@ -482,13 +486,17 @@ premises of definedness that are not decidable.
 r[statics.property.independence]
 Whether a declaration is defined and meets its contract does not depend
 on its own termination or on that of its recursive group. No rule of
-either has a premise about call order, and the interpretations that
+either asks that a call be decreasing or that the declaration pass the
+termination check, and the interpretations that
 entailment ranges over are constrained at the tuples where they give a
 value and nowhere else. The interpretation that gives no function a value
-is admissible for every declaration. The one premise about termination is
-that of the
+is admissible for every declaration. Definedness has two premises that
+read the call order, and both are about conditions:
+[no condition mentions a function of its declaration's own recursive group](#r-statics.condition.group),
+and the
 [functions that a contract or an assumption mentions](#r-statics.condition.terminating),
-which are of earlier strata. So a declaration is defined and meets its
+which are of earlier strata, terminate hereditarily. The second is its
+one premise about termination. So a declaration is defined and meets its
 contract when it opts out of the termination check exactly when it does
 otherwise; opting out can change those judgments only for the
 declarations whose contract or assumptions depend on it.
@@ -572,9 +580,21 @@ over the derivation tables of Core typing: the condition of each layer,
 the obligations collected from it with their hypotheses, satisfaction at
 an assignment, validity, and defined programs. Its goals are the divisor
 of a division or remainder, a callee's `require` and an asserted fact; it
-states no postcondition and admits no recursion. For a program without
-recursion whose postconditions are all `true` and in which no declaration
-opts out of the termination check, one direction holds: when its tables
+states no postcondition and admits no recursion through bodies. Its
+[condition on recursion](Types.md#r-types.program.nonrecursive) reads the
+calls in bodies only, where the [call order](#r-statics.call-order.relation)
+of this chapter also reads the functions that a condition mentions, so
+that condition does not make the call order acyclic. Where `f()` has the
+body `0` and the expectation `g() = 0`, and `g()` has the body `f()`, no
+body calls itself through others, and f and g are one recursive group of
+this chapter: the expectation
+[mentions a function of its own group](#r-statics.condition.group), so
+the declaration of f is not defined here, and the group does not pass
+the termination check. So the correspondence has three conditions on the
+program: no function reaches itself in this chapter's call order, bodies
+and conditions together; its postconditions are all `true`; and no
+declaration opts out of the termination check. For such a program one
+direction holds: when its tables
 are [defined](PropertiesAndChecks.md#r-verification.program.defined)
 there, the program is defined by this chapter. Each declaration of such
 a program meets its contract and, being in no recursive group and not

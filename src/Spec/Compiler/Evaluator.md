@@ -208,12 +208,17 @@ function that confirmation also calls, and the Thir wrapper proves that
 function equal to `select`.
 
 `select` takes the first arm written for a constructor, where the
-[dynamic semantics](../Language/DynamicSemantics.md#r-dynamics.match.selection)
-takes the last. The two
+[table evaluator](../Language/DynamicSemantics.md#r-dynamics.table.differences)
+of the dynamic semantics takes the last. The two
 [agree when no arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics),
 so on a typed match whose scrutinee's constructor has a repeated arm this
-evaluator can run an arm other than the one that the dynamic semantics
-prescribes. That possible disagreement is open and belongs
+evaluator can run an arm other than the one that the table evaluator
+runs. Such a match is a
+[static error](../Language/StaticSemantics.md#r-statics.match.distinct),
+and the
+[step relation](../Language/DynamicSemantics.md#r-dynamics.match.selection)
+is not stated of it, so no admitted program reaches the difference.
+Bringing the two evaluators to one choice is open and belongs
 to the unit that aligns the evaluators.
 
 r[evaluator.selection.arm] spec::evaluator::evaluator_pick::agrees

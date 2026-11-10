@@ -671,7 +671,12 @@ cycles: no function's body calls itself, directly or through other
 functions. This is a static condition separate from typing; the
 [THIR chapter](../Compiler/Thir.md) states its check. It is narrower than
 the [termination check](StaticSemantics.md#r-statics.termination) of the
-static semantics, which admits structural recursion.
+static semantics in that the check admits structural recursion. It does
+not include that check: this condition reads the calls in bodies, and the
+[call order](StaticSemantics.md#r-statics.call-order.relation) of the
+static semantics also reads the functions that a condition mentions, so
+a program without recursive call cycles may have a recursive group
+there.
 
 ## Properties of typing
 

@@ -29,10 +29,17 @@ The chapter's judgments, and the Fren definitions that state them:
 | `⊢ (Σ, ds) admitted` | the program is typed and every match in it is admitted | `prog_admitted?` |
 
 In outline, `select` gives, for a constructor c, the first arm written for c.
-The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection) runs
-the last arm written for c, so the two [agree](#r-patterns.matching.dynamics)
+The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection) is
+stated for matches with
+[distinct arms](StaticSemantics.md#r-statics.match.distinct), where the
+arm of c is unique and is the one that `select` gives. Its
+[table evaluator](DynamicSemantics.md#r-dynamics.table.differences) also
+gives a value to a typed match with a repeated arm, and runs the last arm
+written for c, so the two [agree](#r-patterns.matching.dynamics)
 when no arm is repeated and can disagree on a typed match whose scrutinee's
-constructor has a repeated arm; that possible disagreement is open. A match has two checks, once the typing rules have admitted the patterns of
+constructor has a repeated arm. Such a match is a static error, so the
+disagreement is reached by no admitted program; that the two functions
+differ there is open. A match has two checks, once the typing rules have admitted the patterns of
 the arms: every constructor of the scrutinee's enumeration is the pattern of
 at least one arm, which is the
 [coverage of the static semantics](StaticSemantics.md#r-statics.definedness.coverage),
@@ -123,7 +130,7 @@ is the last arm written. For a constructor c, `select` gives the first arm
 written for c, if there is one: it consults the earlier arms before the
 newest. This is the selection of this chapter and of the production
 `FrenHirToThir.selectArm`; it is proved to be the selection of the
-[dynamic semantics](#r-patterns.matching.dynamics) when no arm is repeated,
+[dynamic semantics' table evaluator](#r-patterns.matching.dynamics) when no arm is repeated,
 and can differ from it for a constructor that has a repeated arm. `occurrences` counts the arms written for c.
 
 ```text
@@ -298,8 +305,11 @@ r[patterns.coverage.repeated]
 A match with a repeated arm is rejected: an arm that is not reachable is a
 static error, whether or not the arms cover the scrutinee's enumeration.
 This error is separate from coverage, which a match with a repeated arm can
-still meet. The static semantics states no such rule yet, so this chapter
-states it, as a premise of [admission](#r-patterns.coverage.admitted).
+still meet. The static semantics states the same rule as
+[distinct arms](StaticSemantics.md#r-statics.match.distinct), with a
+definition of its own, `arms_distinct?`; that it agrees with `reachable?`
+is not proved. This chapter
+states the rule as a premise of [admission](#r-patterns.coverage.admitted).
 
 r[patterns.coverage.diagnostic]
 A match that does not cover its scrutinee's enumeration is rejected with an
@@ -474,8 +484,12 @@ pub proc admitted_selects_typed(
 
 r[patterns.matching.dynamics] spec::patterns::{selected_value, dynamics_selection::{agrees, runs_last, selects_first}}
 The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection) is
+defined for the typed programs with
+[distinct arms](StaticSemantics.md#r-statics.match.distinct), where at
+most one arm has the scrutinee's constructor. Its
+[table evaluator](DynamicSemantics.md#r-dynamics.table.differences) is
 defined for every typed program, and it runs the arm written last when
-several arms have the scrutinee's constructor: its evaluator's `arm_value`
+several arms have the scrutinee's constructor: its `arm_value`
 consults the newest arm first. `select` takes the arm written first.
 `selected_value` is the value that the arm `select` gives would have, read
 from the same row values as `arm_value` reads.
@@ -487,16 +501,18 @@ disagree. For two arms with the one constructor, `arm_value` is the value of the
 `selected_value` the value of the first's, and these differ whenever the
 bodies' values do. Such a match can be typed, since
 [typing ignores repeated arms](Types.md#r-types.judgment.coverage-separate),
-and the dynamic semantics gives it a value, so a disagreement is
-observable when it occurs. This chapter [rejects](#r-patterns.coverage.repeated) the match,
-but the dynamic semantics does not use that check.
+and the table evaluator gives it a value. This chapter
+[rejects](#r-patterns.coverage.repeated) the match, as the static
+semantics does, and the step relation of the dynamic semantics is not
+stated of it, so no admitted program reaches the disagreement; the table
+evaluator does not use that check.
 
-The possible disagreement is open. `select`, and with it the production
+That the two functions differ is open. `select`, and with it the production
 `FrenHirToThir.selectArm` that the evaluator and confirmation call, is not
-shown to implement the dynamic semantics on a typed match with a repeated
-arm, and does not when the scrutinee's constructor has repeated arms whose
+equal to the table evaluator's selection on a typed match with a repeated
+arm, and gives another value when the scrutinee's constructor has repeated arms whose
 bodies' values differ. This
-chapter does not change the dynamic semantics; bringing the two to one
+chapter does not change the table evaluator; bringing the two to one
 choice belongs to the unit that aligns the evaluators.
 
 ```fren

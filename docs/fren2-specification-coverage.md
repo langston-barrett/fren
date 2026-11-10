@@ -368,7 +368,17 @@ chapters is prose.
 - [ ] The table evaluator gives no value to a product, a quotient, a
   remainder or a call. `binary_meaning?` only bounds the first three.
 - [ ] `types.program.nonrecursive` and `verification.program.defined`
-  exclude all recursion, which is narrower than the termination check.
+  exclude all recursion through bodies, which is narrower than the
+  termination check where that admits structural recursion.
+- [ ] `types.program.nonrecursive` and `verification.program.defined`
+  read the calls in bodies only, and the static call order also reads
+  the functions that a condition mentions. A table-defined program may
+  so have a recursive group through a condition (`f` with the body `0`
+  and `expect g() = 0`, `g` with the body `f()`).
+  `statics.property.tables` and `verification.soundness` therefore
+  carry acyclicity of the static call order as a condition of their
+  own. The table definition should check it, with the compiler's
+  `thir.validation.nonrecursive`; neither does yet.
 - [ ] Match coverage is part of definedness in the static semantics; the
   compiler's check of it is not yet tied to that rule.
 - [ ] `verification.program.defined` asks for distinct arms and coverage
