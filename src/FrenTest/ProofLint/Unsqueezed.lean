@@ -150,8 +150,8 @@ private def squeezed (stx : Syntax) : String :=
 
 /-- A name for a declaration that does not depend on where it stands: the
 name it declares; else, for an unnamed declaration (`example`, `instance`),
-its kind, `@` and a hash of its signature's text, which tells the unnamed
-declarations of a file apart; else the first identifier after the keyword of
+its kind, `@` and a hash of its signature's text, which tells unnamed
+declarations of different signatures apart; else the first identifier after the keyword of
 another command, such as `impl` and `interp`; else the command's kind.
 `open ... in` and the like are looked through. -/
 private partial def label (stx : Syntax) : String :=
@@ -170,18 +170,54 @@ private partial def label (stx : Syntax) : String :=
         | none => toString (inner.getKind.components.getLast?.getD `command)
   name.replace " " "_"
 
+/-- Whether a command is a declaration without a name. -/
+private def unnamed (stx : Syntax) : Bool :=
+  match stx.find? (·.isOfKind ``Parser.Command.declaration) with
+  | some inner => (inner.find? (·.isOfKind ``Parser.Command.declId)).isNone
+  | none => false
+
 /-- The unsqueezed `simp` and `grind` calls of a file's commands, each with
-its identity in the file: the label of its declaration, `: ` and the call's
-squeezed source text, so that the identity changes with neither the call's
-position nor its layout, and a call that replaces another has another
-identity. Only calls of the same text under the same label are numbered: the
-second and later ones end in ` #n`. -/
+its identity in the file: the qualified label of its declaration, `: ` and
+the call's squeezed source text, so that the identity changes with neither
+the call's position nor its layout, and a call that replaces another has
+another identity.
+
+The label is qualified by the names of the namespaces and named sections
+that enclose the declaration, outermost first, so declarations of one name
+in two of them differ. An unnamed declaration's label ends in `#n` when it
+is the n-th unnamed one of its label, signature included, in its scope in
+the file, from the second. Calls of the same text under the same label are
+numbered alike: the second and later ones end in ` #n`.
+
+What the identities cannot tell apart: two unnamed declarations of the same
+kind, signature and scope are known only by their order, so exchanging them
+or removing the first renumbers the calls of the others; so are two calls
+of the same text in one declaration. An anonymous `section` adds nothing to
+a label. -/
 def unsqueezed (commands : Array Syntax) : Array (String × Syntax) := Id.run do
   let mut found : Array (String × Syntax) := #[]
   let mut keys : Array String := #[]
+  -- The enclosing namespaces and sections; an anonymous section is "".
+  let mut scopes : Array String := #[]
+  let mut nameless : Array String := #[]
   for piece in commands.flatMap pieces do
+    let kind := piece.getKind
+    let named := (piece.getArgs.back?.bind (·.find? (·.isIdent))).map (·.getId.components.map toString)
+    if kind == ``Parser.Command.namespace || kind == ``Parser.Command.section then
+      scopes := scopes ++ (named.getD [""]).toArray
+      continue
+    if kind == ``Parser.Command.end then
+      scopes := scopes.extract 0 (scopes.size - max 1 ((named.getD []).length))
+      continue
+    let own := label piece
+    let mut name := if own.startsWith "_root_." then own.replace "_root_." ""
+      else ".".intercalate ((scopes.filter (· != "")).toList ++ [own])
+    if unnamed piece then
+      nameless := nameless.push name
+      let nth := (nameless.filter (· == name)).size
+      if nth > 1 then name := s!"{name}#{nth}"
     for stx in visit false piece #[] do
-      let key := s!"{label piece}: {squeezed stx}"
+      let key := s!"{name}: {squeezed stx}"
       keys := keys.push key
       let nth := (keys.filter (· == key)).size
       found := found.push (if nth == 1 then key else s!"{key} #{nth}", stx)

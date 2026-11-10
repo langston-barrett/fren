@@ -14,9 +14,12 @@ Mathlib.
 - simp with the whole default simp set fails on its left-hand side (for
   example because the lemma loops);
 - the default simp set without the lemma rewrites its left-hand side, so
-  another lemma competes with it whichever simp tries first: either simp then
-  also reaches the right-hand side (the lemma is redundant) or it reaches
-  another term (the left-hand side is not in simp normal form);
+  another lemma competes with it whichever simp tries first: it then reaches
+  another term than the right-hand side does (the left-hand side is not in
+  simp normal form);
+- the default simp set without the lemma brings its two sides to one term by
+  rewriting either of them, so the lemma is redundant: this holds too when
+  only the right-hand side changes, to the left-hand side;
 - an unconditional lemma leaves its own left-hand side unchanged;
 - its two sides are definitionally equal with reducible transparency, so
   rewriting with it changes nothing that simp can tell apart.
@@ -40,8 +43,11 @@ Mathlib.
 
 Each finding has a kind (`redundant`, `cycle`, `step-limit`, `depth-limit`
 and so on), and
-its identity is the lemma and the kind, with `@n` for the n-th rewrite of a
-lemma that states several, from the second on.
+its identity is the lemma and the kind. For a lemma that states several
+rewrites it ends in `@` and a hash of the printed left-hand side of the
+finding's rewrite, so replacing one rewrite by another changes it. Two
+rewrites of one lemma with the same printed left-hand side are told apart
+only by their order.
 
 What `simpLoop` cannot see: a loop that starts only from a term that is no
 linted lemma's left-hand side in its general form and that the cycle search's
@@ -80,9 +86,16 @@ structure Finding where
   decl : Name
   kind : String
   message : String
+  /-- For a lemma that states several rewrites, the left-hand side of the
+  finding's rewrite as text, and ` #n` after the n-th of the same text. -/
+  side : String := ""
 
-/-- What the allowlist names a finding by: the lemma and the finding's kind. -/
-def Finding.identity (finding : Finding) : String := s!"{finding.decl}:{finding.kind}"
+/-- What the allowlist names a finding by: the lemma and the finding's kind,
+and for a lemma of several rewrites `@` and a hash of the rewrite's side. -/
+def Finding.identity (finding : Finding) : String :=
+  let side := if finding.side.isEmpty then "" else
+    s!"@{String.ofList (Nat.toDigits 16 ((hash finding.side).toNat % 2 ^ 32))}"
+  s!"{finding.decl}:{finding.kind}{side}"
 
 /-- The rewrites `lhs → rhs` that simp reads from a lemma's conclusion. -/
 private partial def sides (e : Expr) : MetaM (Array (Expr × Expr)) := do
@@ -115,8 +128,8 @@ private def same (a b : Expr) : MetaM Bool :=
 
 private def show_ (e : Expr) : MetaM String := return toString (← ppExpr e)
 
-private def usedNames (stats : Simp.Stats) : String :=
-  ", ".intercalate (stats.usedTheorems.toArray.toList.map (toString <| privateToUserName ·.key))
+private def usedNames (stats : Array Simp.Stats) : String :=
+  ", ".intercalate (stats.flatMap (·.usedTheorems.toArray.map (toString <| privateToUserName ·.key))).toList.eraseDups
 
 /-- The `simpNF` reasons for one rewrite of `decl`, each with its kind. -/
 private def normalForm (decl : Name) (xs : Array Expr) (lhs rhs : Expr) : MetaM (Array (String × String)) := do
@@ -131,30 +144,37 @@ private def normalForm (decl : Name) (xs : Array Expr) (lhs rhs : Expr) : MetaM 
       (simpTheorems := #[if whole then theorems else theorems.eraseCore (.decl decl)])
     tryCatchRuntimeEx (do return .ok (← withCurrHeartbeats <| simp e ctx simprocs)) fun error => do
       return .error s!"simp fails on the {side}-hand side {← show_ e}: {← error.toMessageData.toString}"
-  let (whole, _) ← match ← attempt true "left" lhs with
-    | .ok result => pure result
-    | .error reason => return found.push ("simp-fails", reason)
+  -- A failure here does not end the checks: a lemma that another lemma undoes
+  -- makes simp fail, and only the runs without it show that it is redundant.
+  let whole ← attempt true "left" lhs
+  if let .error reason := whole then found := found.push ("simp-fails", reason)
+  let failed := whole matches .error _
   -- Without the lemma, so that it cannot win against a lemma that competes
   -- with it for its own left-hand side.
   let (left, stats) ← match ← attempt false "left" lhs with
     | .ok result => pure result
-    | .error reason => return found.push ("simp-fails", reason)
-  let (right, _) ← match ← attempt false "right" rhs with
+    | .error reason => return if failed then found else found.push ("simp-fails", reason)
+  let (right, rightStats) ← match ← attempt false "right" rhs with
     | .ok result => pure result
-    | .error reason => return found.push ("simp-fails", reason)
+    | .error reason => return if failed then found else found.push ("simp-fails", reason)
   if ← same left.expr right.expr then
-    -- An unchanged left-hand side means the sides agree by unfolding alone,
-    -- which the check above reports when the unfolding is reducible.
-    if left.proof?.isSome || left.expr != lhs then
-      found := found.push <| .mk "redundant" s!"simp proves this without the lemma, using {usedNames stats}"
+    -- Simp proves the lemma when it changes either side: the left-hand side
+    -- may stay as it is while the right-hand side simplifies to it. With
+    -- both unchanged the sides agree by unfolding alone, which the check
+    -- above reports when the unfolding is reducible.
+    if left.proof?.isSome || left.expr != lhs || right.proof?.isSome || right.expr != rhs then
+      found := found.push <| .mk "redundant" s!"simp proves this without the lemma, using {usedNames #[stats, rightStats]}"
   else if !(← same left.expr lhs) then
-    found := found.push <| .mk "lhs-not-normal" s!"without the lemma, the left-hand side {← show_ lhs} simplifies to {← show_ left.expr} using {usedNames stats}, so the lemma does not fire as written"
+    found := found.push <| .mk "lhs-not-normal" s!"without the lemma, the left-hand side {← show_ lhs} simplifies to {← show_ left.expr} using {usedNames #[stats]}, so the lemma does not fire as written"
   else
     let conditional ← xs.anyM fun x => do
       return (← isProp (← inferType x)) && !(occurring #[x] lhs).contains x
     -- Simp applies a lemma that only renames variables when the result is
     -- smaller in its term order, which a general left-hand side need not be.
-    if !conditional && lhs == whole.expr && shape xs lhs != shape xs rhs then
+    let unchanged := match whole with
+      | .ok (result, _) => lhs == result.expr
+      | .error _ => false
+    if !conditional && unchanged && shape xs lhs != shape xs rhs then
       found := found.push <| .mk "never-applies" s!"simp does not rewrite the left-hand side {← show_ lhs} with this lemma, so it never applies"
   return found
 
@@ -273,13 +293,17 @@ private def lint (modules : Array Name) : MetaM (Array Finding) := do
       for i in [:rewrites.size] do
         let (lhs, rhs) := rewrites[i]!
         let some rule := own.find? (·.side == i) | continue
-        let nth := if i == 0 then "" else s!"@{i + 1}"
+        -- Named by its content, not its place among the lemma's rewrites.
+        let text ← show_ lhs
+        let earlier ← (rewrites.extract 0 i).filterM fun (other, _) => return (← show_ other) == text
+        let side := if rewrites.size == 1 then "" else
+          text ++ (if earlier.isEmpty then "" else s!" #{earlier.size + 1}")
         let reasons ← tryCatchRuntimeEx (normalForm decl xs lhs rhs) fun error => do
           return #[("linter-failed", s!"the linter failed: {← error.toMessageData.toString}")]
         found := found ++ reasons.map fun (kind, message) =>
-          { linter := "simpNF", decl := name, kind := kind ++ nth, message }
+          { linter := "simpNF", decl := name, kind, message, side }
         let loop (kind message : String) : Finding :=
-          { linter := "simpLoop", decl := name, kind := kind ++ nth, message }
+          { linter := "simpLoop", decl := name, kind, message, side }
         if rule.permutes then
           found := found.push <| loop "renaming" s!"the right-hand side {← show_ rhs} is the left-hand side {← show_ lhs} with its variables renamed"
         else match ← cycle rules rule rhs with

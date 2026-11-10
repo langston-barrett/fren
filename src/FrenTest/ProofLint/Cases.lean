@@ -70,17 +70,23 @@ public section
 @[simp] theorem twice_zero_add (n : Nat) : twice (0 + n) = n + n := by unfold twice; omega
 end
 
+-- Two rewrites with a finding of the same kind each: their identities differ.
+@[simp] theorem same_pair : same (same 1) = 1 ∧ same (same 2) = 2 := ⟨rfl, rfl⟩
+
 /-! ## Simp lemmas that `simpLoop` reports -/
 
--- Two rewrites, of which only the second loops: its findings end in `@2`,
--- and the first rewrite has none.
+-- Two rewrites, of which only the second loops: its findings name its
+-- left-hand side after `@`, and the first rewrite has none.
 @[simp] theorem turn_both (n : Nat) : turn n 0 = n ∧ turn n 1 = turn (turn n 1) 1 := ⟨rfl, rfl⟩
 -- Simp runs out of steps here before it runs out of depth.
 @[simp] theorem grow_eq (n : Nat) : grow n = grow (n + 1 + 1 + 1 + 1) := rfl
 
 -- The right-hand side is the left-hand side with `a` and `b` exchanged.
 @[simp] theorem mix_comm (a b : Nat) : mix a b = mix b a := Nat.add_comm a b
--- Each undoes the other.
+-- Each undoes the other, so each is redundant too: without `up_eq` simp
+-- leaves `up n` alone and rewrites the right-hand side `next n` to it. Only
+-- the right-hand side changes, and every such lemma loops with the one that
+-- changes it, so `simpNF` must check past simp's failure on the whole set.
 @[simp] theorem up_eq (n : Nat) : up n = next n := rfl
 @[simp] theorem next_eq (m : Nat) : next m = up m := rfl
 -- Growing: the right-hand side contains an instance of the left-hand side.

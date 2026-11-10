@@ -1,130 +1,143 @@
 # Findings of the proof linters (src/FrenTest/ProofLint.lean) that predate them.
 # Each line is `linter identity` and permits one finding; the identity is the
-# rest of the line. For simpNF and simpLoop it is `lemma:kind`. For unsqueezed
-# it is `file:declaration: tactic`: the tactic's source text with each run of
-# white space as one space, and ` #n` after the n-th call of the same text in
-# the declaration, from the second. An unnamed declaration is `example@hash`
-# or `instance@hash`, by a hash of its signature. No identity holds a line
-# number, so moving a proof changes nothing here.
+# rest of the line. For simpNF and simpLoop it is `lemma:kind`, and for a
+# lemma of several rewrites `@` and a hash of the rewrite's left-hand side.
+# For unsqueezed it is `file:declaration: tactic`: the declaration's name
+# with its namespaces and named sections, then the tactic's source text with
+# each run of white space as one space, and ` #n` after the n-th call of the
+# same text in the declaration, from the second. An unnamed declaration is
+# `example@hash` or `instance@hash`, by a hash of its signature, with `#n`
+# for the n-th of the same signature in its scope, from the second. No
+# identity holds a line number, so moving a proof changes nothing here.
 # The job prints each finding with its identity. It fails on a finding that
 # is not listed and on an entry whose finding is gone, so this list only
 # shrinks. Fix a new finding instead of listing it.
-unsqueezed src/FrenBase/Identity.lean:rebuild: simp [parent] at hp
-unsqueezed src/FrenBase/Identity.lean:rebuild: simp [component] at hc
-unsqueezed src/FrenBase/Identity.lean:rebuild: simp [parent] at hp #2
-unsqueezed src/FrenBase/Identity.lean:rebuild: simp [component] at hc #2
-unsqueezed src/FrenExpr/Core.lean:map_congr: simp_all [map, children]
-unsqueezed src/FrenAstToHir/Resolve.lean:syntax_preserved: simp [hc, Except.map] at h
-unsqueezed src/FrenOirToSmt/Confirm.lean:strict_div_zero: simp [strictWalk, strictStep, hl, hr, Bind.bind, Except.bind, FrenEval.binary, Except.mapError, ofExcept, Except.isOk, Except.toBool]
-unsqueezed src/FrenOirToSmt/Confirm.lean:strict_mod_zero: simp [strictWalk, strictStep, hl, hr, Bind.bind, Except.bind, FrenEval.binary, Except.mapError, ofExcept, Except.isOk, Except.toBool]
-unsqueezed src/Spec/Compiler/AstAndParsing.lean:space_case: simp [fren_spec, FrenParse.spaceByte_iff]
-unsqueezed src/Spec/Compiler/AstAndParsing.lean:continuation_case: simp [fren_spec, FrenParse.continuationByte_iff]
-unsqueezed src/Spec/Compiler/Desugaring.lean:desugar_sound: simp [ExprF.children]
-unsqueezed src/Spec/Compiler/Mir.lean:singleton_false_value: simp at member
-unsqueezed src/Spec/Compiler/Oir.lean:walk_extracts: simp [FrenLirToOir.walk] at h
-unsqueezed src/Spec/Compiler/Oir.lean:walk_extracts: simp [FrenLirToOir.walk] at h #2
-unsqueezed src/Spec/Compiler/Oir.lean:walk_extracts: simp [FrenLirToOir.walk, ha, hb, Bind.bind, Except.bind] at h
-unsqueezed src/Spec/Compiler/Oir.lean:walk_extracts: simp [FrenLirToOir.walk, ha, hb, Bind.bind, Except.bind] at h #2
-unsqueezed src/Spec/Compiler/Oir.lean:empty_witness_constructs: dsimp [out, EmptyWitness, EmptyRequest, EmptyQuestion, SearchFor, ParametersFor, DefinitionEdges, QuestionEdges]
-unsqueezed src/Spec/Compiler/Thir.lean:binary: simp [fren_spec, primitiveBinary, primitiveType, primitiveKind, FrenExpr.binary, FrenExpr.binaryOperand, FrenExpr.binaryResult, FrenExpr.ValueType.compatible, beq_iff_eq]
-unsqueezed src/Spec/Compiler/Thir.lean:arguments_rejected: simp [length] at hl
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [synth_core, provided, placed_core?, judge_core, judge_unary, outcome_expect, unary_operand, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [rule?, unary_rule?, unary_type?, fren_spec]
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [synth_core, provided, placed_core?, judge_core, judge_binary, outcome_expect, binary_operand, binary_output, integer_binary?, comparison?, boolean_binary?, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?, boolean_binary?, fren_spec]
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [synth_core, provided, placed_core?, judge_core, judge_constructor, outcome_type, hE, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [rule?, constructor_rule?, hE, fren_spec]
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [placed_core?, fren_spec] at hp
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [judge_call, hE, hlen, hj, outcome_type] at h'
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [placed_core?, fren_spec] at hp #2
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [outcome_type] at h'
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [synth_core, provided, placed_core?, judge_core, judge_let, outcome_expect, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [rule?, let_rule?, let_annotated_rule?, fren_spec]
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [synth_core, provided, placed_core?, judge_core, judge_local, judge_if, outcome_expect, outcome_local, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound: simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?, fren_spec]
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [rule?, unary_rule?, unary_type?, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [synth_core, provided, placed_core?, judge_core, judge_unary, outcome_expect, unary_operand, fren_spec]
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?, boolean_binary?, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [synth_core, provided, placed_core?, judge_core, judge_binary, outcome_expect, binary_operand, binary_output, integer_binary?, comparison?, boolean_binary?, fren_spec]
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [rule?, constructor_rule?, hE, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [synth_core, provided, placed_core?, judge_core, judge_constructor, outcome_type, hE, fren_spec]
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [rule?, call_rule?, hE, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [rule?, match_rule?, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [synth_core, provided, placed_core?, judge_core, judge_let, outcome_expect, fren_spec]
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?, fren_spec] at h
-unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete: simp [synth_core, provided, placed_core?, judge_core, judge_local, judge_if, outcome_expect, outcome_local, fren_spec]
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_valid: simp [typing_at, hl, synth_layer, provided, placed?, outcome_type, fren_spec] at h2
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_extend: simp [desugar_rows] at hd
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_extend: simp [hd', core_row] at hd
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_extend: simp [rows_extend?, ih c hd' h.2]
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_extend: simp [hd', hl, core_row] at hd
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_extend: simp [rows_extend?, ih c hd' h.2] #2
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_length: simp [desugar_rows] at hd
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_length: simp [hd', core_row] at hd
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_length: simp [hd', hl, core_row] at hd
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_root: simp [hd', core_row] at hd
-unsqueezed src/Spec/Compiler/Thir.lean:desugar_root: simp [hd', hl, core_row] at hd
-unsqueezed src/Spec/Compiler/Thir.lean:desugaring_preserves_typing: simp [fren_spec] at hroot
-unsqueezed src/Spec/Compiler/Thir.lean:desugaring_reflects_typing: simp [hd', core_row] at hd
-unsqueezed src/Spec/Compiler/Thir.lean:desugaring_reflects_typing: simp [hd', hl, core_row] at hd
-unsqueezed src/Spec/Compiler/Thir.lean:desugaring_reflects_typing: simp [hd'] at hp2
-unsqueezed src/Spec/Compiler/Thir.lean:hir_valid_faithful: simp [ht, synth_layer, provided, placed?, outcome_type, fren_spec] at h2
-unsqueezed src/Spec/Compiler/Thir.lean:hir_table_unique: simp at this
-unsqueezed src/Spec/Compiler/Thir.lean:step_binary: simp [← h1, h2, (prodType_compatible ι hι _ _).2, produced, ← prodType_binary_output ι]
-unsqueezed src/Spec/Compiler/Thir.lean:step_binary: simp [← h1, h2', hn, produced, hsr]
-unsqueezed src/Spec/Compiler/Thir.lean:step_binary: simp [h1, produced, hsl]
-unsqueezed src/Spec/Compiler/Thir.lean:step_if: simp [h1, h2, produced]
-unsqueezed src/Spec/Compiler/Thir.lean:step_if: simp [h1, h2, produced, hsn]
-unsqueezed src/Spec/Compiler/Thir.lean:step_if: simp [h1, produced, hsc]
-unsqueezed src/Spec/Compiler/Thir.lean:step_let: simp [h1, h2, produced, ← hte]
-unsqueezed src/Spec/Compiler/Thir.lean:step_let: simp [h1, h2, produced, hs]
-unsqueezed src/Spec/Compiler/Thir.lean:step_let: simp [h1, produced, ← hte]
+unsqueezed src/FrenBase/Identity.lean:FrenBase.ItemId.rebuild: simp [parent] at hp
+unsqueezed src/FrenBase/Identity.lean:FrenBase.ItemId.rebuild: simp [component] at hc
+unsqueezed src/FrenBase/Identity.lean:FrenBase.ItemId.rebuild: simp [parent] at hp #2
+unsqueezed src/FrenBase/Identity.lean:FrenBase.ItemId.rebuild: simp [component] at hc #2
+unsqueezed src/FrenExpr/Core.lean:FrenExpr.ExprF.map_congr: simp_all [map, children]
+unsqueezed src/FrenAstToHir/Resolve.lean:FrenAstToHir.syntax_preserved: simp [hc, Except.map] at h
+unsqueezed src/FrenOirToSmt/Confirm.lean:FrenOirToSmt.strict_div_zero: simp [strictWalk, strictStep, hl, hr, Bind.bind, Except.bind, FrenEval.binary, Except.mapError, ofExcept, Except.isOk, Except.toBool]
+unsqueezed src/FrenOirToSmt/Confirm.lean:FrenOirToSmt.strict_mod_zero: simp [strictWalk, strictStep, hl, hr, Bind.bind, Except.bind, FrenEval.binary, Except.mapError, ofExcept, Except.isOk, Except.toBool]
+unsqueezed src/Spec/Compiler/AstAndParsing.lean:Spec.Compiler.AstAndParsing.space_case: simp [fren_spec, FrenParse.spaceByte_iff]
+unsqueezed src/Spec/Compiler/AstAndParsing.lean:Spec.Compiler.AstAndParsing.continuation_case: simp [fren_spec, FrenParse.continuationByte_iff]
+unsqueezed src/Spec/Compiler/Desugaring.lean:Spec.Compiler.Desugaring.Pass.desugar_sound: simp [ExprF.children]
+unsqueezed src/Spec/Compiler/Mir.lean:Spec.Compiler.Mir.singleton_false_value: simp at member
+unsqueezed src/Spec/Compiler/Oir.lean:Spec.Compiler.Oir.walk_extracts: simp [FrenLirToOir.walk] at h
+unsqueezed src/Spec/Compiler/Oir.lean:Spec.Compiler.Oir.walk_extracts: simp [FrenLirToOir.walk] at h #2
+unsqueezed src/Spec/Compiler/Oir.lean:Spec.Compiler.Oir.walk_extracts: simp [FrenLirToOir.walk, ha, hb, Bind.bind, Except.bind] at h
+unsqueezed src/Spec/Compiler/Oir.lean:Spec.Compiler.Oir.walk_extracts: simp [FrenLirToOir.walk, ha, hb, Bind.bind, Except.bind] at h #2
+unsqueezed src/Spec/Compiler/Oir.lean:Spec.Compiler.Oir.empty_witness_constructs: dsimp [out, EmptyWitness, EmptyRequest, EmptyQuestion, SearchFor, ParametersFor, DefinitionEdges, QuestionEdges]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.binary: simp [fren_spec, primitiveBinary, primitiveType, primitiveKind, FrenExpr.binary, FrenExpr.binaryOperand, FrenExpr.binaryResult, FrenExpr.ValueType.compatible, beq_iff_eq]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.arguments_rejected: simp [length] at hl
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [synth_core, provided, placed_core?, judge_core, judge_unary, outcome_expect, unary_operand, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [rule?, unary_rule?, unary_type?, fren_spec]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [synth_core, provided, placed_core?, judge_core, judge_binary, outcome_expect, binary_operand, binary_output, integer_binary?, comparison?, boolean_binary?, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?, boolean_binary?, fren_spec]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [synth_core, provided, placed_core?, judge_core, judge_constructor, outcome_type, hE, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [rule?, constructor_rule?, hE, fren_spec]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [placed_core?, fren_spec] at hp
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [judge_call, hE, hlen, hj, outcome_type] at h'
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [placed_core?, fren_spec] at hp #2
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [outcome_type] at h'
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [synth_core, provided, placed_core?, judge_core, judge_let, outcome_expect, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [rule?, let_rule?, let_annotated_rule?, fren_spec]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [synth_core, provided, placed_core?, judge_core, judge_local, judge_if, outcome_expect, outcome_local, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_sound: simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?, fren_spec]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [rule?, unary_rule?, unary_type?, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [synth_core, provided, placed_core?, judge_core, judge_unary, outcome_expect, unary_operand, fren_spec]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?, boolean_binary?, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [synth_core, provided, placed_core?, judge_core, judge_binary, outcome_expect, binary_operand, binary_output, integer_binary?, comparison?, boolean_binary?, fren_spec]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [rule?, constructor_rule?, hE, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [synth_core, provided, placed_core?, judge_core, judge_constructor, outcome_type, hE, fren_spec]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [rule?, call_rule?, hE, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [rule?, match_rule?, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [synth_core, provided, placed_core?, judge_core, judge_let, outcome_expect, fren_spec]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?, fren_spec] at h
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.synth_core_complete: simp [synth_core, provided, placed_core?, judge_core, judge_local, judge_if, outcome_expect, outcome_local, fren_spec]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_valid: simp [typing_at, hl, synth_layer, provided, placed?, outcome_type, fren_spec] at h2
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_extend: simp [desugar_rows] at hd
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_extend: simp [hd', core_row] at hd
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_extend: simp [rows_extend?, ih c hd' h.2]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_extend: simp [hd', hl, core_row] at hd
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_extend: simp [rows_extend?, ih c hd' h.2] #2
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_length: simp [desugar_rows] at hd
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_length: simp [hd', core_row] at hd
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_length: simp [hd', hl, core_row] at hd
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_root: simp [hd', core_row] at hd
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugar_root: simp [hd', hl, core_row] at hd
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugaring_preserves_typing: simp [fren_spec] at hroot
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugaring_reflects_typing: simp [hd', core_row] at hd
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugaring_reflects_typing: simp [hd', hl, core_row] at hd
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.desugaring_reflects_typing: simp [hd'] at hp2
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.hir_valid_faithful: simp [ht, synth_layer, provided, placed?, outcome_type, fren_spec] at h2
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.hir_table_unique: simp at this
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.step_binary: simp [← h1, h2, (prodType_compatible ι hι _ _).2, produced, ← prodType_binary_output ι]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.step_binary: simp [← h1, h2', hn, produced, hsr]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.step_binary: simp [h1, produced, hsl]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.step_if: simp [h1, h2, produced]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.step_if: simp [h1, h2, produced, hsn]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.step_if: simp [h1, produced, hsc]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.step_let: simp [h1, h2, produced, ← hte]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.step_let: simp [h1, h2, produced, hs]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.Algorithmic.step_let: simp [h1, produced, ← hte]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.CoverageCorrespondence.uncovered_toList: simp [h, toList, List.filter_cons]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.CoverageCorrespondence.uncovered_toList: simp [h, List.filter_cons]
+unsqueezed src/Spec/Compiler/Thir.lean:Spec.Compiler.Thir.CoverageCorrespondence.production_missing_eq: simp [FrenHirToThir.coverage]
 unsqueezed src/Spec/Compiler/Thir.lean:desugaring_keeps_rows_proof: simp
-unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:desugar_rows_inv: simp [hd', core_row] at hd
-unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:desugar_rows_inv: simp [hd', hl, core_row] at hd
-unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:desugar_typing_at: simp [desugar_rows] at hd
-unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:hir_annotate_iff: simp [ha] at h
-unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:hir_annotate_iff: simp [ht] at h
-unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:synthesis_synth: simp [fren_spec] at hroot
-unsqueezed src/Spec/Compiler/Walking.lean:resolved_success: dsimp at hi he
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:Spec.Compiler.Thir.desugar_rows_inv: simp [hd', core_row] at hd
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:Spec.Compiler.Thir.desugar_rows_inv: simp [hd', hl, core_row] at hd
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:Spec.Compiler.Thir.desugar_typing_at: simp [desugar_rows] at hd
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:Spec.Compiler.Thir.hir_annotate_iff: simp [ha] at h
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:Spec.Compiler.Thir.hir_annotate_iff: simp [ht] at h
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:Spec.Compiler.Thir.synthesis_synth: simp [fren_spec] at hroot
+unsqueezed src/Spec/Compiler/Walking.lean:Spec.Compiler.Walking.resolved_success: dsimp at hi he
 unsqueezed src/Spec/Language/DynamicSemantics.lean:values_agree_proof: simp [fren_spec, unary_value, unary_meaning?]
 unsqueezed src/Spec/Language/DynamicSemantics.lean:values_agree_proof: simp [fren_spec, binary_value, integer_value, boolean_value, binary_meaning?, integer_meaning?, boolean_meaning?]
-unsqueezed src/Spec/Language/NamesAndScope.lean:local_bound: simp at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:local_nearest: simp at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:insert_name_length: simp [length] at h1
-unsqueezed src/Spec/Language/NamesAndScope.lean:local_weakens: simp [length] at h1
-unsqueezed src/Spec/Language/NamesAndScope.lean:nearest_converse: simp [found] at ih
-unsqueezed src/Spec/Language/NamesAndScope.lean:nearest_converse: simp [found] at ih #2
-unsqueezed src/Spec/Language/NamesAndScope.lean:nearest_converse: simp [hi]
-unsqueezed src/Spec/Language/NamesAndScope.lean:resolve_params_length: simp [resolve_params] at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:resolve_params_length: simp at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:head_local: simp at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:head_local: simp [item] at eq
-unsqueezed src/Spec/Language/NamesAndScope.lean:layer_local: simp at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:rows_aligned: simp [resolve_rows] at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:rows_aligned: simp at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:rows_scoped: simp at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:rows_scoped: simp [at_last] at hf
-unsqueezed src/Spec/Language/NamesAndScope.lean:rows_scoped: simp at hr
-unsqueezed src/Spec/Language/NamesAndScope.lean:rows_scoped: simp [not_last] at hf
-unsqueezed src/Spec/Language/NamesAndScope.lean:enum_ok_distinct: simp [decl_names_ok?, fren_spec] at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:nodup_types: simp [fren_spec] at h2
-unsqueezed src/Spec/Language/NamesAndScope.lean:binding_ok_function: simp [binding_ok?, fren_spec, hp]
-unsqueezed src/Spec/Language/NamesAndScope.lean:binding_ok_function: simp [fren_spec] at hr
-unsqueezed src/Spec/Language/NamesAndScope.lean:resolve_arms_weakens: simp [arms_mention?] at ne
-unsqueezed src/Spec/Language/NamesAndScope.lean:layer_weakens: simp [mentions?, fren_spec] at ne
-unsqueezed src/Spec/Language/NamesAndScope.lean:layer_weakens: simp [mentions?, fren_spec] at ne #2
-unsqueezed src/Spec/Language/NamesAndScope.lean:layer_weakens: simp [mentions?, fren_spec] at ne #3
-unsqueezed src/Spec/Language/NamesAndScope.lean:value_form_constructor: simp at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:callee_item_function: simp at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:pattern_item_constructor: simp at h
-unsqueezed src/Spec/Language/NamesAndScope.lean:layer_callee: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.local_bound: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.local_nearest: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.insert_name_length: simp [length] at h1
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.local_weakens: simp [length] at h1
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.nearest_converse: simp [found] at ih
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.nearest_converse: simp [found] at ih #2
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.nearest_converse: simp [hi]
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.resolve_params_length: simp [resolve_params] at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.resolve_params_length: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.head_local: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.head_local: simp [item] at eq
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.layer_local: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.rows_aligned: simp [resolve_rows] at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.rows_aligned: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.rows_scoped: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.rows_scoped: simp [at_last] at hf
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.rows_scoped: simp at hr
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.rows_scoped: simp [not_last] at hf
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.enum_ok_distinct: simp [decl_names_ok?, fren_spec] at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.nodup_types: simp [fren_spec] at h2
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.binding_ok_function: simp [binding_ok?, fren_spec, hp]
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.binding_ok_function: simp [fren_spec] at hr
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.resolve_arms_weakens: simp [arms_mention?] at ne
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.layer_weakens: simp [mentions?, fren_spec] at ne
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.layer_weakens: simp [mentions?, fren_spec] at ne #2
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.layer_weakens: simp [mentions?, fren_spec] at ne #3
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.value_form_constructor: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.callee_item_function: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.pattern_item_constructor: simp at h
+unsqueezed src/Spec/Language/NamesAndScope.lean:Spec.Language.NamesAndScope.layer_callee: simp at h
 unsqueezed src/Spec/Language/NamesAndScope.lean:parameters_parallel_proof: simp at h
 unsqueezed src/Spec/Language/NamesAndScope.lean:siblings_proof: simp [children_scoped?, has_scope?, h.2, fren_spec] at c
 unsqueezed src/Spec/Language/NamesAndScope.lean:siblings_proof: simp [children_scoped?, has_scope?, h.2, fren_spec] at c #2
 unsqueezed src/Spec/Language/NamesAndScope.lean:let_handoff_proof: simp at h
 unsqueezed src/Spec/Language/NamesAndScope.lean:parameter_handoff_proof: simp at h2
+unsqueezed src/Spec/Language/Patterns.lean:Spec.Language.Patterns.select_sound: simp [eq]
+unsqueezed src/Spec/Language/Patterns.lean:Spec.Language.Patterns.select_complete: simp [ne] at h
+unsqueezed src/Spec/Language/Patterns.lean:Spec.Language.Patterns.occurrences_pos_iff: simp [h]
+unsqueezed src/Spec/Language/Patterns.lean:Spec.Language.Patterns.occurrences_pos_iff: simp [h] #2
+unsqueezed src/Spec/Language/Patterns.lean:Spec.Language.Patterns.selection_laws_proof: simp [hf]
+unsqueezed src/Spec/Language/Patterns.lean:Spec.Language.Patterns.first_index_last: simp [first_index, hs]
+unsqueezed src/Spec/Language/Patterns.lean:Spec.Language.Patterns.ctor_member: simp [he, fren_spec] at h2 ⊢
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:strictness_proof: simp [fren_spec, operator_condition, partial?, condition_holds?]
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:guards_proof: simp [fren_spec, condition_holds?]
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:divisor_proof: simp [fren_spec, goal_holds?, integer_domain?, partial?]
@@ -133,92 +146,92 @@ unsqueezed src/Spec/Language/PropertiesAndChecks.lean:hypotheses_proof: simp [sa
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:hypotheses_proof: simp [fact_refuted?, fren_spec]
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:cut_proof: simp [satisfied?, some_refuted?, fact_refuted?, goal_holds?, fren_spec]
 unsqueezed src/Spec/Language/PropertiesAndChecks.lean:member_scope_proof: simp [some_refuted?, fren_spec]
-unsqueezed src/Spec/Language/Types.lean:rule_unique: simp [rule?, unary_rule?, unary_type?, fren_spec] at ha hb
-unsqueezed src/Spec/Language/Types.lean:rule_unique: simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?, boolean_binary?, fren_spec] at ha hb
-unsqueezed src/Spec/Language/Types.lean:rule_unique: simp [rule?, constructor_rule?, h, fren_spec] at ha hb
-unsqueezed src/Spec/Language/Types.lean:rule_unique: simp [rule?, call_rule?, h, fren_spec] at ha hb
-unsqueezed src/Spec/Language/Types.lean:rule_unique: simp [rule?, match_rule?, fren_spec] at ha hb
-unsqueezed src/Spec/Language/Types.lean:rule_unique: simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at ha hb
-unsqueezed src/Spec/Language/Types.lean:rule_unique: simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?, fren_spec] at ha hb
-unsqueezed src/Spec/Language/Types.lean:table_scoped: simp [rows_valid?, rule?, local_rule?, fren_spec] at valid
-unsqueezed src/Spec/Language/Types.lean:table_scoped: simp [rows_valid?, fren_spec] at valid
-unsqueezed src/Spec/Language/Types.lean:insert_length: simp [length] at h
-unsqueezed src/Spec/Language/Types.lean:lookup_shift: simp [length] at h
-unsqueezed src/Spec/Language/Types.lean:lookup_shift: simp [insert_type, lookup, length]
-unsqueezed src/Spec/Language/Types.lean:lookup_shift: simp [shift]
-unsqueezed src/Spec/Language/Types.lean:lookup_shift: simp [insert_type, lookup, length] #2
-unsqueezed src/Spec/Language/Types.lean:lookup_shift: simp [shift] #2
-unsqueezed src/Spec/Language/Types.lean:lookup_shift: simp [lookup, length]
-unsqueezed src/Spec/Language/Types.lean:lookup_shift: simp [insert_type]
-unsqueezed src/Spec/Language/Types.lean:lookup_shift: simp [shift] #3
-unsqueezed src/Spec/Language/Types.lean:entry_kind_ok: simp [fren_spec] at h2
-unsqueezed src/Spec/Language/Types.lean:entry_kind_ok: simp [ty_ok?, fren_spec] at h3 ⊢
-unsqueezed src/Spec/Language/Types.lean:layer_regular: simp [rule?, boolean_rule?] at h
-unsqueezed src/Spec/Language/Types.lean:layer_regular: simp [rule?, integer_rule?] at h
-unsqueezed src/Spec/Language/Types.lean:layer_regular: simp [rule?, local_rule?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:layer_regular: simp [rule?, constructor_rule?, he, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:layer_regular: simp [rule?, unary_rule?, unary_type?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:layer_regular: simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?, boolean_binary?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:layer_regular: simp [rule?, call_rule?, he, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:layer_regular: simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:layer_regular: simp [rule?, if_rule?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:layer_regular: simp [rule?, match_rule?, arm_bodies?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:typing_at_row: simp [hl, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_arguments_ok: simp [annotate_arguments, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_arguments_ok: simp [ha, ht, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_arms_ok: simp [annotate_arms, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_arms_ok: simp [ha, ht, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_children_ok: simp [ha, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_children_ok: simp [hs, ha, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_children_ok: simp [h1, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_children_ok: simp [h1, h2, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_children_ok: simp [h1, h2, fren_spec] at h #2
-unsqueezed src/Spec/Language/Types.lean:annotate_children_ok: simp [h1, h2, h3, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_children_ok: simp [annotate, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:judgment_regular: simp [fren_spec] at hroot
-unsqueezed src/Spec/Language/Types.lean:layer_weakens: simp [rule?, local_rule?, fren_spec] at h ⊢
-unsqueezed src/Spec/Language/Types.lean:layer_weakens: simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at h ⊢
-unsqueezed src/Spec/Language/Types.lean:layer_weakens: simp [rule?, call_rule?, he, fren_spec] at h ⊢
-unsqueezed src/Spec/Language/Types.lean:layer_weakens: simp [rule?, boolean_rule?, integer_rule?, constructor_rule?, unary_rule?, binary_rule?, if_rule?, fren_spec] at h ⊢
-unsqueezed src/Spec/Language/Types.lean:context_ok_insert: simp [length] at hn
-unsqueezed src/Spec/Language/Types.lean:extends_length: simp [extends?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:extends_length: simp [extends?, fren_spec] at h #2
-unsqueezed src/Spec/Language/Types.lean:extends_length: simp [length]
-unsqueezed src/Spec/Language/Types.lean:extends_insert: simp [extends?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:extends_insert: simp [extends?, fren_spec, e] at h
-unsqueezed src/Spec/Language/Types.lean:judgment_weakens: simp [fren_spec] at hroot
-unsqueezed src/Spec/Language/Types.lean:annotate_arguments_iff: simp [annotate_arguments] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_arguments_iff: simp [annotate_arguments]
-unsqueezed src/Spec/Language/Types.lean:annotate_arguments_iff: simp [he, ha] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_arms_iff: simp [annotate_arms] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_arms_iff: simp [annotate_arms]
-unsqueezed src/Spec/Language/Types.lean:annotate_arms_iff: simp [he, ha] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_iff: simp [annotate] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_iff: simp [annotate] at h #2
-unsqueezed src/Spec/Language/Types.lean:annotate_iff: simp [annotate] at h #3
-unsqueezed src/Spec/Language/Types.lean:annotate_iff: simp [annotate] at h #4
-unsqueezed src/Spec/Language/Types.lean:annotate_iff: simp [annotate, hx] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_iff: simp [annotate, hx, hy] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_iff: simp [annotate, hx] at h #2
-unsqueezed src/Spec/Language/Types.lean:annotate_iff: simp [annotate, hx, hy] at h #2
-unsqueezed src/Spec/Language/Types.lean:annotate_iff: simp [annotate, hx, hy, hz] at h
-unsqueezed src/Spec/Language/Types.lean:annotate_iff: simp [annotate, hx, hy] at h #3
-unsqueezed src/Spec/Language/Types.lean:rule_child_ctx: simp [rule?, unary_rule?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:rule_child_ctx: simp [rule?, binary_rule?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:rule_child_ctx: simp [rule?, let_rule?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:rule_child_ctx: simp [rule?, let_annotated_rule?, let_rule?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:rule_child_ctx: simp [rule?, if_rule?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:derivation_typed: simp [fren_spec] at hroot
-unsqueezed src/Spec/Language/Types.lean:layers_paired_zip: simp [layers_paired?, fren_spec] at h
-unsqueezed src/Spec/Language/Types.lean:layers_paired_zip: simp [layers_paired?, fren_spec] at h #2
-unsqueezed src/Spec/Language/Types.lean:layers_paired_zip: simp [layers_paired?, fren_spec] at h #3
-unsqueezed src/Spec/Language/Types.lean:layers_paired_zip: simp [layers_paired?, fren_spec] at h #4
-unsqueezed src/Spec/Language/Types.lean:layers_paired_zip: simp [layers_paired?, fren_spec] at h #5
-unsqueezed src/Spec/Language/Types.lean:layers_paired_zip: simp [layers_paired?, fren_spec] at h #6
-unsqueezed src/Spec/Language/Types.lean:layers_paired_zip: simp [layers_paired?, fren_spec] at h #7
-unsqueezed src/Spec/Language/Types.lean:layers_paired_zip: simp [layers_paired?, fren_spec] at h #8
-unsqueezed src/Spec/Language/Types.lean:layers_paired_zip: simp [layers_paired?, fren_spec] at h #9
-unsqueezed src/Spec/Language/Types.lean:layers_paired_zip: simp [layers_paired?, fren_spec] at h #10
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.rule_unique: simp [rule?, unary_rule?, unary_type?, fren_spec] at ha hb
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.rule_unique: simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?, boolean_binary?, fren_spec] at ha hb
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.rule_unique: simp [rule?, constructor_rule?, h, fren_spec] at ha hb
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.rule_unique: simp [rule?, call_rule?, h, fren_spec] at ha hb
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.rule_unique: simp [rule?, match_rule?, fren_spec] at ha hb
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.rule_unique: simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at ha hb
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.rule_unique: simp [rule?, boolean_rule?, integer_rule?, local_rule?, if_rule?, fren_spec] at ha hb
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.table_scoped: simp [rows_valid?, rule?, local_rule?, fren_spec] at valid
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.table_scoped: simp [rows_valid?, fren_spec] at valid
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.insert_length: simp [length] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.lookup_shift: simp [length] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.lookup_shift: simp [insert_type, lookup, length]
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.lookup_shift: simp [shift]
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.lookup_shift: simp [insert_type, lookup, length] #2
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.lookup_shift: simp [shift] #2
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.lookup_shift: simp [lookup, length]
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.lookup_shift: simp [insert_type]
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.lookup_shift: simp [shift] #3
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.entry_kind_ok: simp [fren_spec] at h2
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.entry_kind_ok: simp [ty_ok?, fren_spec] at h3 ⊢
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_regular: simp [rule?, boolean_rule?] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_regular: simp [rule?, integer_rule?] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_regular: simp [rule?, local_rule?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_regular: simp [rule?, constructor_rule?, he, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_regular: simp [rule?, unary_rule?, unary_type?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_regular: simp [rule?, binary_rule?, binary_type?, integer_binary?, comparison?, boolean_binary?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_regular: simp [rule?, call_rule?, he, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_regular: simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_regular: simp [rule?, if_rule?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_regular: simp [rule?, match_rule?, arm_bodies?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.typing_at_row: simp [hl, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_arguments_ok: simp [annotate_arguments, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_arguments_ok: simp [ha, ht, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_arms_ok: simp [annotate_arms, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_arms_ok: simp [ha, ht, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_children_ok: simp [ha, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_children_ok: simp [hs, ha, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_children_ok: simp [h1, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_children_ok: simp [h1, h2, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_children_ok: simp [h1, h2, fren_spec] at h #2
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_children_ok: simp [h1, h2, h3, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.annotate_children_ok: simp [annotate, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.judgment_regular: simp [fren_spec] at hroot
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_weakens: simp [rule?, local_rule?, fren_spec] at h ⊢
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_weakens: simp [rule?, let_rule?, let_annotated_rule?, fren_spec] at h ⊢
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_weakens: simp [rule?, call_rule?, he, fren_spec] at h ⊢
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.layer_weakens: simp [rule?, boolean_rule?, integer_rule?, constructor_rule?, unary_rule?, binary_rule?, if_rule?, fren_spec] at h ⊢
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.context_ok_insert: simp [length] at hn
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.extends_length: simp [extends?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.extends_length: simp [extends?, fren_spec] at h #2
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.extends_length: simp [length]
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.extends_insert: simp [extends?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.extends_insert: simp [extends?, fren_spec, e] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.judgment_weakens: simp [fren_spec] at hroot
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_arguments_iff: simp [annotate_arguments] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_arguments_iff: simp [annotate_arguments]
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_arguments_iff: simp [he, ha] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_arms_iff: simp [annotate_arms] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_arms_iff: simp [annotate_arms]
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_arms_iff: simp [he, ha] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_iff: simp [annotate] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_iff: simp [annotate] at h #2
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_iff: simp [annotate] at h #3
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_iff: simp [annotate] at h #4
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_iff: simp [annotate, hx] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_iff: simp [annotate, hx, hy] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_iff: simp [annotate, hx] at h #2
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_iff: simp [annotate, hx, hy] at h #2
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_iff: simp [annotate, hx, hy, hz] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.annotate_iff: simp [annotate, hx, hy] at h #3
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.rule_child_ctx: simp [rule?, unary_rule?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.rule_child_ctx: simp [rule?, binary_rule?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.rule_child_ctx: simp [rule?, let_rule?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.rule_child_ctx: simp [rule?, let_annotated_rule?, let_rule?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.rule_child_ctx: simp [rule?, if_rule?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.derivation_typed: simp [fren_spec] at hroot
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.layers_paired_zip: simp [layers_paired?, fren_spec] at h
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.layers_paired_zip: simp [layers_paired?, fren_spec] at h #2
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.layers_paired_zip: simp [layers_paired?, fren_spec] at h #3
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.layers_paired_zip: simp [layers_paired?, fren_spec] at h #4
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.layers_paired_zip: simp [layers_paired?, fren_spec] at h #5
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.layers_paired_zip: simp [layers_paired?, fren_spec] at h #6
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.layers_paired_zip: simp [layers_paired?, fren_spec] at h #7
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.layers_paired_zip: simp [layers_paired?, fren_spec] at h #8
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.layers_paired_zip: simp [layers_paired?, fren_spec] at h #9
+unsqueezed src/Spec/Language/Types.lean:Spec.Language.Types.Adequacy.layers_paired_zip: simp [layers_paired?, fren_spec] at h #10
 unsqueezed src/Spec/Language/Types.lean:derives?: simp [fren_spec] at hr
-unsqueezed src/Spec/Support/Core.lean:instance@17c3abb7: simp [mapF, mapS_id]
-unsqueezed src/Spec/Support/Core.lean:instance@17c3abb7: simp [mapF, mapS_mapS, mapArm]
+unsqueezed src/Spec/Support/Core.lean:Spec.Tables.instance@17c3abb7: simp [mapF, mapS_id]
+unsqueezed src/Spec/Support/Core.lean:Spec.Tables.instance@17c3abb7: simp [mapF, mapS_mapS, mapArm]
