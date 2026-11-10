@@ -592,7 +592,7 @@ of [adequacy](#r-dynamics.theorem.adequacy) that excludes divergence, and
 it has adequacy's conditions. The termination check of the function's
 own declaration does not give it. A function whose body is a call of a
 function that has opted out of the check, and that does not reach it, is
-in no recursive group and
+in no recursive group and, where its own declaration has not opted out,
 [passes the check](StaticSemantics.md#r-statics.termination), and its
 call diverges where the callee's does. Nor does
 [passing the check hereditarily](StaticSemantics.md#r-statics.termination) alone
