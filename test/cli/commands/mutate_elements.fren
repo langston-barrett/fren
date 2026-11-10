@@ -7,7 +7,10 @@
 -- negated, nor is a trigger before it negated. Where the guard gives the
 -- name another sequence's members (`other?`, `retriggered?`), the first
 -- membership is dropped like any conjunct or trigger; where the other
--- membership is a set's (`settled?`), it is not. Everything else is
+-- membership is a set's (`settled?`), it is not. A member of a Boolean
+-- block is a part of the guard like any conjunct, in an `exists`
+-- (`blocked?`), in a trigger (`block_trigger?`) and in a block within a
+-- block (`block_nested?`). Everything else is
 -- mutated: the other conjuncts, a trigger before the membership is
 -- dropped, one after it is dropped and negated, and so are the body and an
 -- `and` around the quantifier. Where `undecidable` is allowed, the
@@ -39,6 +42,15 @@ pub fn retriggered?(names: Seq<String>) :=
 
 pub fn settled?(names: Seq<String>, allowed: Set<String>) :=
     exists (v: String), v in names and v in allowed and ident?(v)
+
+pub fn blocked?(names: Seq<String>) :=
+    exists (v: String), and { v in names and ident?(v), v != "z" }
+
+pub fn block_trigger?(names: Seq<String>) :=
+    forall (v: String), when and { v in names and v != "x", v != "z" }, ident?(v)
+
+pub fn block_nested?(names: Seq<String>) :=
+    exists (v: String), and { and { v in names and ident?(v), v != "y" }, v != "z" }
 
 set_option fren.lint.undecidable "allow" in
 pub fn allowed?(names: Seq<String>) :=

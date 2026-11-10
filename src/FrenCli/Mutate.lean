@@ -443,11 +443,12 @@ partial def Src.chainBinds (s : Src) (c : Expr) : Bool :=
 /-- The edits of expression `e`. `inAndLeft` says that `e` is the left
 operand of an `and`, unparenthesized, where an `or` needs parentheses; an
 `or` whose left operand is an unparenthesized `or` parenthesizes it.
-Where `e` is a part of the guard of a quantifier over a sequence's elements
-that is in the decidable core (`Src.coreElems`), or is in a `not`, an `and`
-or an `or` of it, `core?` says whether the quantifier stays in the core
-with another expression in the place of `e` (`Src.keepsCore`): a mutant
-that would take it out of the core is not made. -/
+Where `e` is within a quantifier over a sequence's elements that is in the
+decidable core (`Src.coreElems`), `core?` says whether the quantifier stays
+in the core with another expression in the place of `e` (`Src.keepsCore`):
+a mutant that would take it out of the core is not made. Every operand is
+asked it, so a part of the guard is, wherever the checker finds it, such as
+in a member of a Boolean block. -/
 partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bool := false)
     (core? : Option (Expr → Bool) := none) : Array Edit :=
   -- Whether the quantifiers around `e` stay in the core with `e'` for `e`.
@@ -616,34 +617,58 @@ partial def edits (s : Src) (e : Expr) (inAndLeft : Bool := false) (divisor : Bo
     | _ => #[]
   here ++ (children e).flatMap id
 where
-  children : Expr → Array (Array Edit)
-    | .when sp negated c b =>
-      #[edits s c (core? := core?.map fun k c' => k (.when sp negated c' b)),
-        edits s b (core? := core?.map fun k b' => k (.when sp negated c b'))]
-    | .block _ _ members => members.map fun (_, value) => edits s value
-    | .ite _ c a b => #[edits s c, edits s a, edits s b]
+  /-- The mutants of each operand of `e`. Each is asked `core?` with `e` as
+  it is with the mutated operand in the operand's place, whatever `e` is:
+  the checker decides what of it is a guard, as it lowers a Boolean block
+  to find the conjuncts of one. -/
+  children (e : Expr) : Array (Array Edit) :=
+    -- `x`, an operand of `e`: `mk x'` is `e` with `x'` for it.
+    let sub (x : Expr) (mk : Expr → Expr) : Array Edit := edits s x (core? := core?.map fun k x' => k (mk x'))
+    let subs (xs : Array Expr) (mk : Array Expr → Expr) : Array (Array Edit) :=
+      xs.mapIdx fun i x => sub x fun x' => mk (xs.set! i x')
+    let fields (fs : Array (Ident × Option Expr)) (mk : Array (Ident × Option Expr) → Expr) : Array (Array Edit) :=
+      (fs.mapIdx fun i (f, x?) => x?.map fun x => sub x fun x' => mk (fs.set! i (f, some x'))).filterMap id
+    match e with
+    | .when sp negated c b => #[sub c (.when sp negated · b), sub b (.when sp negated c ·)]
+    | .block sp op members =>
+      members.mapIdx fun i (name?, value) => sub value fun value' => .block sp op (members.set! i (name?, value'))
+    | .ite sp c a b => #[sub c (.ite sp · a b), sub a (.ite sp c · b), sub b (.ite sp c a ·)]
     | .bin sp op l r =>
       -- `l` is unparenthesized when its span starts the `and`'s.
-      let core? := if op == "and" || op == "or" then core? else none
       #[edits s l (op == "and" && s.outer sp l.span == l.span) (core? := core?.map fun k l' => k (.bin sp op l' r)),
         edits s r (divisor := op == "div" || op == "mod") (core? := core?.map fun k r' => k (.bin sp op l r'))]
-    | .neg _ e => #[edits s e (divisor := divisor)]
-    | .not sp e => #[edits s e (core? := core?.map fun k e' => k (.not sp e'))]
-    | .field _ e _ => #[edits s e]
-    | .app _ _ as | .set _ as | .seq _ as | .chain _ as _ => as.map (edits s ·)
-    | .record _ _ fs => fs.filterMap fun (_, e?) => e?.map (edits s ·)
-    | .update _ r fs => #[edits s r] ++ fs.filterMap fun (_, e?) => e?.map (edits s ·)
-    | .match _ sc arms _ => #[edits s sc] ++ (armParts arms).map (edits s ·)
-    | .table _ rows => (tableParts rows).map (edits s ·)
-    | .is _ sc _ => #[edits s sc]
+    | .neg sp x => #[edits s x (divisor := divisor) (core? := core?.map fun k x' => k (.neg sp x'))]
+    | .not sp x => #[sub x (.not sp ·)]
+    | .field sp x f => #[sub x (.field sp · f)]
+    | .app sp f as => subs as (.app sp f ·)
+    | .set sp as => subs as (.set sp ·)
+    | .seq sp as => subs as (.seq sp ·)
+    | .chain sp as ops => subs as (.chain sp · ops)
+    | .record sp ty fs => fields fs (.record sp ty ·)
+    | .update sp r fs => #[sub r (.update sp · fs)] ++ fields fs (.update sp r ·)
+    | .match sp sc arms table =>
+      #[sub sc (.match sp · arms table)] ++ (arms.mapIdx fun i (p, g?, b) =>
+        (g?.toArray.map fun g => sub g fun g' => .match sp sc (arms.set! i (p, some g', b)) table).push
+          (sub b fun b' => .match sp sc (arms.set! i (p, g?, b')) table)).flatMap id
+    | .table sp rows =>
+      (rows.mapIdx fun i (row, c?, v) =>
+        (c?.toArray.map fun c => sub c fun c' => .table sp (rows.set! i (row, some c', v))).push
+          (sub v fun v' => .table sp (rows.set! i (row, c?, v')))).flatMap id
+    | .is sp sc p => #[sub sc (.is sp · p)]
     -- The body once, not each instance.
     | .quant sp all bs b => #[edits s b (core? := (s.coreOf? core? sp).map fun k b' => k (.quant sp all bs b'))]
+    | .matches sp ss arms table =>
+      subs ss (.matches sp · arms table) ++ (arms.mapIdx fun i (ps, g?, b) =>
+        (g?.toArray.map fun g => sub g fun g' => .matches sp ss (arms.set! i (ps, some g', b)) table).push
+          (sub b fun b' => .matches sp ss (arms.set! i (ps, g?, b')) table)).flatMap id
     -- A closure's body once, not at each application of it.
-    | .matches _ ss arms _ => (ss ++ arms.flatMap (fun (_, g, b) => g.toArray.push b)).map (edits s ·)
-    | .closure _ _ b => #[edits s b]
-    | .pair _ a b | .index _ a b => #[edits s a, edits s b]
-    | .method _ r _ as => #[edits s r] ++ as.map (edits s ·)
-    | .«let» _ defs body _ => defs.map (edits s ·.2.2) |>.push (edits s body)
+    | .closure sp ps b => #[sub b (.closure sp ps ·)]
+    | .pair sp a b => #[sub a (.pair sp · b), sub b (.pair sp a ·)]
+    | .index sp a b => #[sub a (.index sp · b), sub b (.index sp a ·)]
+    | .method sp r name as => #[sub r (.method sp · name as)] ++ subs as (.method sp r name ·)
+    | .«let» sp defs body isWhere =>
+      (defs.mapIdx fun i (x, ty?, d) => sub d fun d' => .«let» sp (defs.set! i (x, ty?, d')) body isWhere).push
+        (sub body (.«let» sp defs · isWhere))
     | _ => #[]
 
 /-! ## Sites -/

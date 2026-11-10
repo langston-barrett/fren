@@ -94,8 +94,14 @@ bound names' members are read again from its guard, each from the first
 conjunct that names it, and so is its place among the quantifiers around
 it. It is asked of the mutants that can change a guard: `swap-quantifier`,
 `swap-and-or`, `drop-conjunct` of an `and`, `drop-trigger`, `negate-trigger`
-and `drop-negation`, of the quantifier, of the triggers and conjuncts of
-its guard, and of the `and`s, `or`s and `not`s within them.
+and `drop-negation`, wherever they are within the quantifier. So it is
+asked of them in the members of a Boolean block as well, at every depth,
+since the checker finds a guard's conjuncts in an `and { ... }` block as in
+an `and`: of `exists (x: String), and { x in names and ident?(x), q? }`, of
+`forall (x: String), when and { x in names and ident?(x), q? }, r?` and of
+`exists (x: String), and { and { x in names and ident?(x), q? }, r? }`
+there is no `drop-conjunct` mutant `ident?(x)` and no `swap-and-or` mutant
+of that `and`.
 
 So a mutant that takes a bound name's membership `x in e` from the guard is
 made only if the guard still gives the name a sequence's members. Of
