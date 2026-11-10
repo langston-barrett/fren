@@ -1771,14 +1771,16 @@ that `synthesis?` accepts for τ in Γ has a root that unfolds to e. The
 theorem `synth_iff_typed` states the same of trees of rule instances.
 
 r[thir.algorithmic.inference]
-*Inference* computes a table from an expression. It visits the expression
-once, each node after its children and the children in written order, and
-adds one row for each node. The context of the root's row is Γ, the context
-of a child's row is the one that its parent's rule gives that child
-(`thir.algorithmic.synthesis`), and the type of a row is the type that
-`synth_layer` gives its layer when it gives one. Inference then returns the
-table and the type of its newest row when `synthesis?` accepts them for Γ,
-and nothing otherwise. The functions are `inferTable`, which returns the
+*Inference* computes a table from an expression. The table is defined by
+recursion on the expression: the rows of a node are the rows of its
+children, in written order, and then a row for the node itself. The context
+of the root's row is Γ, the context of a child's row is the one that its
+parent's rule gives that child (`thir.algorithmic.synthesis`), and the type
+of a row is the type that `synth_layer` gives its layer when it gives one.
+Inference returns the table and the type of its newest row when
+`synthesis?` accepts them for Γ, and nothing otherwise. This rule says
+which table and type inference returns. It does not say how they are
+evaluated, or how often a node is visited. The functions are `inferTable`, which returns the
 table and the type, and `infer`, which returns the type.
 
 Inference is sound: a table that it returns is accepted by `synthesis?`
@@ -1787,7 +1789,8 @@ expression (`inferTable_sound`). Inference is complete: when
 `Σ; Γ ⊢ e ⇒ τ` holds, inference returns a table for e in Γ, with the type τ
 (`inferTable_complete`). So inference returns τ for e in Γ exactly when
 `Σ; Γ ⊢ e ⇒ τ` holds (`infer_iff`), and the judgment is decidable.
-Inference reports no blamed premise when it returns nothing.
+No more is proved of inference than these three laws. Inference reports no
+blamed premise when it returns nothing.
 
 ### The production checker
 

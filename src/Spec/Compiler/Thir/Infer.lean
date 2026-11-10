@@ -3,12 +3,14 @@ import Spec.Compiler.Thir.Adequacy
 /-!
 # Inference
 
-`inferTable` computes a synthesis table from a HIR expression. It walks the
-expression once, children before parents and in order, and adds one row for
-each node. A node's context is the one that its parent's rule prescribes
-(`placed?`), and its type is what `synth_layer` gives for its children's
-types. It then returns the table and the root's type if `synthesis?` accepts
-them.
+`inferTable` computes a synthesis table from a HIR expression. The table is
+defined by recursion on the expression: the rows of a node are the rows of
+its children and then a row for the node. A node's context is the one that
+its parent's rule prescribes (`placed?`), and its type is what `synth_layer`
+gives for its children's types. `inferTable` returns the table and the
+root's type if `synthesis?` accepts them. The definitions are written for
+proof and not for evaluation: they recompute the results of children, and
+nothing here bounds how often a node is visited.
 
 * `inferTable_sound`: a table that inference returns is accepted by
   `synthesis?`, and its root unfolds to the expression.
@@ -532,7 +534,7 @@ example : infer .Empty .Empty parenTrue = some .Boolean := by decide
 /-- The body of the let is typed in the context extended by the value's type. -/
 example : infer .Empty .Empty letLocal = some .Integer := by decide
 
-/-- One row for each node: the literal, its parenthesis, the local and the let. -/
+/-- The table of this expression has four rows. -/
 example : (inferTable .Empty .Empty letLocal).map (fun t => length HirRow t.1) = some 4 := by
   decide
 
