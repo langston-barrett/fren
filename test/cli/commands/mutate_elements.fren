@@ -1,13 +1,17 @@
 --@ args: mutate --list -A collapsible_when
--- A quantifier over a sequence's elements stays in the decidable core:
--- neither `forall` nor `exists` is swapped, a membership stays a conjunct
--- of its guard (its `and` is not made an `or`, and is not dropped for its
--- other operand), and its trigger is neither dropped nor negated, nor is a
--- trigger before it negated. Everything else is mutated: the other
--- conjuncts, a trigger before the membership is dropped, one after it is
--- dropped and negated, and so are the body and an `and` around the
--- quantifier. Where `undecidable` is allowed, the quantifier is mutated
--- like any other.
+-- A quantifier over a sequence's elements stays in the decidable core: a
+-- mutant is made only if the quantifier, as mutated, is still in it. So
+-- neither `forall` nor `exists` is swapped; an `and` whose operand is the
+-- bound name's only membership is not made an `or`, and is not dropped for
+-- its other operand; and the membership's trigger is neither dropped nor
+-- negated, nor is a trigger before it negated. Where the guard gives the
+-- name another sequence's members (`other?`, `retriggered?`), the first
+-- membership is dropped like any conjunct or trigger; where the other
+-- membership is a set's (`settled?`), it is not. Everything else is
+-- mutated: the other conjuncts, a trigger before the membership is
+-- dropped, one after it is dropped and negated, and so are the body and an
+-- `and` around the quantifier. Where `undecidable` is allowed, the
+-- quantifier is mutated like any other.
 pub mod m
 
 pub fn ident?(w: String) := w != ""
@@ -26,6 +30,15 @@ pub fn nested?(names: Seq<String>, others: Seq<String>) :=
 
 pub fn around?(names: Seq<String>, a?) :=
     a? and (forall (v: String), when v in names, ident?(v) and v != "q")
+
+pub fn other?(names: Seq<String>) :=
+    exists (v: String), v in names and v in ["a"] and ident?(v)
+
+pub fn retriggered?(names: Seq<String>) :=
+    forall (v: String), when v in names, when v in ["a"], ident?(v)
+
+pub fn settled?(names: Seq<String>, allowed: Set<String>) :=
+    exists (v: String), v in names and v in allowed and ident?(v)
 
 set_option fren.lint.undecidable "allow" in
 pub fn allowed?(names: Seq<String>) :=

@@ -810,6 +810,26 @@ structure ClosureArg where
   tables : Array (Span × Fren.Core.TableGoal × String) := #[]
   deriving Inhabited
 
+/-- A quantifier over a sequence's elements that is in the decidable core,
+as elaborated: what its verdict (`Fren.Core.elementVerdict`) rests on other
+than its guard, from which the verdict of a mutant of it is decided
+(`CoreElems.keeps`). -/
+structure CoreElem where
+  span : Span
+  /-- Whether it is a `forall`. -/
+  all : Bool
+  nesting : Fren.Core.ElementNesting
+  /-- Its bound names, in order. -/
+  names : Array String
+  /-- Its bound names of types that are not listed, in order: each one's
+  position in `names`, whether it is a `Nat`, its name, and its uses in the
+  body. -/
+  unbounded : Array (Nat × Bool × Name × List Fren.Core.ElementUse)
+  /-- The bound names of types that are not listed of the quantifiers
+  around it. -/
+  outer : Array Name
+  deriving Inhabited, BEq
+
 /-- A higher-order defined function (`Reqs/Lang/HigherOrder`): what its
 applications need to unfold it. -/
 structure HigherOrderFn where
@@ -1135,10 +1155,13 @@ are abstract types within it (`Reqs/Lang/GenericFunctions`). -/
   does not make a `-` (`Reqs/Mutate`). -/
   natSums : Array (Nat × Span) := #[]
   /-- Each quantifier over a sequence's elements that is in the decidable
-  core where `undecidable` is an error, by file, with the sequences of its
-  memberships: `fren mutate` makes no mutant that takes a membership from
-  its guard (`Reqs/Mutate`). -/
-  coreElems : Array (Nat × Span × Array Span) := #[]
+  core where `undecidable` is an error, by file: `fren mutate` makes no
+  mutant that takes it out of the core (`Reqs/Mutate`, `CoreElems.keeps`). -/
+  coreElems : Array (Nat × CoreElem) := #[]
+  /-- The sequences `e` of the memberships `x in e` within the quantifiers
+  over elements, by file and span: a mutant may make one the membership of
+  its quantifier's guard (`CoreElems.keeps`). -/
+  seqMembers : Array (Nat × Span) := #[]
   /-- The names of `let` and `where` definitions made so far, which number
   their SMT-LIB symbols. -/
   nLets : Nat := 0

@@ -237,17 +237,10 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
   -- A quantifier over a sequence's elements (`lang::element_quantifier`):
   -- each bound name of a type that is not listed has the members of `x in
   -- e` as its domain, by the first conjunct of the guard that names it.
-  let parts := Fren.Core.guardPartsBy guardNode whenOf? all body
-  let members : Array (Option Expr) := new.zipIdx.filterMap fun (c, k) =>
-    if !c.unbounded then none else some <|
-      match domainOf all names body k (c.ty == Ty.nat) with
-      | (.members j, bounds) =>
-        if (parts.extract 0 j).any (·.any (·.names names[k]!)) then none else bounds[j]?.bind (·.map (·.1))
-      | _ => none
+  let positions := new.zipIdx.filterMap fun (c, k) => if c.unbounded then some (k, c.ty == Ty.nat) else none
+  let members := elementMembers all names positions body
   let candidate := !members.isEmpty && members.all Option.isSome
-  let nesting : Fren.Core.ElementNesting := match cx.elemKind? with
-    | none => .top
-    | some k => if k == all && cx.elemDirect.contains span then .direct else .other
+  let nesting := elementNesting cx.elemKind? cx.elemDirect span all
   let bodyCx := if candidate then
       { cx with elemGuards := cx.elemGuards ++ members.filterMap (·.map (·.span)), elemKind? := some all
                 elemDirect := cx.elemDirect ++ (elementSpine all body).toArray
@@ -262,18 +255,18 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
   let kw := if all then "forall" else "exists"
   unless tb == .bool do mismatch body .bool tb (some s!"note: the body of `{kw}` is a `Bool`")
   -- Its verdict, from its bound names of types that are not listed, in order.
-  let verdict ← if !candidate then pure Fren.Core.ElementVerdict.notMembers else do
+  let unbounded := new.filter (·.unbounded)
+  let outerNames := (cx.binders.filter (·.unbounded)).map (·.name)
+  let (verdict, infos) ← if !candidate then pure (Fren.Core.ElementVerdict.notMembers, #[]) else do
     let recorded := (← get).elemMembers
     let inner := body.declaredNames.map Name.mkSimple
-    let unbounded := new.filter (·.unbounded)
     let mut infos := #[]
     for c in unbounded, e? in members, k in [0:unbounded.size] do
       let some e := e? | continue
       let seq := (recorded.find? (·.1 == e.span)).any (·.2.1)
-      let earlier := (unbounded.extract 0 k).map (·.name) ++ (cx.binders.filter (·.unbounded)).map (·.name)
       infos := infos.push
         { members := if seq then .seq else .set
-          receiverBound := (mentions e).any (earlier.contains ·.getRoot)
+          receiverBound := membersBound ((unbounded.extract 0 k).map (·.name) ++ outerNames) e
           uses := (← elementUses cx c.name inner body).toList : Fren.Core.ElementBinder }
     -- What the quantifier mentions, once its own bound names are not.
     let whole := Expr.quant span all bs body
@@ -281,14 +274,18 @@ partial def elabQuantExpr (cx : ExprCtx) (span : Span) (all : Bool) (bs : Array 
     let bound := (mentions whole).any fun n =>
       let r := n.getRoot
       !chain.contains r && (cx.binder? r).any (·.unbounded)
-    pure (Fren.Core.elementVerdict nesting (← mentionsOutput cx whole) bound infos.toList)
+    pure (Fren.Core.elementVerdict nesting (← mentionsOutput cx whole) bound infos.toList, infos)
   let inCore := verdict == .inCore
   -- The reports that its guard's memberships deferred, and its binders'.
   let spans := members.filterMap (·.map (·.span))
   let deferred := (← get).elemMembers.filter (spans.contains ·.1)
   if inCore && (((← get).levels.get .undecidable).level.severity? == some .error) then
-    modify fun s => if s.coreElems.any (fun (f, sp, _) => f == s.file && sp == span) then s
-      else { s with coreElems := s.coreElems.push (s.file, span, spans) }
+    -- What `fren mutate` decides a mutant's verdict from (`CoreElems.keeps`).
+    let record : CoreElem :=
+      { span, all, nesting, names, outer := outerNames
+        unbounded := (positions.zip (unbounded.zip infos)).map fun ((k, nat), c, i) => (k, nat, c.name, i.uses) }
+    modify fun s => if s.coreElems.any (fun (f, r) => f == s.file && r.span == span) then s
+      else { s with coreElems := s.coreElems.push (s.file, record) }
   modify fun s => { s with elemMembers := s.elemMembers.filter (!spans.contains ·.1) }
   unless inCore do
     modify fun s => { s with quantified := true }
@@ -763,6 +760,10 @@ partial def elabInExpr (cx : ExprCtx) (e : Expr) (span : Span) (a : Expr) (b : E
   let (y, ty) ← elabExpr { cx with expected? := Fren.Core.ExprSite.membershipRight.expected none (some (if seqShaped b then .seq tx else .set tx)) } b
   -- The membership of a quantifier over elements' guard: its report waits
   -- for the quantifier's verdict (`elabQuantExpr`).
+  -- Within a quantifier over elements, a mutant may make it the membership
+  -- of the guard (`State.seqMembers`).
+  if ty == .seq tx && cx.elemKind?.isSome then
+    modify fun s => if s.seqMembers.contains (s.file, b.span) then s else { s with seqMembers := s.seqMembers.push (s.file, b.span) }
   if cx.elemGuards.contains b.span then
     let infinite ← #[a, b].anyM (mentionsInfiniteOutput cx)
     let ground ← isConstant cx e

@@ -1722,8 +1722,11 @@ def mutantsWith (files : Array (String × Array Char)) (parsed : Array Parsed) (
     if let some (toks, items, _) := parsed[i]! then
       -- The state after file `i`.
       let natSums := ((states[i + 1]?.map (·.natSums)).getD #[]).filterMap fun (f, sp) => if f == i then some sp else none
-      let coreElems := ((states[i + 1]?.map (·.coreElems)).getD #[]).filterMap fun (f, sp, ms) => if f == i then some (sp, ms) else none
-      all := all ++ Mutate.ofFile { file := i, path, chars, toks, natSums, coreElems, enums } items divisors
+      let ofFile {α} (rows : State → Array (Nat × α)) : Array α :=
+        ((states[i + 1]?.map rows).getD #[]).filterMap fun (f, x) => if f == i then some x else none
+      let elems : CoreElems := { quants := ofFile (·.coreElems), seqs := ofFile (·.seqMembers) }
+      all := all ++ Mutate.ofFile
+        { file := i, path, chars, toks, natSums, coreElems := elems.quants.map (·.span), keepsCore := elems.keeps none, enums } items divisors
   return all
 
 /-- The mutants of the files, as elaborated, with the lint levels `lints`,
@@ -1804,7 +1807,7 @@ or splices. Every field is compared (`same_fields%`), so a field added to
   differ in them (`FrenTestMain`);
 - `comps`, `consts` and `constInts`, which `skipFile?` compares by name;
 - the fields that `skipFile?` splices: `globals`, `bodies`,
-  `diags`, `edits`, `natSums`, `coreElems`, `claims` and `applied`, which elaboration
+  `diags`, `edits`, `natSums`, `coreElems`, `seqMembers`, `claims` and `applied`, which elaboration
   only extends, or restores to an earlier value, and reads `applied` only
   after the size that it had when it was read; and `defs`, of which only
   each function's name, parameters and result type are read, never its
@@ -1818,7 +1821,7 @@ def sameForLater (a b : State) : Bool :=
     lintReports, useLocs, expectationRemovals, items, usedItems, procs, hofParams, fnArgs, lintFixes, globalTexts, settings, settingRemovals,
     seenSettings, assumptions, globalReads, trailingCommas, natReports, natKept, itemStart, literals, itemSpan,
     comps, consts, constInts,
-    globals, bodies, diags, edits, natSums, coreElems, claims, applied, defs, bound]
+    globals, bodies, diags, edits, natSums, coreElems, seqMembers, claims, applied, defs, bound]
     && a.bound.size == b.bound.size
     && a.defs.isEqv b.defs (fun (n, ps, r, _) (n', ps', r', _) => n == n' && ps == ps' && r == r')
     && a.itemErrors.isEmpty && b.itemErrors.isEmpty
@@ -1873,7 +1876,7 @@ either, and so does the same:
   constant's, each resolved from a path written in the file, which ends in
   the item's name (`Table.resolvePath`); the latter two are otherwise only
   extended;
-- `globals`, `bodies`, `diags`, `edits`, `natSums`, `coreElems`,
+- `globals`, `bodies`, `diags`, `edits`, `natSums`, `coreElems`, `seqMembers`,
   `claims` and `applied` are only extended or restored to an earlier value,
   and `applied` is read after the size that it had when it was read;
 - `defs` is read only as `sameForLater` compares it.
@@ -1889,7 +1892,7 @@ def skipFile? (orig mine orig' : State) (d : Drift) (written : Std.HashSet Strin
                       constInts := ← respliced? orig.constInts mine.constInts orig'.constInts d.constInts
                       comps := splice (·.comps), globals := splice (·.globals)
                       bodies := splice (·.bodies), diags := splice (·.diags), edits := splice (·.edits)
-                      natSums := splice (·.natSums), coreElems := splice (·.coreElems), claims := splice (·.claims), applied := splice (·.applied)
+                      natSums := splice (·.natSums), coreElems := splice (·.coreElems), seqMembers := splice (·.seqMembers), claims := splice (·.claims), applied := splice (·.applied)
                       defs := splice (·.defs) }
 
 /-- The state of the files with the mutant `m` applied, from the states
