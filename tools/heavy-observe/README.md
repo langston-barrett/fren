@@ -197,8 +197,8 @@ the actual Std-only ownership/charge/fit functions and publishing running
 state. Only the oldest held waiter may start; after it starts, another
 fitting request may start too. There is no concurrency cap. Intrinsically
 oversized requests fail promptly. Lock contention and capacity waits retry
-until the fixed caller deadline. A wait that reaches it fails that compiler
-without starting it, exit 125, and reports
+until the fixed caller deadline. A deadline check that finds it expired
+fails that compiler without starting it, exit 125, and reports
 `admission timed out after N ms (limit L ms, the session's admission wait) waiting for ...`,
 naming the registry lock, the compiler budget (with the reserved, available
 and requested KiB and the ticket) or grant publication; the record's

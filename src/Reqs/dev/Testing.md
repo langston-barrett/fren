@@ -2473,7 +2473,8 @@ of the registry lock that no holder refused counts as a wait for budget.
 Held reservations do not expire, so a waiter is admitted only if enough
 budget and its turn become free before its deadline. The build entry point
 therefore defaults to 600,000 ms, the longest bound a session accepts; a
-compiler that waits longer than that still fails with this report.
+compiler whose deadline check finds that bound expired still fails with
+this report.
 
 Before fork, the session and gated observer require SIGCHLD's raw handler
 to be SIG_DFL with no SA_NOCLDWAIT. They reject unsupported dispositions
