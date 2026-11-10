@@ -4,8 +4,9 @@ import Spec.Compiler.Thir
 # Admission and the type pass
 
 The walking checker `FrenHirToThir.infer` is sound for the declarative
-judgments of the THIR chapter. A successful traversal of an expression gives
-its meaning (`HasValue` or `HasCallable`), its postorder occurrence table
+judgments of the THIR chapter on every expression in which each call has a
+name as its callee. A successful traversal of such an expression gives its
+meaning (`HasValue` or `HasCallable`), its postorder occurrence table
 (`OccurrenceOrder`), and both directions of the correspondence between the
 table and the expression's descendants.
 

@@ -79,8 +79,10 @@ The `body_contract_iff` theorem equates the body component with the existing
 `FrenHirToThir.TypingSound` obligation. It does not prove that obligation.
 The wrapper proves admission/retention, uniqueness, failure exclusion and the
 exact factorization of the public static boundary using actual-code theorems.
-The [admission module](Thir/Admission.lean) proves the type pass sound for
-every successful production. `infer_sound` proves that a successful traversal
+The [admission module](Thir/Admission.lean) proves part of
+`TypePassContract`: the body typing and occurrence judgments of every
+successful production in which each call has a name as its callee.
+`infer_sound` proves that a successful traversal
 of an expression gives its meaning and its exact occurrence table, when every
 call below it has a name as its callee. `NamedCallees` states that condition
 for every body. The parser writes no other callee, but no theorem derives the
