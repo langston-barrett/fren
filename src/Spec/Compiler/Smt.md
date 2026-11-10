@@ -362,11 +362,18 @@ def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
     (value : Bool) : Prop :=
   Lir.SourceValue p body values.toList.reverse (.bool value)
 
-/-- In every model the assignment violates the definedness question: its
-hypotheses hold, its frames are active and the divisor at its site is zero. -/
-def DefinednessViolation (out : FrenOir.Program) (q : FrenOir.Question)
+/-- The static traversal of the question's source body under the assignment
+reaches the division or remainder that the question retains, and the strict
+source judgment gives its divisor there the value zero. The assignment is then
+a witness against `Mir.BodySafe` of that body. -/
+def DefinednessViolation (p : Input) (q : FrenOir.Question)
     (values : Array FrenEval.Value) : Prop :=
-  ∀ symbols zero, Model out symbols zero → Oir.Violation symbols zero q values.toList.reverse
+  ∃ body origin ctx env guards left token op right,
+    q.subject = some body ∧ q.origin = some origin ∧
+    origin.expression = .binary left token op right ∧ (op = .div ∨ op = .rem) ∧
+    Mir.StaticAt p.typed (Mir.SourceDefinition p.typed) body.context body.expression
+      values.toList.reverse ctx (.binary left token op right) env guards ∧
+    Mir.ValueOf p.typed (Mir.SourceDefinition p.typed) ctx right env (.int 0)
 
 /-- Concrete candidates do not discharge universal validity or domain questions. -/
 def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Question)
@@ -378,7 +385,7 @@ def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Questi
     (q.kind = .validity ∧ answer = .counterexample ∧
       ∃ body, q.subject = some body ∧ SourceBoolean p body values false) ∨
     (q.kind ∈ [FrenOir.Kind.functionDefinedness, .assumptionDefinedness, .goalDefinedness] ∧
-      answer = .counterexample ∧ DefinednessViolation out.oir q values))
+      answer = .counterexample ∧ DefinednessViolation p q values))
 
 /-- Decoder typing and source-observation correspondence are separate from the
 universal SMT interpretation, strict-evaluation and evaluator-adequacy bridges. -/
@@ -542,12 +549,19 @@ body may contain division anywhere; only its evaluation at the model decides.
 
 A definedness refutation evaluates no goal. Its question must retain a
 division or remainder as its origin and ask that the divisor differ from zero.
-After the hypotheses, the let values and the conditions of the `if` and
-`match` expressions that enclose that site in its source body are evaluated by
-the interpreter. If an unselected branch encloses the site, the candidate is
-rejected as unreachable. Otherwise the divisor is evaluated by the interpreter
+After the hypotheses, the path to that site in its source body is evaluated:
+the value of each `let` whose body encloses the site, and the condition or
+scrutinee of each `if` or `match` whose branch encloses it. An operand, a call
+argument, a let value, a condition or a scrutinee that itself encloses the
+site is entered without evaluation. If an unselected branch encloses the site,
+the candidate is rejected as unreachable. Otherwise the divisor is evaluated
 in the environment of the site: zero yields a concrete counterexample, and any
-other value rejects the candidate. The division itself is never evaluated.
+other value rejects the candidate. Each term on the path, and the divisor, is
+evaluated both by the interpreter and strictly, whether or not it mentions
+division or remainder, and the two values must be equal. The strict
+evaluations draw on the budget that the hypotheses share. If a term has no
+strict value, the candidate is unconfirmed. The division itself is never
+evaluated.
 
 A false premise or true goal rejects the candidate; unsupported forms and
 evaluation failures are unconfirmed. No per-question confirmation is an
@@ -558,12 +572,17 @@ A confirmed answer is specified through the judgments of the earlier
 chapters, not through the evaluators that compute it. `SourceBoolean` holds
 of a body, an assignment and a Boolean when the strict source judgment of
 `r[lir.meaning.symbols]` gives the body that Boolean value under the assignment.
-`DefinednessViolation` holds of a question and an assignment when, in every
-model of the program's definitions and for every choice of the values that
-division and remainder by zero take, the assignment violates the question in
-the sense of `r[oir.meaning.search]`: every hypothesis is true, every frame
-of the question is active, and its condition is false, that is, the divisor at
-its site is zero.
+`DefinednessViolation` holds of a question and an assignment when the static
+traversal of `r[mir.walking.partiality]`, started at the question's source
+body under the assignment, reaches the division or remainder that the question
+retains as its origin, and the strict source judgment gives the divisor the
+value zero in the environment of that site. The traversal passes into both
+operands of every operator, into every call argument and into every let value,
+condition and scrutinee without evaluating them. It passes into a let body
+only when the strict judgment gives the let value a value, and into a branch
+only when the strict judgment gives the condition or scrutinee the value that
+selects it. Such an assignment is a witness against `BodySafe` of that body:
+at a site that applies statically, the divisor is zero.
 
 `SourceCandidate` holds of a produced question, an assignment and an answer
 when the question is ready, the assignment has the types of the question's
@@ -577,12 +596,15 @@ applies:
 - the question is a definedness question, the answer is a counterexample, and
   the assignment is a `DefinednessViolation` of it.
 
-A definedness counterexample is stated at the question and not at the source
-site because the path to the site is evaluated by runtime demand. A let value
-or a condition on that path may have a value by demand and none by the strict
-judgment, for example when the right operand of an `and` whose left operand is
-false divides by zero. The frames of the question interpret every such term
-totally, so the violation is stated where it has a meaning.
+A term on the path to a site may have a value by runtime demand and none by
+the strict judgment, for example a let value `false and (1 div x = 1)` when
+`x` is zero. The traversal does not then reach the let body, so no site in
+that body has a `DefinednessViolation` under that assignment, and its
+candidate is unconfirmed. The division inside the let value is itself a site
+that the traversal reaches, and its candidate is confirmed.
+
+None of the three cases mentions a model of the program's definitions. A
+`SourceCandidate` is a statement about the source alone.
 
 **Proof obligations**
 
@@ -591,15 +613,31 @@ r[smt.model.bridges]
 are constructed as their chapters specify and whose source is in the semantic
 domain of `r[mir.walking.check-correspondence]`, every witness or
 counterexample that `confirmAssignment` returns, at any evaluation depth, is a
-`SourceCandidate` of the question at that index. `confirmed_ready` proves the
-part of it that does not depend on evaluation: a confirmed answer names a
-question of the regenerated program, and that question is ready. The rest is open. It needs
-three inductions that have not been done: that a value of the strict evaluator
-is a value of the strict source judgment; that the interpreter's value of a
-well-typed, nonrecursive body that reaches no division or remainder is such a
-value too; and that the interpreter's values of the terms on the path to a
-definedness site agree with the total meaning of the question's frames in
-every model.
+`SourceCandidate` of the question at that index. `confirmed_ready` proves a
+part of it that does not depend on evaluation: a confirmed answer names an
+entry of the regenerated program, and the question of that entry is ready.
+
+The rest is open. Three obligations do not depend on evaluation and are
+unproved: that the question of every entry is a member of the program's
+questions; that an assignment which passes the arity, type and enum checks is
+a `ModelAssignment`; and that the answer is paired with the kind of the
+question, a witness with a satisfiability question and a counterexample with a
+validity or definedness question. Three more need inductions that have not
+been done: that a value of the strict evaluator is a value of the strict
+source judgment; that the interpreter's value of a well-typed, nonrecursive
+body that reaches no division or remainder is such a value too; and that the
+path which confirmation follows to a definedness site is a static traversal
+to that site, given the first induction for each term on the path.
+
+A `SourceCandidate` does not by itself show that the produced question has a
+violation in the sense of `r[oir.meaning.search]`, which is stated in a model.
+That step is open as well, and has two obligations of its own. The first is
+that the hypotheses of the question are all true in every `Model`; it needs
+the LIR `InterpretationContract` and a proof that the symbols of every `Model`
+satisfy the LIR `Models` relation. The second is model existence: without a
+`Model`, a statement about every `Model` holds vacuously and refutes nothing.
+For a definedness counterexample the step also needs the frames of the
+question to be active at the site that the static traversal reaches.
 
 General decoder correspondence, model existence, solver identity/trust and
 recursive source/SMT preservation require independent justification. The MIR/LIR/OIR/SMT contracts and their

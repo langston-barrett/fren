@@ -235,6 +235,24 @@ def runDefinednessControls : IO Unit := do
   let some i := out.queries.findIdx? (fun q => isNonzero ⟨q, .sat, none⟩)
     | throw (IO.userError "divisor question missing")
   require (confirmAssignment p i #[.int 2] == .rejected "source divisor is nonzero") "nonzero divisor confirmed"
+  -- A site's path is evaluated strictly: at x = 0 the let value's skipped
+  -- operand is undefined, so the body's site has no strict path and stays
+  -- unconfirmed. The operand's own site lies on no evaluated term and confirms.
+  let p ← load "mod sites\nexpect c(x: Int) { expect bad: let b := false and (1 div x = 1) in 5 div x = 0 }"
+  let .ok out := produce p | throw (IO.userError "strict path control production")
+  let site := fun (dividend : Nat) => out.queries.findIdx? fun q =>
+    isNonzero ⟨q, .sat, none⟩ && q.question.origin.any fun origin =>
+      match origin.expression with
+      | FrenAst.Expr.binary (.integer _ n) _ _ _ => n == dividend
+      | _ => false
+  let some operand := site 1 | throw (IO.userError "let operand question missing")
+  let some body := site 5 | throw (IO.userError "let body question missing")
+  require (confirmAssignment p operand #[.int 0] == .counterexample) "let operand site not confirmed"
+  require (match confirmAssignment p body #[.int 0] with
+    | .unconfirmed reason => reason.startsWith "source definedness evaluation: strict:"
+    | _ => false) "site under an undefined let value confirmed"
+  require (confirmAssignment p body #[.int 3] == .rejected "source divisor is nonzero")
+    "defined strict path not evaluated"
   let guardFailure ← runSource "failed-prerequisite"
     "mod sites\nexpect c(d: Int) { expect bad: if 1 div 0 = 0 then d = d else d = d }"
   require (guardFailure.verdict == .refuted && guardFailure.checks.any (·.status == .blocked))

@@ -438,18 +438,29 @@ upstream universal proof obligations are preserved in full.
   rejected and unconfirmed statuses. Preserve static questions and unresolved
   readiness; a consumed body whose strict evaluation is undefined at the model
   remains unconfirmed. Check divisor definedness counterexamples by evaluating
-  the site's enclosing let values, guards and divisor through the interpreter.
+  the let values and guards on the path to the site, and the divisor, through
+  the interpreter and an agreeing strict evaluation.
 - [x] State `SourceBoolean` through `Lir.SourceValue`/`Mir.ValueOf` and a
-  definedness counterexample through `Oir.Violation` in every model, so that
-  `SourceCandidate` covers validity and definedness rows without naming the
-  evaluators. `confirmed_ready` proves that a confirmed answer names a ready
-  question of the regenerated program.
-- [ ] Prove `ReadbackContract` and the rest of `ConfirmationContract`:
-  adequacy of the budgeted strict evaluator to `Lir.SourceValue`/`Mir.ValueOf`,
-  adequacy of the interpreter alone on well-typed nonrecursive bodies that
-  reach no division or remainder, and agreement of the interpreter on a
-  definedness site's prefix with the total meaning of the question's frames.
+  definedness counterexample through `Mir.StaticAt` and a zero divisor, a
+  witness against `Mir.BodySafe`, so that `SourceCandidate` covers validity
+  and definedness rows without naming the evaluators or a model.
+  `confirmed_ready` proves a part of `ConfirmationContract` that does not
+  depend on evaluation: a confirmed answer names a ready question of an entry
+  of the regenerated program.
+- [ ] Prove `ReadbackContract` and the rest of `ConfirmationContract`. Three
+  obligations do not depend on evaluation: membership of the entry's question
+  in `out.oir.questions`, `ModelAssignment` from the arity, type and enum
+  checks, and the pairing of the answer with the question's kind. Three need
+  inductions: adequacy of the budgeted strict evaluator to
+  `Lir.SourceValue`/`Mir.ValueOf`, adequacy of the interpreter alone on
+  well-typed nonrecursive bodies that reach no division or remainder, and
+  that the path followed to a definedness site is a `Mir.StaticAt` traversal.
   Justify mutually partial assumptions.
+- [ ] Prove that a `SourceCandidate` gives an `Oir.Violation` of its question:
+  that the hypotheses are `Lir.AllTrue` in every `Smt.Model` (from
+  `Lir.InterpretationContract` and every `Smt.Model` satisfying `Lir.Models`),
+  that the question's frames are active at the site, and model existence,
+  without which a statement about every model is vacuous.
 - [x] Deliver a conservative actual-source checker report with complete ordered
   inventory, receipt provenance, dependency discharge and confirmed nonvacuity.
 - [ ] Prove `CheckerContract` and the universal source-soundness bridges; actual

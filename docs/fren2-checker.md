@@ -89,8 +89,12 @@ physical transport and source evaluator. Universal source/encoding soundness,
 model existence, confirmation adequacy and `CheckerContract` remain unproved.
 Divisor definedness counterexamples are confirmed by evaluating the source
 assumptions, lexical bindings, conditional guards and divisor at the retained
-site. The bindings, guards and divisor are evaluated by the demand-driven
-interpreter. That confirmation never evaluates the site's `div` or `%` itself.
+site. The bindings and guards on the path to the site, and the divisor, are
+each evaluated twice, by the demand-driven interpreter and strictly, and the
+two values must agree; a term with no strict value, such as a let value
+`false and (1 div x = 1)` at `x = 0`, leaves the row unconfirmed. Terms off
+the path are not evaluated. That confirmation never evaluates the site's `div`
+or `%` itself.
 Both Boolean operands and unused lets retain static obligations; `if` and
 `match` guard their branches. An unrelated partial expression does not prevent
 a nonvacuity witness or counterexample in another body from being confirmed.

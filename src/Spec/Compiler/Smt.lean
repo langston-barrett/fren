@@ -213,11 +213,18 @@ def SourceBoolean (p : Input) (body : TypedBody) (values : Array FrenEval.Value)
     (value : Bool) : Prop :=
   Lir.SourceValue p body values.toList.reverse (.bool value)
 
-/-- In every model the assignment violates the definedness question: its
-hypotheses hold, its frames are active and the divisor at its site is zero. -/
-def DefinednessViolation (out : FrenOir.Program) (q : FrenOir.Question)
+/-- The static traversal of the question's source body under the assignment
+reaches the division or remainder that the question retains, and the strict
+source judgment gives its divisor there the value zero. The assignment is then
+a witness against `Mir.BodySafe` of that body. -/
+def DefinednessViolation (p : Input) (q : FrenOir.Question)
     (values : Array FrenEval.Value) : Prop :=
-  ∀ symbols zero, Model out symbols zero → Oir.Violation symbols zero q values.toList.reverse
+  ∃ body origin ctx env guards left token op right,
+    q.subject = some body ∧ q.origin = some origin ∧
+    origin.expression = .binary left token op right ∧ (op = .div ∨ op = .rem) ∧
+    Mir.StaticAt p.typed (Mir.SourceDefinition p.typed) body.context body.expression
+      values.toList.reverse ctx (.binary left token op right) env guards ∧
+    Mir.ValueOf p.typed (Mir.SourceDefinition p.typed) ctx right env (.int 0)
 
 /-- Concrete candidates do not discharge universal validity or domain questions. -/
 def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Question)
@@ -229,7 +236,7 @@ def SourceCandidate (p : Input) (out : FrenOirToSmt.Program) (q : FrenOir.Questi
     (q.kind = .validity ∧ answer = .counterexample ∧
       ∃ body, q.subject = some body ∧ SourceBoolean p body values false) ∨
     (q.kind ∈ [FrenOir.Kind.functionDefinedness, .assumptionDefinedness, .goalDefinedness] ∧
-      answer = .counterexample ∧ DefinednessViolation out.oir q values))
+      answer = .counterexample ∧ DefinednessViolation p q values))
 
 /-- Decoder typing and source-observation correspondence are separate from the
 universal SMT interpretation, strict-evaluation and evaluator-adequacy bridges. -/

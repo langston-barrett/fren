@@ -147,17 +147,31 @@ private def containsSite : Nat → FrenAst.Expr → FrenAst.Expr → Bool
     | .call _ _ args _ _ => args.any (containsSite n target)
     | _ => false)
 
+/-- Value of a term on the path to a definedness site, or of its divisor. The
+demand-driven interpreter and strict evaluation must agree, as for a consumed
+body, so an undefined operand or unused let that demand skips leaves the site
+unconfirmed. The strict budget is the question's shared one. -/
+private def siteValue (n : Nat) (t : FrenModule.Typed) (b : FrenModule.TypedBody)
+    (env : FrenEval.Environment) (e : FrenAst.Expr) :
+    StateT StrictState (Except (Option String)) FrenEval.Value := fun state => do
+  let demanded ← (FrenEval.walk n t b env e).mapError (some ∘ reprStr)
+  let (strict, remaining) ← ((boundedStrictWalk n t b env e).run state).mapError
+    (fun reason => some ("strict: " ++ reason))
+  unless strict == demanded do throw (some "strict and demand-driven evaluation disagree")
+  return (strict, remaining)
+
 /-- Locate the exact retained source occurrence under its lexical bindings and
-conditional guards. Boolean operands and unused lets retain static obligations;
-only if/match select branches. Never evaluate the target operation itself. -/
+conditional guards. Every let value and guard on the path is evaluated strictly
+too; only if/match select branches. Never evaluate the target operation itself. -/
 private def siteEnvironment : Nat → FrenModule.Typed → FrenModule.TypedBody →
-    FrenEval.Environment → FrenAst.Expr → FrenAst.Expr → Except (Option String) FrenEval.Environment
-  | 0, _, _, _, _, _ => .error (some "source site traversal exhausted")
+    FrenEval.Environment → FrenAst.Expr → FrenAst.Expr →
+    StateT StrictState (Except (Option String)) FrenEval.Environment
+  | 0, _, _, _, _, _ => throw (some "source site traversal exhausted")
   | n + 1, t, b, env, target, e => do
     if e == target then return env
     let has := containsSite 10000 target
     let visit := siteEnvironment n t b
-    let eval := fun a => (FrenEval.walk n t b env a).mapError (some ∘ reprStr)
+    let eval := siteValue n t b env
     match e with
     | .paren _ a _ | .unary _ _ a => visit env target a
     | .binary a _ _ c => visit env target (if has a then a else c)
@@ -187,7 +201,7 @@ private def siteEnvironment : Nat → FrenModule.Typed → FrenModule.TypedBody 
     | _ => throw (some "source site not found")
 
 private def confirmDefinedness (p : FrenEval.Program) (q : FrenOir.Question)
-    (values : Array FrenEval.Value) (depth : Nat) : Confirmation := Id.run do
+    (values : Array FrenEval.Value) (depth : Nat) (state : StrictState) : Confirmation := Id.run do
   let some b := q.subject | return .unconfirmed "missing source body"
   let some origin := q.origin | return .unconfirmed "missing source site"
   if !p.typed.bodies.contains b || origin.owner != b.owner || origin.member != b.member then
@@ -201,8 +215,9 @@ private def confirmDefinedness (p : FrenEval.Program) (q : FrenOir.Question)
     | return .unconfirmed "source definedness condition unsupported"
   let result : Except (Option String) FrenEval.Value := do
     let env ← (FrenEval.arguments p.typed b values).mapError (some ∘ reprStr)
-    let env ← siteEnvironment depth p.typed b env origin.expression b.expression
-    (FrenEval.walk depth p.typed b env divisor).mapError (some ∘ reprStr)
+    let (env, state) ← (siteEnvironment depth p.typed b env origin.expression b.expression).run state
+    let (value, _) ← (siteValue depth p.typed b env divisor).run state
+    return value
   match result with
   | .error none => return .rejected "source site is unreachable"
   | .error (some reason) => return .unconfirmed ("source definedness evaluation: " ++ reason)
@@ -238,7 +253,7 @@ def confirmObservations (evaluator : FrenEval.Program) (q : FrenOir.Question)
     | .ok (false, _) => return .rejected "source premise is false"
     | .ok (true, remaining) => state := remaining
   if q.kind == .assumptionsSatisfiable then return .witness
-  if q.kind != .validity then return confirmDefinedness evaluator q values depth
+  if q.kind != .validity then return confirmDefinedness evaluator q values depth state
   let some subject := q.subject | return .unconfirmed "missing source goal"
   match sourceBoolean evaluator subject values depth state with
   | .error e => return .unconfirmed ("source goal evaluation: " ++ e)
@@ -255,7 +270,8 @@ private def confirmProduced (p : FrenThirDesugar.Program) (out : Program) (index
   if q.readiness != .ready then return .unconfirmed "unresolved question readiness"
   -- sourceBoolean evaluates consumed hypotheses and goals, strictly too when
   -- the body or a transitive callee mentions division or remainder.
-  -- Definedness confirmation evaluates a source prefix instead of its body.
+  -- Definedness confirmation evaluates a source prefix instead of its body,
+  -- with the same strict agreement.
   for edge in q.dependencies do
     match edge with
     | .definition id =>

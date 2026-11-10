@@ -20,6 +20,10 @@ under the model, a skipped `or` operand and a callee defined only for some
 inputs; there a definedness row refutes in any case, and the corpus checks
 only verdicts. That strict confirmation leaves such rows unconfirmed is pinned
 by the unit controls in `src/FrenOirToSmtTests/Model.lean`.
+`div-site-under-undefined-let.fren` has a site whose path crosses a let value
+that is undefined at the model; the unit controls in
+`src/FrenOirToSmtTests/Checker.lean` pin that this site's row stays unconfirmed
+there while the row of the division inside the let value is confirmed.
 `empty.fren` has a total function, which creates definedness checks and verifies;
 `no-checks.fren` has no obligations.
 

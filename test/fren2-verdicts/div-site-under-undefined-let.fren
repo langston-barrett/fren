@@ -1,0 +1,6 @@
+-- verdict: refuted exit: 1
+-- At x = 0 the let value's skipped operand 1 div x is undefined, and its
+-- definedness row is the confirmed counterexample. The row for 5 div x has no
+-- strict path to its site there, so that row alone would stay unconfirmed.
+mod corpus
+expect c(x: Int) { expect bad: let b := false and (1 div x = 1) in 5 div x = 0 }
