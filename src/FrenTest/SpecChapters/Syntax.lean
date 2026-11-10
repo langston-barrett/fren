@@ -125,7 +125,7 @@ of their own suffixes, the corpus and the random texts do not.
 Bounded: every text of up to three characters over `alphabet` (24 characters),
 every text of up to four over ten of them, `corpus`, and 500 seeded random
 texts of 20 to 120 characters. -/
-def lexer_agrees : Bool :=
+def lexer_agrees (_ : Unit) : Bool :=
   let texts := strings alphabet 3 ++ strings ['a', '?', '-', '<', '=', '!', ':', '\r', '\n', '1'] 4 ++
     corpus ++ randomTexts 500
   texts.all fun s => specPieces s == some (actualPieces s) &&
@@ -140,7 +140,7 @@ def lexer_agrees : Bool :=
 the characters it encodes, and rejects overlong forms, surrogates, stray
 continuation bytes, truncated sequences and bytes that never occur in UTF-8.
 Bounded: every sequence of up to two bytes, and the listed longer ones. -/
-def encoding_agrees : Bool :=
+def encoding_agrees (_ : Unit) : Bool :=
   let bytes (l : List Nat) : ByteArray := ⟨l.toArray.map (·.toUInt8)⟩
   let valid : List (List Nat) := [[], [0x41], [0xC3, 0xA9], [0xE2, 0x82, 0xAC], [0xF0, 0x9F, 0x98, 0x80]]
   let invalid : List (List Nat) := [[0xFF], [0x80], [0xC0, 0x80], [0xED, 0xA0, 0x80], [0xE2, 0x82],
@@ -158,7 +158,7 @@ def encoding_agrees : Bool :=
 leading zeros included, beyond any fixed width. Bounded: the listed numerals,
 which include 2^64, 2^128 + 1 and 10^40, and 200 seeded random numerals of 1 to
 80 digits, whose value is summed from their digits. -/
-def numerals_agree : Bool :=
+def numerals_agree (_ : Unit) : Bool :=
   let listed := [("0", 0), ("007", 7), ("42", 42), ("18446744073709551616", 18446744073709551616),
     ("340282366920938463463374607431768211457", 2 ^ 128 + 1),
     ("10000000000000000000000000000000000000000", 10 ^ 40),
@@ -1051,7 +1051,7 @@ three of the characters `(){},:=<>!+-*%/.?&|`, which includes each punctuator,
 the lexer's keywords, `x`, `1` and `assume`; orders the binary operators'
 precedences as the chapter's categories rank them; and reads each unary
 spelling before an operand as that unary operator. -/
-def operators_agree : Bool :=
+def operators_agree (_ : Unit) : Bool :=
   let prec (op : SBinary) : Option Nat := (FrenParse.binaryOperator (spellBinary op)).map (·.2)
   let rank (op : SBinary) : Int := spec.surface.rank (spec.surface.binary_category op)
   binaryOps.all (fun op => match FrenParse.binaryOperator (spellBinary op) with
@@ -1080,7 +1080,7 @@ Bounded: 1000 seeded random trees of at most six levels, every pair of binary
 operators and every unary operator around binary operands, and seven
 ill-formed trees; the converse on those trees' texts in full parentheses and
 on the texts near those of 300 more random trees of at most five levels. -/
-def roundtrip_agrees : Bool := Id.run do
+def roundtrip_agrees (_ : Unit) : Bool := Id.run do
   let x := Tree.name (mkPath ["x"])
   let y := Tree.name (mkPath ["y"])
   let z := Tree.name (mkPath ["z"])
@@ -1170,7 +1170,7 @@ seven ill-formed declaration trees, which the chapter's
 `declaration_well_formed?` must refuse; and one whose only fault is its body,
 a call without arguments, which `declaration_well_formed?` accepts and
 `node_well_formed?` must refuse. -/
-def declarations_agree : Bool := Id.run do
+def declarations_agree (_ : Unit) : Bool := Id.run do
   let x := Tree.name (mkPath ["x"])
   let p : spec.surface.Parameter := ⟨"x", some .Integer⟩
   let illFormed : List (spec.surface.DeclarationF Tree) := [
@@ -1353,15 +1353,20 @@ def mutants_caught (md : String) (inputs : List (String × String)) : Except Str
 /-! ## Status names
 
 Each `tested` or `lean` status of the chapter names a declaration that exists. -/
-/-- Every check of both chapters, by name, with its failures. -/
+/-- Every check of both chapters, by name, with its failures.
+
+The bounded checks above take `Unit` so that only this function runs them. As
+constants, Lean evaluated all six when the module initialized, which cost
+every `fren_test` process about 22 seconds before it read its arguments, and
+the native harnesses' deadlines for a probe's first output are shorter. -/
 def check : IO (Array String) := do
   let lexical ← IO.FS.readFile ("src" / "Spec" / "Language" / "LexicalStructure.md")
   let md ← IO.FS.readFile chapterPath
   let inputs := grammarInputs md
   let mut out := #[]
-  for (name, ok) in [("lexer_agrees", lexer_agrees), ("encoding_agrees", encoding_agrees),
-      ("numerals_agree", numerals_agree), ("operators_agree", operators_agree),
-      ("roundtrip_agrees", roundtrip_agrees), ("declarations_agree", declarations_agree)] do
+  for (name, ok) in [("lexer_agrees", lexer_agrees ()), ("encoding_agrees", encoding_agrees ()),
+      ("numerals_agree", numerals_agree ()), ("operators_agree", operators_agree ()),
+      ("roundtrip_agrees", roundtrip_agrees ()), ("declarations_agree", declarations_agree ())] do
     unless ok do out := out.push s!"{name} failed"
   for (name, result) in [("pieces_agree", pieces_agree lexical),
       ("grammar_agrees", grammar_agrees md inputs), ("terminals_agree", terminals_agree md),
