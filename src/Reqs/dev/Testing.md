@@ -1198,6 +1198,9 @@ a file takes effect without a restart:
   the load, since the load includes unrelated work and decays slowly;
   it still needs a slot and memory. An unavailable load reading lets it
   start too. `HEAVY_MAX_LOAD=off` disables even a value in the file.
+- **Aging:** `HEAVY_AGING_SECONDS`, else the number in
+  `~/.cache/heavy/aging_seconds`, else 300: the wait that outweighs one
+  priority class ([Admission order](#admission-order)).
 
 A setting that is set but is not a positive finite number is ignored,
 with a warning.
@@ -3363,6 +3366,11 @@ With no logged exposure the rate is `null`. Raw counts and run times retain
 the admission policy; these and the top-level wait and latency summaries
 include every completion in the requested window.
 
+`by_priority` lists, for each priority class that completed a job in the
+window, the number of jobs, that number divided by the requested hours,
+the wait and run-time percentiles and the longest wait. Records from
+before the classes appear as `unrecorded`.
+
 `by_kind` compares successful run-time percentiles within each job kind.
 For each load threshold it also reports the ratio of its median run time
 to off's median for each kind with the same slot count. The aggregate
@@ -3408,6 +3416,264 @@ elan fetches toolchains. `python3 scripts/heavy_test.py` tests its
 argument parsing, overrides, admission with injected load, job logs,
 policy comparisons and flips without sleeping, and
 the `lint` workflow runs it.
+
+### Admission order
+
+Heavy's aim is throughput: useful jobs completed per unit of time. The
+kernel shares the CPUs among the running jobs and places their processes,
+so heavy neither hands out CPU time nor pins anything. It decides only
+when a waiting job starts, and tells the kernel which job matters more.
+
+A job starts when it holds a slot, the running jobs' charged memory is at
+most 60% of the cap, and the load limit, if one is set, allows it.
+`heavy_start` is that rule in exact integers: `rss` is absent when the
+registry gave no total, and such a job waits. The load and its limit are
+integers in one common unit, and so are `waited` and `grace`. The script
+compares `5 * rss` with `3 * cap` in integers too, since a floating-point
+60% of a large cap is not exact.
+
+Each job has a priority class, which says what waits for it. The caller
+names it in `HEAVY_PRIORITY`, as `fd job --priority` does: `main-repair`
+(main is broken), `critical-path` (a merge that other work is stacked on
+waits for it), `merge-blocking` (a merge waits for it), `edit-loop` (an
+author waits for it while editing), or `exploratory` (fuzzing, measurement
+and everything else). A missing or unknown label is `exploratory`, so a
+misspelt label never jumps the queue.
+
+Waiting jobs start in the order of a key: the time the job was enqueued
+plus one aging step, `HEAVY_AGING_SECONDS` (300 by default), for each class
+below the most urgent. A job's key never changes while later arrivals' keys
+grow with the clock, so an exploratory job that has waited more than four
+steps goes before every newcomer, and nothing starves. Jobs of one class
+start in the order they were enqueued. The step is a policy guess; the
+waits that `--stats` reports for each class are the evidence for changing it.
+
+A waiting job yields a free slot only to a waiter that could take that slot
+now: one that still reports itself (`ttl`), counts the slot among its own,
+and meets the start rule under its own settings. A stopped or stuck waiter,
+or one that waits under a tighter private setting, therefore holds nobody
+back, and a slot is never left idle for a job that cannot use it. Priority
+only chooses among jobs that could each start, so it admits no job that the
+memory rule alone would refuse.
+
+When a job starts, heavy also sets its share of the CPU from its class.
+Jobs in separate cgroups compete by `cpu.weight`, and niceness matters only
+among the processes of one cgroup, so heavy does both. It raises the job's
+niceness to the class's value, and never lowers it; where the kernel
+groups each session for scheduling (`sched_autogroup`), it raises the
+niceness of the job's session group as well, since that is what then
+competes with other sessions. Heavy's own monitor keeps its niceness: it
+enforces the memory cap. It writes the class's
+weight to its own cgroup's `cpu.weight` when it may write that file and
+every process in the cgroup is heavy itself, an ancestor of it or the job,
+as in the scope that `fd job` gives each job; it restores the previous
+weight when the job ends. Otherwise the weight stays as it is: a cgroup
+shared with other work is not heavy's to change. The values are policy
+guesses too. A lighter weight costs a job nothing while the CPUs are not
+contended.
+
+A waiting job publishes itself in a file of its own under `waiters/` in
+the state directory, holds a lock on it while it waits, and rewrites it on
+every poll. A file whose lock is free belongs to no job. A job that cannot
+publish itself warns and starts by the start rule alone. A copy of the
+script from before this order publishes nothing, so it neither yields nor
+is yielded to until its worktree is rebased.
+
+`Heavy.Admission` is the Std-only Lean kernel for these decisions, and the
+`impl`s in `Impls.HeavyAdmission` bind it to the requirements below. The
+`heavyAdmission` job compares the script's start rule, classes and turns
+with that kernel on generated cases; the script stays the scheduler until
+the Lean executable replaces it.
+
+```fren
+-- A load limit and a load reading are integers in one common unit, small
+-- enough that the adapter's conversion of both is exact.
+pub fn start_allowed?(
+    rss: Option<Int>,
+    cap: Int,
+    waited: Int,
+    grace: Int,
+    limit: Option<Int>,
+    load: Option<Int>
+) :=
+    (match rss {
+        Option::Some(used) => 5 * used <= 3 * cap,
+        Option::None => false,
+    }) and (match limit {
+        Option::None => true,
+        Option::Some(bound) =>
+            waited >= grace or (match load {
+                Option::None => true,
+                Option::Some(reading) => reading < bound,
+            }),
+    })
+
+-- The adapter reads the load only when the limit binds; the reading is an
+-- input here so that the rule decides what a missing one means.
+pub proc heavy_start(
+    rss: Option<Int>,
+    cap: Int,
+    waited: Int,
+    grace: Int,
+    limit: Option<Int>,
+    load: Option<Int>,
+): (det start?) {
+    ensure rule: start? iff start_allowed?(rss, cap, waited, grace, limit, load)
+    expect unknown_memory: when rss = Option::None, not start?
+    expect no_limit: when limit = Option::None and rss = Option::Some(0) and cap >= 0, start?
+    expect grace_over: when waited >= grace and rss = Option::Some(0) and cap >= 0, start?
+    expect load_missing: when load = Option::None and rss = Option::Some(0) and cap >= 0, start?
+}
+
+pub enum PriorityClass { MainRepair, CriticalPath, MergeBlocking, EditLoop, Exploratory }
+
+pub fn priority_class(label: Option<String>): PriorityClass :=
+    if label = Option::Some("main-repair") then PriorityClass::MainRepair
+    else if label = Option::Some("critical-path") then PriorityClass::CriticalPath
+    else if label = Option::Some("merge-blocking") then PriorityClass::MergeBlocking
+    else if label = Option::Some("edit-loop") then PriorityClass::EditLoop
+    else PriorityClass::Exploratory
+
+pub fn priority_rank(priority: PriorityClass): Int := match priority {
+    PriorityClass::MainRepair => 0,
+    PriorityClass::CriticalPath => 1,
+    PriorityClass::MergeBlocking => 2,
+    PriorityClass::EditLoop => 3,
+    PriorityClass::Exploratory => 4,
+}
+
+pub fn priority_nice(priority: PriorityClass): Int := match priority {
+    PriorityClass::MainRepair => 0,
+    PriorityClass::CriticalPath => 2,
+    PriorityClass::MergeBlocking => 4,
+    PriorityClass::EditLoop => 7,
+    PriorityClass::Exploratory => 10,
+}
+
+pub fn priority_weight(priority: PriorityClass): Int := match priority {
+    PriorityClass::MainRepair => 250,
+    PriorityClass::CriticalPath => 160,
+    PriorityClass::MergeBlocking => 100,
+    PriorityClass::EditLoop => 50,
+    PriorityClass::Exploratory => 25,
+}
+
+pub proc heavy_priority_class(label: Option<String>): (det priority: PriorityClass, det rank: Int) {
+    out priority := priority_class(label)
+    out rank := priority_rank(priority)
+    expect default: when label = Option::None, priority = PriorityClass::Exploratory
+    expect ranked: 0 <= rank <= 4
+}
+
+-- `outsiders` counts the processes in heavy's cgroup that are neither heavy,
+-- one of its ancestors nor part of the job. `other` is any second label: the
+-- more urgent of two classes gets the larger share by either mechanism.
+pub proc heavy_cpu_weight(
+    label: Option<String>,
+    writable?,
+    outsiders: Nat,
+    other: Option<String>,
+): (det nice: Int, det weight: Option<Int>) {
+    out nice := priority_nice(priority_class(label))
+    out weight :=
+        if writable? and outsiders = 0 then Option::Some(priority_weight(priority_class(label)))
+        else Option::None
+    expect unprivileged: 0 <= nice <= 19
+    expect shared: when outsiders > 0, weight = Option::None
+    expect kernel_range: 1 <= priority_weight(priority_class(label)) <= 10000
+    expect urgent_gets_more: when priority_rank(priority_class(label)) < priority_rank(priority_class(other)),
+        nice < priority_nice(priority_class(other))
+        and priority_weight(priority_class(label)) > priority_weight(priority_class(other))
+}
+
+-- A waiting job as it published itself. Times are on one machine-wide
+-- monotonic clock; slots, cap and limit are the settings it waits under.
+pub struct Waiter {
+    sequence: Int,
+    label: Option<String>,
+    enqueued: Int,
+    updated: Int,
+    slots: Int,
+    cap: Int,
+    limit: Option<Int>,
+}
+
+pub enum Waiters { Nil, Cons(Waiter, Waiters) }
+
+-- The key is `rank * step + enqueued`, one case for each rank.
+pub fn queue_key(w: Waiter, step: Int): Int := match priority_class(w.label) {
+    PriorityClass::MainRepair => w.enqueued,
+    PriorityClass::CriticalPath => step + w.enqueued,
+    PriorityClass::MergeBlocking => 2 * step + w.enqueued,
+    PriorityClass::EditLoop => 3 * step + w.enqueued,
+    PriorityClass::Exploratory => 4 * step + w.enqueued,
+}
+
+pub fn queue_before?(a: Waiter, b: Waiter, step: Int) :=
+    queue_key(a, step) < queue_key(b, step)
+    or (queue_key(a, step) = queue_key(b, step) and a.sequence < b.sequence)
+
+pub proc heavy_queue_order(first: Waiter, second: Waiter, step: Nat): (det before?) {
+    ensure rule: before? iff queue_before?(first, second, step)
+    expect fifo: when first.label = second.label and first.enqueued < second.enqueued, before?
+    expect aging: when first.enqueued + 4 * step < second.enqueued, before?
+    expect one_way: not (before? and queue_before?(second, first, step))
+}
+
+pub fn queue_contends?(
+    w: Waiter,
+    slot: Int,
+    rss: Option<Int>,
+    load: Option<Int>,
+    now: Int,
+    ttl: Int,
+    grace: Int
+) :=
+    0 <= now - w.updated <= ttl and slot < w.slots
+    and start_allowed?(rss, w.cap, now - w.enqueued, grace, w.limit, load)
+
+pub fn queue_ahead(
+    own: Waiter,
+    others: Waiters,
+    slot: Int,
+    rss: Option<Int>,
+    load: Option<Int>,
+    now: Int,
+    ttl: Int,
+    grace: Int,
+    step: Int
+): Int := match others {
+    Waiters::Nil => 0,
+    Waiters::Cons(w, rest) =>
+        (if queue_contends?(w, slot, rss, load, now, ttl, grace) and queue_before?(w, own, step) then 1
+            else 0) + queue_ahead(own, rest, slot, rss, load, now, ttl, grace, step),
+}
+
+-- `own` is the caller, which has just met the start rule itself and found
+-- slot `slot` free; `others` are the other published waiters.
+pub proc heavy_queue_turn(
+    own: Waiter,
+    others: Waiters,
+    slot: Int,
+    rss: Option<Int>,
+    load: Option<Int>,
+    now: Int,
+    ttl: Nat,
+    grace: Nat,
+    step: Nat,
+): (det ahead: Int, det turn?) {
+    out ahead := queue_ahead(own, others, slot, rss, load, now, ttl, grace, step)
+    ensure rule: turn? iff ahead = 0
+    expect alone: when others = Waiters::Nil, turn?
+    expect memory_blocks_all: when rss = Option::None, turn?
+}
+
+#fren_check heavy_start
+#fren_check heavy_priority_class
+#fren_check heavy_cpu_weight
+#fren_check heavy_queue_order
+#fren_check heavy_queue_turn
+```
 
 ## Shared builds
 

@@ -20,6 +20,7 @@ import Impls.GroundClosure
 import Impls.GroundMatching
 import Impls.Guards
 import Impls.Heavy
+import Impls.HeavyAdmission
 import Impls.HeavyOwnership
 import Impls.HigherOrder
 import Impls.Impl
