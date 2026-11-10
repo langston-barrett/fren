@@ -429,6 +429,24 @@ theorem synth_contexts_ok (symb : Snoc Entry) (ctx : Snoc Ty) (e : Hir) (ty : Ty
       (Derives.mono (fun _ _ hr => ⟨hr.2, hr.1⟩)
         (derives_regular symb h.1 (synth_desugars symb h.2.2) h.2.1).1))
 
+/-- A valid table whose contexts extend Γ and whose newest row concludes
+`Γ ⊢ τ` is accepted by `synthesis?`, when Σ and Γ are well formed. -/
+theorem synthesis_of_valid (symb : Snoc Entry) (ctx : Snoc Ty) (ty : Ty) (rows : Snoc HirRow)
+    (r : HirRow) (hs : symb_ok? symb = true) (hc : ctx_ok? symb ctx = true)
+    (hv : Valid hirView (fun l j => HRuleOk symb l j ∧ extends? j.ctx ctx = true) (.Extend rows r))
+    (hcl : hirView.concl r = ⟨ctx, ty⟩) : synthesis? symb (.Extend rows r) ctx ty = true := by
+  have hcl' : r.ctx = ctx ∧ r.ty = ty := by
+    have := congrArg Typing.ctx hcl; have := congrArg Typing.ty hcl; constructor <;> assumption
+  have hvalid : hir_rows_valid? symb (.Extend rows r) = true :=
+    (hir_valid_iff symb _).2 (Valid.mono (fun _ _ hr => hr.1) hv)
+  have hext : hir_rows_extend? (.Extend rows r) ctx = true :=
+    hir_rows_extend_of_lookup _ _ (fun p r' hl => Valid.invariant hv hl)
+  have hs' : bindings_ok? symb symb = true := by
+    simpa only [symb_ok?, decide_eq_true_eq] using hs
+  simp only [synthesis?, decide_eq_true_eq]
+  refine ⟨⟨⟨⟨hs', hc⟩, hvalid⟩, hext⟩, ?_⟩
+  simp [fren_spec, hcl'.1, hcl'.2]
+
 /-- `thir.algorithmic.tree-lift`: the table judgment agrees with the
 inductive reading of the rules. Some table that `synthesis?` accepts for
 `ty` in `ctx` has a root that unfolds to `e` exactly when Σ and Γ are well
@@ -446,18 +464,7 @@ theorem synthesis_adequate (symb : Snoc Entry) (ctx : Snoc Ty) (e : Hir) (ty : T
     obtain ⟨rows', r, -, hv, hcl, hu⟩ := Derives.table (V := hirView)
       (fun l j => (⟨l, j.ctx, j.ty⟩ : HirRow)) (fun _ _ => rfl) (fun _ _ => rfl) h2 .Empty
       (Valid.empty _ _)
-    refine ⟨.Extend rows' r, ?_, ?_⟩
-    · have hcl' : r.ctx = ctx ∧ r.ty = ty := by
-        have := congrArg Typing.ctx hcl; have := congrArg Typing.ty hcl; constructor <;> assumption
-      have hvalid : hir_rows_valid? symb (.Extend rows' r) = true :=
-        (hir_valid_iff symb _).2 (Valid.mono (fun _ _ hr => hr.1) hv)
-      have hext : hir_rows_extend? (.Extend rows' r) ctx = true :=
-        hir_rows_extend_of_lookup _ _ (fun p r' hl => Valid.invariant hv hl)
-      have hs : bindings_ok? symb symb = true := by
-        simpa only [symb_ok?, decide_eq_true_eq] using h.1
-      simp only [synthesis?, decide_eq_true_eq]
-      refine ⟨⟨⟨⟨hs, h.2.1⟩, hvalid⟩, hext⟩, ?_⟩
-      simp [fren_spec, hcl'.1, hcl'.2]
+    refine ⟨.Extend rows' r, synthesis_of_valid symb ctx ty rows' r h.1 h.2.1 hv hcl, ?_⟩
     · unfold HRootUnfolds; rw [hir_root_position]; exact hu
 
 /-- A table that `synthesis?` accepts has a root that unfolds to exactly one

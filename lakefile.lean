@@ -521,7 +521,7 @@ input_file spec_compiler_hir_md where
   text := true
 
 lean_lib SpecCompilerThir where
-  globs := #[`Spec.Compiler.Thir, `Spec.Compiler.Thir.Hir, `Spec.Compiler.Thir.Adequacy]
+  globs := #[`Spec.Compiler.Thir, `Spec.Compiler.Thir.Hir, `Spec.Compiler.Thir.Adequacy, `Spec.Compiler.Thir.Infer]
   needs := #[`@/spec_compiler_thir_md]
 
 input_file spec_compiler_thir_md where
