@@ -1837,9 +1837,12 @@ checks that each rule of the three chapters links the Fren items after it:
 The chapter reuses the Core's identities, `Snoc`, `Symb` and `ArmF`. Its
 wrapper proves in Lean, over every arm sequence (every typed one, where a
 premise says so), that selection takes the first written arm for a
-constructor, agrees with the arm at the first index, and is unaffected by the
-order of arms when a constructor has one. Reachability is defined through
-`first_index`; the wrapper proves it equivalent to "no arm is repeated", that
+constructor and is unaffected by the order of arms when a constructor has
+one. Of `first_index` it proves only that the index is within the arms and
+that there is none exactly when no arm is written for the constructor; that
+selection gives the arm at that index is not stated or proved, and is open.
+Reachability is defined through `first_index`; the wrapper proves it
+equivalent to "no arm is repeated", that
 covering arms select an arm for every constructor of the enumeration
 (including the empty one), and that the selected arm keeps the match's body
 type and pattern type. Admission is lifted from one match to layered rows and

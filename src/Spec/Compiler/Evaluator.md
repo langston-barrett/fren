@@ -202,8 +202,9 @@ function equal to `select`.
 [dynamic semantics](../Language/DynamicSemantics.md#r-dynamics.match.selection)
 takes the last. The two
 [agree when no arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics),
-so on a typed match with a repeated arm this evaluator does not run the arm
-that the dynamic semantics prescribes. That disagreement is open and belongs
+so on a typed match whose scrutinee's constructor has a repeated arm this
+evaluator can run an arm other than the one that the dynamic semantics
+prescribes. That possible disagreement is open and belongs
 to the unit that aligns the evaluators.
 
 r[evaluator.selection.arm] spec::evaluator::evaluator_pick::agrees

@@ -30,8 +30,8 @@ what a solver's answer establishes. Later chapters build on these
 same identities, contexts and judgments rather than assuming precomputed
 resolution or typing decisions.
 [Patterns and matching](Patterns.md) defines how a match selects an arm, the
-coverage check that every constructor has an arm, and the
-unreachable (repeated) arms that the check rejects.
+coverage check that every constructor has at least one arm, and the
+separate check that rejects unreachable (repeated) arms.
 
 The defined source domain has Booleans, mathematical integers, payload-free
 nominal enums, named functions, locals and lets, conditionals, constructor

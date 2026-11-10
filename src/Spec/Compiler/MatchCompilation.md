@@ -12,8 +12,9 @@ which is the arm that
 constructor that has no arm, the chain runs its fallback, where `select`
 names none, so the two agree only on a match whose arms
 [cover](../Language/Patterns.md#r-patterns.coverage.covered) the constructor.
-`select` in turn is the selection of the dynamic semantics only when
-[no arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics).
+`select` in turn is the selection of the dynamic semantics when
+[no arm is repeated](../Language/Patterns.md#r-patterns.matching.dynamics),
+and can differ from it for a constructor that has a repeated arm.
 
 r[match.lowering.selection] spec::lowering::lowering_selection::agrees
 For an [admitted](../Language/Patterns.md#r-patterns.coverage.admitted)

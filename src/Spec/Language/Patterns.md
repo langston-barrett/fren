@@ -31,8 +31,8 @@ The chapter's judgments, and the Fren definitions that state them:
 In outline, `select` gives, for a constructor c, the first arm written for c.
 The [dynamic semantics](DynamicSemantics.md#r-dynamics.match.selection) runs
 the last arm written for c, so the two [agree](#r-patterns.matching.dynamics)
-when no arm is repeated and disagree on a typed match with a repeated arm;
-that disagreement is open. A match has two checks, once the typing rules have admitted the patterns of
+when no arm is repeated and can disagree on a typed match whose scrutinee's
+constructor has a repeated arm; that possible disagreement is open. A match has two checks, once the typing rules have admitted the patterns of
 the arms: every constructor of the scrutinee's enumeration is the pattern of
 at least one arm, which is the
 [coverage of the static semantics](StaticSemantics.md#r-statics.definedness.coverage),
@@ -122,9 +122,9 @@ The arms of a match are a snoc sequence in written order, so the newest entry
 is the last arm written. For a constructor c, `select` gives the first arm
 written for c, if there is one: it consults the earlier arms before the
 newest. This is the selection of this chapter and of the production
-`FrenHirToThir.selectArm`; it is the selection of the
-[dynamic semantics](#r-patterns.matching.dynamics) only when no arm is
-repeated. `occurrences` counts the arms written for c.
+`FrenHirToThir.selectArm`; it is proved to be the selection of the
+[dynamic semantics](#r-patterns.matching.dynamics) when no arm is repeated,
+and can differ from it for a constructor that has a repeated arm. `occurrences` counts the arms written for c.
 
 ```text
   arms = c₀ ⇒ e₀ | … | cₘ ⇒ eₘ     k least with cₖ = c
@@ -482,18 +482,20 @@ from the same row values as `arm_value` reads.
 
 When no arm repeats the pattern of an earlier arm, the two agree: `arm_value`
 is `selected_value` for every constructor, whether or not an arm is written
-for it. When an arm is repeated they disagree. For two arms with the one
-constructor, `arm_value` is the value of the second arm's body and
+for it. When the scrutinee's constructor has a repeated arm they can
+disagree. For two arms with the one constructor, `arm_value` is the value of the second arm's body and
 `selected_value` the value of the first's, and these differ whenever the
 bodies' values do. Such a match can be typed, since
 [typing ignores repeated arms](Types.md#r-types.judgment.coverage-separate),
-and the dynamic semantics gives it a value, so the disagreement is
-observable. This chapter [rejects](#r-patterns.coverage.repeated) the match,
+and the dynamic semantics gives it a value, so a disagreement is
+observable when it occurs. This chapter [rejects](#r-patterns.coverage.repeated) the match,
 but the dynamic semantics does not use that check.
 
-The disagreement is open. `select`, and with it the production
-`FrenHirToThir.selectArm` that the evaluator and confirmation call, does not
-implement the dynamic semantics on a typed match with a repeated arm. This
+The possible disagreement is open. `select`, and with it the production
+`FrenHirToThir.selectArm` that the evaluator and confirmation call, is not
+shown to implement the dynamic semantics on a typed match with a repeated
+arm, and does not when the scrutinee's constructor has repeated arms whose
+bodies' values differ. This
 chapter does not change the dynamic semantics; bringing the two to one
 choice belongs to the unit that aligns the evaluators.
 
