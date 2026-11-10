@@ -5,7 +5,18 @@ of its inputs. This chapter specifies the source domain of
 [typed syntax](Thir.md). It does not decide whether a property holds for
 all inputs. It defines the concrete value-debugging strategy.
 The [dynamic semantics](../Language/DynamicSemantics.md) is the language's
-evaluation, which this evaluator implements; the
+evaluation. This evaluator agrees with it on verified programs whose
+assumptions hold, as its
+[implementation property](../Language/DynamicSemantics.md#r-dynamics.theorem.implementation)
+states, and differs from it elsewhere in four ways. It is a recursive
+walk that computes an outcome in one pass, where the dynamic semantics
+is a step relation on configurations. It leaves a let's
+definition unread where the body does not read it, where the dynamic
+semantics evaluates every let's value. It has one undefined outcome,
+where the dynamic semantics has two kinds of error. It evaluates only
+the admitted nonrecursive programs, so it always ends, where an
+evaluation of the dynamic semantics may
+[diverge](../Language/DynamicSemantics.md#r-dynamics.divergence). The
 [static semantics](../Language/StaticSemantics.md) separately defines
 declarative source verification.
 
@@ -78,8 +89,12 @@ the current static checker rejects zero or enforces Fren's solver restrictions.
 Source verification independently retains both ordinary Boolean operands'
 obligations in the incoming context. Only explicit conditional/guard scopes
 supply conditional verification contexts; unused values do not erase checks.
-Pure value semantics require no fixed evaluation order. Written-order
-traversal and first diagnostics are implementation policies.
+The dynamic semantics fixes
+[one order of evaluation](../Language/DynamicSemantics.md#r-dynamics.order):
+written order, with `and` and `or` short-circuiting, given by its
+evaluation contexts. This evaluator visits subexpressions in that order
+except at a let. Which diagnostic is reported first is an
+implementation policy.
 
 For a check member, evaluation produces its Boolean value under supplied
 parameter values. Assumptions restrict which parameter assignments are relevant

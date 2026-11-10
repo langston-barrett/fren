@@ -331,6 +331,61 @@ commuting square with OIR condition generation, is open
   `if_condition`, `let_condition` and `call_condition` through an
   erasure of `FrenLir.Verification` to `Condition`.
 
+## Static, denotational and dynamic semantics: status
+
+The three chapters are a skeleton. Of their rules, only those whose
+`r[...]` line names a Fren definition are stated in Fren: the mention
+relation and the integer domains of the static semantics, the values and
+operator meanings of the denotational semantics, and the table evaluator
+of the dynamic semantics. Every judgment and every property of the three
+chapters is prose.
+
+- [ ] Write the Termination chapter, which defines `Σ ⊢ d terminates`.
+  The static semantics holds its placeholder: no recursive group, or
+  structural recursion on one decreasing parameter. With the present
+  types (Bool, Int and enums without payloads) no value has a proper
+  subterm, so no recursive group passes the placeholder.
+- [ ] Decide how a program selects whether the termination check applies.
+- [ ] Write the definedness rules, the denotational equations and the
+  step relation, with its configurations and evaluation contexts, as
+  Fren definitions.
+- [ ] The table evaluator and the compiler's evaluator are one-pass
+  evaluators, not the step relation. `dynamics.table.differences` and
+  the introduction of the evaluator chapter list their differences.
+- [ ] The table evaluator gives no value to a product, a quotient, a
+  remainder or a call. `binary_meaning?` only bounds the first three.
+- [ ] `types.program.nonrecursive` and `verification.program.defined`
+  exclude all recursion, which is narrower than the termination check.
+- [ ] Match coverage is part of definedness in the static semantics; the
+  compiler's check of it is not yet tied to that rule.
+- [ ] Prove the open properties of the three chapters. Entailment over
+  admissible interpretations is stated to agree with truth of the
+  denotations in verified programs in one direction only.
+
+**A program without the termination check can reach an error.** The
+dynamic semantics states partial correctness for a program that is
+typed, is defined and meets its contracts without the check. It does not
+state that such a program reaches no error state, because that fails:
+
+```text
+g(x: Int): Bool := if g(x) then false else true
+f(x: Int): Int  require g(x)  := 1 div 0
+h(): Int := f(0)
+```
+
+`g` is defined and meets its trivial contract, and it diverges at every
+argument, so no admissible interpretation gives `g` a value. The body of
+`f` is defined, since its hypothesis `g(x)` is true nowhere. The call in
+`h` is defined, since the precondition goal `g(0)` is false nowhere.
+Evaluation reads no contract, so `h()` evaluates `1 div 0` and ends in
+`error(zero-divisor)`. Other readings of entailment fail as well. If
+interpretations are total and satisfy each postcondition, a diverging
+function with the postcondition `false` makes every caller's goals hold
+vacuously, and partial correctness fails too. The claim would hold if a
+call's precondition had to be true, and not only not false, which
+requires conditions to mention only functions that have passed the
+termination check.
+
 ## Compiler correction units
 
 The shared-core correction's first Compiler unit is THIR: the wrapper

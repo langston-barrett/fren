@@ -15,13 +15,15 @@ complete one-layer expression forms. [Core typing](Types.md) defines the
 typing judgment over that Core.
 Source constructs are defined by derived forms that translate into this Core.
 Three chapters give the Core its semantics. The
-[static semantics](StaticSemantics.md) is typing, definedness and
-contracts; a program that satisfies all three is verified. The
+[static semantics](StaticSemantics.md) comprises resolution, typing,
+definedness, contracts and termination; a program that is typed, is
+defined, meets its contracts and passes the termination check is
+verified. The
 [denotational semantics](DenotationalSemantics.md) gives each verified
 program a set-theoretic meaning. The
 [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
-program, with error states and one fixed order of evaluation; an
-evaluation ends in a value or an error, or does not end.
+program by a small-step relation, with error states and one fixed order
+of evaluation; a run ends in a value, ends in an error, or diverges.
 [Definedness and verification](PropertiesAndChecks.md) defines the obligations
 of a typed expression, the hypotheses under which each must be proved, and
 what a solver's answer establishes. Later chapters build on these
@@ -32,17 +34,25 @@ The defined source domain has Booleans, mathematical integers, payload-free
 nominal enums, named functions, locals and lets, conditionals, constructor
 matches and global assumptions and expectations. The [source grammar](Syntax.md)
 fixes its concrete forms. Static semantics comprises resolution, typing,
-definedness and contracts, including match coverage and a well-founded
-call order, which admits structural recursion and no other. A contract is a precondition and a postcondition
+definedness, contracts and termination. Match coverage is part of
+definedness. The termination check is a judgment of its own, which need
+not be applied; a program that has not passed it is not verified. A
+contract is a precondition and a postcondition
 that relate a function's whole argument tuple to its result; it is not
 part of a type.
-Verification hypotheses are discharged by SMT. Passing typing does not
+Verification obligations are discharged by SMT. Passing typing does not
 establish verification. The denotational semantics is defined only for
-verified programs: it assigns no meaning to an undefined operation and
-prescribes no evaluation order. The dynamic semantics is defined for every
-well-typed program: an undefined operation evaluates to an error, in one
-fixed order, and unbounded recursion does not end. On verified programs
-evaluation ends and the two agree. A solver limit or unknown
+verified programs, which terminate: it assigns no meaning to an undefined
+operation and prescribes no evaluation order. The dynamic semantics is
+defined for every well-typed program: an undefined operation evaluates to
+an error, in one fixed order, and unbounded recursion diverges.
+[Adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy) states where
+the two agree: in a verified program whose assumptions hold, an
+expression evaluated where its hypotheses are true ends in a value, which
+is its denotation. A program that is defined and meets its contracts
+without the termination check has no denotation and is
+[partially correct](DynamicSemantics.md#r-dynamics.theorem.partial-correctness).
+A solver limit or unknown
 result proves neither a goal nor its negation.
 
 Numbered rules state the reference requirements. Core typing uses

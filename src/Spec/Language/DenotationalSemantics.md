@@ -1,31 +1,37 @@
 # Denotational semantics
 
-The denotational semantics gives each verified function, and each defined
-expression over verified functions, a value, as a set-theoretic function
-of the values of its free locals. It is defined only for verified Core,
-[stratum by stratum](StaticSemantics.md#r-statics.stratification): a
-function has a denotation once it and the functions it reaches are
-verified. It therefore has no undefined result and no error value, its
-intended meaning has no case for a zero divisor, and it has no order of
-evaluation. The
-[dynamic semantics](DynamicSemantics.md) is defined for every well-typed
-program, and agrees with this chapter on the verified ones.
+The denotational semantics gives each function of a
+[verified](StaticSemantics.md#r-statics.program.verified) program, and
+each defined expression over such functions, a value, as a set-theoretic
+function of the values of its free locals. It gives a meaning to verified
+Core only. A verified program has passed the termination check, so no
+denotation has to account for an evaluation that does not end; a program
+that is defined and meets its contracts without that check has no
+denotation. The chapter proceeds
+[stratum by stratum](StaticSemantics.md#r-statics.stratification). A
+denotation is total on its domain: it has no undefined result, no error
+value and no case for a zero divisor, and it has no order of evaluation.
+The [dynamic semantics](DynamicSemantics.md) evaluates every well-typed
+program, and [adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy)
+states where the two agree.
 
-This chapter defines values and the meanings of the operators. The
-equations of the denotation and its theorems are open: each is listed below
-under its identifier with what it will state.
+A rule whose `r[...]` line names no Fren definition is stated in prose
+only.
 
 ## Overview
 
-| Judgment | Meaning | Fren |
-| --- | --- | --- |
-| `Σ ⊢ v ∈ ⟦τ⟧` | v is a value of type τ | `value_type`, `value_valid?` |
-| `Σ ⊢ ρ ∈ ⟦Γ⟧` | ρ assigns a value of its type to each level of Γ | open |
-| `⟦op⟧(v) = w`, `⟦op⟧(v₁, v₂) = w` | the operator op has result w | `unary_meaning?`, `binary_meaning?`; for `*`, `div` and `%` the relation is looser than the judgment |
-| `⟦e⟧ρ = v` | the defined expression e over verified functions denotes v at ρ | open |
-| `⟦f⟧(v₁, …, vₙ) = v` | the verified function f maps the argument tuple to v | open |
-| `ρ ⊨ φ` | the Boolean expression φ is true at ρ | open |
-| `⊨ φ` | the expectation φ is true | open |
+| Judgment | Meaning | Rule | Fren |
+| --- | --- | --- | --- |
+| `Σ ⊢ v ∈ ⟦τ⟧` | v is a value of type τ | [values of a type](#r-denotation.type) | `value_type`, `value_valid?` |
+| `Σ ⊢ ρ ∈ ⟦Γ⟧` | ρ assigns a value of its type to each level of Γ | [assignments](#r-denotation.assignment) | — |
+| `⟦op⟧(v) = w`, `⟦op⟧(v₁, v₂) = w` | the operator op has the result w | [operators](#r-expressions.meaning.operators), [arithmetic](#r-denotation.operators.arithmetic) | `unary_meaning?`, `binary_meaning?` |
+| `I` | an interpretation gives each function a function on values | [interpretation](#r-expressions.meaning.context) | — |
+| `⟦e⟧ᴵρ = v` | e has the value v at ρ under the interpretation I | [expressions](#r-denotation.expression) | — |
+| `⟦e⟧ρ = v` | e denotes v at ρ | [expressions](#r-denotation.expression), [domain](#r-denotation.domain) | — |
+| `⟦f⟧(v₁, …, vₙ) = v` | the function f maps the argument tuple to v | [functions](#r-denotation.function) | — |
+| `ρ ⊨ φ` | the Boolean expression φ is true at ρ | [truth](#r-denotation.truth) | — |
+| `⊨ A` | the assumption A holds | [truth](#r-denotation.truth) | — |
+| `⊨ ψ` | the expectation ψ is true | [truth](#r-denotation.truth) | — |
 
 ```text
   v ::= true | false                   Booleans
@@ -33,10 +39,6 @@ under its identifier with what it will state.
       | c                              a constructor of a nominal enum
 
   ρ ::= ·  |  ρ, v                     assignments, by de Bruijn level
-
-  ⟦e⟧ρ      is defined when  Σ; Γ; Φ ⊢ e def,  Σ ⊢ ρ ∈ ⟦Γ⟧  and  ρ ⊨ Φ,
-            and every function that e reaches is verified
-  ⟦f⟧(v̄)    is defined when  Σ ⊢ f verified  and  v̄ ⊨ P,  f's precondition
 ```
 
 The denotation of a program is the family of its functions' denotations.
@@ -77,29 +79,18 @@ and the constructors of the enum a for `Nominal(a)`.
 
 r[denotation.assignment]
 An assignment ρ of a context Γ, `Σ ⊢ ρ ∈ ⟦Γ⟧`, lists one value for each
-level of Γ, oldest first, each a value of that level's type. This rule is
-open: [Definedness and verification](PropertiesAndChecks.md#r-verification.validity.assignment)
-states it for the context of a table's row.
+level of Γ, oldest first, each a value of that level's type.
+[Definedness and verification](PropertiesAndChecks.md#r-verification.validity.assignment)
+states the same condition in Fren for the context of a table's row.
 
-## Domain
-
-r[denotation.domain]
-`⟦e⟧ρ` is defined exactly when e is
-[defined](StaticSemantics.md#definedness) under some hypotheses Φ, every
-function that e calls, and every function those reach, is verified, ρ is
-an assignment of e's context, and ρ makes every hypothesis of Φ true.
-`⟦f⟧(v̄)` is defined exactly when f is verified and v̄ meets f's
-precondition; a verified declaration has verified callees, so every
-function that f reaches is verified too. The domain does not wait for the
-whole program: the functions of a
-[stratum](StaticSemantics.md#r-statics.stratification) have denotations as
-soon as that stratum is verified, and the judgments of later declarations
-read them. The judgments of a declaration read no denotation of its own
-recursive group, so the domain is not defined in terms of itself. Nothing
-else has a denotation: this chapter gives no meaning to an ill-typed
-expression, to an expression that is not defined, to a function that is
-not verified, or to a defined expression at an assignment that fails its
-hypotheses. This rule is open.
+r[denotation.leaf]
+Three forms have a value that depends on no other expression, in every
+well-typed program. A Boolean or integer literal has the value that it
+carries. A constructor c of the enum a has the nominal value of c with
+owner a. A local has, at an assignment ρ, the value that ρ lists at the
+local's level. Both this chapter and the
+[dynamic semantics](DynamicSemantics.md#r-dynamics.configuration.loading) give
+these forms these values.
 
 ## Operators
 
@@ -110,11 +101,9 @@ strictly less than the absolute divisor, and `n = (n div d) * d + n % d`.
 Comparisons use integer order; Boolean operators use their truth tables;
 equality compares values of one type, including canonical nominal identity.
 Unary minus negates an integer and `not` complements a Boolean.
-`binary_meaning?` and `unary_meaning?` state the result of every other
-operator exactly. For `*`, `div` and `%` they state only the result's
-sort, and the remainder's range at a nonzero divisor; the equations above
-give the values, and [the rule below](#r-denotation.operators.arithmetic)
-says what the relation leaves out.
+`unary_meaning?` and `binary_meaning?` fix the result of every operator
+except `*`, `div` and `%`; of those three they fix the result's sort and,
+at a nonzero divisor, the remainder's range.
 
 ```fren
 pub fn unary_meaning?(op: UnaryOp, operand: Value, result: Value) := match op, operand {
@@ -162,84 +151,135 @@ pub fn binary_meaning?(op: BinaryOp, left: Value, right: Value, result: Value) :
 ```
 
 r[denotation.operators.arithmetic]
-The denotation of `*`, `div` and `%` is a function on the verified domain:
-`*` denotes the product at every pair of integers, and `div` and `%` denote
-the Euclidean quotient and remainder at every pair whose divisor is not
-zero. A zero divisor is outside the domain, and no defined expression
-reaches one. This rule is open, and `binary_meaning?` does not state it.
-The relation is a looser approximation: it accepts every integer as the
-result of `*` and of `div`, at a zero divisor too; it accepts every integer
-as the remainder by zero; and at a nonzero divisor it bounds the
-remainder's range without fixing its value. The rule will replace those
-three cases by the product and the equation `n = (n div d) * d + n % d`,
-and will relate no result to a zero divisor.
+`*` denotes the product at every pair of integers. `div` and `%` denote
+the Euclidean quotient and remainder, which the equation
+`n = (n div d) * d + n % d` and the remainder's range determine, at every
+pair of integers whose divisor is not zero. They denote nothing at a zero
+divisor.
 
 ## Expressions
 
 r[expressions.meaning.context]
-An interpretation assigns meanings to canonical items. A local assignment
-lists values by level, oldest first, in the exact typing context. Literals
-denote the values they carry; a local denotes the value at its level; a
-constructor denotes its nominal value. A named call substitutes its
-positional arguments into its function body's parameter context, without
-inheriting the caller's locals. A let interprets its value in the incoming
-context and its body with that value appended as the newest level. An if
-denotes its selected branch; a match denotes the body for its constructor, in the incoming context.
+An interpretation assigns meanings to canonical items: to each function, a
+function from value tuples of its parameters' types to values of its
+result's type, which need not have a value at every tuple. A local
+assignment lists values by level, oldest first, in the exact typing
+context. Literals, locals and constructors have their
+[leaf values](#r-denotation.leaf). A named call applies its callee's
+meaning to its positional arguments, and its callee's body is read in the
+parameter context, without inheriting the caller's locals. A let
+interprets its value in the incoming context and its body with that value
+appended as the newest level. An if denotes its selected branch; a match
+denotes, in the incoming context, the body of the arm that
+[arm selection](DynamicSemantics.md#r-dynamics.match.selection) gives for
+its scrutinee's constructor.
 
 r[denotation.expression]
-`⟦e⟧ρ` is defined by one equation for each Core form, by recursion on e.
-The equations state [the paragraph above](#r-expressions.meaning.context):
-an operator's value is its [meaning](#r-expressions.meaning.operators) at
-its operands' denotations, and a call's value is its callee's
-[denotation](#r-denotation.function) at its arguments' denotations. These
-equations are open.
+`⟦e⟧ᴵρ`, the value of e at ρ under an interpretation I, is given by one
+equation for each Core form, by recursion on e. The equations state
+[the paragraph above](#r-expressions.meaning.context): an operator's value
+is its [meaning](#r-expressions.meaning.operators) at its operands'
+values, and a call's value is the value that I gives the callee at the
+arguments' values. `⟦e⟧ᴵρ` has a value only where every part that its
+equation reads has one. The equation of a conditional reads the condition
+and the selected branch, and that of a match the scrutinee and the
+selected arm. The equation of `and` reads its second operand only where
+the first is true, and that of `or` only where the first is false. Every
+other equation reads all the children of its form. A division or
+remainder has no value at a zero divisor, a match has none without an arm
+for its scrutinee's constructor, and a call has none where I gives the
+callee no value. The *denotation* `⟦e⟧ρ` is `⟦e⟧ᴵρ` for the
+interpretation that gives each function its
+[denotation](#r-denotation.function).
 
-r[expressions.value.denotation]
-A well-typed expression of type τ, in a verified program and under values
-of its context's types, whose partial operations are within their domains,
-denotes a value of type τ. This is open. With
-[adequacy](DynamicSemantics.md#r-dynamics.theorem.adequacy) it gives
-[type safety](Types.md#r-types.safety) on verified programs.
+## Domain
+
+r[denotation.domain]
+`⟦f⟧(v̄)` exists exactly when the stratum of f and every earlier
+[stratum](StaticSemantics.md#r-statics.stratification) are
+[verified](StaticSemantics.md#r-statics.program.verified), the
+[assumptions of those strata hold](#r-denotation.truth), and v̄ meets f's
+precondition. `⟦e⟧ρ` is asked for exactly when e is
+[defined](StaticSemantics.md#r-statics.definedness.rules) under some
+hypotheses Φ, every function that e or Φ mentions has a denotation at
+some tuple, ρ is an assignment of e's context, and ρ makes every
+hypothesis of Φ true. This chapter gives no meaning to an ill-typed
+expression, to an expression that is not defined, to a function whose
+stratum or an earlier one is not verified, or to a defined expression at
+an assignment that fails its hypotheses.
 
 ## Functions and programs
 
 r[denotation.function]
-A verified function f denotes the function that maps each argument tuple
-v̄ meeting f's precondition to the denotation of f's body at that tuple. It
-is not defined at any other tuple. The equation is a definition by
+A function f denotes the function that maps each argument tuple v̄ of its
+[domain](#r-denotation.domain) to the denotation of f's body at that
+tuple. It has no value at any other tuple. The equation is a definition by
 recursion on
-[call order](StaticSemantics.md#r-statics.call-order.well-founded): the
-body at v̄ reads the denotations of the functions of earlier strata, and
-those of f's own recursive group only at call instances that precede
-`(f, v̄)`. For a function that is not recursive only the first kind
-occurs. Call order is well founded, so the equations of a recursive group
-have exactly one solution on the tuples that meet the preconditions. This
-rule is open.
+[call order](StaticSemantics.md#r-statics.call-order.instances), with the
+decreasing parameters under which f's group
+[terminates](StaticSemantics.md#r-statics.termination).
 
 r[denotation.program]
 The denotation of a verified program gives each of its functions its
 denotation, [stratum by stratum](StaticSemantics.md#r-statics.stratification).
-The denotation of a function does not change when later declarations are
-added or verified. This rule is open.
 
 ## Truth
 
 r[denotation.truth]
-A Boolean expression φ is true at ρ, `ρ ⊨ φ`, when `⟦φ⟧ρ` is the value
-true. An expectation is true, `⊨ φ`, when φ is true at every assignment of
-its context that makes the program's assumptions true. The truth of an
-expectation is a fact about the program and depends on no solver; the
-verdict that a check reports for it belongs to the
-[tooling part](../Tooling/index.md). This rule is open.
+Under an interpretation I, a Boolean expression φ is *true* at ρ when
+`⟦φ⟧ᴵρ` is the value true and *false* at ρ when it is the value false;
+where `⟦φ⟧ᴵρ` has no value, φ is neither. φ is true at ρ, `ρ ⊨ φ`, when
+`⟦φ⟧ρ` is the value true. A tuple v̄ *meets* the precondition of f when
+the precondition is true at v̄. An assumption A of a function f *holds*,
+`⊨ A`, when it is true at every argument tuple that meets f's
+precondition. The *assumptions of a stratum hold* when every assumption
+of every function of the stratum holds; this is asked only where the
+earlier strata are verified and their assumptions hold, since the
+assumption's truth reads those strata's denotations. A program's
+assumptions hold when those of each of its strata do. The assumptions of
+an expectation declaration are hypotheses of its expectations and are not
+asked to hold. An expectation ψ of a declaration d is true, `⊨ ψ`, when ψ
+is true at every assignment of d's parameters that makes true the
+[hypotheses of d](StaticSemantics.md#r-statics.condition.scope); this too
+is asked only where the strata before d's are verified and their
+assumptions hold. The truth of an expectation is a fact about the program
+and depends on no solver, and it is no part of being verified. The
+verdict that a check reports for an expectation belongs to the
+[tooling part](../Tooling/index.md).
 
 ## Properties
 
 The properties of this section are open: none is stated in Fren or proved.
 
+r[expressions.value.denotation]
+In a verified program whose assumptions hold, a well-typed expression of
+type τ that is defined under hypotheses Φ has a denotation at every
+assignment of its context that makes Φ true, and the denotation is a valid
+value of type τ. No division or remainder that the denotation reads has a
+zero divisor there, and every match that it reads has an arm for its
+scrutinee's constructor.
+
 r[denotation.theorem.unique]
-The denotation is a function: where `⟦e⟧ρ` is defined, the equations
-determine exactly one value. In particular it does not depend on the
-hypotheses under which e is defined.
+The denotation is a function: where `⟦e⟧ρ` exists, the equations determine
+exactly one value. In particular it does not depend on the hypotheses
+under which e is defined.
+
+r[denotation.theorem.well-defined]
+The domain is not defined in terms of itself. Whether a declaration is
+verified reads no denotation, and whether its assumptions hold reads the
+denotations of earlier strata only. A verified group
+[terminates](StaticSemantics.md#r-statics.termination), so at an
+argument tuple of its domain the body reads the group's denotations only
+at preceding call instances; call order is
+[well founded](StaticSemantics.md#r-statics.property.call-order), so the
+equations of the group have exactly one solution on the tuples of the
+group's domains. Without the termination check the equations of a group
+may have no solution or several, which is why this chapter gives such a
+group no denotation.
+
+r[denotation.theorem.extension]
+The denotation of a function does not change when declarations of later
+strata are added to the program.
 
 r[denotation.theorem.coincidence]
 `⟦e⟧ρ` depends only on the values that ρ gives to e's free local slots and
@@ -247,23 +287,29 @@ on the denotations of the functions that e
 [mentions](StaticSemantics.md#r-expressions.mentions.closure).
 
 r[denotation.theorem.contract]
-Every verified function has a denotation at every argument tuple that
-meets its precondition, and its postcondition is true of that tuple and
-the denotation's value there. The proof is by induction on call order,
-over call instances: at `(f, v̄)` the postconditions of the preceding
-instances of f's recursive group hold by the induction hypothesis, which
-is what the verification of f's declaration
-[assumed of them](StaticSemantics.md#r-statics.stratification).
+In a verified program whose assumptions hold, every function has a
+denotation at every argument tuple that meets its precondition, and its
+postcondition is true of that tuple and the denotation's value there. The
+proof is by induction on call order, over call instances. At `(f, v̄)`,
+the denotations of the earlier strata, together with those of f's
+recursive group restricted to the instances that precede `(f, v̄)`, form
+an interpretation that is
+[admissible](StaticSemantics.md#r-statics.entailment.admissible) for f's
+declaration, which is what the entailments of that declaration range
+over; termination gives the body's calls into the group their values
+under it.
 
 r[denotation.theorem.models]
 A model that a solver gives for a verified program's conditions agrees
 with the denotation. The [SMT chapter](../Compiler/Smt.md) states this of
 its encoding, including the values that the encoding gives a division by
-zero, which this chapter does not define.
+zero, to which this chapter gives none.
 
 ## Examples
 
-With `Γ = ·, Boolean, Integer`, local 0 denotes the Boolean, and local 1 the
-integer. In `let x := y + 1 in x + y`, with incoming context `·, y: Integer`,
-the value uses level 0 for `y`; the body uses level 0 for `y` and level 1
-for `x`. These are the same contexts required by `rule?`.
+r[denotation.examples.levels]
+With `Γ = ·, Bool, Int`, local 0 denotes the Boolean, and local 1 the
+integer. In `let x := y + 1 in x + y`, with the incoming context `·, Int`
+for `y`, the value uses level 0 for `y`; the body uses level 0 for `y` and
+level 1 for `x`. These are the contexts that the
+[typing rule of a let](Types.md#r-types.expression.let) requires.

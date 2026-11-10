@@ -1,136 +1,260 @@
 # Dynamic semantics
 
-The dynamic semantics evaluates an expression. An evaluation that ends
-has an outcome, a value or an error; an evaluation need not end, since
-typing does not exclude recursion. The semantics is operational, and it is
-defined for every well-typed program, whether or not the program is
-[verified](StaticSemantics.md#r-statics.program.verified). It fixes one
-order of evaluation. An operation outside its domain gives an error state,
-and never an arbitrary value. The
-[denotational semantics](DenotationalSemantics.md) is defined for verified
-Core only; the adequacy theorem states that there evaluation ends, reaches
-no error and gives the denotation.
+The dynamic semantics evaluates an expression. It is operational and
+small-step: a one-step relation rewrites a configuration, and an
+evaluation is a run of steps. It is defined for every well-typed program,
+whether or not the program is
+[verified](StaticSemantics.md#r-statics.program.verified). A run has one
+of three results: it ends in a value, it ends in an error state, or it
+diverges. Evaluation contexts fix one order of evaluation. An operation
+outside its domain steps to an error state, and never to an arbitrary
+value. The [denotational semantics](DenotationalSemantics.md) is defined
+for verified Core only; [adequacy](#r-dynamics.theorem.adequacy) states
+that there a run ends in a value, which is the denotation.
 
-The evaluation rules and the theorems are open: each is listed below under
-its identifier with what it will state. What this chapter states in Fren is
-[an evaluator of call-free derivation tables](#the-table-evaluator), which
-has no error outcome and gives no value to `*`, `div` or `%`.
+A rule whose `r[...]` line names no Fren definition is stated in prose
+only. What this chapter states in Fren is
+[an evaluator of derivation tables](#the-table-evaluator).
 
 ## Overview
 
-| Judgment | Meaning | Fren |
-| --- | --- | --- |
-| `P ⊢ ⟨e, ρ⟩ ⇓ r` | in the program P, e evaluates at ρ to the outcome r | open |
-| `P ⊢ ⟨e, ρ⟩ ⇑` | in the program P, the evaluation of e at ρ does not end | open |
-| `P ⊢ f(v₁, …, vₙ) ⇓ r` | the call of f at the argument values has outcome r | open |
-| `op(v) ⇓ r`, `op(v₁, v₂) ⇓ r` | the operator op has outcome r at the operand values | open; `unary_value` and `binary_value` where they give a value |
-| `eval(t, i, ρ) = v` | row i of the call-free table t has the value v at ρ | `eval` |
+| Judgment | Meaning | Rule | Fren |
+| --- | --- | --- | --- |
+| `P ⊢ m → m′` | in the program P, the configuration m takes one step to m′ | [steps](#r-dynamics.step) | — |
+| `P ⊢ m → error(k)` | m takes one step to the error state of kind k | [steps](#r-dynamics.step) | — |
+| `P ⊢ m →* s` | a finite run leads from m to the state s | [runs](#r-dynamics.run) | — |
+| `P ⊢ m ⇑` | m diverges: it has an infinite run | [divergence](#r-dynamics.divergence) | — |
+| `P ⊢ m : τ` | the configuration m has the type τ | [configuration typing](#r-dynamics.configuration.typing) | — |
+| `op(v) = r`, `op(v₁, v₂) = r` | the operator op has the outcome r at the operand values | [operators](#r-dynamics.operators.total) | `unary_value` and `binary_value`, where they give a value |
+| `P ⊢ ⟨e, ρ⟩ ⇓ r` | derived: e evaluates at ρ to the outcome r | [big-step evaluation](#r-dynamics.evaluation.rules) | — |
+| `eval(t, i, ρ) = v` | row i of the table t has the value v at ρ | [the table evaluator](#r-expressions.meaning.evaluation) | `eval` |
 
 ```text
-  r ::= v                              a value
-      | error(k)                       an error of kind k
+  m ::= v                              configurations: a value
+      | op m  |  m₁ op m₂              an operator
+      | if m₀ then m₁ else m₂          a conditional
+      | match m₀ { c₁ ⇒ m₁ … cₙ ⇒ mₙ }  a match
+      | let m in (e, ρ)                a let; its body e waits at ρ
+      | f(m₁, …, mₙ)                   a call
 
-  k ::= …                              the kinds of error; open
+  s ::= m  |  error(k)                 states
+  r ::= v  |  error(k)                 outcomes
+
+  k ::= zero-divisor                   division or remainder by zero
+      | no-arm                         a match without an arm for its value
 
   ρ ::= ·  |  ρ, v                     assignments, by de Bruijn level
+
+  E ::= []                             evaluation contexts
+      | op E
+      | E op m  |  v op E              op is neither `and` nor `or`
+      | E and m  |  E or m
+      | if E then m₁ else m₂
+      | match E { c₁ ⇒ m₁ … cₙ ⇒ mₙ }
+      | let E in (e, ρ)
+      | f(v₁, …, vᵢ₋₁, E, mᵢ₊₁, …, mₙ)
 ```
 
 The values v are those of the
 [denotational semantics](DenotationalSemantics.md#values). P is a
-well-typed program, e is well typed in a context Γ of P, and ρ gives each
-level of Γ a value of its type.
+well-typed program.
 
 ## Scope
 
 r[dynamics.scope]
 The dynamic semantics is defined for every well-typed program. It reads
-no contract proof, no hypothesis and no solver's answer: an evaluation
-depends only on the program, the expression and the assignment. A program
-that is well typed and not verified has evaluations; some of them may end
-in an error, and some may not end. This rule is open, with the judgments
-it describes.
+no contract, no hypothesis, no result of the termination check and no
+solver's answer: a run depends only on the program, the expression and
+the assignment. It evaluates the bodies of functions and never their
+conditions, unless a condition is itself the expression being evaluated.
 
-## Outcomes and errors
+## Configurations
+
+r[dynamics.configuration]
+A *configuration* m is an expression in the course of its evaluation. It
+has the forms of Core, with two differences. It has no local: every local
+has been replaced by its value. The body of a let stays a Core expression
+e, paired with the assignment ρ at which the let was loaded; it becomes a
+configuration when the let's value is known. A *state* is a configuration
+or an error state `error(k)`. An error state is not a configuration: no
+context holds one, and no operator or call takes one as an operand.
+
+r[dynamics.configuration.loading]
+*Loading* gives the configuration `⟨e, ρ⟩` of an expression e, well typed
+in a context Γ, at an assignment ρ of Γ. It is defined by recursion on e
+and evaluates nothing. A literal and a constructor load to their
+[leaf values](DenotationalSemantics.md#r-denotation.leaf), and the local
+of level i loads to the value that ρ gives level i. `⟨let e₁ in e₂, ρ⟩`
+is `let ⟨e₁, ρ⟩ in (e₂, ρ)`. Every other form loads its children at ρ:
+`⟨e₁ op e₂, ρ⟩` is `⟨e₁, ρ⟩ op ⟨e₂, ρ⟩`, and likewise for a unary
+operator, a conditional, the scrutinee and the arms of a match, and the
+arguments of a call. The *initial configuration* of e at ρ is `⟨e, ρ⟩`.
+
+r[dynamics.configuration.typing]
+`P ⊢ m : τ` types a configuration. A value has the type τ when it is a
+[valid value](DenotationalSemantics.md#values) of τ. An operator, a
+conditional, a match and a call are typed from the types of their
+children by the [Core rule](Types.md#typing-rules) of their form.
+`let m in (e, ρ)` has the type τ when m has a type σ, ρ gives each level
+of a context Γ a value of its type, and e has the type τ in Γ extended
+with σ.
+
+## Steps
+
+r[dynamics.context]
+An *evaluation context* E is a configuration with one hole `[]`, of the
+forms that the [overview](#overview) lists; `E[m]` is E with m in its
+hole. The contexts fix the [order of evaluation](#r-dynamics.order): the
+hole is where the next step is taken. There is no context for the second
+operand of `and` or `or`, for a branch of a conditional, for an arm of a
+match or for the body of a let.
+
+r[dynamics.step]
+The *step relation* has two forms, `P ⊢ m → m′` and `P ⊢ m → error(k)`.
+It is the least relation closed under the
+[reductions](#r-dynamics.step.reductions) and two context rules: a step
+of m to m′ is a step of `E[m]` to `E[m′]`, and a step of m to `error(k)`
+is a step of `E[m]` to `error(k)`. A value takes no step, and neither
+does an error state.
+
+```text
+  P ⊢ m → m′                       P ⊢ m → error(k)
+  ───────────────────              ─────────────────────
+  P ⊢ E[m] → E[m′]                 P ⊢ E[m] → error(k)
+```
+
+r[dynamics.step.reductions]
+A *reduction* is a step of a configuration whose evaluated children are
+values. The reductions are these, and no others.
+
+```text
+  op v → v′                            when op(v) = v′
+  v₁ op v₂ → r                         when op(v₁, v₂) = r;
+                                       op is neither `and` nor `or`
+  false and m → false                  true and m → m
+  true or m → true                     false or m → m
+  if true then m₁ else m₂ → m₁         if false then m₁ else m₂ → m₂
+  match c { c₁ ⇒ m₁ … cₙ ⇒ mₙ } → mᵢ    when selection gives arm i
+  match c { c₁ ⇒ m₁ … cₙ ⇒ mₙ } → error(no-arm)
+                                       when selection gives no arm
+  let v in (e, ρ) → ⟨e, (ρ, v)⟩
+  f(v₁, …, vₙ) → ⟨e, (·, v₁, …, vₙ)⟩    when f has the body e in P
+```
+
+The outcome of an operator is that of
+[its rule](#r-dynamics.operators.total), and the arm of a match is the
+one that [selection](#r-dynamics.match.selection) gives.
+
+r[dynamics.run]
+A *run* from m is a sequence of states that starts at m, each state but
+the first being a step from the one before it. `P ⊢ m →* s` holds when a
+finite run from m ends at s; a run of no steps gives `m →* m`. A run
+*ends* when its last state is a value or an error state. A configuration
+is *stuck* when it is not a value and takes no step.
+
+## Outcomes, errors and divergence
 
 r[dynamics.outcome]
-An evaluation that ends, ends in exactly one *outcome*: a value, or an
-error with its kind. An error is not a value: no local is bound to one,
-and no operator or call takes one as an operand. This rule is open.
-
-r[dynamics.divergence]
-An evaluation need not end. Typing does not exclude recursion
-([Core typing](Types.md#r-types.judgment.separate)), so a well-typed
-function may call itself without bound. Such an evaluation *diverges*,
-`P ⊢ ⟨e, ρ⟩ ⇑`. Divergence is not an outcome and not an error: `⇓` relates
-a diverging evaluation to no outcome at all. This rule is open. How
-divergence is stated is decided with the evaluation rules: as a judgment
-of its own beside `⇓`, or as an unending run of a step relation from which
-`⇓` is derived. Either way it must tell divergence apart from an
-expression that no rule applies to, which
-[type safety](#r-dynamics.theorem.type-safety) excludes.
+An *outcome* is a value or an error state. An expression e *has the
+outcome* r at ρ when `P ⊢ ⟨e, ρ⟩ →* r`. An evaluation has one of three
+*results*: it ends in a value, it ends in an error, or it
+[diverges](#r-dynamics.divergence).
 
 r[dynamics.error.kinds]
-A division or remainder whose divisor evaluates to zero has the outcome
-error. This rule is open. It will list every kind of error; whether a call
-that fails its callee's precondition, or an assertion that evaluates to
-false, is an error, and of which kind, is decided with it.
+There are two kinds of error. A division or remainder whose divisor is
+zero steps to `error(zero-divisor)`. A match whose scrutinee is a
+constructor that none of its arms has steps to `error(no-arm)`. Nothing
+else is an error. In particular a call at arguments that fail its
+callee's precondition is not one: the call steps to the callee's body as
+[any call does](#r-dynamics.call).
 
 r[dynamics.error.propagation]
-When evaluating a child that an expression needs ends in an error, the
-expression ends in that error, and no later child is evaluated. When
-evaluating such a child diverges, the expression diverges. This rule is
-open.
+An error state ends the run. When a configuration in an evaluation
+context steps to an error state, the whole configuration steps to that
+error state, by the second [context rule](#r-dynamics.step); nothing
+that the context holds is evaluated afterwards.
 
-## Evaluation
+r[dynamics.divergence]
+Divergence, `P ⊢ m ⇑`, is a judgment of its own. It is not the absence
+of an outcome: m *diverges* when there is an infinite run from m, that
+is, an infinite sequence m₀, m₁, m₂, … of configurations with m₀ = m and
+`P ⊢ mᵢ → mᵢ₊₁` for every i. An expression e diverges at ρ when its
+initial configuration `⟨e, ρ⟩` does. Divergence is not an outcome and not
+an error.
+
+## Order of evaluation
 
 r[dynamics.order]
-Evaluation has one fixed order. The arguments of a call, and the operands
-of every operator other than `and` and `or`, are evaluated left to right,
-each exactly once, before the call or operator itself. `and` and `or`
-evaluate their first operand exactly once, and first. A let evaluates its
-value, then its body. A conditional evaluates its condition, then only the
-selected branch; a match evaluates its scrutinee, then only the selected
-arm. This rule is open. Whether `and` and `or` evaluate their second
-operand when the first decides the result is decided with it; nothing in
-this chapter depends on that choice. Either way
-[definedness](StaticSemantics.md#r-statics.definedness.declarative) does not
-follow the order: it requires both operands to be defined.
+Evaluation has one fixed order, which the
+[evaluation contexts](#r-dynamics.context) give. The arguments of a call,
+and the operands of every operator other than `and` and `or`, are
+evaluated left to right, each exactly once, before the call or operator
+itself. `and` and `or` short-circuit: each evaluates its first operand,
+and evaluates its second only when the first does not decide the result,
+which is when the first operand of `and` is true and when that of `or` is
+false. A let evaluates its value, used or not, then its body. A
+conditional evaluates its condition, then only the selected branch; a
+match evaluates its scrutinee, then only the selected arm.
+[Definedness](StaticSemantics.md#r-statics.definedness.declarative) does
+not follow the order: it requires both operands of `and` and of `or` to
+be defined, under the same hypotheses.
 
-r[dynamics.evaluation.rules]
-`P ⊢ ⟨e, ρ⟩ ⇓ r` is defined by rules for each Core form: one for the form's
-value and one for each child whose error it propagates. An expression
-whose evaluation [diverges](#r-dynamics.divergence) has no derivation of
-`⇓`. A literal, a local
-and a constructor evaluate to the values that
-[the interpretation](DenotationalSemantics.md#r-expressions.meaning.context)
-gives them. These rules are open.
+r[dynamics.match.selection]
+A match selects, for a scrutinee value that is the constructor c, the arm
+whose constructor is c. When several arms have that constructor, it
+selects the one written last. When none has it, the match selects no arm
+and steps to `error(no-arm)`.
 
 r[dynamics.operators.total]
-Every operator has an outcome at every pair of operand values of its
-operand types: applying an operator to values never diverges. `*`, `div`
-and `%` evaluate to the product and to the Euclidean quotient and
-remainder that the
-[equations of their meaning](DenotationalSemantics.md#r-expressions.meaning.operators)
-state, and `div` and `%` to an error at a zero divisor. This rule is
-open: `binary_value` computes no result for these three operators, and
-`binary_meaning?` does not determine one.
+`op(v) = r` and `op(v₁, v₂) = r` give an operator's outcome at operand
+values of its operand types. `div` and `%` have the outcome
+`error(zero-divisor)` at a zero divisor. At every other operand values an
+operator's outcome is the value that
+[its meaning](DenotationalSemantics.md#r-expressions.meaning.operators)
+gives: for `*`, `div` and `%`, the product and the Euclidean quotient and
+remainder of
+[integer arithmetic](DenotationalSemantics.md#r-denotation.operators.arithmetic).
+The reductions take the outcomes of `and` and `or` from their first
+operand alone where it decides them, and from this rule nowhere.
 
 r[dynamics.call]
-A call evaluates its arguments, then the callee's body at the assignment
-that lists the argument values, without the caller's locals. Its outcome
-is the body's, and it diverges when the body does. The rule reads no
-contract and bounds no recursion: a call is evaluated whether or not its
-callee's recursion is
-[well founded](StaticSemantics.md#r-statics.call-order.well-founded). This
-rule is open.
+A call whose arguments are values steps to the callee's body, loaded at
+the assignment that lists the argument values, without the caller's
+locals. The step reads no contract and bounds no recursion: it is taken
+whether or not the arguments meet the callee's precondition, and whether
+or not the callee
+[terminates](StaticSemantics.md#r-statics.termination).
+
+## Big-step evaluation
+
+r[dynamics.evaluation.rules]
+`P ⊢ ⟨e, ρ⟩ ⇓ r` is a derived judgment for the evaluations that end. It
+is not the definition of evaluation, which is the
+[step relation](#r-dynamics.step);
+[a property](#r-dynamics.theorem.big-step) relates the two. It is defined
+inductively, by rules for each Core form: one for the form's value, one
+for each [error of the form's own](#r-dynamics.error.kinds), and one for
+each evaluated child that has an error, whose error the form then has. A
+literal, a local and a constructor evaluate to their
+[leaf values](DenotationalSemantics.md#r-denotation.leaf). An operator
+evaluates its operands in [order](#r-dynamics.order) and has the
+[outcome of the operator](#r-dynamics.operators.total) at their values;
+`and` whose first operand is false is false, and `or` whose first
+operand is true is true, and otherwise each has the outcome of its second
+operand. A let has the outcome of its body at the assignment with the
+value of its value appended. A conditional has the outcome of the branch
+that its condition's value selects, and a match that of the arm that
+[selection](#r-dynamics.match.selection) gives. A call has the outcome of
+its callee's body at the assignment that lists its arguments' values.
+
+r[dynamics.truth]
+A Boolean expression φ *evaluates to true* at ρ when
+`P ⊢ ⟨φ, ρ⟩ →* true`, and to false likewise. The *assumptions of P hold
+in evaluation* when, for every function declaration of P and every tuple
+of values of its parameters' types at which each of its preconditions
+evaluates to true, each of its assumptions evaluates to true.
 
 ## The table evaluator
-
-The rules of this section are stated in Fren. They evaluate the rows of a
-call-free [derivation table](Types.md#derivations), and give no value
-where the open rules above will give an error or the value of a product, a
-quotient, a remainder or a call. A table has no calls and its rows are
-finite, so this evaluator always ends.
 
 r[expressions.meaning.values] spec::dynamics::{unary_value, integer_value, boolean_value, binary_value}
 `unary_value` and `binary_value` compute an operator's result from its
@@ -210,24 +334,24 @@ r[expressions.meaning.evaluation] spec::dynamics::{value_at, arm_value, layer_va
 The *evaluator* computes the value of every row of a
 [derivation table](Types.md#derivations) in one local assignment ρ.
 `values` works row by row, oldest first, and reads each child's value from
-the rows before it. A literal, a local and a constructor have the values
-that [the interpretation](DenotationalSemantics.md#r-expressions.meaning.context)
-gives them. An
+the rows before it. A literal, a local and a constructor have their
+[leaf values](DenotationalSemantics.md#r-denotation.leaf). An
 operator row has the result of `unary_value` or `binary_value` at its
 operands' values. A conditional has the value of the branch that its
-condition selects, and a match the value of the arm for its scrutinee's
+condition selects, and a match the value of the arm that
+[selection](#r-dynamics.match.selection) gives for its scrutinee's
 constructor. A let row is evaluated in two steps: its value v in ρ, then
 its body in the assignment that keeps the levels of the let's own context
 and appends v. `eval(t, r, ρ)` is the value of row r.
 
 A row has no value when a child that it needs has none, when a local is
-not in ρ, when an operator has no result, or when it is a call. So a
-row that depends on a product, a quotient or a remainder has none. The
-evaluator is strict where verification is: an operator needs both
-operands' values, and a let needs its value's, whether or not the result
-depends on them. A conditional needs only the selected branch, and a match
-only the selected arm. The evaluator covers the call-free Core; evaluating
-a call needs the callee's body, and is not yet specified.
+not in ρ, when an operator has no result, when a match has no arm for
+its scrutinee's constructor, or when it is a call. So a row that depends
+on a product, a quotient, a remainder or a call has none, and the
+evaluator has no error outcome. An operator row needs both operands'
+values, `and` and `or` included, and a let needs its value's, whether or
+not the result depends on them. A conditional needs only the selected
+branch, and a match only the selected arm.
 
 ```fren
 pub fn value_at(prior: Snoc<Option<Value>>, pos: Int): Option<Value> := match lookup(prior, pos) {
@@ -298,6 +422,19 @@ pub fn eval(rows: Snoc<Row>, pos: Int, env: Snoc<Value>): Option<Value> :=
     value_at(values(rows, env), pos)
 ```
 
+r[dynamics.table.differences]
+The table evaluator is not the step relation, and it differs from it in
+five ways. It computes a row's value in one pass over the rows before
+it, and has no configurations, steps or runs. It has no error state: a
+row that the step relation takes to an error has no value. It gives no
+value to a call, a product, a quotient or a remainder, where the step
+relation reduces each. It needs the second operand of `and` and of `or`
+even where the first decides the result, so a row has no value when that
+operand has none, where the step relation never evaluates it. It cannot
+diverge.
+[Where it gives a value](#r-dynamics.theorem.table-agreement), the step
+relation gives the same one.
+
 r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, evaluation_examples::{bound, unbound, uncomputed}}
 `let d := 2 in 10 - d` has this table; row 4 is the let.
 
@@ -346,40 +483,77 @@ pub proc evaluation_examples(): (holds?) {
 The properties of this section are open: none is stated in Fren or proved.
 
 r[dynamics.theorem.determinism]
-An expression has at most one outcome at an assignment, and an expression
-that has an outcome there does not diverge there.
+A configuration takes at most one step: it is `E[m]` for a reduction of
+m in at most one way, and a reduction has one result. So a run from a
+configuration is unique, and an evaluation has exactly one of the three
+results, or it reaches a stuck configuration.
+
+r[dynamics.theorem.progress]
+In a well-typed program, a configuration that has a type is a value or
+takes a step, to a configuration or to an error state of one of the
+[two kinds](#r-dynamics.error.kinds). It is not stuck.
+
+r[dynamics.theorem.preservation]
+In a well-typed program, a step keeps the type: if `P ⊢ m : τ` and
+`P ⊢ m → m′`, then `P ⊢ m′ : τ`. The initial configuration of an
+expression of type τ, at an assignment of its context, has the type τ.
 
 r[dynamics.theorem.type-safety]
-In a well-typed program, a well-typed expression of type τ, at an
-assignment of its context, either evaluates to a valid value of type τ,
-or evaluates to one of the listed errors, or diverges. It is in no other
-state: no rule is missing for a well-typed expression. In a step
-presentation this is progress and preservation. The theorem does not say
-that evaluation ends.
+Type safety is [progress](#r-dynamics.theorem.progress) and
+[preservation](#r-dynamics.theorem.preservation) together. In a
+well-typed program, a well-typed expression of type τ, at an assignment
+of its context, ends in a valid value of type τ, or ends in an error of
+one of the two kinds, or [diverges](#r-dynamics.divergence). It never
+reaches a stuck configuration. The theorem does not say that evaluation
+ends, and it needs neither definedness nor termination.
 
-r[dynamics.theorem.termination]
-Evaluation ends where recursion is well founded. In a well-typed program
-whose [call order is well founded](StaticSemantics.md#r-statics.call-order.well-founded),
-every well-typed expression has an outcome at every assignment of its
-context that meets the conditions under which the static semantics
-establishes the decrease of each recursive call. Without that condition
-the theorem is false: a well-typed function whose body is a call of itself
-at its own parameters diverges. The exact condition is open with the
-static rule it cites.
+r[dynamics.theorem.big-step]
+The derived judgment agrees with the runs that end:
+`P ⊢ ⟨e, ρ⟩ ⇓ r` holds exactly when `P ⊢ ⟨e, ρ⟩ →* r`, for a value or
+an error state r.
 
 r[dynamics.theorem.adequacy]
-In a verified program, an expression that is defined under hypotheses
-which the assignment ρ makes true does not diverge and evaluates to a
-value and not to an error, and that value is its denotation:
-`P ⊢ ⟨e, ρ⟩ ⇓ ⟦e⟧ρ`. A verified function called at an argument tuple that
-meets its precondition evaluates to its denotation there.
+In a verified program whose
+[assumptions hold](DenotationalSemantics.md#r-denotation.truth), an
+expression that is defined under hypotheses which the assignment ρ makes
+true ends in a value, and that value is its denotation:
+`P ⊢ ⟨e, ρ⟩ →* ⟦e⟧ρ`, and so `P ⊢ ⟨e, ρ⟩ ⇓ ⟦e⟧ρ`. It does not end in an
+error and it does not diverge. A function of such a program, called at
+an argument tuple that meets its precondition, ends in its denotation
+there.
+
+r[dynamics.theorem.termination]
+Evaluation ends where the termination check has passed: this is the part
+of [adequacy](#r-dynamics.theorem.adequacy) that excludes divergence, and
+it has adequacy's conditions. Without the check it fails. A well-typed
+function whose body is a call of itself at its own parameters is
+[defined and meets its contract](StaticSemantics.md#r-statics.examples.recursion),
+and it diverges at every argument.
+
+r[dynamics.theorem.partial-correctness]
+A program that is well typed, is
+[defined](StaticSemantics.md#r-statics.program.defined) and
+[meets its contracts](StaticSemantics.md#r-statics.contract.meets) is
+partially correct, whether or not it passes the termination check. Let
+its [assumptions hold in evaluation](#r-dynamics.truth), and let f be one
+of its functions and v̄ a tuple at which each precondition of f evaluates
+to true. If the call of f at v̄ ends in a value u, then u meets the
+postcondition: the postcondition does not evaluate to false at v̄ and u.
+The theorem says nothing of a call that diverges. It does not say that
+the call reaches no error state, and that is not claimed of a program
+that has not passed the termination check: a condition may mention a
+function that diverges, and then a precondition that has no value can be
+entailed at a call whose callee's body divides by zero.
 
 r[dynamics.theorem.table-agreement]
-Where the [table evaluator](#the-table-evaluator) gives a row a value, the
-evaluation judgment gives the row's expression that value.
+Where the [table evaluator](#the-table-evaluator) gives a row a value v
+at ρ, the row's expression e has that outcome: `P ⊢ ⟨e, ρ⟩ →* v`.
 
 r[dynamics.theorem.implementation]
-An implementation that evaluates in another order, or that omits a check
-which verification has discharged, agrees with this chapter on verified
-programs. The [evaluator chapter](../Compiler/Evaluator.md) states the
-agreement of the compiler's evaluator; it is open here.
+An implementation that evaluates in another order, that leaves an unused
+let's value unevaluated, that evaluates in one pass and not by steps, or
+that omits a check which verification has discharged, agrees with this
+chapter on verified programs whose assumptions hold, at the assignments
+of [adequacy](#r-dynamics.theorem.adequacy). The
+[evaluator chapter](../Compiler/Evaluator.md) states how the compiler's
+evaluator differs from this chapter elsewhere.

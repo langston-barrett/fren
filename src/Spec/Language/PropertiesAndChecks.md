@@ -11,8 +11,8 @@ what a solver's answer establishes. It builds on the typed Core of
 [static semantics](StaticSemantics.md), on the values of the
 [denotational semantics](DenotationalSemantics.md) and on the table
 evaluator of the [dynamic semantics](DynamicSemantics.md). The static
-semantics lists, as open rules, the judgments that will restate this
-chapter's obligations.
+semantics states, as judgments, the definedness and contracts that this
+chapter states as obligations.
 
 ## Overview
 
@@ -773,7 +773,7 @@ pub enum Verdict { Proved, Refuted(Snoc<Value>), Unknown }
 pub fn discharged?(verdict: Verdict) := verdict = Verdict::Proved
 ```
 
-## Defined and verified programs
+## Defined programs and their expectations
 
 r[verification.program.tables] spec::verification::{moved_arguments, moved_arms, moved_form, moved, ends_with?, upto, rooted?, has_member?, condition_tabled?, tabled?, all_tabled?, condition_typed?, members_typed?, tables_typed?, represents?}
 The tables P *represent* the [declarations of a typed program](Types.md#declarations-and-programs)
@@ -930,19 +930,21 @@ specified. No function in it calls itself, directly or through others
 valid, except the `Asserted` obligation of an `expect` member. The
 keyword of each member is the one that P states, which nothing here ties
 to the source. The conditions cover a function that nothing calls. Coverage and the absence
-of recursion yield no obligations. Excluding all recursion is the present
-condition; the static semantics' open rule on
-[call order](StaticSemantics.md#r-statics.call-order.well-founded) admits
-structural recursion. The
+of recursion yield no obligations. The absence of recursion is narrower
+than the
+[termination check](StaticSemantics.md#r-statics.termination) of the
+static semantics, which admits structural recursion. The
 [dynamic semantics](DynamicSemantics.md#r-dynamics.error.kinds) gives an
 error to an operation outside its domain, and in a defined program no
 operation is outside its domain.
 
 r[verification.program.verified]
-A program is *verified* when it is defined and the `Asserted` obligation
-of every `expect` member is valid too. The denotational semantics applies
-only to verified programs; of the conditions of verification it relies on
-definedness alone, since an `expect` is a hypothesis of nothing.
+A defined program *meets its expectations* when the `Asserted`
+obligation of every `expect` member is valid too. Which programs are
+*verified* is defined by the
+[static semantics](StaticSemantics.md#r-statics.program.verified), and
+the truth of an expectation is no part of it: an `expect` is a hypothesis
+of nothing.
 
 r[verification.program.assumptions]
 Both notions are relative to the program's assumptions. A caller proves a
@@ -1175,7 +1177,7 @@ A proved fact adds nothing as a hypothesis. An assignment that satisfies
 declaration's `assert` members are valid, an `expect` that is valid with
 their facts as hypotheses is valid without them, one fact at a time: the
 rule that an `expect` uses `assert` facts changes what a check may assume,
-not which programs are verified.
+not which programs meet their expectations.
 
 ```fren
 set_option fren.evidence "random" in
