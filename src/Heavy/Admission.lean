@@ -102,7 +102,9 @@ def before (a b : Waiter) (step : Int) : Bool :=
 
 /-- Whether `w` could take slot `slot` now: it still heartbeats, the slot is
 one of its slots, and the start rule holds under its own settings. A waiter
-that cannot start holds nobody back. -/
+that cannot start holds nobody back. `rss` is whatever total the caller
+supplies: the executable passes its own, charged under its own cap, so where
+caps differ the answer is the caller's estimate, not the waiter's own. -/
 def contends (w : Waiter) (slot : Int) (rss : Option Int) (load : Option Int)
     (now ttl grace : Int) : Bool :=
   decide (0 ≤ now - w.updated ∧ now - w.updated ≤ ttl) && decide (slot < w.slots) &&
@@ -117,7 +119,9 @@ def ahead (own : Waiter) (others : List Waiter) (slot : Int) (rss : Option Int)
     (if contends w slot rss load now ttl grace && before w own step then 1 else 0) +
       ahead own rest slot rss load now ttl grace step
 
-/-- A waiter may claim the slot when nobody goes first. -/
+/-- A waiter may claim the slot when nobody goes first. This decides over
+one list of waiters, as read at one time. The executable does not read the
+queue again when it claims the slot, so the order it gives is best effort. -/
 def turn (own : Waiter) (others : List Waiter) (slot : Int) (rss : Option Int)
     (load : Option Int) (now ttl grace step : Int) : Bool :=
   ahead own others slot rss load now ttl grace step == 0

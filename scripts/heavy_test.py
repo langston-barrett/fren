@@ -2915,6 +2915,15 @@ def test_priority_order():
         with open(os.path.join(state, "aging_seconds"), "w") as f:
             f.write("1.5")
         assert heavy.aging_ms(state) == 1500
+        # The largest finite floats are accepted settings: they count as the
+        # largest step rather than overflowing in milliseconds.
+        for text in ("1e308", "1.7976931348623157e308", "1e10"):
+            with open(os.path.join(state, "aging_seconds"), "w") as f:
+                f.write(text)
+            assert heavy.aging_ms(state) == heavy.MAX_AGING_SECONDS * 1000
+        with open(os.path.join(state, "aging_seconds"), "w") as f:
+            f.write("inf")
+        assert heavy.aging_ms(state, lambda m: None) == 300000
 
 
 def test_waiting_registry():

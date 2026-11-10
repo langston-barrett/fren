@@ -1201,7 +1201,8 @@ a file takes effect without a restart:
 - **Aging:** the number in `~/.cache/heavy/aging_seconds`, else 300: the
   wait that outweighs one priority class
   ([Admission order](#admission-order)). No environment variable sets it:
-  it is one value for the whole queue.
+  it is one value for the whole queue. A value above 10^9 seconds counts
+  as 10^9.
 
 A setting that is set but is not a positive finite number is ignored,
 with a warning.
@@ -3559,7 +3560,7 @@ author waits for it while editing), or `exploratory` (fuzzing, measurement
 and everything else). A missing or unknown label is `exploratory`, so a
 misspelt label never jumps the queue.
 
-Waiting jobs start in the order of a key: the time the job was enqueued
+Waiting jobs start, on a best effort, in the order of a key: the time the job was enqueued
 plus one aging step (300 seconds by default) for each class below the most
 urgent. Every waiter reads the step from the shared state directory, never
 from its own environment, so all of them order the queue by the same step;
@@ -3569,7 +3570,7 @@ arrivals' keys grow with the clock, so an exploratory job that has waited
 more than four steps goes before every newcomer, and no waiter is passed
 over for ever. A change to the file reaches each waiter at its next poll,
 and until then two waiters may disagree. Jobs of one class start in the
-order they were enqueued. The step is a policy guess; the
+order they were enqueued, as far as the limitations below allow. The step is a policy guess; the
 waits that `--stats` reports for each class are the evidence for changing it.
 
 A waiting job yields a free slot only to a waiter that could take that slot
@@ -3579,6 +3580,24 @@ or one that waits under a tighter private setting, therefore holds nobody
 back, and a slot is never left idle for a job that cannot use it. Priority
 only chooses among jobs that could each start, so it admits no job that the
 memory rule alone would refuse.
+
+The order is best effort; the memory rule is not. Each caller checks its
+own start rule under its own cap before and after it claims a slot, but it
+judges the queue from its own cap and one read of the waiters. Two known
+limitations follow, which `heavy_queue_order` and `heavy_queue_turn` do not
+cover, since they decide over a given memory total and a given list of
+waiters:
+
+- A caller judges whether another waiter could start with its own memory
+  total, charged under its own cap. The charge for a running job whose
+  memory is not observed is half the cap, so callers with different caps
+  reach different totals: a caller with a large cap may conclude that a
+  more urgent waiter with a small cap cannot start, and go before it, when
+  that waiter's own total would let it start.
+- A caller reads the queue and then claims a slot, and does not read the
+  queue again after the claim. It may therefore claim a slot that a more
+  urgent or earlier waiter published just before, among jobs of one class
+  too.
 
 When a job starts, heavy also sets its share of the CPU from its class.
 Jobs in separate cgroups compete by `cpu.weight`, and niceness matters only

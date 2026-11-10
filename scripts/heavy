@@ -113,6 +113,9 @@ PRIORITY_CLASSES = ("main-repair", "critical-path", "merge-blocking", "edit-loop
 PRIORITY_NICE = dict(zip(PRIORITY_CLASSES, (0, 2, 4, 7, 10)))
 PRIORITY_WEIGHT = dict(zip(PRIORITY_CLASSES, (250, 160, 100, 50, 25)))
 DEFAULT_AGING_SECONDS = 300
+# A larger aging step counts as this one: it already never lets a wait
+# outweigh a class, and a float near the largest overflows in milliseconds.
+MAX_AGING_SECONDS = 10 ** 9
 WAITER_STALE_MS = 30000
 WAITER_ABANDONED_SECONDS = 60
 WAITER_BYTES = 512
@@ -283,7 +286,7 @@ def aging_ms(state=STATE, warn=None):
     waiters that ordered the queue by different steps could each yield to
     the other for ever."""
     seconds = setting("HEAVY_AGING_SECONDS", "aging_seconds", float, {}, state, warn)
-    return round((DEFAULT_AGING_SECONDS if seconds is None else seconds) * 1000)
+    return round(min(DEFAULT_AGING_SECONDS if seconds is None else seconds, MAX_AGING_SECONDS) * 1000)
 
 
 def monotonic_ms():
@@ -302,14 +305,19 @@ def queue_before(a, b, step):
 
 def queue_contends(waiter, slot, rss, load_reader, now):
     """Whether a waiter could take this slot now, under its own settings.
-    One that could not holds nobody back."""
+    One that could not holds nobody back. `rss` is the caller's total,
+    charged under the caller's cap, so this is the caller's estimate: where
+    the caps differ, the waiter itself may charge less and judge otherwise."""
     return (0 <= now - waiter["updated_ms"] <= WAITER_STALE_MS and slot < waiter["slots"]
             and start_rule((now - waiter["enqueued_ms"]) / 1000, rss, waiter["cap_kb"],
                            waiter["max_load"], load_reader))
 
 
 def queue_ahead(own, others, slot, rss, load_reader, now, step):
-    """How many other waiters take this slot before `own`."""
+    """How many other waiters take this slot before `own`. The order is best
+    effort: it is judged from one read of the queue with the caller's memory
+    total, and is not checked again when the slot is claimed, so a caller may
+    claim a slot that a waiter ahead of it published just before."""
     return sum(1 for waiter in others
                if queue_before(waiter, own, step) and queue_contends(waiter, slot, rss, load_reader, now))
 
