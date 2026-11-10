@@ -6,7 +6,7 @@ public import Plausible
 /-! Property tests of the separated HIR→THIR pass on generated input of its
 own IR, under Plausible. A case is a THIR module that is well typed by
 construction, or one with a single injected fault; the HIR input is its
-erasure. No property has a premise, so nothing is discarded; the census
+erasure. One property breaks further items of such a case. No property has a premise, so nothing is discarded; the census
 reports what the samples covered. -/
 
 public section
@@ -108,6 +108,51 @@ def originBlind (k : Nat) (c : Case) : Bool :=
 def scopedUnlessDangling (c : Case) : Bool :=
   c.hir.scoped == (c.expected.map (·.fault) != some .dangling)
 
+/-- One more fault for an item, with the error that item then gives when it
+is typed alone: a function's body becomes a literal of another type than its
+result, a check's first member the literal `0`. An enum has no body. -/
+def breakItem : Item (Expr .hir) → Option (Item (Expr .hir) × TypeError)
+  | .function f os =>
+    let (found, literal) : Ty × ExprF .hir (Expr .hir) :=
+      if f.result == .int then (.bool, .bool true) else (.int, .int 0)
+    some (.function {f with body := ⟨f.body.origin, (), literal⟩} os,
+      ⟨f.id, f.body.origin, .mismatch f.result found⟩)
+  | .check c os => do
+    let mem ← c.members[0]?
+    let members := c.members.set! 0 {mem with body := ⟨mem.body.origin, (), .int 0⟩}
+    some (.check {c with members} os, ⟨c.id, mem.body.origin, .mismatch .bool .int⟩)
+  | .enum .. => none
+
+/-- The case with further items broken, and the errors expected of it: every
+item other than the generator's own faulty one is broken unless `mask` spares
+it. Each broken item gives its own error and the generator's faulty item
+keeps its error, in declaration order. -/
+def severalFaults (mask : Nat) (c : Case) : Hir × Array TypeError := Id.run do
+  let mut items := #[]
+  let mut errors := #[]
+  for item in c.hir.items, i in [:c.hir.items.size] do
+    match c.expected with
+    | some e =>
+      if item.id == e.item then
+        items := items.push item
+        errors := errors.push ⟨e.item, e.origin, e.outcome.reason⟩
+        continue
+    | none => pure ()
+    match if (mask + i) % 3 == 0 then none else breakItem item with
+    | some (broken, error) =>
+      items := items.push broken
+      errors := errors.push error
+    | none => items := items.push item
+  return (⟨c.hir.id, items⟩, errors)
+
+/-- Faults in several items at once: the result holds exactly the error of
+each failing item, in declaration order. With no failing item it is typed. -/
+def reportsEach (mask : Nat) (c : Case) : Bool :=
+  let (m, errors) := severalFaults mask c
+  match typeModule m with
+  | .error got => got == errors
+  | .ok _ => errors.isEmpty
+
 private def property (label : String) (p : Prop)
     (decorated : Decorations.DecorationsOf p := by mk_decorations) [Testable decorated] : IO Unit := do
   let report ← Testable.checkIO decorated {numInst := 500, maxSize := 12, randomSeed := some 20261109}
@@ -124,6 +169,8 @@ def runGenerated : IO Unit := do
     ∀ c : Faulty, rejects c.case = true
   property "origins and display names do not affect typing" <|
     ∀ (c : Faulty) (k : Nat), originBlind k c.case = true
+  property "faults in several items: one error for each failing item, in declaration order" <|
+    ∀ (c : Faulty) (mask : Nat), reportsEach mask c.case = true
   property "generator check (not the pass): input is well scoped unless a dangling local was injected" <|
     ∀ c : Faulty, scopedUnlessDangling c.case = true
 

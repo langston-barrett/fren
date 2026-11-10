@@ -27,8 +27,16 @@ of:
 
 Everything after type checking still consumes `FrenWalking.Program`: the
 evaluator, MIR construction, and through MIR the LIR, OIR and SMT producers
-and `FrenCli2`. The Thir, Desugaring, Mir, Lir, Oir and Smt chapter wrappers
-state their contracts over it.
+and `FrenCli2`. The Thir, Walking, Mir, Lir, Oir and Smt chapter wrappers state
+their contracts over it. The Walking chapter (`src/Spec/Compiler/Walking.md`
+and its wrapper) holds the walking program's own contract and nothing else.
+
+The walking program is also declared twice. `FrenWalking.Program` and
+`FrenEval.Program` are separate structures with the same three fields: the
+resolved input, the typed result and the acceptance evidence. The Walking
+wrapper's `Evaluator` copies one into the other, and each library proves its
+own retention, static and determinism theorems. Both go in the removal; until
+then a change to one must be made to the other.
 
 ## What must exist first
 
@@ -56,11 +64,12 @@ Each step is one small change that builds and passes on its own.
 2. Move the evaluator, then MIR construction, to the desugared module. The
    passes after MIR take MIR and do not change, apart from how their tests and
    `FrenCli2` obtain it.
-3. Restate the chapter wrappers over the modules: the Desugaring wrapper's
-   `Guard`, `ScopedChild`, `ScopedAt`, `DomainSite` and `Members`, and the
-   Thir wrapper's judgments, lose their `Resolved` and `Typed` parameters.
-   Update the chapters in the same changes.
-4. Delete `FrenWalking`, the legacy checker files in `FrenHirToThir`,
+3. Restate over the modules what the Walking wrapper states over the walking
+   program: `Guard`, `ScopedChild`, `ScopedAt`, `DomainSite` and `Members`,
+   and the Thir wrapper's judgments, lose their `Resolved` and `Typed`
+   parameters. They move to the chapters of the passes that read them, and
+   the Walking chapter and its wrapper are deleted whole.
+4. Delete `FrenWalking`, `FrenEval.Program`, the legacy checker files in `FrenHirToThir`,
    `FrenModule.Typed`, and what remains unused of `FrenModule.Resolved`.
    Remove `FrenWalking` and its exceptions from the `layering` allow-list, so
    that no pass may import the parser or the resolver except the resolver's

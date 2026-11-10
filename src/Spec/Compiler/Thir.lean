@@ -577,6 +577,143 @@ impl binary: binary for
       FrenExpr.binaryOperand, FrenExpr.binaryResult, FrenExpr.ValueType.compatible, beq_iff_eq]
   all_goals by_cases h : left_id = right_id <;> simp_all [primitiveKind, eq_comm]
 
+/-! ## The typed module
+
+`thir.module.items` and `thir.module.errors`, stated over the production
+module types without the module-level function `typeModule`. What typing one
+item gives is `typeItem`; the rules say how a module's result is made of its
+items' results, and the theorems relate `typeModule` to that. -/
+
+section TypedModule
+open FrenExpr FrenModule.Core FrenHirToThir.Pass
+
+/-- The signatures every item of a module is typed against. -/
+def moduleSignatures (m : Hir) : Array (FrenBase.ItemId × Array FrenExpr.Ty × FrenExpr.Ty) :=
+  m.functions.map fun f => (f.id, f.params.map (·.type), f.result)
+
+/-- One item typed alone. Of the rest of the module it reads the signatures
+and the constructor owners, and no other item's body, members or origins. -/
+def Alone (m : Hir) (item : Item (FrenExpr.Expr .hir)) : Result (Item (FrenExpr.Expr .thir)) :=
+  typeItem (moduleSignatures m) m.ctorOwner item
+
+/-- The error of a failing result. -/
+def errorOf {α : Type} : Result α → Option TypeError
+  | .error e => some e
+  | .ok _ => none
+
+/-- The module rule. A typed module is the result exactly when every item,
+typed alone, gives the item at the same position. A list of errors is the
+result exactly when it is nonempty and holds, in declaration order, the error
+of each item that fails when typed alone. -/
+def ModuleResult (m : Hir) : Except (Array TypeError) Thir → Prop
+  | .ok t => t.id = m.id ∧ m.items.toList.map (Alone m) = t.items.toList.map .ok
+  | .error es => es ≠ #[] ∧ es.toList = m.items.toList.filterMap fun item => errorOf (Alone m item)
+
+private theorem all_ok {α : Type} : ∀ rs : List (Result α),
+    rs.filterMap errorOf = [] → rs = (rs.filterMap (·.toOption)).map .ok
+  | [], _ => rfl
+  | .ok a :: rs, h => by
+    have h' : rs.filterMap errorOf = [] := by simpa [errorOf] using h
+    simpa [Except.toOption] using all_ok rs h'
+  | .error e :: rs, h => by simp [errorOf] at h
+
+private theorem ok_toOption {α : Type} (l : List α) :
+    (l.map (Except.ok : α → Result α)).filterMap (·.toOption) = l := by
+  induction l with
+  | nil => rfl
+  | cons a l ih => simpa [Except.toOption] using ih
+
+private theorem typeModule_eq (m : Hir) : typeModule m =
+    if ((m.items.map (Alone m)).filterMap errorOf).isEmpty then
+      .ok ⟨m.id, (m.items.map (Alone m)).filterMap (·.toOption)⟩
+    else .error ((m.items.map (Alone m)).filterMap errorOf) := by
+  have h : (fun r : Result (Item (FrenExpr.Expr .thir)) =>
+      match r with | .error e => some e | .ok _ => none) = errorOf := by
+    funext r; cases r <;> rfl
+  unfold typeModule
+  simp only [← h]
+  rfl
+
+/-- The production checker's result satisfies the module rule. -/
+theorem typed_module_sound (m : Hir) : ModuleResult m (typeModule m) := by
+  rw [typeModule_eq]
+  split
+  · rename_i h
+    refine ⟨rfl, ?_⟩
+    have h' : (m.items.toList.map (Alone m)).filterMap errorOf = [] := by
+      simpa [Array.isEmpty_iff, ← Array.toList_eq_nil_iff] using h
+    simpa using all_ok _ h'
+  · rename_i h
+    refine ⟨fun he => h (by rw [he]; rfl), by simp [Function.comp_def]⟩
+
+/-- The module rule determines the result. -/
+theorem typed_module_unique {m : Hir} {r : Except (Array TypeError) Thir}
+    (h : ModuleResult m r) : r = typeModule m := by
+  rw [typeModule_eq]
+  cases r with
+  | ok t =>
+    obtain ⟨hid, hs⟩ := h
+    have hl : (m.items.map (Alone m)).toList = t.items.toList.map .ok := by simpa using hs
+    have he : ((m.items.map (Alone m)).filterMap errorOf).toList = [] := by
+      rw [Array.toList_filterMap, hl]; simp [errorOf]
+    have hi : ((m.items.map (Alone m)).filterMap (·.toOption)).toList = t.items.toList := by
+      rw [Array.toList_filterMap, hl]; exact ok_toOption _
+    rw [if_pos (by simpa [Array.isEmpty_iff, ← Array.toList_eq_nil_iff] using he)]
+    obtain ⟨id, items⟩ := t
+    dsimp only at hid hi
+    subst hid
+    rw [Array.toList_inj.mp hi]
+  | error es =>
+    obtain ⟨hne, hs⟩ := h
+    have he : (m.items.map (Alone m)).filterMap errorOf = es :=
+      Array.toList_inj.mp (by rw [hs]; simp [Function.comp_def])
+    rw [he, if_neg (by simpa [Array.isEmpty_iff] using hne)]
+
+/-- An error in one item neither hides nor changes the error of another: each
+failing item's own error is in the module's result. -/
+theorem item_error_reported {m : Hir} {es : Array TypeError} (h : typeModule m = .error es)
+    {item : Item (FrenExpr.Expr .hir)} (hi : item ∈ m.items.toList) {e : TypeError}
+    (he : Alone m item = .error e) : e ∈ es := by
+  have hs := (h ▸ typed_module_sound m : ModuleResult m (.error es)).2
+  have : e ∈ es.toList := by
+    rw [hs, List.mem_filterMap]
+    exact ⟨item, hi, by rw [he]; rfl⟩
+  simpa using this
+
+/-- Every reported error is the error of an item typed alone. -/
+theorem reported_error_alone {m : Hir} {es : Array TypeError} (h : typeModule m = .error es)
+    {e : TypeError} (he : e ∈ es) :
+    ∃ item ∈ m.items.toList, errorOf (Alone m item) = some e := by
+  have hs := (h ▸ typed_module_sound m : ModuleResult m (.error es)).2
+  have : e ∈ es.toList := by simpa using he
+  rw [hs, List.mem_filterMap] at this
+  exact this
+
+/-- An item's result reads the rest of the module through its signatures and
+constructor owners alone: modules that agree on both give the item the same
+result, whatever their other bodies and members are. -/
+theorem alone_reads_signatures {m m' : Hir} (hs : moduleSignatures m = moduleSignatures m')
+    (hc : m.ctorOwner = m'.ctorOwner) (item : Item (FrenExpr.Expr .hir)) :
+    Alone m item = Alone m' item := by
+  unfold Alone; rw [hs, hc]
+
+/-- Parameters come first: a signature error is the item's error, whatever
+its body or members are. -/
+theorem function_params_first (sigs co) (f : Function (FrenExpr.Expr .hir)) (os : Array Origin)
+    (e : TypeError) (h : checkParams f.id f.params = .error e) :
+    typeItem sigs co (.function f os) = .error e := by
+  simp [typeItem, h, bind, Except.bind]
+
+theorem check_params_first (sigs co) (c : Check (FrenExpr.Expr .hir)) (os : Array Origin)
+    (e : TypeError) (h : checkParams c.id c.params = .error e) :
+    typeItem sigs co (.check c os) = .error e := by
+  simp [typeItem, h, bind, Except.bind]
+
+end TypedModule
+
+#print axioms typed_module_sound
+#print axioms typed_module_unique
+
 end Spec.Compiler.Thir
 
 set_option fren.requireEvidence "trusted" in

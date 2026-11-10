@@ -130,6 +130,7 @@
   - [HIR](src/Spec/Compiler/Hir.md)
   - [THIR](src/Spec/Compiler/Thir.md)
   - [Desugaring](src/Spec/Compiler/Desugaring.md)
+  - [The walking program](src/Spec/Compiler/Walking.md)
   - [The evaluator](src/Spec/Compiler/Evaluator.md)
   - [MIR](src/Spec/Compiler/Mir.md)
   - [Monomorphization](src/Spec/Compiler/Monomorphization.md)

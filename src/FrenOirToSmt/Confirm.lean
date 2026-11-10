@@ -384,7 +384,7 @@ theorem model_nonzero (r : Receipt) (h : r.exitCode ≠ some 0) : modelData r = 
   simp [modelData, h]
 
 /-- A confirmed answer names a question of the re-run producer that is ready. -/
-theorem confirmAssignment_ready (p : FrenThirDesugar.Program) (out : Program) (hp : produce p = .ok out)
+theorem confirmAssignment_ready (p : FrenWalking.Program) (out : Program) (hp : produce p = .ok out)
     (index : Nat) (values : Array FrenEval.Value) (depth : Nat)
     (h : confirmAssignment p index values depth = .witness ∨
       confirmAssignment p index values depth = .counterexample) :

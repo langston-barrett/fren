@@ -181,16 +181,39 @@ else.
 **Proof obligations**
 
 r[thir.module.items]
-Each item is typed on its own, against the signatures and constructor owners
-of the whole module. Within one item the checker stops at the first error, in
-the order parameters, then the body or the members as written. An error in one
-item neither hides nor changes the result of another.
+Each item is typed alone. Typing an item alone reads that item and, of the
+rest of the module, only the functions' signatures and the owner of each
+constructor. It reads no other item's body, members or origins. Typing an
+item alone gives the typed item or one error. If the item's parameters have
+an error, that error is the item's error, whatever its body or members are.
 
 r[thir.module.errors]
-The result is the THIR module exactly when no item fails. Otherwise it is a
-nonempty list holding the first error of each failing item, in declaration
-order, and no typed module. Each error names its item, the origin of the
-offending node and the reason.
+The result is a THIR module exactly when every item, typed alone, gives a
+typed item. That module has the input's identity and, at each position, the
+typed item of the input item at that position. Otherwise the result is a
+nonempty list of errors and no typed module. The list holds, in declaration
+order, the error that each failing item gives when it is typed alone, and
+nothing else. An error in one item therefore neither hides nor changes the
+error of another.
+
+The chapter wrapper states both rules without the production module
+function. `Alone` types one item against the module's signatures and
+constructor owners, and `ModuleResult` is the relation of
+`thir.module.errors` between a module and a result. The wrapper proves that
+the production checker's result satisfies the relation
+(`typed_module_sound`) and that any result that satisfies it is the
+production checker's (`typed_module_unique`). It proves that the error of
+each item that fails alone is in the list (`item_error_reported`), and that
+each listed error is the error of some item typed alone
+(`reported_error_alone`). It proves that two modules with the same signatures
+and constructor owners give an item the same result
+(`alone_reads_signatures`), and that a parameter error is the item's error
+(`function_params_first`, `check_params_first`). A property test over
+generated modules breaks two or more items at once and requires exactly the
+error of each broken item, in declaration order. Two parts are covered only
+by tests: that within a check the members are typed in written order and the
+first failing member gives the error, and that each error names the origin
+of the offending node.
 
 Coverage and non-recursion are not part of this result; the walking
 validators below decide them for the legacy checker's output.

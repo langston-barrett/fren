@@ -2,8 +2,10 @@
 
 MIR separates declarations that give expressions their meaning from owned
 assumptions and questions about those expressions. This chapter relates the
-actual [desugared THIR](Desugaring.md) to `FrenMir.Theory`, using the shared
+[walking program](Walking.md) to `FrenMir.Theory`, using the shared
 [Language meanings](../Language/Expressions.md) and [THIR judgments](Thir.md).
+MIR construction does not yet read [desugared THIR](Desugaring.md): its input
+keeps the written syntax, parentheses included.
 Its domain is Bool, Int, payload-free nominal enums, nonrecursive named
 functions, global checks and the expressions in the source grammar.
 
@@ -141,7 +143,7 @@ pub proc question_laws(assumptions?, goal?) {
 **Proof obligations**
 
 r[mir.walking.partiality]
-`DomainSite` uses the shared desugaring `ScopedAt` relation, with exact body,
+`DomainSite` uses the walking program's `ScopedAt` relation, with exact body,
 lexical context, ordered guard path, operands, operator token and division/remainder
 kind. MIR must retain these sites in both directions. Both ordinary Boolean
 operands and every unused let value remain in the incoming static scope.
@@ -177,7 +179,7 @@ unknown and solver resource limits are not Boolean values or proof evidence.
 
 The following relations are compiled verbatim in the
 [chapter wrapper](Mir.lean). They use production IR, the shared THIR judgments
-and the scoped desugaring relations, without a second executable compiler.
+and the walking program's scoped relations, without a second executable compiler.
 
 ```lean
 abbrev Program := FrenWalking.Program
@@ -276,11 +278,11 @@ def Constructs (p : Program) (t : Theory) : Prop :=
     RootInventory p t ∧ DefinitionInventory p t ∧
     RequestOrder t.declarations.toList t.requests.toList
 
-/-- The same scoped sites as Desugaring, now rooted in real MIR declarations. -/
+/-- The walking program's scoped sites, now rooted in real MIR declarations. -/
 def DomainSite (t : Theory) (body : TypedBody) (ctx : TypeContext)
-    (guards : List Desugaring.Guard) (left : Expr) (token : Token) (op : BinaryOp) (right : Expr) : Prop :=
+    (guards : List Walking.Guard) (left : Expr) (token : Token) (op : BinaryOp) (right : Expr) : Prop :=
   TheoryRoot t body ∧ (op = .div ∨ op = .rem) ∧
-    Desugaring.ScopedAt t.source.resolved t.source.signatures body.context body.expression ctx
+    Walking.ScopedAt t.source.resolved t.source.signatures body.context body.expression ctx
       (.binary left token op right) guards
 
 /-- Positional parameters and nearest-first local assignments are distinct. -/
@@ -328,10 +330,10 @@ inductive ValueOf (s : Typed) (defines : Signature → TypedBody → Prop) :
 A let body carries its actual bound value; explicit guards alone select branches. -/
 inductive StaticAt (s : Typed) (defines : Signature → TypedBody → Prop) :
     TypeContext → Expr → List FrenEval.Value →
-      TypeContext → Expr → List FrenEval.Value → List Desugaring.Guard → Prop where
+      TypeContext → Expr → List FrenEval.Value → List Walking.Guard → Prop where
   | root : StaticAt s defines ctx e env ctx e env []
   | ordinary : StaticAt s defines rootCtx root rootEnv ctx parent env guards →
-      Desugaring.ScopedChild s.resolved s.signatures ctx parent ctx child [] →
+      Walking.ScopedChild s.resolved s.signatures ctx parent ctx child [] →
       StaticAt s defines rootCtx root rootEnv ctx child env guards
   | letBody : StaticAt s defines rootCtx root rootEnv ctx
         (.letE l name assign value inside body) env guards →

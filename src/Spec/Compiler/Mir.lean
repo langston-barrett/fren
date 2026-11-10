@@ -1,6 +1,6 @@
 import Fren.Impl
 import Fren.Literate
-import Spec.Compiler.Desugaring
+import Spec.Compiler.Walking
 import FrenThirToMir
 
 open Fren.Lang
@@ -107,11 +107,11 @@ def Constructs (p : Program) (t : Theory) : Prop :=
     RootInventory p t ∧ DefinitionInventory p t ∧
     RequestOrder t.declarations.toList t.requests.toList
 
-/-- The same scoped sites as Desugaring, now rooted in real MIR declarations. -/
+/-- The walking program's scoped sites, now rooted in real MIR declarations. -/
 def DomainSite (t : Theory) (body : TypedBody) (ctx : TypeContext)
-    (guards : List Desugaring.Guard) (left : Expr) (token : Token) (op : BinaryOp) (right : Expr) : Prop :=
+    (guards : List Walking.Guard) (left : Expr) (token : Token) (op : BinaryOp) (right : Expr) : Prop :=
   TheoryRoot t body ∧ (op = .div ∨ op = .rem) ∧
-    Desugaring.ScopedAt t.source.resolved t.source.signatures body.context body.expression ctx
+    Walking.ScopedAt t.source.resolved t.source.signatures body.context body.expression ctx
       (.binary left token op right) guards
 
 /-- Positional parameters and nearest-first local assignments are distinct. -/
@@ -159,10 +159,10 @@ inductive ValueOf (s : Typed) (defines : Signature → TypedBody → Prop) :
 A let body carries its actual bound value; explicit guards alone select branches. -/
 inductive StaticAt (s : Typed) (defines : Signature → TypedBody → Prop) :
     TypeContext → Expr → List FrenEval.Value →
-      TypeContext → Expr → List FrenEval.Value → List Desugaring.Guard → Prop where
+      TypeContext → Expr → List FrenEval.Value → List Walking.Guard → Prop where
   | root : StaticAt s defines ctx e env ctx e env []
   | ordinary : StaticAt s defines rootCtx root rootEnv ctx parent env guards →
-      Desugaring.ScopedChild s.resolved s.signatures ctx parent ctx child [] →
+      Walking.ScopedChild s.resolved s.signatures ctx parent ctx child [] →
       StaticAt s defines rootCtx root rootEnv ctx child env guards
   | letBody : StaticAt s defines rootCtx root rootEnv ctx
         (.letE l name assign value inside body) env guards →
@@ -292,7 +292,7 @@ theorem entry_success (file : FrenSource.FileId) (source : String) (t : Theory) 
 theorem interpreter_preservation (p : Program) (t : Theory) (h : Produces p t)
     (request : FrenEval.Request) (values : Array FrenEval.Value) (depth : Nat) :
     FrenEval.evaluate ⟨p.input, t.source, FrenThirToMir.admission p t h⟩ request values depth =
-      FrenEval.evaluate (Desugaring.Evaluator p) request values depth := by
+      FrenEval.evaluate (Walking.Evaluator p) request values depth := by
   have hs := FrenThirToMir.retains p t h
   cases t with
   | mk source declarations requests =>
@@ -327,12 +327,12 @@ theorem produced_request_context (p : Program) (t : Theory) (h : Produces p t)
 /-- Site preservation uses the explicit root-inventory premise, not value traces. -/
 theorem domain_sites (p : Program) (t : Theory) (h : Produces p t) (roots : RootInventory p t) :
     ∀ body ctx guards left token op right,
-      Desugaring.DomainSite p body ctx guards left token op right ↔
+      Walking.DomainSite p body ctx guards left token op right ↔
         DomainSite t body ctx guards left token op right := by
   intro body ctx guards left token op right
   have hs := FrenThirToMir.retains p t h
   have hi := (FrenHirToThir.walking_retains p.input p.typed p.accepted).1
-  simp only [Desugaring.DomainSite, DomainSite, hs, hi, roots body]
+  simp only [Walking.DomainSite, DomainSite, hs, hi, roots body]
 
 /-- Equality of retained data transports every observation, including negative outcomes. -/
 theorem source_observation (p : Program) (t : Theory) (h : Produces p t)
@@ -362,11 +362,11 @@ theorem check_correspondence (p : Program) (t : Theory) (h : Produces p t)
 
 /-- Static paths project to the shared scope relation, including original guard contexts. -/
 theorem static_scopes (h : StaticAt s defines rootCtx root rootEnv ctx e env guards) :
-    Desugaring.ScopedAt s.resolved s.signatures rootCtx root ctx e guards := by
+    Walking.ScopedAt s.resolved s.signatures rootCtx root ctx e guards := by
   induction h with
   | root => exact .root
-  | ordinary _ edge ih => simpa using Desugaring.ScopedAt.child ih edge
-  | letBody _ typed _ _ ih => simpa using Desugaring.ScopedAt.child ih (.letBody typed)
+  | ordinary _ edge ih => simpa using Walking.ScopedAt.child ih edge
+  | letBody _ typed _ _ ih => simpa using Walking.ScopedAt.child ih (.letBody typed)
   | thenBranch _ _ ih => exact .child ih .thenBranch
   | elseBranch _ _ ih => exact .child ih .elseBranch
   | armBody _ member _ _ ih => exact .child ih (.armBody member)
@@ -523,7 +523,7 @@ private theorem raw_duplicate_values
     | throw (IO.userError "constructor type missing")
   let value := FrenEval.Value.enum owner ctor
   unless value.valid p.typed do throw (IO.userError "enum assignment invalid")
-  let .ok evaluation := FrenEval.evaluate (Desugaring.Evaluator p)
+  let .ok evaluation := FrenEval.evaluate (Walking.Evaluator p)
       ⟨p.input.scope.id.named "c", some "g"⟩ #[value] 20
     | throw (IO.userError "enum goal evaluation failed")
   unless (match evaluation.outcome with | .ok (.bool false) => true | _ => false) && t.requests.size == 2 do

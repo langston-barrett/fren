@@ -584,7 +584,7 @@ owned assumptions and requests, static definedness, interpretation and
 confirmation. Its displayed Lean definitions are the wrapper's exact compiled
 reference block. They reuse production `Program`, `Typed`, `Theory`, bodies,
 contexts, syntax and request data, together with the shared THIR and
-Desugaring judgments. No executable compiler or IR is duplicated. The
+walking-program judgments. No executable compiler or IR is duplicated. The
 pointwise Fren question matrix is checked independently of the Lean laws.
 The former Light/arithmetic example and its unreferenced `mir.primitive.offset`,
 `mir.primitive.implication` and `mir.primitive.amber` identifiers have been
@@ -686,12 +686,44 @@ preservation with its actual hypotheses. The immutable core research receipt
 is `out/fren2-language-core/phases/001-author-75cb4488-a40c-4027-a2d1-2a7548ffc302/references.json`;
 this unit uses that supplied record while network access is paused.
 
+## The typed module: rules and evidence
+
+The separated type checker's module rules are in
+`Spec/Compiler/Thir.md`, proved in its wrapper over the production
+`FrenHirToThir.Pass.typeModule` and `typeItem`.
+
+| Rule | Evidence |
+| --- | --- |
+| `thir.module.items` | `Alone` types one item against the module's signatures and constructor owners. `alone_reads_signatures` proves that modules with the same signatures and constructor owners give an item the same result. `function_params_first` and `check_params_first` prove that a parameter error is the item's error. |
+| `thir.module.errors` | `ModuleResult` states the rule without the production module function. `typed_module_sound` proves that the production result satisfies it, and `typed_module_unique` that a result satisfying it is the production result. `item_error_reported` and `reported_error_alone` prove that the error list holds exactly the errors of the items that fail alone. |
+
+These are universal Lean proofs. The `typingProperties` job adds a generated
+property: it takes a generated module with one injected fault, breaks further
+items of it, and requires exactly the error of each failing item, in
+declaration order. Its census fails unless some samples have two or more
+failing items. The agreement test with the legacy checker cannot show this,
+since the legacy checker stops at the module's first error and the test
+compares only single-error results. Two parts are covered only by tests: that
+a check's members are typed in written order and its first failing member
+gives the error, and that each error names the origin of the offending node.
+
+Spec gap. Before this change both rules were stated only in prose under
+"Proof obligations", with no relation, theorem or binding in the wrapper, and
+were checked by one hand-written module. The generated properties injected a
+single fault, so no generated case had two failing items. The relation and
+theorems above now state the rules, and the generated property checks them
+with several failing items.
+
 ## Desugaring contracts and proof boundary
 
 `FrenThirDesugar.desugar` takes the THIR module and returns the desugared
-THIR module. It removes parentheses and nothing else, and imports only the
-shared expression and module libraries; the `layering` test forbids it any
-pass, the parser and the syntax tree. The wrapper of
+THIR module. It removes parentheses and nothing else. That it reads only its
+argument follows from its type, a pure function from the THIR module to the
+desugared module. The `layering` test checks one further thing: that no pass
+(the parser, the resolver, the type checker or any later pass) is reachable
+from its imports. It does not check that the syntax tree or the legacy tables
+are out of reach, since the shared module library the pass imports defines
+them too. The wrapper of
 `Spec/Compiler/Desugaring.md` proves, for every input, that the pass
 is related to its input by `Erases` and `ErasesModule`, relations stated
 without the production functions: a parenthesis has the result of its body,
@@ -714,9 +746,11 @@ generator, that the input with added parentheses is well typed. This is
 bounded evidence. No theorem yet states that desugaring preserves the typing
 judgment or evaluation; the evaluator still reads the walking program.
 
-The same wrapper keeps the walking program's definitions, which MIR
-construction reads: `Program`, `Produces`, `Rejects`, `Guard`, `ScopedChild`,
-`ScopedAt`, `DomainSite`, `Members` and `Evaluator`. It proves exact resolved
+The walking program's definitions, which MIR construction reads, are in a
+chapter of their own, `Spec/Compiler/Walking.md`, with rule ids
+`walking.program.*`, so that removing the walking program deletes that chapter
+and leaves the desugaring chapter alone. Its wrapper holds `Program`, `Produces`, `Rejects`, `Guard`, `ScopedChild`,
+`ScopedAt`, `DomainSite`, `Members` and `Evaluator`, and proves exact resolved
 success and failure, the type/coverage/non-recursion admission factorization,
 failure exclusion, source-result projection and the output's
 admission/retention/static facts. `ScopedChild` and its closure project to the

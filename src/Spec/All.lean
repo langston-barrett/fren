@@ -17,6 +17,7 @@ import Spec.Compiler.Oir
 import Spec.Compiler.Overview
 import Spec.Compiler.Smt
 import Spec.Compiler.Thir
+import Spec.Compiler.Walking
 import Spec.Language.DiagnosticsAndLints
 import Spec.Language.Evidence
 import Spec.Language.Example

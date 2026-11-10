@@ -532,6 +532,14 @@ input_file spec_compiler_desugaring_md where
   path := "src/Spec/Compiler/Desugaring.md"
   text := true
 
+lean_lib SpecCompilerWalking where
+  globs := #[`Spec.Compiler.Walking]
+  needs := #[`@/spec_compiler_walking_md]
+
+input_file spec_compiler_walking_md where
+  path := "src/Spec/Compiler/Walking.md"
+  text := true
+
 lean_lib SpecCompilerEvaluator where
   globs := #[`Spec.Compiler.Evaluator]
   needs := #[`@/spec_compiler_evaluator_md]

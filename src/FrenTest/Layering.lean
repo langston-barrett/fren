@@ -95,6 +95,9 @@ private def permits (owner imported : String) : Bool := Id.run do
   -- Legacy-adapter tests, and agreement of the separated pass with the
   -- existing checker on printed programs, need the walking pipeline.
   if owner == "FrenHirToThirTests" && imported == "FrenWalking" then return true
+  -- The source-level agreement test desugars the separated checker's output
+  -- and compares it with the walking program for the same source.
+  if owner == "FrenHirToThirTests" && imported == "FrenThirDesugar" then return true
   if ["FrenProp", "FrenAstToHirTests", "FrenHirToThirTests", "FrenEvalTests", "FrenThirDesugarTests"].contains owner && imported == "Plausible" then return true
   if owner == "FrenTextTests" then return false
   if owner == "FrenTextTestsTests" then return imported == "FrenTextTests"
@@ -158,6 +161,8 @@ private def permits (owner imported : String) : Bool := Id.run do
 #guard !permits "FrenHirToThirTests" "FrenParse"
 #guard !permits "FrenHirToThirTests" "FrenAstToHir"
 #guard permits "FrenHirToThirTests" "FrenWalking"
+#guard permits "FrenHirToThirTests" "FrenThirDesugar"
+#guard !permits "FrenThirDesugarTests" "FrenHirToThirTests"
 #guard (reach "FrenWalking").contains "FrenParse"
 #guard permits "FrenEvalTests" "Plausible"
 #guard !permits "FrenEval" "Plausible"

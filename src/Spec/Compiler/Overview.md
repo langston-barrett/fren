@@ -38,6 +38,12 @@ that Lean emission takes MIR as its input.
 r[compiler.pipeline.order]
 Monomorphization precedes closure lowering, which precedes match compilation.
 
+This table is the intended order. The implementation does not yet follow it
+between desugaring and MIR: [MIR construction](Mir.md) does not read desugared
+THIR. It reads the [walking program](Walking.md), the legacy type checker's
+result over the written syntax, and the desugaring pass's output has no
+consumer yet.
+
 A theory packages declarations and sentences about them. For example, an
 interface contributes abstract operations and laws; a view supplies an
 interpretation of them and obligations for its laws. A check request asks
@@ -69,6 +75,11 @@ Each representation admits only the forms available at its phase.
 | Pattern matches | HIR through `fo`; compiled in `flat` |
 | First-order logical terms and sharing | LIR and OIR |
 | Goals and their active hypotheses | OIR |
+
+The rows that name desugared THIR describe the intended pipeline. Until MIR
+construction reads desugared THIR, the expressions MIR is built from are the
+[walking program](Walking.md)'s written expressions, which still contain
+parentheses.
 
 A declared subset type may remain as signature metadata after erasure. For
 example, a value entering a positive-integer subset carries an obligation to

@@ -77,7 +77,7 @@ private def several : Hir :=
   | .error es => es == #[⟨f, 3, .mismatch .int .bool⟩, ⟨c "c1", 1, .mismatch .bool .int⟩,
       ⟨c "c3", 4, .mismatch .bool .int⟩]
   | .ok _ => false
--- With the faults repaired the same module is typed whole.
+-- The second check has no fault: a module of that check alone is typed.
 #guard (typeModule ⟨m, several.items.extract 2 3⟩).isOk
 
 end FrenHirToThirTests.PassCases

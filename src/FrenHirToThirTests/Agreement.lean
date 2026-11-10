@@ -1,13 +1,18 @@
 module
 
 public import FrenHirToThirTests.Properties
+public import FrenThirDesugar
+public import FrenWalking
 public import Plausible
 
 /-! The separated pass against the existing checker, on the same generated
 programs: print the HIR module as Fren source, parse and resolve it, read the
 resolver's output into the IR core (which must give back the generated module)
 and type it both ways. Both accept, with the same type at every node, or both
-reject, with the same catalogue code at the same span. -/
+reject, with the same catalogue code at the same span. When both accept,
+the desugared module is compared with the walking program for the same
+source: the same bodies, and at every node the type of the walking program's
+occurrence, its parenthesis occurrences left out. -/
 
 public section
 namespace FrenHirToThirTests
@@ -25,9 +30,40 @@ def legacyTypes (b : FrenModule.TypedBody) : List Ty :=
     | .value ty => some ty
     | .callable _ => none
 
+/-- Every node's type of a desugared body, in postorder. -/
+def desugaredPostorder : Expr .dthir → List Ty :=
+  Expr.fold fun _ (ty : Ty) n => n.children.foldl (· ++ ·) [] ++ [ty]
+
+/-- The legacy value occurrences that are not written parentheses. -/
+def legacyCoreTypes (b : FrenModule.TypedBody) : List Ty :=
+  b.occurrences.toList.filterMap fun o => match o.expression, o.type with
+    | .paren .., _ => none
+    | _, .value ty => some ty
+    | _, .callable _ => none
+
+def legacyParens (b : FrenModule.TypedBody) : Nat :=
+  (b.occurrences.toList.filter fun o => o.expression matches .paren ..).length
+
+/-- Both accepted, with the number of written parentheses and whether the
+walking program admits the source, or both rejected. -/
 inductive Agreed where
-  | accepted | rejected
-  deriving BEq
+  | accepted (parens : Nat) (walking : Bool) | rejected
+
+/-- The desugared module against the legacy typed table of the same source,
+which is the table of the walking program whenever that program is admitted. -/
+def desugaredAgreement (resolved : FrenModule.Resolved) (legacy : FrenModule.Typed) (core : Thir)
+    (source : String) : Except String Agreed := do
+  let out := FrenThirDesugar.desugar core
+  unless out.bodies.toList.map desugaredPostorder == legacy.bodies.toList.map legacyCoreTypes do
+    throw s!"desugared node types differ from the walking program's\n{source}"
+  let parens := (legacy.bodies.toList.map legacyParens).sum
+  unless (core.bodies.toList.map Expr.size).sum == (out.bodies.toList.map Expr.size).sum + parens do
+    throw s!"desugaring removed other than the written parentheses\n{source}"
+  match FrenWalking.fromResolved resolved with
+  | .ok p =>
+    unless p.typed == legacy do throw s!"the walking program holds another typed table\n{source}"
+    return .accepted parens true
+  | .error _ => return .accepted parens false
 
 def agreement (c : Case) (file : Nat) : Except String Agreed := do
   let source := Printer.module c.hir
@@ -43,7 +79,7 @@ def agreement (c : Case) (file : Nat) : Except String Agreed := do
     let ours := core.bodies.toList.map postorder
     let theirs := legacy.bodies.toList.map legacyTypes
     unless ours == theirs do throw s!"node types differ\n{source}"
-    return .accepted
+    desugaredAgreement resolved legacy core source
   | .error d, .error #[e] =>
     unless d.code == e.code && some d.span == e.span lowered do
       throw s!"different errors: legacy {repr d}, core {repr e} at {repr (e.span lowered)}\n{source}"
@@ -81,6 +117,12 @@ structure Census where
   nodes : Nat := 0
   accepted : Nat := 0
   rejected : Nat := 0
+  /-- Accepted samples the walking program admits, and their parentheses. -/
+  walking : Nat := 0
+  parens : Nat := 0
+  /-- Samples with two or more failing items, and those failing items. -/
+  several : Nat := 0
+  failing : Nat := 0
   deriving Repr
 
 /-- A seeded census with the same generator: every property again, plus what
@@ -100,12 +142,19 @@ def census : IO Census := do
       | none => if fault.isSome then out := {out with notInjected := out.notInjected + 1}
       unless rejects c && originBlind (seed % 5) c && scopedUnlessDangling c do
         throw (IO.userError s!"census: property failed for seed {seed}, fault {repr fault}")
+      let failing := (severalFaults seed c).2.size
+      unless reportsEach seed c do
+        throw (IO.userError s!"census: several faults, seed {seed}, fault {repr fault}")
+      if failing ≥ 2 then out := {out with several := out.several + 1, failing := out.failing + failing}
       if fault.all (·.printable) then
         match agreement c 92 with
-        | .ok .accepted => out := {out with accepted := out.accepted + 1}
+        | .ok (.accepted removed admitted) =>
+          out := {out with accepted := out.accepted + 1, parens := out.parens + removed}
+          if admitted then out := {out with walking := out.walking + 1}
         | .ok .rejected => out := {out with rejected := out.rejected + 1}
         | .error msg => throw (IO.userError s!"census: seed {seed}, fault {repr fault}: {msg}")
-  unless out.forms.all (· > 0) && out.injected.all (· > 0) && out.accepted > 0 && out.rejected > 0 do
+  unless out.forms.all (· > 0) && out.injected.all (· > 0) && out.accepted > 0 && out.rejected > 0 &&
+      out.walking > 0 && out.parens > 0 && out.several > 0 do
     throw (IO.userError s!"census became vacuous: {repr out}")
   return out
 
@@ -138,6 +187,6 @@ def runProperties : IO Unit := do
   let c ← census
   let forms := (formNames.zip c.forms).toList.map fun (n, k) => s!"{n}={k}"
   let faults := (Fault.all.zip c.injected.toList).map fun (f, k) => s!"{repr f}={k}"
-  IO.println s!"HIR→THIR census: {c.samples} seeded cases ({c.nodes} nodes); forms: {", ".intercalate forms}; faults injected: {", ".intercalate faults}; fault with no site (typed as well-typed) = {c.notInjected}; checked against the existing checker: {c.accepted} accepted, {c.rejected} rejected; Plausible properties have no premises, discarded = 0"
+  IO.println s!"HIR→THIR census: {c.samples} seeded cases ({c.nodes} nodes); forms: {", ".intercalate forms}; faults injected: {", ".intercalate faults}; fault with no site (typed as well-typed) = {c.notInjected}; checked against the existing checker: {c.accepted} accepted, {c.rejected} rejected; desugared and compared with the walking program's table: {c.accepted} ({c.walking} admitted as walking programs, {c.parens} parentheses removed); several faults: {c.several} cases with two or more failing items ({c.failing} failing items); Plausible properties have no premises, discarded = 0"
 
 end FrenHirToThirTests
