@@ -571,18 +571,9 @@ theorem flipped_goal_model (p : FrenOir.Program) :
 #print axioms flipped_goal_model
 
 open smt_primitives in
-interp confirmation_pick := fun arms c => Spec.Compiler.Thir.pickArm arms c
-
-open smt_primitives in
-impl confirmation_selection_proof: confirmation_selection for
-    (arms : spec.surface.Snoc (spec.names.ArmF spec.types.Typing)) (constructor : Fren.Seq String) {
-  arms := arms, constructor := constructor, holds? := true
-} by
-  intro arms constructor _
-  simp only [confirmation_selection.ensures, confirmation_selection.ensure.output,
-    confirmation_selection.ensure.agrees, smt_primitives.confirmation_pick]
-  exact ⟨trivial, Spec.Compiler.Thir.pickArm_eq_select arms constructor⟩
+interp confirmation_pick := fun arms c => Spec.Compiler.Thir.pickArm arms c by
+  intro arms constructor
+  simp only [smt_primitives.confirmation_pick.agrees]
+  exact Spec.Compiler.Thir.pickArm_eq_select arms constructor
 
 end Spec.Compiler.Smt
-
-#fren_check confirmation_selection

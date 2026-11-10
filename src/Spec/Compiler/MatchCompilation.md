@@ -11,7 +11,9 @@ names for every constructor of an admitted match.
 
 r[match.lowering.selection] spec::lowering::lowering_selection::agrees
 The arm that the lowered guard chain runs for a constructor is the arm
-`select` names for it.
+`select` names for it. `lowering_pick` stands for the arm that the chain
+runs and has no interpretation yet, so the procedure's result says where the
+two agree, and that it is `true` for every match is the open claim.
 
 ```fren
 pub mod spec::lowering
@@ -25,8 +27,7 @@ pub fn lowering_pick(Snoc<ArmF<Typing>>, ItemId): Option<ArmF<Typing>>
 
 set_option fren.evidence "random" in
 pub proc lowering_selection(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (holds?) {
-    ensure output: holds?
-    ensure agrees: lowering_pick(arms, constructor) = select(arms, constructor)
+    ensure agrees: when holds?, lowering_pick(arms, constructor) = select(arms, constructor)
 }
 
 trusted lowering_selection: "open: the lowered guard chain, whose last arm is the fallback, is not yet related to select; lowering shares no extracted selection function with the evaluator"

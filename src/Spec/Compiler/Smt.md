@@ -747,7 +747,7 @@ instances, not the universal preservation or trust obligations.
 Confirmation of a match selects the arm of a constructor with
 `FrenHirToThir.selectArm`, the function that the evaluator also calls.
 
-r[smt.selection.arm] smt_primitives::confirmation_selection::agrees
+r[smt.selection.arm] smt_primitives::confirmation_pick::agrees
 The arm that confirmation selects for a constructor is the arm that
 [`select`](../Language/Patterns.md#r-patterns.matching.select) names for it.
 
@@ -757,11 +757,7 @@ use spec::surface::Snoc
 use spec::types::Typing
 use spec::patterns::select
 
-pub fn confirmation_pick(Snoc<ArmF<Typing>>, ItemId): Option<ArmF<Typing>>
-
-set_option fren.evidence "random" in
-pub proc confirmation_selection(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (holds?) {
-    ensure output: holds?
-    ensure agrees: confirmation_pick(arms, constructor) = select(arms, constructor)
+pub fn confirmation_pick(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (arm: Option<ArmF<Typing>>) {
+    ensure agrees: arm = select(arms, constructor)
 }
 ```

@@ -68,18 +68,9 @@ private def source := "mod demand\n\
     return true
 
 open spec.evaluator in
-interp evaluator_pick := fun arms c => Spec.Compiler.Thir.pickArm arms c
-
-open spec.evaluator in
-impl evaluator_selection_proof: evaluator_selection for
-    (arms : spec.surface.Snoc (spec.names.ArmF spec.types.Typing)) (constructor : Fren.Seq String) {
-  arms := arms, constructor := constructor, holds? := true
-} by
-  intro arms constructor _
-  simp only [evaluator_selection.ensures, evaluator_selection.ensure.output,
-    evaluator_selection.ensure.agrees, evaluator_pick]
-  exact ⟨trivial, Spec.Compiler.Thir.pickArm_eq_select arms constructor⟩
+interp evaluator_pick := fun arms c => Spec.Compiler.Thir.pickArm arms c by
+  intro arms constructor
+  simp only [spec.evaluator.evaluator_pick.agrees]
+  exact Spec.Compiler.Thir.pickArm_eq_select arms constructor
 
 end Spec.Compiler.Evaluator
-
-#fren_check evaluator_selection

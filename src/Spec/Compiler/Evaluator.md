@@ -198,7 +198,7 @@ names. The evaluator's walk selects it with `FrenHirToThir.selectArm`, the
 function that confirmation also calls, and the Thir wrapper proves that
 function equal to `select`.
 
-r[evaluator.selection.arm] spec::evaluator::evaluator_selection::agrees
+r[evaluator.selection.arm] spec::evaluator::evaluator_pick::agrees
 The arm that the evaluator selects for a constructor is the arm `select`
 names for it.
 
@@ -208,11 +208,7 @@ use spec::surface::Snoc
 use spec::types::Typing
 use spec::patterns::select
 
-pub fn evaluator_pick(Snoc<ArmF<Typing>>, ItemId): Option<ArmF<Typing>>
-
-set_option fren.evidence "random" in
-pub proc evaluator_selection(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (holds?) {
-    ensure output: holds?
-    ensure agrees: evaluator_pick(arms, constructor) = select(arms, constructor)
+pub fn evaluator_pick(arms: Snoc<ArmF<Typing>>, constructor: ItemId): (arm: Option<ArmF<Typing>>) {
+    ensure agrees: arm = select(arms, constructor)
 }
 ```

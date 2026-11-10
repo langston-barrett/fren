@@ -463,7 +463,7 @@ decidable equality; its agreement at the compiler's item identities needs
 their equality to be lawful, which is not proved, and the match's whole
 `CoverageContract` stays open.
 
-r[thir.coverage.lists] spec::thir::coverage_lists::{missing, repeated}
+r[thir.coverage.lists] spec::thir::{production_missing::agrees, production_repeated::agrees}
 The missing constructors that production reports are `uncovered`, and its
 repeated targets are `repeats`.
 
@@ -473,15 +473,12 @@ use spec::surface::Snoc
 use spec::types::Typing
 use spec::patterns::{repeats, uncovered}
 
-pub fn production_missing(Snoc<ItemId>, Snoc<ArmF<Typing>>): Snoc<ItemId>
+pub fn production_missing(constructors: Snoc<ItemId>, arms: Snoc<ArmF<Typing>>): (missing: Snoc<ItemId>) {
+    ensure agrees: missing = uncovered(constructors, arms)
+}
 
-pub fn production_repeated(Snoc<ArmF<Typing>>): Snoc<ItemId>
-
-set_option fren.evidence "random" in
-pub proc coverage_lists(constructors: Snoc<ItemId>, arms: Snoc<ArmF<Typing>>): (holds?) {
-    ensure output: holds?
-    ensure missing: production_missing(constructors, arms) = uncovered(constructors, arms)
-    ensure repeated: production_repeated(arms) = repeats(arms)
+pub fn production_repeated(arms: Snoc<ArmF<Typing>>): (repeated: Snoc<ItemId>) {
+    ensure agrees: repeated = repeats(arms)
 }
 ```
 

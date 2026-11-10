@@ -1656,22 +1656,16 @@ def productionCoverage {E : Type} (cs : Snoc (Fren.Seq String)) (arms : Snoc (Ar
   @FrenHirToThir.coverage (Fren.Seq String) ⟨fun x y => decide (x = y)⟩ (toList cs).toArray
     ((toList arms).map (·.constructor)).toArray
 
-interp thir::production_missing := fun cs arms => ofList (productionCoverage cs arms).1.toList
-interp thir::production_repeated := fun arms => ofList (productionCoverage Snoc.Empty arms).2.toList
-
-open spec.thir in
-impl coverage_lists_proof: thir::coverage_lists for (constructors : Snoc (Fren.Seq String))
-    (arms : Snoc (ArmF Typing)) {
-  constructors := constructors, arms := arms, holds? := true
-} by
-  intro constructors arms _
-  simp only [coverage_lists.ensures, coverage_lists.ensure.output, coverage_lists.ensure.missing,
-    coverage_lists.ensure.repeated, production_missing, production_repeated]
-  refine ⟨trivial, ?_, ?_⟩
-  · have := production_missing_eq constructors arms
-    simp only [productionCoverage, this, ofList_toList]
-  · have := production_repeated_eq Snoc.Empty arms
-    simp only [productionCoverage, this, ofList_toList]
+interp thir::production_missing := fun cs arms => ofList (productionCoverage cs arms).1.toList by
+  intro constructors arms
+  simp only [spec.thir.production_missing.agrees]
+  have := production_missing_eq constructors arms
+  simp only [productionCoverage, this, ofList_toList]
+interp thir::production_repeated := fun arms => ofList (productionCoverage Snoc.Empty arms).2.toList by
+  intro arms
+  simp only [spec.thir.production_repeated.agrees]
+  have := production_repeated_eq Snoc.Empty arms
+  simp only [productionCoverage, this, ofList_toList]
 
 /-- The arm that a constructor selects, as the evaluator and confirmation compute it. -/
 def pickArm {E : Type} (arms : Snoc (ArmF E)) (c : Fren.Seq String) : Option (ArmF E) :=
