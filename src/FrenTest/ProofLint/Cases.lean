@@ -17,6 +17,18 @@ def same (n : Nat) : Nat := n
 def mix (a b : Nat) : Nat := a + b
 def up (n : Nat) : Nat := n + 1
 def next (n : Nat) : Nat := n + 1
+def spin (n : Nat) : Nat := n
+def port (a b : Nat) : Nat := a + b
+def star (a b : Nat) : Nat := a + b
+def q1 (n : Nat) : Nat := n
+def q2 (n : Nat) : Nat := n
+def q3 (n : Nat) : Nat := n
+def q4 (n : Nat) : Nat := n
+def r1 (n : Nat) : Nat := n
+def r2 (n : Nat) : Nat := n
+def r3 (n : Nat) : Nat := n
+def r4 (n : Nat) : Nat := n
+def r5 (n : Nat) : Nat := n
 @[reducible] def again (n : Nat) : Nat := twice n
 
 /-! ## Simp lemmas that pass -/
@@ -45,6 +57,10 @@ end
 @[simp] theorem twice_both (n : Nat) : twice 2 = 4 ∧ twice (0 + n) = n + n :=
   ⟨rfl, by unfold twice; omega⟩
 
+-- `same_eq` proves it too. With this lemma in the simp set its higher
+-- priority wins, so only a run without it shows the competition.
+@[simp high] theorem same_zero : same 0 = 0 := rfl
+
 public section
 @[simp] theorem twice_zero_add (n : Nat) : twice (0 + n) = n + n := by unfold twice; omega
 end
@@ -56,6 +72,28 @@ end
 -- Each undoes the other.
 @[simp] theorem up_eq (n : Nat) : up n = next n := rfl
 @[simp] theorem next_eq (m : Nat) : next m = up m := rfl
+-- Growing: the right-hand side contains an instance of the left-hand side.
+@[simp] theorem spin_eq (n : Nat) : spin n = spin (spin n) := rfl
+-- A cycle under instantiation: `port_eq` at `a a` undoes `star_self`, which
+-- does not undo `port_eq` in general, so only `star_self` is reported.
+@[simp] theorem port_eq (a b : Nat) : port a b = star a b := rfl
+@[simp] theorem star_self (a : Nat) : star a a = port a a := rfl
+-- A cycle of `cycleLength` lemmas, the longest that the search follows.
+@[simp] theorem q1_eq (n : Nat) : q1 n = q2 n := rfl
+@[simp] theorem q2_eq (n : Nat) : q2 n = q3 n := rfl
+@[simp] theorem q3_eq (n : Nat) : q3 n = q4 n := rfl
+@[simp] theorem q4_eq (n : Nat) : q4 n = q1 n := rfl
+
+/-! ## A loop beyond the bound of `simpLoop`
+
+A cycle of five lemmas: `simpLoop` reports none of them, and `simpNF` reports
+each because simp fails on its left-hand side. -/
+
+@[simp] theorem r1_eq (n : Nat) : r1 n = r2 n := rfl
+@[simp] theorem r2_eq (n : Nat) : r2 n = r3 n := rfl
+@[simp] theorem r3_eq (n : Nat) : r3 n = r4 n := rfl
+@[simp] theorem r4_eq (n : Nat) : r4 n = r5 n := rfl
+@[simp] theorem r5_eq (n : Nat) : r5 n = r1 n := rfl
 
 /-! ## Unsqueezed tactics -/
 
@@ -123,8 +161,21 @@ example (n : Nat) : n + 0 = n := by
   | 0 => simp
   | k + 1 => { simp }
 
-example (n : Nat) : n + 0 = n := by
+-- Each branch of a tactic `if` must close its goal, whatever follows the
+-- `if`: Lean rejects a branch that leaves it open ("unsolved goals"), as it
+-- does for a `match` alternative. So the last tactic of a branch is terminal.
+example (n : Nat) : n + 0 = n ∧ n = n := by
+  constructor
   if h : n = 0 then simp [h] else simp
+  rfl
+
+example (n m : Nat) (h : m + 0 = n) : n + 0 = n ∧ m = n := by
+  constructor
+  if c : n = 0 then
+    simp at h -- unsqueezed
+    simp
+  else simp
+  exact h
 
 example (a b : Nat) (h : a = b) : a + 0 = b := by
   conv => lhs; simp

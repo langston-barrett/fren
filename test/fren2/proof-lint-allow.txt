@@ -1,21 +1,221 @@
 # Findings of the proof linters (src/FrenTest/ProofLint.lean) that predate them.
-# Each line is `linter key [count]`: a lemma's name for simpNF and simpLoop, a
-# file and its number of findings for unsqueezed. The job fails on a finding
-# that is not listed and on an entry that permits more than it finds, so this
-# list only shrinks. Fix a new finding instead of listing it.
-unsqueezed src/FrenAstToHir/Resolve.lean 1
-unsqueezed src/FrenBase/Identity.lean 4
-unsqueezed src/FrenExpr/Core.lean 1
-unsqueezed src/FrenOirToSmt/Confirm.lean 2
-unsqueezed src/Spec/Compiler/AstAndParsing.lean 2
-unsqueezed src/Spec/Compiler/Desugaring.lean 1
-unsqueezed src/Spec/Compiler/Mir.lean 1
-unsqueezed src/Spec/Compiler/Oir.lean 5
-unsqueezed src/Spec/Compiler/Thir.lean 55
-unsqueezed src/Spec/Compiler/Thir/Adequacy.lean 6
-unsqueezed src/Spec/Compiler/Walking.lean 1
-unsqueezed src/Spec/Language/DynamicSemantics.lean 2
-unsqueezed src/Spec/Language/NamesAndScope.lean 35
-unsqueezed src/Spec/Language/PropertiesAndChecks.lean 8
-unsqueezed src/Spec/Language/Types.lean 87
-unsqueezed src/Spec/Support/Core.lean 2
+# Each line is `linter identity` and permits one finding. For simpNF and
+# simpLoop the identity is `lemma#n`: the linter's n-th finding for the lemma.
+# For unsqueezed it is `file:declaration#n`: the n-th reported tactic of the
+# declaration (of all the file's unnamed ones of a kind, such as `example`).
+# The job prints each finding with its identity. It fails on a finding that
+# is not listed and on an entry whose finding is gone, so this list only
+# shrinks. Fix a new finding instead of listing it.
+unsqueezed src/FrenBase/Identity.lean:rebuild#1
+unsqueezed src/FrenBase/Identity.lean:rebuild#2
+unsqueezed src/FrenBase/Identity.lean:rebuild#3
+unsqueezed src/FrenBase/Identity.lean:rebuild#4
+unsqueezed src/FrenExpr/Core.lean:map_congr#1
+unsqueezed src/FrenAstToHir/Resolve.lean:syntax_preserved#1
+unsqueezed src/FrenOirToSmt/Confirm.lean:strict_div_zero#1
+unsqueezed src/FrenOirToSmt/Confirm.lean:strict_mod_zero#1
+unsqueezed src/Spec/Compiler/AstAndParsing.lean:space_case#1
+unsqueezed src/Spec/Compiler/AstAndParsing.lean:continuation_case#1
+unsqueezed src/Spec/Compiler/Desugaring.lean:desugar_sound#1
+unsqueezed src/Spec/Compiler/Mir.lean:singleton_false_value#1
+unsqueezed src/Spec/Compiler/Oir.lean:walk_extracts#1
+unsqueezed src/Spec/Compiler/Oir.lean:walk_extracts#2
+unsqueezed src/Spec/Compiler/Oir.lean:walk_extracts#3
+unsqueezed src/Spec/Compiler/Oir.lean:walk_extracts#4
+unsqueezed src/Spec/Compiler/Oir.lean:empty_witness_constructs#1
+unsqueezed src/Spec/Compiler/Thir.lean:binary#1
+unsqueezed src/Spec/Compiler/Thir.lean:arguments_rejected#1
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#1
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#2
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#3
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#4
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#5
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#6
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#7
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#8
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#9
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#10
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#11
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#12
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#13
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_sound#14
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#1
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#2
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#3
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#4
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#5
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#6
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#7
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#8
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#9
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#10
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#11
+unsqueezed src/Spec/Compiler/Thir.lean:synth_core_complete#12
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_valid#1
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_extend#1
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_extend#2
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_extend#3
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_extend#4
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_extend#5
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_length#1
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_length#2
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_length#3
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_root#1
+unsqueezed src/Spec/Compiler/Thir.lean:desugar_root#2
+unsqueezed src/Spec/Compiler/Thir.lean:desugaring_preserves_typing#1
+unsqueezed src/Spec/Compiler/Thir.lean:desugaring_reflects_typing#1
+unsqueezed src/Spec/Compiler/Thir.lean:desugaring_reflects_typing#2
+unsqueezed src/Spec/Compiler/Thir.lean:desugaring_reflects_typing#3
+unsqueezed src/Spec/Compiler/Thir.lean:hir_valid_faithful#1
+unsqueezed src/Spec/Compiler/Thir.lean:hir_table_unique#1
+unsqueezed src/Spec/Compiler/Thir.lean:step_binary#1
+unsqueezed src/Spec/Compiler/Thir.lean:step_binary#2
+unsqueezed src/Spec/Compiler/Thir.lean:step_binary#3
+unsqueezed src/Spec/Compiler/Thir.lean:step_if#1
+unsqueezed src/Spec/Compiler/Thir.lean:step_if#2
+unsqueezed src/Spec/Compiler/Thir.lean:step_if#3
+unsqueezed src/Spec/Compiler/Thir.lean:step_let#1
+unsqueezed src/Spec/Compiler/Thir.lean:step_let#2
+unsqueezed src/Spec/Compiler/Thir.lean:step_let#3
+unsqueezed src/Spec/Compiler/Thir.lean:desugaring_keeps_rows_proof#1
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:desugar_rows_inv#1
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:desugar_rows_inv#2
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:desugar_typing_at#1
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:hir_annotate_iff#1
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:hir_annotate_iff#2
+unsqueezed src/Spec/Compiler/Thir/Adequacy.lean:synthesis_synth#1
+unsqueezed src/Spec/Compiler/Walking.lean:resolved_success#1
+unsqueezed src/Spec/Language/DynamicSemantics.lean:values_agree_proof#1
+unsqueezed src/Spec/Language/DynamicSemantics.lean:values_agree_proof#2
+unsqueezed src/Spec/Language/NamesAndScope.lean:local_bound#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:local_nearest#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:insert_name_length#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:local_weakens#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:nearest_converse#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:nearest_converse#2
+unsqueezed src/Spec/Language/NamesAndScope.lean:nearest_converse#3
+unsqueezed src/Spec/Language/NamesAndScope.lean:resolve_params_length#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:resolve_params_length#2
+unsqueezed src/Spec/Language/NamesAndScope.lean:head_local#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:head_local#2
+unsqueezed src/Spec/Language/NamesAndScope.lean:layer_local#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:rows_aligned#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:rows_aligned#2
+unsqueezed src/Spec/Language/NamesAndScope.lean:rows_scoped#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:rows_scoped#2
+unsqueezed src/Spec/Language/NamesAndScope.lean:rows_scoped#3
+unsqueezed src/Spec/Language/NamesAndScope.lean:rows_scoped#4
+unsqueezed src/Spec/Language/NamesAndScope.lean:enum_ok_distinct#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:nodup_types#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:binding_ok_function#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:binding_ok_function#2
+unsqueezed src/Spec/Language/NamesAndScope.lean:resolve_arms_weakens#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:layer_weakens#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:layer_weakens#2
+unsqueezed src/Spec/Language/NamesAndScope.lean:layer_weakens#3
+unsqueezed src/Spec/Language/NamesAndScope.lean:value_form_constructor#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:callee_item_function#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:pattern_item_constructor#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:layer_callee#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:parameters_parallel_proof#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:siblings_proof#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:siblings_proof#2
+unsqueezed src/Spec/Language/NamesAndScope.lean:let_handoff_proof#1
+unsqueezed src/Spec/Language/NamesAndScope.lean:parameter_handoff_proof#1
+unsqueezed src/Spec/Language/PropertiesAndChecks.lean:strictness_proof#1
+unsqueezed src/Spec/Language/PropertiesAndChecks.lean:guards_proof#1
+unsqueezed src/Spec/Language/PropertiesAndChecks.lean:divisor_proof#1
+unsqueezed src/Spec/Language/PropertiesAndChecks.lean:hypotheses_proof#1
+unsqueezed src/Spec/Language/PropertiesAndChecks.lean:hypotheses_proof#2
+unsqueezed src/Spec/Language/PropertiesAndChecks.lean:hypotheses_proof#3
+unsqueezed src/Spec/Language/PropertiesAndChecks.lean:cut_proof#1
+unsqueezed src/Spec/Language/PropertiesAndChecks.lean:member_scope_proof#1
+unsqueezed src/Spec/Language/Types.lean:rule_unique#1
+unsqueezed src/Spec/Language/Types.lean:rule_unique#2
+unsqueezed src/Spec/Language/Types.lean:rule_unique#3
+unsqueezed src/Spec/Language/Types.lean:rule_unique#4
+unsqueezed src/Spec/Language/Types.lean:rule_unique#5
+unsqueezed src/Spec/Language/Types.lean:rule_unique#6
+unsqueezed src/Spec/Language/Types.lean:rule_unique#7
+unsqueezed src/Spec/Language/Types.lean:table_scoped#1
+unsqueezed src/Spec/Language/Types.lean:table_scoped#2
+unsqueezed src/Spec/Language/Types.lean:insert_length#1
+unsqueezed src/Spec/Language/Types.lean:lookup_shift#1
+unsqueezed src/Spec/Language/Types.lean:lookup_shift#2
+unsqueezed src/Spec/Language/Types.lean:lookup_shift#3
+unsqueezed src/Spec/Language/Types.lean:lookup_shift#4
+unsqueezed src/Spec/Language/Types.lean:lookup_shift#5
+unsqueezed src/Spec/Language/Types.lean:lookup_shift#6
+unsqueezed src/Spec/Language/Types.lean:lookup_shift#7
+unsqueezed src/Spec/Language/Types.lean:lookup_shift#8
+unsqueezed src/Spec/Language/Types.lean:entry_kind_ok#1
+unsqueezed src/Spec/Language/Types.lean:entry_kind_ok#2
+unsqueezed src/Spec/Language/Types.lean:layer_regular#1
+unsqueezed src/Spec/Language/Types.lean:layer_regular#2
+unsqueezed src/Spec/Language/Types.lean:layer_regular#3
+unsqueezed src/Spec/Language/Types.lean:layer_regular#4
+unsqueezed src/Spec/Language/Types.lean:layer_regular#5
+unsqueezed src/Spec/Language/Types.lean:layer_regular#6
+unsqueezed src/Spec/Language/Types.lean:layer_regular#7
+unsqueezed src/Spec/Language/Types.lean:layer_regular#8
+unsqueezed src/Spec/Language/Types.lean:layer_regular#9
+unsqueezed src/Spec/Language/Types.lean:layer_regular#10
+unsqueezed src/Spec/Language/Types.lean:typing_at_row#1
+unsqueezed src/Spec/Language/Types.lean:annotate_arguments_ok#1
+unsqueezed src/Spec/Language/Types.lean:annotate_arguments_ok#2
+unsqueezed src/Spec/Language/Types.lean:annotate_arms_ok#1
+unsqueezed src/Spec/Language/Types.lean:annotate_arms_ok#2
+unsqueezed src/Spec/Language/Types.lean:annotate_children_ok#1
+unsqueezed src/Spec/Language/Types.lean:annotate_children_ok#2
+unsqueezed src/Spec/Language/Types.lean:annotate_children_ok#3
+unsqueezed src/Spec/Language/Types.lean:annotate_children_ok#4
+unsqueezed src/Spec/Language/Types.lean:annotate_children_ok#5
+unsqueezed src/Spec/Language/Types.lean:annotate_children_ok#6
+unsqueezed src/Spec/Language/Types.lean:annotate_children_ok#7
+unsqueezed src/Spec/Language/Types.lean:judgment_regular#1
+unsqueezed src/Spec/Language/Types.lean:layer_weakens#1
+unsqueezed src/Spec/Language/Types.lean:layer_weakens#2
+unsqueezed src/Spec/Language/Types.lean:layer_weakens#3
+unsqueezed src/Spec/Language/Types.lean:layer_weakens#4
+unsqueezed src/Spec/Language/Types.lean:context_ok_insert#1
+unsqueezed src/Spec/Language/Types.lean:extends_length#1
+unsqueezed src/Spec/Language/Types.lean:extends_length#2
+unsqueezed src/Spec/Language/Types.lean:extends_length#3
+unsqueezed src/Spec/Language/Types.lean:extends_insert#1
+unsqueezed src/Spec/Language/Types.lean:extends_insert#2
+unsqueezed src/Spec/Language/Types.lean:judgment_weakens#1
+unsqueezed src/Spec/Language/Types.lean:annotate_arguments_iff#1
+unsqueezed src/Spec/Language/Types.lean:annotate_arguments_iff#2
+unsqueezed src/Spec/Language/Types.lean:annotate_arguments_iff#3
+unsqueezed src/Spec/Language/Types.lean:annotate_arms_iff#1
+unsqueezed src/Spec/Language/Types.lean:annotate_arms_iff#2
+unsqueezed src/Spec/Language/Types.lean:annotate_arms_iff#3
+unsqueezed src/Spec/Language/Types.lean:annotate_iff#1
+unsqueezed src/Spec/Language/Types.lean:annotate_iff#2
+unsqueezed src/Spec/Language/Types.lean:annotate_iff#3
+unsqueezed src/Spec/Language/Types.lean:annotate_iff#4
+unsqueezed src/Spec/Language/Types.lean:annotate_iff#5
+unsqueezed src/Spec/Language/Types.lean:annotate_iff#6
+unsqueezed src/Spec/Language/Types.lean:annotate_iff#7
+unsqueezed src/Spec/Language/Types.lean:annotate_iff#8
+unsqueezed src/Spec/Language/Types.lean:annotate_iff#9
+unsqueezed src/Spec/Language/Types.lean:annotate_iff#10
+unsqueezed src/Spec/Language/Types.lean:rule_child_ctx#1
+unsqueezed src/Spec/Language/Types.lean:rule_child_ctx#2
+unsqueezed src/Spec/Language/Types.lean:rule_child_ctx#3
+unsqueezed src/Spec/Language/Types.lean:rule_child_ctx#4
+unsqueezed src/Spec/Language/Types.lean:rule_child_ctx#5
+unsqueezed src/Spec/Language/Types.lean:derivation_typed#1
+unsqueezed src/Spec/Language/Types.lean:layers_paired_zip#1
+unsqueezed src/Spec/Language/Types.lean:layers_paired_zip#2
+unsqueezed src/Spec/Language/Types.lean:layers_paired_zip#3
+unsqueezed src/Spec/Language/Types.lean:layers_paired_zip#4
+unsqueezed src/Spec/Language/Types.lean:layers_paired_zip#5
+unsqueezed src/Spec/Language/Types.lean:layers_paired_zip#6
+unsqueezed src/Spec/Language/Types.lean:layers_paired_zip#7
+unsqueezed src/Spec/Language/Types.lean:layers_paired_zip#8
+unsqueezed src/Spec/Language/Types.lean:layers_paired_zip#9
+unsqueezed src/Spec/Language/Types.lean:layers_paired_zip#10
+unsqueezed src/Spec/Language/Types.lean:derives?#1
+unsqueezed src/Spec/Support/Core.lean:instance#1
+unsqueezed src/Spec/Support/Core.lean:instance#2

@@ -130,9 +130,44 @@ private partial def visit (terminal : Bool) (stx : Syntax) (found : Array Syntax
         visit (inner || afterBy) args[i]! found
   | _ => found
 
-/-- The unsqueezed `simp` and `grind` calls of a file's commands. -/
-def unsqueezed (commands : Array Syntax) : Array Syntax :=
-  commands.foldl (fun found command => visit false command found) #[]
+private partial def declIds (stx : Syntax) : Nat :=
+  stx.getArgs.foldl (· + declIds ·) (if stx.isOfKind ``Parser.Command.declId then 1 else 0)
+
+/-- The parts of a command that declare at most one name each: the command
+itself, or the declarations of a `mutual` block and the like. -/
+private partial def pieces (stx : Syntax) : Array Syntax :=
+  if declIds stx ≤ 1 then #[stx] else stx.getArgs.flatMap pieces
+
+/-- A name for a declaration that does not depend on where it stands: the
+name it declares, else the kind of an unnamed declaration (`example`,
+`instance`), else the first identifier after the keyword of another command,
+such as `impl` and `interp`, else the command's kind. `open ... in` and the
+like are looked through. -/
+private partial def label (stx : Syntax) : String :=
+  if stx.isOfKind ``Parser.Command.in then label stx[2] else
+  let inner := (stx.find? (·.isOfKind ``Parser.Command.declaration)).getD stx
+  let name := match inner.find? (·.isOfKind ``Parser.Command.declId) with
+    | some id => toString id[0].getId
+    | none =>
+      if inner.isOfKind ``Parser.Command.declaration then toString (inner[1].getKind.components.getLast?.getD `declaration)
+      else match inner[1].find? (·.isIdent) with
+        | some id => toString id.getId
+        | none => toString (inner.getKind.components.getLast?.getD `command)
+  name.replace " " "_"
+
+/-- The unsqueezed `simp` and `grind` calls of a file's commands, each with
+its identity in the file: the label of its declaration, `#` and its number
+among the calls reported under that label, from 1. A label that several
+declarations share, such as `example`, numbers their calls together. -/
+def unsqueezed (commands : Array Syntax) : Array (String × Syntax) := Id.run do
+  let mut found : Array (String × Syntax) := #[]
+  let mut labels : Array String := #[]
+  for piece in commands.flatMap pieces do
+    for stx in visit false piece #[] do
+      let name := label piece
+      labels := labels.push name
+      found := found.push (s!"{name}#{(labels.filter (· == name)).size}", stx)
+  return found
 
 /-- Whether any of the commands gives a declaration the `simp` attribute. -/
 def hasSimpAttribute (commands : Array Syntax) : Bool :=

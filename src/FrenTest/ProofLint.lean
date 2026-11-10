@@ -13,10 +13,14 @@ The proof-linter jobs of `fren_test`: `proofLint simp` and
 `FrenTest.ProofLint.Cases`, then lints every file of the Fren2 inventory that
 the `layering` job checks.
 
-Findings that predate the linters are listed in `test/fren2/proof-lint-allow.txt`.
-A job fails on a finding that the list does not permit and on an entry that
-no longer matches a finding, so the list can only shrink: the unit that
-cleans the proofs empties it. Each job prints every finding, permitted or not.
+Findings that predate the linters are listed in `test/fren2/proof-lint-allow.txt`,
+one entry for each finding, by its identity: the declaration and the
+finding's number within it, never a line. A job fails on a finding that no
+entry names and on an entry that names no finding, so the list can only
+shrink: the unit that cleans the proofs empties it. A finding that replaces
+another under the same identity (the same declaration and number) is the one
+change that the list cannot see. Each job prints every finding, permitted or
+not, with its identity.
 
 Lean's own `linter.unusedSimpArgs` is on by default and reports during the
 build, which `lake build --wfail` turns into a failure, so it needs no job.
@@ -36,8 +40,13 @@ private def casesPath : String := "src/FrenTest/ProofLint/Cases.lean"
 /-- The simp lemmas of the cases that each linter must report, and no others. -/
 private def expected : List (String × String) :=
   [("simpNF", "twice_same"), ("simpNF", "same_same"), ("simpNF", "again_eq"),
-   ("simpNF", "twice_both"), ("simpNF", "twice_zero_add"), ("simpNF", "up_eq"), ("simpNF", "next_eq"),
-   ("simpLoop", "mix_comm"), ("simpLoop", "up_eq"), ("simpLoop", "next_eq")]
+   ("simpNF", "twice_both"), ("simpNF", "same_zero"), ("simpNF", "twice_zero_add"),
+   ("simpLoop", "mix_comm"), ("simpLoop", "spin_eq"), ("simpLoop", "star_self")] ++
+  -- simp fails on the left-hand side of every lemma of a cycle; `simpLoop`
+  -- reports the `r` lemmas' cycle of five no more, beyond its bound.
+  ["up_eq", "next_eq", "spin_eq", "star_self", "q1_eq", "q2_eq", "q3_eq", "q4_eq",
+   "r1_eq", "r2_eq", "r3_eq", "r4_eq", "r5_eq"].map (("simpNF", ·)) ++
+  ["up_eq", "next_eq", "q1_eq", "q2_eq", "q3_eq", "q4_eq"].map (("simpLoop", ·))
 
 /-- Cases of the unsqueezed linter that no compiled proof can hold: a `grind`
 that leaves its goal open does not compile, and the proof of an `impl` needs
@@ -90,46 +99,68 @@ private unsafe def load (modules : Array Name) : IO Environment := do
   initSearchPath (← findSysroot)
   importModules (modules.map fun module => { module, importAll := true }) {} (loadExts := true)
 
-private structure Allowed where
-  key : String
-  count : Nat
-
-/-- The allowlist's entries for one linter: `linter key` permits one finding,
-`linter key count` that many. `#` starts a comment. -/
-private def allowed (linter : String) : IO (Except String (Array Allowed)) := do
+/-- The allowlist's entries for one linter: a line `linter identity` permits
+the one finding of that identity. A line that starts with `#` is a comment. -/
+private def allowed (linter : String) : IO (Except String (Array String)) := do
   let mut entries := #[]
   for line in (← IO.FS.readFile allowPath).splitOn "\n" do
-    let words := ((line.splitOn "#").headD "").splitOn " " |>.filter (· != "")
-    match words with
+    match (if line.startsWith "#" then "" else line).splitOn " " |>.filter (· != "") with
     | [] => pure ()
-    | [name, key] => if name == linter then entries := entries.push { key, count := 1 }
-    | [name, key, count] =>
-      let some count := count.toNat? | return .error s!"{allowPath}: bad count in '{line}'"
-      if count == 0 then return .error s!"{allowPath}: remove the entry '{line}' rather than permit nothing"
-      if name == linter then entries := entries.push { key, count }
+    | [name, identity] =>
+      unless ["simpNF", "simpLoop", "unsqueezed"].contains name do
+        return .error s!"{allowPath}: unknown linter in '{line}'"
+      if name == linter then entries := entries.push identity
     | _ => return .error s!"{allowPath}: cannot read '{line}'"
-    unless ["simpNF", "simpLoop", "unsqueezed"].contains (words.headD "simpNF") do
-      return .error s!"{allowPath}: unknown linter in '{line}'"
   return .ok entries
 
-/-- Compares a linter's findings, as (key, description) pairs, with the
-allowlist: every key must have exactly as many findings as its entries permit. -/
-private def compare (linter : String) (findings : Array (String × String)) : IO (Array String) := do
-  let entries ← match ← allowed linter with
-    | .ok entries => pure entries
-    | .error error => return #[error]
+/-- What separates a linter's findings, as (identity, description) pairs, from
+the entries that permit them: each finding needs an entry of its identity,
+and each entry a finding. -/
+private def unmatched (linter : String) (entries : Array String) (findings : Array (String × String)) :
+    Array String := Id.run do
   let mut failures := #[]
-  let keys := (findings.map (·.1) ++ entries.map (·.key)).foldl (init := #[]) fun keys key =>
-    if keys.contains key then keys else keys.push key
-  for key in keys do
-    let actual := findings.filter (·.1 == key)
-    let permitted := (entries.filter (·.key == key)).foldl (· + ·.count) 0
-    if actual.size > permitted then
-      let listed := "; ".intercalate (actual.map (·.2)).toList
-      failures := failures.push s!"{linter} {key}: {actual.size} findings where {allowPath} permits {permitted}. Fix the new one rather than permit it: {listed}"
-    else if actual.size < permitted then
-      failures := failures.push s!"{linter} {key}: {actual.size} findings remain where {allowPath} permits {permitted}. Lower the entry to match, or remove it"
+  for (identity, description) in findings do
+    unless entries.contains identity do
+      failures := failures.push s!"{linter} {identity}: a finding that {allowPath} does not permit. Fix it rather than permit it: {description}"
+  for i in [:entries.size] do
+    if (entries.extract 0 i).contains entries[i]! then
+      failures := failures.push s!"{linter} {entries[i]!}: {allowPath} lists this entry twice"
+    else unless findings.any (·.1 == entries[i]!) do
+      failures := failures.push s!"{linter} {entries[i]!}: {allowPath} permits a finding that is gone. Remove the entry"
   return failures
+
+/-- Checks `unmatched` itself: a finding that takes the place of a fixed one
+in the same file is reported along with the fixed one's entry, and an entry
+whose finding is gone is reported. -/
+private def allowlistCases : Array String := Id.run do
+  let finding (identity : String) := (identity, "text")
+  let cases : List (String × Array String × Array String × List String) :=
+    [("all permitted", #["f:a#1", "f:a#2"], #["f:a#1", "f:a#2"], []),
+     ("one fixed and one new in the same file", #["f:a#1", "f:b#1"], #["f:a#1", "f:c#1"],
+      ["f:c#1: a finding", "f:b#1: test/"]),
+     ("one fixed in a declaration with two", #["f:a#1", "f:a#2"], #["f:a#1"], ["f:a#2: test/"]),
+     ("a new finding", #[], #["f:a#1"], ["f:a#1: a finding"]),
+     ("an entry listed twice", #["f:a#1", "f:a#1"], #["f:a#1"], ["f:a#1: test/"])]
+  let mut failures := #[]
+  for (name, entries, findings, want) in cases do
+    let got := unmatched "x" entries (findings.map finding)
+    unless got.size == want.length && want.all (fun part => got.any (·.startsWith s!"x {part}")) do
+      failures := failures.push s!"proof-lint allowlist case '{name}': got {got}"
+  return failures
+
+private def compare (linter : String) (findings : Array (String × String)) : IO (Array String) := do
+  match ← allowed linter with
+  | .ok entries => return unmatched linter entries findings
+  | .error error => return #[error]
+
+/-- A linter's findings with their identities: the declaration, `#` and the
+finding's number among the linter's findings for it, from 1. -/
+private def identified (findings : Array Finding) : Array (String × Finding) := Id.run do
+  let mut found : Array (String × Finding) := #[]
+  for finding in findings do
+    let before := (found.filter (·.2.decl == finding.decl)).size
+    found := found.push (s!"{finding.decl}#{before + 1}", finding)
+  return found
 
 private def describe (finding : Finding) : String :=
   s!"{finding.linter} {finding.decl}: {finding.message}"
@@ -159,24 +190,24 @@ private unsafe def simpJob : IO (Array String) := do
         if hasSimpAttribute commands then
           failures := failures.push s!"{path}: a simp lemma in a module that simpNF cannot load; declare it in another module"
   let (findings, lemmas) ← lintSimp env (together.map (·.1))
-  for finding in findings do IO.println (describe finding)
   for linter in ["simpNF", "simpLoop"] do
-    let mine := findings.filter (·.linter == linter)
+    let mine := identified (findings.filter (·.linter == linter))
+    for (identity, finding) in mine do IO.println s!"{linter} {identity}: {finding.message}"
     IO.println s!"{linter}: {mine.size} findings in {lemmas} simp lemmas of {together.size} modules"
-    failures := failures ++ (← compare linter (mine.map fun finding => (toString finding.decl, finding.message)))
+    failures := failures ++ (← compare linter (mine.map fun (identity, finding) => (identity, finding.message)))
   return failures
 
-/-- The reported tactics of a file as (line, text) pairs, or its parse error. -/
+/-- The reported tactics of a file as (identity, line, text), or its parse error. -/
 private def unsqueezedIn (env : Environment) (path source : String) :
-    IO (Except String (Array (Nat × String) × Array Syntax)) := do
+    IO (Except String (Array (String × Nat × String) × Array Syntax)) := do
   match ← parseFile env path source with
   | .error error => return .error error
   | .ok commands =>
     let map := FileMap.ofString source
     let lines := source.splitOn "\n"
-    let hits := (unsqueezed commands).map fun stx =>
+    let hits := (unsqueezed commands).map fun (identity, stx) =>
       let line := (map.toPosition (stx.getPos?.getD 0)).line
-      (line, (lines.getD (line - 1) "").trimAscii.toString)
+      (s!"{path}:{identity}", line, (lines.getD (line - 1) "").trimAscii.toString)
     return .ok (hits, commands)
 
 private def caseCheck (env : Environment) (path source : String) : IO (Array String) := do
@@ -186,7 +217,7 @@ private def caseCheck (env : Environment) (path source : String) : IO (Array Str
     let lines := (source.splitOn "\n").toArray
     let marked := (Array.range lines.size).filter (fun i => lines[i]!.trimAsciiEnd.toString.endsWith "-- unsqueezed")
       |>.map (· + 1)
-    let reported := hits.map (·.1)
+    let reported := hits.map (·.2.1)
     let missed := marked.filter (!reported.contains ·)
     let extra := reported.filter (!marked.contains ·)
     IO.println s!"proof-lint cases: {path}: {marked.size} marked lines, {reported.size} reported"
@@ -205,9 +236,9 @@ private unsafe def unsqueezedJob : IO (Array String) := do
     match ← unsqueezedIn env path.toString source with
     | .error error => failures := failures.push s!"{path}: cannot parse: {error}"
     | .ok (hits, commands) =>
-      for (line, text) in hits do
-        IO.println s!"unsqueezed {path}:{line}: {text}"
-        findings := findings.push (path.toString, s!"line {line}: {text}")
+      for (identity, line, text) in hits do
+        IO.println s!"unsqueezed {identity} (line {line}): {text}"
+        findings := findings.push (identity, s!"line {line}: {text}")
       unless (optionMentions options commands).isEmpty do
         failures := failures.push s!"{path}: sets {options}; linter.unusedSimpArgs must stay on in Fren2"
   if ((← IO.FS.readFile "lakefile.lean").splitOn "unusedSimpArgs").length > 1 then
@@ -217,8 +248,8 @@ private unsafe def unsqueezedJob : IO (Array String) := do
 
 /-- The proof-linter jobs. -/
 unsafe def check : List String → IO (Array String)
-  | ["simp"] => simpJob
-  | ["unsqueezed"] => unsqueezedJob
+  | ["simp"] => return allowlistCases ++ (← simpJob)
+  | ["unsqueezed"] => return allowlistCases ++ (← unsqueezedJob)
   | other => return #[s!"unknown proofLint job {other}"]
 
 end FrenTest.ProofLint
