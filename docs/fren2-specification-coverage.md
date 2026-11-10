@@ -346,8 +346,9 @@ commuting square with OIR condition generation, is open
 
 The three chapters are a skeleton. Of their rules, only those whose
 `r[...]` line names a Fren definition are stated in Fren: the mention
-relation, the distinct arms of one match, the integer domains and, for
-one layer, the sizes and guarded arguments of the termination check, in
+relation, the distinct arms of one match, the integer domains and the
+deciding functions of the termination check (sizes, guarded calls, the
+choices of decreasing parameters and the verdict on a group), in
 the static semantics, the values and
 operator meanings of the denotational semantics, and the table evaluator
 of the dynamic semantics. Every judgment and every property of the three
@@ -386,11 +387,57 @@ chapters is prose.
   as `f(n) := if n = 0 then 0 else f(n - 1)` with the precondition
   `n >= 0` does not pass and must opt out. A check by a stated decreasing
   measure would need an entailment and is deferred.
-- [ ] Of the termination check only `form_size` and `guarded?` are Fren,
-  each for one layer of an expression. The size of a whole body, the
-  choice of decreasing parameters and the judgment are prose, no checker
-  implements them and no `impl` binds them. The compiler still rejects
-  every recursive program (`thir.validation.nonrecursive`).
+- [x] State the termination check's deciding functions in Fren
+  (`statics.termination.size`, `.guarded`, `.written`, `.group`,
+  `.structural`, `.decision`) and implement them in
+  `src/FrenHirToThir/Termination.lean`. `thir.termination.judgment`
+  binds production's `groupPassesNow`, `structural` and `passesAlone`
+  to `group_passes?`, `structural?` and `passes_alone?`, proved in
+  `src/Spec/Compiler/Thir.lean` at the specification's identities.
+  `validateNonrecursive` judges the recursive group of a function on a
+  call cycle and reports a group that fails as a termination failure
+  with its group and reason (`thir.validation.nonrecursive`).
+- [ ] Open in the termination checker:
+  - The compiler still accepts no recursive program. In the present
+    Core every recursive group with a call between its members fails
+    the check. A group that passed would be rejected as a cycle, since
+    desugaring, MIR, LIR, OIR, SMT and the evaluator are specified and
+    proved for nonrecursive programs only and take validation's
+    `WalkingNonrecursive` as their precondition. None of them changed.
+    Accepting a passing group needs each of them to handle recursion.
+  - Production decides a group by a closed form, `structuralNow`,
+    proved equal to the search over choices only because no size
+    context of the present Core holds `smaller`. When a match arm binds
+    fields, validation must call the search, or a closed form proved
+    for that Core. The search is exponential in the group's size: a
+    group has as many choices as the product of its members' parameter
+    counts. So whoever makes that change chooses a criterion for each
+    function, or a bound, deliberately.
+  - Not bound: the recursive group that `recursiveGroup` takes from
+    the call graph, and the written calls that `writtenCalls` reads
+    from a typed body, against `written_calls` of the Core table. Tests
+    check them on written programs, with each form's calls and levels;
+    no theorem does.
+  - The binding is at the specification's identities with decided
+    equality, while validation compares `FrenBase.ItemId` with that
+    type's own `==`. The binding transfers to validation only if that
+    `==` is equality, which nothing states or proves. The coverage
+    correspondence has the same gap.
+  - The condition rule, that a condition calls only functions that pass
+    hereditarily, is implemented (`Termination.conditionTerminating`)
+    and tested on one fixed graph, but no pass calls it and no Fren
+    definition states it: the call order through conditions is prose.
+    Validation's call graph has the calls in bodies only, so a group
+    that is recursive through conditions alone is not judged.
+  - A function outside every recursive group passes unless it opted
+    out, and no source form opts out, so `passesAlone` has no caller in
+    the pass. The mark's surface form and field are open, below.
+  - A recursive group whose member has no parameter fails with the
+    reason `noParameters`. No source form calls a function without
+    arguments, so only the tests of the generic functions reach it.
+  - The termination failure has no catalogue code and no specified
+    rendering; the command line prints its structure, as it does for
+    coverage and cycle failures.
 - [ ] `statics.property.termination`, that a call of a function that
   passes the check hereditarily does not diverge, is argued in prose and
   not proved. So are `statics.property.sizes`,

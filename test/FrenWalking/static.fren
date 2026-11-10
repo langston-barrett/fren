@@ -16,16 +16,34 @@ enum E { A, B }
 fn f(e: E): Int := match e { E::A => 0, E::A => 1 }
 -- result: coverage m.E; missing=1; repeated=1
 
--- case: self_cycle
+-- case: self_recursion
 mod m
 fn f(x: Int): Int := f(x)
--- result: cycle m.f -> m.f
+-- result: termination m.f: under every choice of decreasing parameters, some call is not guarded
 
--- case: mutual_cycle
+-- case: mutual_recursion
 mod m
 fn f(x: Int): Int := g(x)
 fn g(x: Int): Int := f(x)
--- result: cycle m.f -> m.g -> m.f
+-- result: termination m.f, m.g: under every choice of decreasing parameters, some call is not guarded
+
+-- case: caller_outside_group
+mod m
+fn top(x: Int): Int := g(x)
+fn g(x: Int): Int := f(x)
+fn f(x: Int): Int := g(x)
+-- result: termination m.g, m.f: under every choice of decreasing parameters, some call is not guarded
+
+-- case: let_of_parameter
+mod m
+fn f(x: Int, y: Int): Int := let z := x in f(z, y)
+-- result: termination m.f: under every choice of decreasing parameters, some call is not guarded
+
+-- case: recursive_function_in_expectation
+mod m
+fn f(x: Int): Bool := f(x)
+expect q() { expect calls_recursive: f(1) }
+-- result: termination m.f: under every choice of decreasing parameters, some call is not guarded
 
 -- case: false_goal_remains_goal
 mod m

@@ -66,6 +66,74 @@ example :
     spec.statics.guarded? Int (.Extend (.Extend .Empty .Same) .Smaller) (.Local 0) = false := by
   decide
 
+-- The size context of two parameters has `same` at the decreasing one.
+open spec.names spec.surface in
+example :
+    spec.statics.parameter_sizes (.Extend (.Extend .Empty .Integer) .Boolean) 0 =
+      .Extend (.Extend .Empty .Same) .Unknown := by
+  decide
+
+-- A call is guarded when the argument at the callee's decreasing parameter is a `smaller` local.
+open spec.names spec.surface in
+example :
+    spec.statics.argument_guarded? (.Extend (.Extend .Empty .Same) .Smaller)
+      (.Extend .Empty (.some 1)) 0 = true := by
+  decide
+
+-- An argument that is no local guards no call.
+open spec.names spec.surface in
+example :
+    spec.statics.argument_guarded? (.Extend (.Extend .Empty .Same) .Smaller)
+      (.Extend .Empty .none) 0 = false := by
+  decide
+
+-- A let whose value is a local gives its own local the value's size.
+open spec.names spec.types spec.surface in
+example :
+    spec.statics.calls_guarded? (.Extend .Empty ⟨F, 0⟩) (.Extend .Empty .Smaller)
+      (.Let (.some 0) (.Call F (.Extend .Empty (.some 1)))) = true := by
+  decide
+
+-- A function that calls itself on its own parameter is not structurally recursive.
+open spec.names spec.types spec.surface in
+example :
+    spec.statics.group_passes? (.Extend .Empty
+      ⟨F, .Extend .Empty .Integer, .Checked, .Call F (.Extend .Empty (.some 0))⟩) = false := by
+  decide
+
+-- A group of a function with no parameters has no choice of decreasing parameters.
+open spec.names spec.types spec.surface in
+example :
+    spec.statics.choices (.Extend .Empty ⟨F, .Empty, .Checked, .Leaf⟩) = .Empty := by
+  decide
+
+-- A function in no recursive group passes unless its mark opts it out.
+open spec.names spec.types spec.surface in
+example :
+    spec.statics.passes_alone? ⟨F, .Empty, .Checked, .Call SIGNAL .Empty⟩ = true := by
+  decide
+
+open spec.names spec.types spec.surface in
+example :
+    spec.statics.passes_alone? ⟨F, .Empty, .Unchecked, .Leaf⟩ = false := by
+  decide
+
+-- One `unchecked` mark opts the whole group out.
+open spec.names spec.types spec.surface in
+example :
+    spec.statics.opted_out? (.Extend (.Extend .Empty
+      ⟨F, .Empty, .Unchecked, .Leaf⟩) ⟨SIGNAL, .Empty, .Checked, .Leaf⟩) = true := by
+  decide
+
+-- The written calls of the table of `F(x₀)`: one call, whose argument is the local 0.
+open spec.names spec.types spec.surface in
+example :
+    spec.statics.written_calls (.Extend (.Extend .Empty
+      ⟨.Local 0, .Extend .Empty .Integer, .Integer⟩)
+      ⟨.Call F (.Extend .Empty 0), .Extend .Empty .Integer, .Integer⟩) =
+      .Both (.Both .Leaf .Leaf) (.Call F (.Extend .Empty (.some 0))) := by
+  decide
+
 end Spec.Language.StaticSemantics
 
 set_option fren.requireEvidence "trusted" in

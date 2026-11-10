@@ -1,6 +1,7 @@
 module
 
 public import FrenHirToThirTests.Support
+public import FrenHirToThirTests.Termination
 
 public section
 namespace FrenHirToThirTests
@@ -83,21 +84,44 @@ private def coverageCases : IO Unit := do
 private def cycleCases : IO Unit := do
   let self := "mod m\nfn f(x: Int): Int := f(x)"
   match ← fails self with
-  | .cycle span path => require (path == #[key "f", key "f"] && span.file == ⟨47⟩ &&
-      span.start == 27 && span.stop == 28) "self-cycle concrete path/span"
+  | .termination span group .unguarded => require (group == #[key "f"] && span.file == ⟨47⟩ &&
+      span.start == 27 && span.stop == 28) "self-recursion concrete group/span"
   | _ => throw (IO.userError "wrong self failure")
   let mutualSource := "mod m\nfn f(x: Int): Int := g(x)\nfn g(x: Int): Int := f(x)"
   match ← fails mutualSource with
-  | .cycle span path => require (path == #[key "f", key "g", key "f"] &&
-      span.start == 53 && span.stop == 54) "mutual concrete path/span"
+  | .termination span group .unguarded => require (group == #[key "f", key "g"] &&
+      span.start == 53 && span.stop == 54) "mutual concrete group/span"
   | _ => throw (IO.userError "wrong mutual failure")
   match ← fails ("mod m\nfn f(x: Int): Int := g(x)\nfn g(x: Int): Int := h(x)\n" ++
       "fn h(x: Int): Int := f(x)") with
-  | .cycle _ path => require (path == #[key "f", key "g", key "h", key "f"]) "long cycle"
+  | .termination _ group .unguarded =>
+    require (group == #[key "f", key "g", key "h"]) "long recursive group"
   | _ => throw (IO.userError "wrong long failure")
+  -- A group is in declaration order whichever function the cycle was found from,
+  -- and a function that only calls into it is not of it.
+  match ← fails ("mod m\nfn top(x: Int): Int := g(x)\nfn g(x: Int): Int := f(x)\n" ++
+      "fn f(x: Int): Int := g(x)") with
+  | .termination _ group .unguarded => require (group == #[key "g", key "f"]) "group members"
+  | _ => throw (IO.userError "wrong group failure")
+  -- No source form calls a function of no parameters, so `noParameters` is tested on
+  -- the deciding functions directly (`FrenHirToThirTests.Termination`).
+  -- An argument that is the parameter itself, or a let of it, has the size `same`.
+  for expr in ["f(y, x)", "let z := x in f(z, y)", "f((x), (y))", "f(x + 1, y)"] do
+    match ← fails ("mod m\nfn f(x: Int, y: Int): Int := " ++ expr) with
+    | .termination _ group .unguarded => require (group == #[key "f"]) "unguarded argument"
+    | _ => throw (IO.userError s!"wrong failure: {expr}")
   for expr in ["if true then x else f(x)", "let y := f(x) in y", "(f(x))",
       "match E::A { E::A => x, E::B => f(x) }", "g(f(x))"] do
-    discard <| fails ("mod m\nenum E { A, B }\nfn g(x: Int): Int := x\nfn f(x: Int): Int := " ++ expr)
+    match ← fails ("mod m\nenum E { A, B }\nfn g(x: Int): Int := x\nfn f(x: Int): Int := " ++ expr) with
+    | .termination _ group .unguarded => require (group == #[key "f"]) "nested call's group"
+    | _ => throw (IO.userError s!"wrong nested failure: {expr}")
+  -- `cycleFrom` still gives the closed path, though validation reports the group.
+  for (source, closed) in [(self, #[key "f", key "f"]), (mutualSource, #[key "f", key "g", key "f"])] do
+    let t ← typed source
+    let .ok edges := callEdges t | throw (IO.userError "cycle metadata")
+    match cycleFrom t edges (key "f") with
+    | some (.cycle span path) => require (path == closed && span.file == ⟨47⟩) "closed cycle path"
+    | _ => throw (IO.userError "no cycle found")
   -- Every declaration is checked, including a disconnected unused cycle.
   discard <| fails "mod m\nfn main(x: Int): Int := x\nfn unused(x: Int): Int := unused(x)"
   let diamond := "mod m\nfn f(x: Int): Int := g(x) + h(x)\n" ++
@@ -124,6 +148,55 @@ private def cycleCases : IO Unit := do
     let root := FrenBase.ItemId.root.named modName
     require (edges.map (·.callee) == #[root.named "g"]) "module nominal call identity"
 
+/-- The written calls that validation reads of the body of `f`, by the production
+`functionOf`, compared with a tree written by hand. -/
+private def writtenCase (body : String) (expected : Termination.Calls FrenBase.ItemId) : IO Unit := do
+  let t ← typed ("mod m\nenum E { A, B }\nfn g(x: Int): Int := x\n" ++
+    "fn h(x: Int, y: Int): Int := x\nfn f(x: Int, y: Int): Int := " ++ body)
+  let some typedBody := t.bodies.find? fun b => b.member.isNone && b.owner == key "f"
+    | throw (IO.userError "no body of f")
+  let span := (anchor typedBody.expression t.resolved.scope.name).span
+  let .ok function := functionOf t span (key "f") | throw (IO.userError s!"no written calls: {body}")
+  require (function.item == key "f" && function.parameters.length == 2 && !function.unchecked)
+    "function read for the check"
+  require (s!"{repr function.body}" == s!"{repr expected}")
+    s!"written calls of {body}: {repr function.body}"
+
+/-- Each form's written calls, with the level of each argument and let value that is a
+local: `x` is at level 0, `y` at 1, and a let's local at the next level. -/
+private def extractionCases : IO Unit := do
+  let empty : Termination.Calls FrenBase.ItemId := .leaf
+  -- A call has the calls of its arguments, folded from `leaf`, and then itself.
+  let one := fun (argument call : Termination.Calls FrenBase.ItemId) => .both (.both empty argument) call
+  let gx := one empty (.call (key "g") [some 0])
+  writtenCase "x" empty
+  writtenCase "g(y)" (one empty (.call (key "g") [some 1]))
+  writtenCase "(g(x))" gx
+  writtenCase "g((x))" gx
+  writtenCase "g(x) + y" (.both gx empty)
+  -- An argument that is not a local has no level; its own calls come first.
+  writtenCase "h(g(x), y + 1)"
+    (.both (.both (.both empty gx) (.both empty empty)) (.call (key "h") [none, none]))
+  writtenCase "g(f(x, y))"
+    (.both (.both empty (.both (.both (.both empty empty) empty) (.call (key "f") [some 0, some 1])))
+      (.call (key "g") [none]))
+  writtenCase "let z := y in g(z)"
+    (.both empty (.bind (some 1) (one empty (.call (key "g") [some 2]))))
+  -- A let of a call has no level, and a nested let's local is one level higher.
+  writtenCase "let z := g(x) in let w := z in h(w, (x))"
+    (.both gx (.bind none (.both empty (.bind (some 2)
+      (.both (.both (.both empty empty) empty) (.call (key "h") [some 3, some 0]))))))
+  -- A let with no call is recorded all the same.
+  writtenCase "let z := x in z" (.both empty (.bind (some 0) empty))
+  writtenCase "if true then g(x) else y" (.both empty (.both gx empty))
+  writtenCase "match E::A { E::A => x, E::B => g(x) }" (.both empty (.both (.both empty empty) gx))
+  -- A unary operator has its operand's calls, and a condition and a scrutinee theirs.
+  writtenCase "-g(x)" gx
+  let test : Termination.Calls FrenBase.ItemId := .both gx empty
+  writtenCase "if g(x) = 0 then x else y" (.both test (.both empty empty))
+  writtenCase "match (if g(x) = 0 then E::A else E::B) { E::A => x, E::B => y }"
+    (.both (.both test (.both empty empty)) (.both (.both empty empty) empty))
+
 private def boundaryCases : IO Unit := do
   let source ← IO.FS.readFile "test/FrenResolve/s1.fren"
   let t ← accepts source
@@ -148,6 +221,8 @@ private def boundaryCases : IO Unit := do
 def runWalking : IO Unit := do
   coverageCases
   cycleCases
+  extractionCases
+  runTermination
   boundaryCases
   IO.println "walking static: coverage, actual call cycles, S1 goals and producer boundary passed"
 

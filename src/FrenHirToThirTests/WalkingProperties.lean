@@ -24,7 +24,7 @@ private def tree : Nat → Nat → String
 structure WalkingCounts where
   accepted : Nat := 0
   coverageRejected : Nat := 0
-  cycleRejected : Nat := 0
+  terminationRejected : Nat := 0
   typingRejected : Nat := 0
   providerRejected : Nat := 0
   deriving Repr
@@ -60,10 +60,10 @@ private def sample (n file : Nat) : Option WalkingCounts := do
           repeated != (if source == (variants[1]!).1 then #[] else #[(key "E").named "A"]) ||
           !(check r).isOk then none else pure ()
       counts := {counts with coverageRejected := counts.coverageRejected + 1}
-    | .error (.validation (.cycle _ path)) =>
-      let expectedPath := (List.range length).toArray.map (fun i => key s!"r{i}") |>.push (key "r0")
-      if expected != 2 || path != expectedPath || !(check r).isOk then none else pure ()
-      counts := {counts with cycleRejected := counts.cycleRejected + 1}
+    | .error (.validation (.termination _ group .unguarded)) =>
+      let expectedGroup := (List.range length).toArray.map (fun i => key s!"r{i}")
+      if expected != 2 || group != expectedGroup || !(check r).isOk then none else pure ()
+      counts := {counts with terminationRejected := counts.terminationRejected + 1}
     | .error (.typing _) =>
       if expected != 3 || (check r).isOk then none else pure ()
       counts := {counts with typingRejected := counts.typingRejected + 1}
@@ -76,7 +76,7 @@ private def sample (n file : Nat) : Option WalkingCounts := do
 private def audit (n file : Nat) : Bool :=
   match sample n file with
   | none => false
-  | some c => c.accepted == 1 && c.coverageRejected == 2 && c.cycleRejected == 1 &&
+  | some c => c.accepted == 1 && c.coverageRejected == 2 && c.terminationRejected == 1 &&
     c.typingRejected == 1 && c.providerRejected == 5
 
 private def checkProperty (p : Prop)
@@ -93,9 +93,9 @@ def runWalkingProperties : IO Unit := do
   for n in [:24] do
     let some c := sample n 93 | throw (IO.userError s!"walking census failed at {n}")
     totals := ⟨totals.accepted + c.accepted, totals.coverageRejected + c.coverageRejected,
-      totals.cycleRejected + c.cycleRejected, totals.typingRejected + c.typingRejected,
+      totals.terminationRejected + c.terminationRejected, totals.typingRejected + c.typingRejected,
       totals.providerRejected + c.providerRejected⟩
-  require (totals.accepted == 24 && totals.coverageRejected == 48 && totals.cycleRejected == 24 &&
+  require (totals.accepted == 24 && totals.coverageRejected == 48 && totals.terminationRejected == 24 &&
     totals.typingRejected == 24 && totals.providerRejected == 120) "vacuous walking census"
   IO.println s!"actual walking premise census: {repr totals}; discarded=0; finite evidence, no universal traversal soundness proof"
 

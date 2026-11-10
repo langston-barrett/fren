@@ -6,6 +6,14 @@ public section
 namespace FrenHirToThir
 open FrenAst FrenModule
 
+/-- Why a recursive group fails the termination check: one of its functions
+has no parameter to decrease on, or under every choice of decreasing
+parameters some call of the group is not guarded. -/
+inductive TerminationReason where
+  | noParameters (function : FrenBase.ItemId)
+  | unguarded
+  deriving Repr, BEq
+
 /-- Structured failures have no catalogue code until diagnostic rendering is
 specified. Missing cases use the match keyword; duplicates use the repeated
 pattern's first token. Identity arrays retain declaration/written order. -/
@@ -14,6 +22,8 @@ inductive WalkingFailure where
       (missing repeated : Array FrenBase.ItemId)
   | invalidMetadata (span : FrenSource.Span)
   | cycle (span : FrenSource.Span) (functions : Array FrenBase.ItemId)
+  | termination (span : FrenSource.Span) (group : Array FrenBase.ItemId)
+      (reason : TerminationReason)
   deriving Repr, BEq
 
 abbrev ValidationResult := Except WalkingFailure Unit
