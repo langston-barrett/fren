@@ -27,18 +27,13 @@ constructor of its canonical enum owner; `value_type` gives its type.
 pub mod spec
 pub mod spec::expressions
 
-use spec::surface::{BinaryOp, UnaryOp}
-
-use spec::types::{
-    Arm,
+use spec::names::{
     ArmF,
+    CoreF,
     Ctx,
-    ExprF,
     Form,
     ItemId,
     ItemKind,
-    Row,
-    Snoc,
     Symb,
     Ty,
     entry,
@@ -48,7 +43,11 @@ use spec::types::{
     one,
 }
 
-use spec::types::Snoc::{Empty, Extend}
+use spec::surface::{BinaryOp, Snoc, UnaryOp}
+
+use spec::types::{Arm, Row}
+
+use spec::surface::Snoc::{Empty, Extend}
 
 pub enum Value { Boolean(Bool), Integer(Int), Nominal(ItemId, ItemId) }
 
@@ -231,27 +230,27 @@ pub fn arm_value(prior: Snoc<Option<Value>>, arms: Snoc<Arm>, constructor: ItemI
 
 pub fn layer_value(prior: Snoc<Option<Value>>, env: Snoc<Value>, row: Row): Option<Value> :=
     match row.form {
-        ExprF::BooleanLiteral(value?) => Some(Value::Boolean(value?)),
-        ExprF::IntegerLiteral(value) => Some(Value::Integer(value)),
-        ExprF::Local(level) => lookup(env, level),
-        ExprF::Constructor(item) => match row.ty {
+        CoreF::BooleanLiteral(value?) => Some(Value::Boolean(value?)),
+        CoreF::IntegerLiteral(value) => Some(Value::Integer(value)),
+        CoreF::Local(level) => lookup(env, level),
+        CoreF::Constructor(item) => match row.ty {
             Ty::Nominal(owner) => Some(Value::Nominal(owner, item)),
             _ => None,
         },
-        ExprF::Unary(op, operand) => match value_at(prior, operand) {
+        CoreF::Unary(op, operand) => match value_at(prior, operand) {
             Some(value) => unary_value(op, value),
             None => None,
         },
-        ExprF::Binary(op, left, right) => match value_at(prior, left), value_at(prior, right) {
+        CoreF::Binary(op, left, right) => match value_at(prior, left), value_at(prior, right) {
             Some(l), Some(r) => binary_value(op, l, r),
             _, _ => None,
         },
-        ExprF::If(condition, yes, no) => match value_at(prior, condition) {
+        CoreF::If(condition, yes, no) => match value_at(prior, condition) {
             Some(Value::Boolean(holds?)) =>
                 if holds? then value_at(prior, yes) else value_at(prior, no),
             _ => None,
         },
-        ExprF::Match(scrutinee, arms) => match value_at(prior, scrutinee) {
+        CoreF::Match(scrutinee, arms) => match value_at(prior, scrutinee) {
             Some(Value::Nominal(_, constructor)) => arm_value(prior, arms, constructor),
             _ => None,
         },
@@ -268,7 +267,7 @@ pub fn values(rows: Snoc<Row>, env: Snoc<Value>): Snoc<Option<Value>> := match r
     Extend(earlier, row) => Extend(
         values(earlier, env),
         match row.form {
-            ExprF::Let(_, value, body) => match value_at(values(earlier, env), value) {
+            CoreF::Let(_, value, body) => match value_at(values(earlier, env), value) {
                 Some(bound) => value_at(
                     values(earlier, Extend(initial(env, length(row.ctx)), bound)),
                     body
@@ -304,16 +303,16 @@ pub fn typed(form: Form, ctx: Ctx, ty: Ty): Row := Row { form, ctx, ty }
 
 pub const LET_ROWS: Snoc<Row> := Extend(
     four(
-        typed(ExprF::IntegerLiteral(2), Empty, Ty::Integer),
-        typed(ExprF::IntegerLiteral(10), one(Ty::Integer), Ty::Integer),
-        typed(ExprF::Local(0), one(Ty::Integer), Ty::Integer),
+        typed(CoreF::IntegerLiteral(2), Empty, Ty::Integer),
+        typed(CoreF::IntegerLiteral(10), one(Ty::Integer), Ty::Integer),
+        typed(CoreF::Local(0), one(Ty::Integer), Ty::Integer),
         typed(
-            ExprF::Binary(BinaryOp::Sub, 1, 2),
+            CoreF::Binary(BinaryOp::Sub, 1, 2),
             one(Ty::Integer),
             Ty::Integer
         )
     ),
-    typed(ExprF::Let(None, 0, 3), Empty, Ty::Integer)
+    typed(CoreF::Let(None, 0, 3), Empty, Ty::Integer)
 )
 
 -- The examples are constant judgments, which the wrapper evaluates.
@@ -338,10 +337,10 @@ pub fn arm_mentions?<E>(arms: Snoc<ArmF<E>>, item: ItemId) := match arms {
     Snoc::Extend(earlier, arm) => arm.constructor = item or arm_mentions?(earlier, item),
 }
 
-pub fn direct_item?<E>(form: ExprF<E>, item: ItemId) := match form {
-    ExprF::Constructor(target) => item = target,
-    ExprF::Call(target, _) => item = target,
-    ExprF::Match(_, arms) => arm_mentions?(arms, item),
+pub fn direct_item?<E>(form: CoreF<E>, item: ItemId) := match form {
+    CoreF::Constructor(target) => item = target,
+    CoreF::Call(target, _) => item = target,
+    CoreF::Match(_, arms) => arm_mentions?(arms, item),
     _ => false,
 }
 ```

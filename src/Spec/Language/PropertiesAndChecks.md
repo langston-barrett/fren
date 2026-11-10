@@ -81,39 +81,32 @@ use spec::expressions::{
     values,
 }
 
-use spec::surface::{BinaryOp, UnaryOp}
-
-use spec::types::{
-    Arm,
+use spec::names::{
     ArmF,
+    CoreF,
     Ctx,
-    Decl,
-    ExprF,
-    F,
     Form,
     ItemId,
     ItemKind,
     LIGHT,
     LIGHT_GREEN,
     LIGHT_RED,
-    Row,
-    SYMB,
-    Snoc,
     Symb,
     Ty,
-    derivation?,
     entry,
     four,
     length,
     lookup,
     one,
-    rows_valid?,
     three,
     two,
-    weaken,
 }
 
-use spec::types::Snoc::{Empty, Extend}
+use spec::surface::{BinaryOp, Snoc, UnaryOp}
+
+use spec::types::{Arm, Decl, F, Row, SYMB, derivation?, rows_valid?, weaken}
+
+use spec::surface::Snoc::{Empty, Extend}
 
 pub enum Goal { NonZero(Int), Defined(Int), Asserted(Int) }
 ```
@@ -280,23 +273,23 @@ pub fn arms_condition(prior: Snoc<Condition>, scrutinee: Int, arms: Snoc<Arm>): 
     }
 
 pub fn generate(prior: Snoc<Condition>, pos: Int, form: Form): Condition := match form {
-    ExprF::Unary(_, operand) => condition_at(prior, operand),
-    ExprF::Binary(op, left, right) => operator_condition(
+    CoreF::Unary(_, operand) => condition_at(prior, operand),
+    CoreF::Binary(op, left, right) => operator_condition(
         op,
         condition_at(prior, left),
         condition_at(prior, right),
         right
     ),
-    ExprF::Call(_, args) => call_condition(arguments_condition(prior, args), pos),
-    ExprF::Let(_, value, body) =>
+    CoreF::Call(_, args) => call_condition(arguments_condition(prior, args), pos),
+    CoreF::Let(_, value, body) =>
         let_condition(condition_at(prior, value), value, condition_at(prior, body)),
-    ExprF::If(condition, yes, no) => if_condition(
+    CoreF::If(condition, yes, no) => if_condition(
         condition_at(prior, condition),
         condition,
         condition_at(prior, yes),
         condition_at(prior, no)
     ),
-    ExprF::Match(scrutinee, arms) => match_condition(
+    CoreF::Match(scrutinee, arms) => match_condition(
         condition_at(prior, scrutinee),
         arms_condition(prior, scrutinee, arms)
     ),
@@ -639,7 +632,7 @@ pub fn goal_holds?(prog: Snoc<Declared>, rows: Snoc<Row>, env: Snoc<Value>, goal
         },
         Goal::Defined(pos) => match lookup(rows, pos) {
             Some(row) => match row.form {
-                ExprF::Call(callee, args) => match argument_values(values(rows, env), args) {
+                CoreF::Call(callee, args) => match argument_values(values(rows, env), args) {
                     Some(arguments) => within_domain?(prog, callee, arguments),
                     None => false,
                 },
@@ -822,16 +815,16 @@ pub fn moved_arms(arms: Snoc<Arm>, offset: Int): Snoc<Arm> := match arms {
 }
 
 pub fn moved_form(form: Form, offset: Int): Form := match form {
-    ExprF::Unary(op, operand) => ExprF::Unary(op, operand + offset),
-    ExprF::Binary(op, left, right) => ExprF::Binary(op, left + offset, right + offset),
-    ExprF::Call(item, args) => ExprF::Call(item, moved_arguments(args, offset)),
-    ExprF::Let(annotation, value, body) => ExprF::Let(annotation, value + offset, body + offset),
-    ExprF::If(condition, then_branch, else_branch) => ExprF::If(
+    CoreF::Unary(op, operand) => CoreF::Unary(op, operand + offset),
+    CoreF::Binary(op, left, right) => CoreF::Binary(op, left + offset, right + offset),
+    CoreF::Call(item, args) => CoreF::Call(item, moved_arguments(args, offset)),
+    CoreF::Let(annotation, value, body) => CoreF::Let(annotation, value + offset, body + offset),
+    CoreF::If(condition, then_branch, else_branch) => CoreF::If(
         condition + offset,
         then_branch + offset,
         else_branch + offset
     ),
-    ExprF::Match(scrutinee, arms) => ExprF::Match(scrutinee + offset, moved_arms(arms, offset)),
+    CoreF::Match(scrutinee, arms) => CoreF::Match(scrutinee + offset, moved_arms(arms, offset)),
     _ => form,
 }
 
@@ -1000,12 +993,12 @@ pub fn arm_body?(arms: Snoc<Arm>, pos: Int) := match arms {
 }
 
 pub fn child?(form: Form, pos: Int) := match form {
-    ExprF::Unary(_, operand) => operand = pos,
-    ExprF::Binary(_, left, right) => left = pos or right = pos,
-    ExprF::Call(_, args) => argument?(args, pos),
-    ExprF::Let(_, value, body) => value = pos or body = pos,
-    ExprF::If(condition, yes, no) => condition = pos or yes = pos or no = pos,
-    ExprF::Match(scrutinee, arms) => scrutinee = pos or arm_body?(arms, pos),
+    CoreF::Unary(_, operand) => operand = pos,
+    CoreF::Binary(_, left, right) => left = pos or right = pos,
+    CoreF::Call(_, args) => argument?(args, pos),
+    CoreF::Let(_, value, body) => value = pos or body = pos,
+    CoreF::If(condition, yes, no) => condition = pos or yes = pos or no = pos,
+    CoreF::Match(scrutinee, arms) => scrutinee = pos or arm_body?(arms, pos),
     _ => false,
 }
 
@@ -1024,10 +1017,10 @@ pub proc complete(
 ): (holds?) {
     ensure output: holds?
     ensure divisor: when lookup(rows, pos) = Some(row)
-        and row.form = ExprF::Binary(op, left, right)
+        and row.form = CoreF::Binary(op, left, right)
         and partial?(op),
         requires?(condition_at(conditions(rows), pos), Goal::NonZero(right))
-    ensure call: when lookup(rows, pos) = Some(row) and row.form = ExprF::Call(callee, args),
+    ensure call: when lookup(rows, pos) = Some(row) and row.form = CoreF::Call(callee, args),
         requires?(condition_at(conditions(rows), pos), Goal::Defined(pos))
     ensure inherited: when lookup(rows, pos) = Some(row)
         and child?(row.form, child)
@@ -1440,54 +1433,54 @@ pub const GUARDED_ROWS: Snoc<Row> := Extend(
         Extend(
             Extend(
                 four(
-                    integer(ExprF::Local(1)),
-                    integer(ExprF::IntegerLiteral(0)),
-                    typed(ExprF::Binary(BinaryOp::Ne, 0, 1), INTEGERS, Ty::Boolean),
-                    integer(ExprF::Local(0))
+                    integer(CoreF::Local(1)),
+                    integer(CoreF::IntegerLiteral(0)),
+                    typed(CoreF::Binary(BinaryOp::Ne, 0, 1), INTEGERS, Ty::Boolean),
+                    integer(CoreF::Local(0))
                 ),
-                integer(ExprF::Local(1))
+                integer(CoreF::Local(1))
             ),
-            integer(ExprF::Binary(BinaryOp::Div, 3, 4))
+            integer(CoreF::Binary(BinaryOp::Div, 3, 4))
         ),
-        integer(ExprF::IntegerLiteral(0))
+        integer(CoreF::IntegerLiteral(0))
     ),
-    integer(ExprF::If(2, 5, 6))
+    integer(CoreF::If(2, 5, 6))
 )
 
 pub const CONJUNCTION_ROWS: Snoc<Row> := Extend(
     Extend(
         Extend(
             four(
-                typed(ExprF::BooleanLiteral(false), Empty, Ty::Boolean),
-                typed(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
-                typed(ExprF::IntegerLiteral(0), Empty, Ty::Integer),
-                typed(ExprF::Binary(BinaryOp::Div, 1, 2), Empty, Ty::Integer)
+                typed(CoreF::BooleanLiteral(false), Empty, Ty::Boolean),
+                typed(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+                typed(CoreF::IntegerLiteral(0), Empty, Ty::Integer),
+                typed(CoreF::Binary(BinaryOp::Div, 1, 2), Empty, Ty::Integer)
             ),
-            typed(ExprF::IntegerLiteral(0), Empty, Ty::Integer)
+            typed(CoreF::IntegerLiteral(0), Empty, Ty::Integer)
         ),
-        typed(ExprF::Binary(BinaryOp::Eq, 3, 4), Empty, Ty::Boolean)
+        typed(CoreF::Binary(BinaryOp::Eq, 3, 4), Empty, Ty::Boolean)
     ),
-    typed(ExprF::Binary(BinaryOp::And, 0, 5), Empty, Ty::Boolean)
+    typed(CoreF::Binary(BinaryOp::And, 0, 5), Empty, Ty::Boolean)
 )
 
 pub const UNUSED_ROWS: Snoc<Row> := Extend(
     four(
-        typed(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
-        typed(ExprF::IntegerLiteral(0), Empty, Ty::Integer),
-        typed(ExprF::Binary(BinaryOp::Div, 0, 1), Empty, Ty::Integer),
-        typed(ExprF::IntegerLiteral(0), BOUND, Ty::Integer)
+        typed(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+        typed(CoreF::IntegerLiteral(0), Empty, Ty::Integer),
+        typed(CoreF::Binary(BinaryOp::Div, 0, 1), Empty, Ty::Integer),
+        typed(CoreF::IntegerLiteral(0), BOUND, Ty::Integer)
     ),
-    typed(ExprF::Let(None, 2, 3), Empty, Ty::Integer)
+    typed(CoreF::Let(None, 2, 3), Empty, Ty::Integer)
 )
 
 pub const BOUND_ROWS: Snoc<Row> := Extend(
     four(
-        typed(ExprF::IntegerLiteral(2), Empty, Ty::Integer),
-        typed(ExprF::IntegerLiteral(10), BOUND, Ty::Integer),
-        typed(ExprF::Local(0), BOUND, Ty::Integer),
-        typed(ExprF::Binary(BinaryOp::Div, 1, 2), BOUND, Ty::Integer)
+        typed(CoreF::IntegerLiteral(2), Empty, Ty::Integer),
+        typed(CoreF::IntegerLiteral(10), BOUND, Ty::Integer),
+        typed(CoreF::Local(0), BOUND, Ty::Integer),
+        typed(CoreF::Binary(BinaryOp::Div, 1, 2), BOUND, Ty::Integer)
     ),
-    typed(ExprF::Let(None, 0, 3), Empty, Ty::Integer)
+    typed(CoreF::Let(None, 0, 3), Empty, Ty::Integer)
 )
 
 pub const SHARED_ROWS: Snoc<Row> := Extend(
@@ -1495,53 +1488,53 @@ pub const SHARED_ROWS: Snoc<Row> := Extend(
         Extend(
             Extend(
                 four(
-                    typed(ExprF::IntegerLiteral(0), Empty, Ty::Integer),
-                    typed(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
-                    typed(ExprF::IntegerLiteral(10), BOUND, Ty::Integer),
-                    typed(ExprF::Local(0), BOUND, Ty::Integer)
+                    typed(CoreF::IntegerLiteral(0), Empty, Ty::Integer),
+                    typed(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+                    typed(CoreF::IntegerLiteral(10), BOUND, Ty::Integer),
+                    typed(CoreF::Local(0), BOUND, Ty::Integer)
                 ),
-                typed(ExprF::Binary(BinaryOp::Div, 2, 3), BOUND, Ty::Integer)
+                typed(CoreF::Binary(BinaryOp::Div, 2, 3), BOUND, Ty::Integer)
             ),
-            typed(ExprF::Let(None, 0, 4), Empty, Ty::Integer)
+            typed(CoreF::Let(None, 0, 4), Empty, Ty::Integer)
         ),
-        typed(ExprF::Let(None, 1, 4), Empty, Ty::Integer)
+        typed(CoreF::Let(None, 1, 4), Empty, Ty::Integer)
     ),
-    typed(ExprF::Binary(BinaryOp::Add, 5, 6), Empty, Ty::Integer)
+    typed(CoreF::Binary(BinaryOp::Add, 5, 6), Empty, Ty::Integer)
 )
 
 pub const CALL_ROWS: Snoc<Row> := two(
-    typed(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
-    typed(ExprF::Call(F, one(0)), Empty, Ty::Integer)
+    typed(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+    typed(CoreF::Call(F, one(0)), Empty, Ty::Integer)
 )
 
 pub const NEGATION_ROWS: Snoc<Row> := four(
-    typed(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
-    typed(ExprF::IntegerLiteral(0), Empty, Ty::Integer),
-    typed(ExprF::Binary(BinaryOp::Div, 0, 1), Empty, Ty::Integer),
-    typed(ExprF::Unary(UnaryOp::Neg, 2), Empty, Ty::Integer)
+    typed(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+    typed(CoreF::IntegerLiteral(0), Empty, Ty::Integer),
+    typed(CoreF::Binary(BinaryOp::Div, 0, 1), Empty, Ty::Integer),
+    typed(CoreF::Unary(UnaryOp::Neg, 2), Empty, Ty::Integer)
 )
 
 pub const MATCH_ROWS: Snoc<Row> := Extend(
     four(
-        typed(ExprF::Local(0), one(Ty::Nominal(LIGHT)), Ty::Nominal(LIGHT)),
+        typed(CoreF::Local(0), one(Ty::Nominal(LIGHT)), Ty::Nominal(LIGHT)),
         typed(
-            ExprF::IntegerLiteral(1),
+            CoreF::IntegerLiteral(1),
             one(Ty::Nominal(LIGHT)),
             Ty::Integer
         ),
         typed(
-            ExprF::IntegerLiteral(0),
+            CoreF::IntegerLiteral(0),
             one(Ty::Nominal(LIGHT)),
             Ty::Integer
         ),
         typed(
-            ExprF::Binary(BinaryOp::Div, 1, 2),
+            CoreF::Binary(BinaryOp::Div, 1, 2),
             one(Ty::Nominal(LIGHT)),
             Ty::Integer
         )
     ),
     typed(
-        ExprF::Match(
+        CoreF::Match(
             0,
             two(
                 ArmF { constructor := LIGHT_RED, body := 1 },
@@ -1724,18 +1717,18 @@ pub const SIBLING_ROWS: Snoc<Row> := Extend(
         Extend(
             Extend(
                 four(
-                    typed(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
-                    typed(ExprF::IntegerLiteral(2), Empty, Ty::Integer),
-                    typed(ExprF::Local(0), BOUND, Ty::Integer),
-                    typed(ExprF::Let(None, 1, 2), Empty, Ty::Integer)
+                    typed(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+                    typed(CoreF::IntegerLiteral(2), Empty, Ty::Integer),
+                    typed(CoreF::Local(0), BOUND, Ty::Integer),
+                    typed(CoreF::Let(None, 1, 2), Empty, Ty::Integer)
                 ),
-                typed(ExprF::Let(None, 0, 2), Empty, Ty::Integer)
+                typed(CoreF::Let(None, 0, 2), Empty, Ty::Integer)
             ),
-            typed(ExprF::Binary(BinaryOp::Sub, 3, 4), Empty, Ty::Integer)
+            typed(CoreF::Binary(BinaryOp::Sub, 3, 4), Empty, Ty::Integer)
         ),
-        typed(ExprF::Binary(BinaryOp::Sub, 5, 0), Empty, Ty::Integer)
+        typed(CoreF::Binary(BinaryOp::Sub, 5, 0), Empty, Ty::Integer)
     ),
-    typed(ExprF::Binary(BinaryOp::Div, 0, 6), Empty, Ty::Integer)
+    typed(CoreF::Binary(BinaryOp::Div, 0, 6), Empty, Ty::Integer)
 )
 
 -- The example is a constant judgment, which the wrapper evaluates.
@@ -1807,20 +1800,20 @@ pub const DOMAIN_ROWS: Snoc<Row> := Extend(
             Extend(
                 Extend(
                     four(
-                        integer(ExprF::Local(1)),
-                        integer(ExprF::IntegerLiteral(0)),
-                        typed(ExprF::Binary(BinaryOp::Ne, 0, 1), INTEGERS, Ty::Boolean),
-                        integer(ExprF::Local(0))
+                        integer(CoreF::Local(1)),
+                        integer(CoreF::IntegerLiteral(0)),
+                        typed(CoreF::Binary(BinaryOp::Ne, 0, 1), INTEGERS, Ty::Boolean),
+                        integer(CoreF::Local(0))
                     ),
-                    integer(ExprF::Local(1))
+                    integer(CoreF::Local(1))
                 ),
-                integer(ExprF::Binary(BinaryOp::Div, 3, 4))
+                integer(CoreF::Binary(BinaryOp::Div, 3, 4))
             ),
-            typed(ExprF::Binary(BinaryOp::Gt, 5, 1), INTEGERS, Ty::Boolean)
+            typed(CoreF::Binary(BinaryOp::Gt, 5, 1), INTEGERS, Ty::Boolean)
         ),
-        typed(ExprF::BooleanLiteral(false), INTEGERS, Ty::Boolean)
+        typed(CoreF::BooleanLiteral(false), INTEGERS, Ty::Boolean)
     ),
-    typed(ExprF::If(2, 6, 7), INTEGERS, Ty::Boolean)
+    typed(CoreF::If(2, 6, 7), INTEGERS, Ty::Boolean)
 )
 
 pub fn declared(members: Snoc<Member>): Declared := Declared {
@@ -1904,17 +1897,17 @@ pub const NONZERO: Declared := Declared {
     item := F,
     params := BOUND,
     rows := three(
-        typed(ExprF::Local(0), BOUND, Ty::Integer),
-        typed(ExprF::IntegerLiteral(0), BOUND, Ty::Integer),
-        typed(ExprF::Binary(BinaryOp::Ne, 0, 1), BOUND, Ty::Boolean)
+        typed(CoreF::Local(0), BOUND, Ty::Integer),
+        typed(CoreF::IntegerLiteral(0), BOUND, Ty::Integer),
+        typed(CoreF::Binary(BinaryOp::Ne, 0, 1), BOUND, Ty::Boolean)
     ),
     body := None,
     members := one(Member { keyword := Keyword::Require, root := 2 }),
 }
 
 pub const ZERO_CALL_ROWS: Snoc<Row> := two(
-    typed(ExprF::IntegerLiteral(0), Empty, Ty::Integer),
-    typed(ExprF::Call(F, one(0)), Empty, Ty::Integer)
+    typed(CoreF::IntegerLiteral(0), Empty, Ty::Integer),
+    typed(CoreF::Call(F, one(0)), Empty, Ty::Integer)
 )
 
 -- The examples are constant judgments, which the wrapper evaluates.
@@ -1947,12 +1940,12 @@ condition `1 != x`, and it does not represent the program.
 
 ```fren
 pub const F_DECLS: Snoc<Decl> := two(
-    Decl::Function(F, one(typed(ExprF::Local(0), BOUND, Ty::Integer))),
+    Decl::Function(F, one(typed(CoreF::Local(0), BOUND, Ty::Integer))),
     Decl::Condition(BOUND, NONZERO.rows)
 )
 
 pub const ONE_DECLS: Snoc<Decl> := two(
-    Decl::Function(F, one(typed(ExprF::IntegerLiteral(1), BOUND, Ty::Integer))),
+    Decl::Function(F, one(typed(CoreF::IntegerLiteral(1), BOUND, Ty::Integer))),
     Decl::Condition(BOUND, NONZERO.rows)
 )
 
@@ -1960,10 +1953,10 @@ pub const SEPARATE: Declared := Declared {
     item := F,
     params := BOUND,
     rows := four(
-        typed(ExprF::IntegerLiteral(1), BOUND, Ty::Integer),
-        typed(ExprF::Local(0), BOUND, Ty::Integer),
-        typed(ExprF::IntegerLiteral(0), BOUND, Ty::Integer),
-        typed(ExprF::Binary(BinaryOp::Ne, 1, 2), BOUND, Ty::Boolean)
+        typed(CoreF::IntegerLiteral(1), BOUND, Ty::Integer),
+        typed(CoreF::Local(0), BOUND, Ty::Integer),
+        typed(CoreF::IntegerLiteral(0), BOUND, Ty::Integer),
+        typed(CoreF::Binary(BinaryOp::Ne, 1, 2), BOUND, Ty::Boolean)
     ),
     body := Some(0),
     members := one(Member { keyword := Keyword::Require, root := 3 }),
@@ -1973,10 +1966,10 @@ pub const UNMOVED: Declared := Declared {
     item := F,
     params := BOUND,
     rows := four(
-        typed(ExprF::IntegerLiteral(1), BOUND, Ty::Integer),
-        typed(ExprF::Local(0), BOUND, Ty::Integer),
-        typed(ExprF::IntegerLiteral(0), BOUND, Ty::Integer),
-        typed(ExprF::Binary(BinaryOp::Ne, 0, 1), BOUND, Ty::Boolean)
+        typed(CoreF::IntegerLiteral(1), BOUND, Ty::Integer),
+        typed(CoreF::Local(0), BOUND, Ty::Integer),
+        typed(CoreF::IntegerLiteral(0), BOUND, Ty::Integer),
+        typed(CoreF::Binary(BinaryOp::Ne, 0, 1), BOUND, Ty::Boolean)
     ),
     body := Some(0),
     members := one(Member { keyword := Keyword::Require, root := 3 }),
@@ -2000,7 +1993,7 @@ pub proc tables(): (holds?) {
     ensure extra: not represents?(
         SYMB,
         one(
-            Decl::Function(F, one(typed(ExprF::Local(0), BOUND, Ty::Integer)))
+            Decl::Function(F, one(typed(CoreF::Local(0), BOUND, Ty::Integer)))
         ),
         one(NONZERO_BODY)
     )
@@ -2028,7 +2021,9 @@ procedure.
 pub mod spec::validity
 
 use spec::expressions::Value
-use spec::types::{Row, Snoc, Symb}
+use spec::names::Symb
+use spec::surface::Snoc
+use spec::types::Row
 use spec::verification::{Declared, Obligation, Verdict, assignment?, satisfied?}
 
 -- Every assignment of the obligation satisfies it.

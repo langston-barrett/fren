@@ -4,14 +4,15 @@ A Fren specification declares values and functions, states assumptions and
 asks whether its expectations follow. This part defines the source forms,
 their meanings, and the obligations that checking them produces.
 
-Start with source text and [syntax](Syntax.md). [Resolution](NamesAndScope.md)
+Start with source text and [syntax](Syntax.md), which defines the tree
+that the parser gives. [Resolution](NamesAndScope.md) reads that tree. It
 maps the names of source forms to canonical item identities and local
 levels, and collects a module's declarations into the symbol environment.
-The typed Core in [Core typing](Types.md) defines
-canonical item identities, Boolean, integer and nominal enum types, local
-contexts indexed by de Bruijn level, a symbol environment of signatures,
-constructors and enumerations, complete one-layer expression forms and a
-typing judgment.
+It defines what it produces: canonical item identities, Boolean, integer
+and nominal enum types, local contexts indexed by de Bruijn level, a symbol
+environment of signatures, constructors and enumerations, and the Core's
+complete one-layer expression forms. [Core typing](Types.md) defines the
+typing judgment over that Core.
 Source constructs are defined by derived forms that translate into this Core.
 [Expressions](Expressions.md) uses those definitions for meaning, mentioned
 names and operator domains.

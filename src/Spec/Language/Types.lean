@@ -1,7 +1,7 @@
 import Fren.Impl
 import Fren.Literate
 import Fren.Trace
-import Spec.Language.Syntax
+import Spec.Language.NamesAndScope
 
 open Fren.Lang
 
@@ -12,26 +12,8 @@ set_option warningAsError true in
 
 namespace Spec.Language.Types
 
-open spec.types
-
-/-! ## Lookup -/
-
-theorem lookup_bound {α : Type} [Inhabited α] (xs : Snoc α) (level : Int) (x : α)
-    (h : lookup _ xs level = some x) : 0 ≤ level ∧ level < length _ xs := by
-  induction xs with
-  | Empty => simp [lookup] at h
-  | Extend earlier last ih =>
-    simp only [lookup] at h
-    simp only [length]
-    split at h
-    · rename_i eq; subst eq; omega
-    · have := ih h; omega
-
-theorem lookup_none {α : Type} [Inhabited α] (xs : Snoc α) (level : Int)
-    (h : ¬ (0 ≤ level ∧ level < length _ xs)) : lookup _ xs level = none := by
-  cases hl : lookup _ xs level with
-  | none => rfl
-  | some x => exact absurd (lookup_bound xs level x hl) h
+open spec.surface spec.names spec.types
+open Spec.Language.NamesAndScope (lookup_bound lookup_none)
 
 /-! ## Arity -/
 
@@ -54,7 +36,7 @@ theorem argument_types_length (args : Snoc Typing) (parameters : Snoc Ty)
 /-! ## Tables -/
 
 /-- The one-layer rule determines the type from the form and child typings. -/
-theorem rule_unique (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF Typing) (a b : Ty)
+theorem rule_unique (symbols : Snoc Entry) (context : Snoc Ty) (form : CoreF Typing) (a b : Ty)
     (ha : rule? symbols context form a = true) (hb : rule? symbols context form b = true) :
     a = b := by
   cases form with
@@ -267,7 +249,7 @@ theorem typings_ok_extend (symbols : Snoc Entry) (earlier : Snoc Typing) (t : Ty
   cases ty <;> simp [typings_ok?, ty_ok?, fren_spec]
 
 /-- One layer: a typed layer over well-formed children has a well-formed type. -/
-theorem layer_regular (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF Typing) (ty : Ty)
+theorem layer_regular (symbols : Snoc Entry) (context : Snoc Ty) (form : CoreF Typing) (ty : Ty)
     (hs : symb_ok? symbols = true) (hc : ctx_ok? symbols context = true)
     (hch : children_ok? symbols form = true) (h : rule? symbols context form ty = true) :
     ty_ok? symbols ty = true := by
@@ -374,7 +356,7 @@ theorem annotate_arms_ok (symbols : Snoc Entry) (rows : Snoc Row)
 /-- Every child typing that a table supplies has a well-formed type. -/
 theorem annotate_children_ok (symbols : Snoc Entry) (rows : Snoc Row)
     (ok : ∀ p r, lookup _ rows p = some r → ty_ok? symbols r.ty = true)
-    (form : ExprF Int) (typed : ExprF Typing) (h : annotate rows form = some typed) :
+    (form : CoreF Int) (typed : CoreF Typing) (h : annotate rows form = some typed) :
     children_ok? symbols typed = true := by
   have child : ∀ p t, typing_at rows p = some t → ty_ok? symbols t.ty = true := by
     intro p t ht
@@ -543,7 +525,7 @@ theorem arm_patterns_weaken (symbols : Snoc Entry) (arms : Snoc (ArmF Typing)) (
 
 /-- One layer: inserting a type at level `cutoff` and shifting levels keeps a
 layer typed. -/
-theorem layer_weakens (symbols : Snoc Entry) (context : Snoc Ty) (form : ExprF Typing) (ty : Ty)
+theorem layer_weakens (symbols : Snoc Entry) (context : Snoc Ty) (form : CoreF Typing) (ty : Ty)
     (cutoff : Int) (extra : Ty) (h0 : 0 ≤ cutoff) (hn : cutoff ≤ length _ context)
     (h : rule? symbols context form ty = true) :
     rule? symbols (insert_type context cutoff extra) (weaken_layer form cutoff extra) ty = true := by
@@ -626,7 +608,7 @@ theorem annotate_arms_weaken (rows : Snoc Row) (cutoff : Int) (extra : Ty) (arms
     simp only [annotate_arms, ih, typing_at_weaken]
     cases annotate_arms rows earlier <;> cases typing_at rows arm.body <;> simp [weaken_arms]
 
-theorem annotate_weaken (rows : Snoc Row) (cutoff : Int) (extra : Ty) (form : ExprF Int) :
+theorem annotate_weaken (rows : Snoc Row) (cutoff : Int) (extra : Ty) (form : CoreF Int) :
     annotate (weaken rows cutoff extra) (shift_form form cutoff) =
       (annotate rows form).map (fun f => weaken_layer f cutoff extra) := by
   cases form with
@@ -873,7 +855,7 @@ end Spec.Language.Types
 
 pub mod spec::types
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl call_arity_proof: call_arity for (args : Snoc Typing) (params : Snoc Ty) {
   args := args, params := params, holds? := true
 } by
@@ -883,9 +865,9 @@ impl call_arity_proof: call_arity for (args : Snoc Typing) (params : Snoc Ty) {
   intro h
   rw [Spec.Language.Types.argument_types_length args params h]
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl layer_regularity_proof: layer_regularity for (symb : Snoc Entry) (ctx : Snoc Ty)
-    (form : ExprF Typing) (ty : Ty) {
+    (form : CoreF Typing) (ty : Ty) {
   symb := symb, ctx := ctx, form := form, ty := ty, holds? := true
 } by
   intro symb ctx form ty _
@@ -894,7 +876,7 @@ impl layer_regularity_proof: layer_regularity for (symb : Snoc Entry) (ctx : Sno
   intro h
   exact Spec.Language.Types.layer_regular symb ctx form ty h.1.1.1 h.1.1.2 h.1.2 h.2
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl table_regularity_proof: table_regularity for (symb : Snoc Entry) (rows : Snoc Row)
     (pos : Int) (found : Row) {
   symb := symb, rows := rows, pos := pos, found := found, holds? := true
@@ -905,7 +887,7 @@ impl table_regularity_proof: table_regularity for (symb : Snoc Entry) (rows : Sn
   intro h
   exact Spec.Language.Types.table_regular symb rows h.1.1 h.1.2 pos found h.2
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl judgment_regularity_proof: judgment_regularity for (symb : Snoc Entry)
     (rows : Snoc Row) (ctx : Snoc Ty) (ty : Ty) {
   symb := symb, rows := rows, ctx := ctx, ty := ty, holds? := true
@@ -915,18 +897,18 @@ impl judgment_regularity_proof: judgment_regularity for (symb : Snoc Entry)
   refine ⟨trivial, ?_⟩
   exact Spec.Language.Types.judgment_regular symb rows ctx ty
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl table_scoping_proof: table_scoping for (symb : Snoc Entry) (rows : Snoc Row)
     (pos : Int) (found : Row) (level : Int) {
   symb := symb, rows := rows, pos := pos, found := found, level := level, holds? := true
 } by
   intro symb rows pos found level _
-  simp only [table_scoping.ensures, table_scoping.ensure.output, table_scoping.ensure.in_scope]
+  simp only [spec.types.table_scoping.ensures, spec.types.table_scoping.ensure.output, spec.types.table_scoping.ensure.in_scope]
   refine ⟨trivial, ?_⟩
   intro h
   exact Spec.Language.Types.table_scoped symb rows pos level found h.1.1 h.1.2 h.2
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl table_uniqueness_proof: table_uniqueness for (symb : Snoc Entry)
     (left right : Snoc Row) {
   symb := symb, left := left, right := right, holds? := true
@@ -937,18 +919,18 @@ impl table_uniqueness_proof: table_uniqueness for (symb : Snoc Entry)
   intro h
   exact Spec.Language.Types.table_unique symb left right h.1.1 h.1.2 h.2
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl layer_weakening_proof: layer_weakening for (symb : Snoc Entry) (ctx : Snoc Ty)
-    (form : ExprF Typing) (ty : Ty) (cutoff : Int) (extra : Ty) {
+    (form : CoreF Typing) (ty : Ty) (cutoff : Int) (extra : Ty) {
   symb := symb, ctx := ctx, form := form, ty := ty, cutoff := cutoff, extra := extra, holds? := true
 } by
   intro symb ctx form ty cutoff extra _
-  simp only [layer_weakening.ensures, layer_weakening.ensure.output, layer_weakening.ensure.weakened]
+  simp only [spec.types.layer_weakening.ensures, spec.types.layer_weakening.ensure.output, spec.types.layer_weakening.ensure.weakened]
   refine ⟨trivial, ?_⟩
   intro h
   exact Spec.Language.Types.layer_weakens symb ctx form ty cutoff extra h.1.1 h.1.2 h.2
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl lookup_shifting_proof: lookup_shifting for (ctx : Snoc Ty) (cutoff : Int)
     (extra : Ty) (level : Int) {
   ctx := ctx, cutoff := cutoff, extra := extra, level := level, holds? := true
@@ -959,18 +941,18 @@ impl lookup_shifting_proof: lookup_shifting for (ctx : Snoc Ty) (cutoff : Int)
   exact ⟨fun h => (Spec.Language.Types.lookup_shift ctx cutoff extra h.1 h.2).1 level,
     fun h => (Spec.Language.Types.lookup_shift ctx cutoff extra h.1 h.2).2⟩
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl table_weakening_proof: table_weakening for (symb : Snoc Entry) (rows : Snoc Row)
     (cutoff : Int) (extra : Ty) {
   symb := symb, rows := rows, cutoff := cutoff, extra := extra, holds? := true
 } by
   intro symb rows cutoff extra _
-  simp only [table_weakening.ensures, table_weakening.ensure.output, table_weakening.ensure.valid]
+  simp only [spec.types.table_weakening.ensures, spec.types.table_weakening.ensure.output, spec.types.table_weakening.ensure.valid]
   refine ⟨trivial, ?_⟩
   intro h
   exact Spec.Language.Types.table_weakens symb rows cutoff extra h.1.1.1 h.1.1.2 h.1.2 h.2
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl judgment_weakening_proof: judgment_weakening for (symb : Snoc Entry)
     (rows : Snoc Row) (ctx : Snoc Ty) (ty extra : Ty) {
   symb := symb, rows := rows, ctx := ctx, ty := ty, extra := extra, holds? := true
@@ -981,10 +963,10 @@ impl judgment_weakening_proof: judgment_weakening for (symb : Snoc Entry)
   intro h
   exact Spec.Language.Types.judgment_weakens symb rows ctx ty extra h.1 h.2
 
-open spec.types in
+open spec.surface spec.names spec.types in
 impl worked_examples_proof: worked_examples { holds? := true } by
   intro _
-  simp only [worked_examples.ensures, worked_examples.ensure.output, worked_examples.ensure.valid]
+  simp only [spec.types.worked_examples.ensures, spec.types.worked_examples.ensure.output, spec.types.worked_examples.ensure.valid]
   refine ⟨trivial, ?_⟩
   decide
 
@@ -1008,7 +990,7 @@ interp derives? := fun symb ctx rows ty => spec.types.derivation? symb rows ctx 
       simp [fren_spec] at hr
       simp [hr.2]
   · simp only [spec.types.derivation?, decide_eq_true_eq] at h
-    exact ⟨by simp only [spec.types.symb_ok?, decide_eq_true_eq]; exact h.1.1.1.1, h.1.1.1.2⟩
+    exact ⟨by simp only [spec.names.symb_ok?, decide_eq_true_eq]; exact h.1.1.1.1, h.1.1.1.2⟩
 
 set_option fren.requireEvidence "trusted" in
 #fren_trace

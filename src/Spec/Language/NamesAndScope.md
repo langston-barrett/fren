@@ -1,16 +1,15 @@
 # Resolution
 
 Resolution is the first part of static semantics: a module is resolved
-before it is typed. This chapter nevertheless follows [Core
-typing](Types.md), because it is stated over that chapter's semantic
-objects: identities, the symbol environment and the Core forms.
-Resolution replaces every written
-name of a module by what the name denotes: a local by its level in the
-enclosing scope, an item by its canonical identity. Its results are the
-symbol environment Σ and the Core expression forms that Core typing
-consumes; the Core itself has no names. The
-[syntax chapter](Syntax.md) owns the written forms, and typing owns every
-question about types beyond which enumeration a written type names.
+before it is typed. Resolution takes the tree that the
+[syntax chapter](Syntax.md) defines and replaces every written name of a
+module by what the name denotes: a local by its level in the enclosing
+scope, an item by its canonical identity. Its results are the symbol
+environment Σ and the expressions of the Core, which has no names.
+This chapter defines both, with the types, identities and contexts they are
+made of, and [Core typing](Types.md), the next chapter, types them. The
+syntax chapter owns the written forms, and typing owns every question about
+types beyond which enumeration a written type names.
 
 The domain is one module of enumerations with payload-free variants and
 functions over `Bool`, `Int` and those enumerations, whose bodies are
@@ -27,6 +26,9 @@ segment are outside what its judgments decide.
 
 | Judgment | Meaning | Fren |
 | --- | --- | --- |
+| `Σ ⊢ τ ok` | τ is a well-formed type | `ty_ok?` |
+| `Σ ⊢ Γ ok` | every type of Γ is well formed | `ctx_ok?` |
+| `⊢ Σ ok` | Σ is a well-formed symbol environment | `symb_ok?` |
 | `S(x) = i` | in scope S the name x denotes the local at level i | `resolve_local` |
 | `R; S ⊢ p ⇒ t` | the path p denotes the target t | `path_target` |
 | `R ⊢ T ⇒ τ` | the written type T denotes the type τ | `resolve_type` |
@@ -43,12 +45,10 @@ most one resolution, and each Fren definition above computes it:
 none. Resolution is therefore decidable. It consults no typing judgment,
 value or solver: the only types it inspects are the ones it resolves for
 a binder whose name ends in `?`, to apply the
-[suffix rule](#r-names.expression.layer). An expression is given to these
+[suffix rule](#r-names.surface.suffix). An expression is given to these
 definitions as a source table; that two tables of one expression resolve
 alike is a [separate law](#r-names.expression.unique-expression), which is
-open. The [interface](#r-names.overview.interface) at the end of the
-chapter states the function for source tables as a contract of
-uninterpreted functions.
+open.
 
 ```text
   resolve_expression : (m, Σ) × scope × source table ⇀ Core table
@@ -62,8 +62,9 @@ uninterpreted functions.
                 position needs, and ⊢ Σ ok
   order         sequences of the same declarations collect alike
 ```
- The other laws are stated where their subjects
-are defined: [nearest binding](#r-names.locals.nearest) and
+Determinism needs no law of its own: `resolve_expression` and `collect`
+are functions. The other laws are stated where their subjects are defined:
+[nearest binding](#r-names.locals.nearest) and
 [weakening](#r-names.locals.weakening) for scopes,
 [weakening for a layer](#r-names.expression.weakening) and [for a
 table](#r-names.expression.table-weakening),
@@ -71,6 +72,283 @@ table](#r-names.expression.table-weakening),
 items](#r-names.handoff.items) for expressions, and, for collection,
 [independence of declaration order](#r-names.collection.permutation) and the
 [well-formed environment](#r-names.handoff.environment) that typing assumes.
+
+## Semantic objects
+
+r[names.object.identity] spec::names::{ItemId, Ty}
+An *item identity* is the canonical sequence of enclosing module and item
+names, which this chapter [assigns to each item](#r-names.identity.child). Value types are `Bool`, the mathematical
+integers `Int`, and nominal enumeration types `Nominal(a)`; in Fren their
+constructors are `Ty::Boolean`, `Ty::Integer` and `Ty::Nominal`. Types are
+compared by equality, including every component of a nominal identity.
+
+```fren
+pub mod spec
+pub mod spec::names
+
+use spec::surface::{BinaryOp, Parameter, Path, Snoc, SurfaceArm, SurfaceF, TypeName, UnaryOp}
+
+use spec::surface::Snoc::{Empty, Extend}
+
+pub type ItemId := Seq<String>
+pub enum Ty { Boolean, Integer, Nominal(ItemId) }
+```
+
+r[names.sequence.snoc] spec::names::{length, lookup}
+A *snoc sequence*, the
+[syntax chapter's `Snoc`](Syntax.md#r-syntax.tree.types), is either empty,
+written `·`, or an earlier snoc sequence extended by one newest entry x,
+written `xs, x`. Its length `|xs|` counts
+its entries. The *level* of an entry is the number of entries before it, so
+the oldest entry has level 0 and the newest has level `|xs| - 1`. `xs(i)`
+is the entry at level i, defined exactly when `0 ≤ i < |xs|`. `lookup`
+states half of this as its postcondition: where `xs(i)` is defined,
+`0 ≤ i < |xs|`.
+
+```fren
+pub fn length<T>(xs: Snoc<T>): Nat := match xs {
+    Empty => 0,
+    Extend(earlier, _) => length(earlier) + 1,
+}
+
+pub fn lookup<T>(xs: Snoc<T>, level: Int): (entry: Option<T>) {
+    out entry := match xs {
+        Empty => None,
+        Extend(earlier, x) => if level = length(earlier) then Some(x) else lookup(earlier, level),
+    }
+    ensure bound: when entry != None, 0 <= level < length(xs)
+}
+```
+
+r[names.sequence.builders] spec::names::{one, two, three, four}
+`one` to `four` build snoc sequences of one to four entries, oldest first.
+
+```fren
+pub fn one<T>(a: T): Snoc<T> := Extend(Empty, a)
+pub fn two<T>(a: T, b: T): Snoc<T> := Extend(one(a), b)
+pub fn three<T>(a: T, b: T, c: T): Snoc<T> := Extend(two(a, b), c)
+pub fn four<T>(a: T, b: T, c: T, d: T): Snoc<T> := Extend(three(a, b, c), d)
+```
+
+r[names.context.slots] spec::names::Ctx
+A *context* Γ is a snoc sequence of value types. Extending Γ by τ produces
+`Γ, τ`, whose new entry has level `|Γ|`. A local refers to its entry by level.
+
+```fren
+pub type Ctx := Snoc<Ty>
+```
+
+r[names.symbols.environment] spec::names::{Sig, ItemKind, Entry, Symb, entry}
+A *symbol environment* Σ binds item identities to entries. An entry is a
+function signature, a constructor's owning enumeration, or an enumeration
+with its constructors. A signature has the parameter types as a context, in
+written order, and a result type. `Σ(x)` is the newest entry bound to x.
+The environment is shared by every body of a program.
+
+```fren
+pub struct Sig { params: Ctx, result: Ty }
+pub enum ItemKind { Function(Sig), Constructor(ItemId), Enumeration(Snoc<ItemId>) }
+pub struct Entry { item: ItemId, kind: ItemKind }
+pub type Symb := Snoc<Entry>
+
+pub fn entry(symb: Symb, item: ItemId): Option<ItemKind> := match symb {
+    Empty => None,
+    Extend(earlier, binding) =>
+        if binding.item = item then Some(binding.kind) else entry(earlier, item),
+}
+```
+
+r[names.symbols.types-ok] spec::names::{ty_ok?, ctx_ok?}
+A type is *well formed* in Σ when it is `Bool`, `Int`, or `Nominal(a)` with
+`Σ(a)` an enumeration; a context is well formed when each of its types is.
+
+```text
+                                  Σ(a) = enumeration
+  Σ ⊢ Bool ok     Σ ⊢ Int ok      ──────────────────
+                                  Σ ⊢ Nominal(a) ok
+
+                  Σ ⊢ Γ ok   Σ ⊢ τ ok
+  Σ ⊢ · ok        ───────────────────
+                  Σ ⊢ Γ, τ ok
+```
+
+```fren
+pub fn ty_ok?(symb: Symb, ty: Ty) := match ty {
+    Ty::Nominal(owner) => entry(symb, owner) is Some(ItemKind::Enumeration(_)),
+    _ => true,
+}
+
+pub fn ctx_ok?(symb: Symb, ctx: Ctx) := match ctx {
+    Empty => true,
+    Extend(earlier, ty) => ty_ok?(symb, ty) and ctx_ok?(symb, earlier),
+}
+```
+
+r[names.symbols.well-formed] spec::names::{member?, constructors_ok?, binding_ok?, bindings_ok?, symb_ok?}
+Σ is well formed when it binds each item once, every signature's types are
+well formed, every constructor's owner is an enumeration that lists it, and
+every enumeration lists distinct constructors, each bound as a constructor
+of that enumeration. In the figure, `Σ' ⊢ Σ ok` checks the bindings of
+Σ against the whole environment Σ', as `bindings_ok?(Σ', Σ)` does,
+x ∉ Σ says that Σ binds no x, and the list c₀, …, cₙ of an enumeration's
+constructors may be empty.
+
+```text
+                Σ' ⊢ Σ ok   x ∉ Σ   Σ' ⊢ Δ ok   Σ' ⊢ τ ok
+  Σ' ⊢ · ok     ─────────────────────────────────────────
+                Σ' ⊢ Σ, x = function (Δ) → τ ok
+
+  Σ' ⊢ Σ ok   x ∉ Σ   Σ'(a) = enumeration listing x
+  ─────────────────────────────────────────────────
+  Σ' ⊢ Σ, x = constructor of a ok
+
+  Σ' ⊢ Σ ok   x ∉ Σ   c₀, …, cₙ distinct   Σ'(cₖ) = constructor of x
+  ──────────────────────────────────────────────────────────────────
+  Σ' ⊢ Σ, x = enumeration listing c₀, …, cₙ ok
+
+  Σ ⊢ Σ ok
+  ────────
+  ⊢ Σ ok
+```
+
+```fren
+pub fn member?(items: Snoc<ItemId>, item: ItemId) := match items {
+    Empty => false,
+    Extend(earlier, other) => other = item or member?(earlier, item),
+}
+
+pub fn constructors_ok?(symb: Symb, constructors: Snoc<ItemId>, owner: ItemId) :=
+    match constructors {
+        Empty => true,
+        Extend(earlier, constructor) =>
+            entry(symb, constructor) = Some(ItemKind::Constructor(owner))
+            and not member?(earlier, constructor)
+            and constructors_ok?(symb, earlier, owner),
+    }
+
+pub fn binding_ok?(symb: Symb, binding: Entry) := match binding.kind {
+    ItemKind::Function(sig) => ctx_ok?(symb, sig.params) and ty_ok?(symb, sig.result),
+    ItemKind::Constructor(owner) => match entry(symb, owner) {
+        Some(ItemKind::Enumeration(constructors)) => member?(constructors, binding.item),
+        _ => false,
+    },
+    ItemKind::Enumeration(constructors) => constructors_ok?(symb, constructors, binding.item),
+}
+
+pub fn bindings_ok?(symb: Symb, bindings: Symb) := match bindings {
+    Empty => true,
+    Extend(earlier, binding) =>
+        entry(earlier, binding.item) = None
+        and binding_ok?(symb, binding)
+        and bindings_ok?(symb, earlier),
+}
+
+pub fn symb_ok?(symb: Symb) := bindings_ok?(symb, symb)
+```
+
+## The Core
+
+The Core is the language that resolution produces and typing types. It has
+the following grammar. The Core has no names: x stands for a local, which
+the Core writes as its level `#i` in the enclosing scope, and a let binds
+the next level.
+
+```text
+τ ::= Bool | Int | Nominal(a)
+Γ ::= · | Γ, τ
+e ::= b | n | x | c | ⊖ e | e ⊕ e | f(e, …, e)
+    | let x := e in e | let x : τ := e in e
+    | if e then e else e | match e { c ⇒ e | … | c ⇒ e }
+```
+
+Here b is a Boolean, n an integer, c a constructor and f a function, each
+item named by its canonical identity; ⊖ is a unary and ⊕ a binary operator.
+A match has at least one arm.
+
+r[names.core.syntax] spec::names::{ArmF, CoreF, Form}
+A Core expression is a finite tree whose nodes have the forms of `CoreF<E>`,
+where E is the position of a child. A literal carries its value, and a let
+carries the type annotation written on it, if any. A call's arguments and a
+match's arms are snoc sequences in written order. An arm has a resolved
+constructor pattern and a body, with no binder. Parentheses are concrete
+syntax, removed before the Core, and have no form here. Fren cannot declare
+a type of trees whose children sit inside snoc sequences, so a whole
+expression is given as a table whose rows name their children by row
+level, and a `Form` is the form of such a row. `CoreF<E>` is the one form
+type that the tables of this chapter and of typing (`E` a row level),
+typing's rules (`E` a child's typing) and the maps between them share.
+
+```fren
+pub struct ArmF<E> { constructor: ItemId, body: E }
+
+pub enum CoreF<E> {
+    BooleanLiteral(Bool),
+    IntegerLiteral(Int),
+    Local(Int),
+    Constructor(ItemId),
+    Unary(UnaryOp, E),
+    Binary(BinaryOp, E, E),
+    Call(ItemId, Snoc<E>),
+    Let(Option<Ty>, E, E),
+    If(E, E, E),
+    Match(E, Snoc<ArmF<E>>),
+}
+
+pub type Form := CoreF<Int>
+```
+
+r[names.core.shift] spec::names::{shift, shift_form}
+*Shifting* at a level n makes room for a new local at n: a level of at
+least n becomes the next level, and a lower level is unchanged. Shifting a
+layer shifts its local, if it is one, and changes no other form: the
+children of a layer are not locals but positions.
+
+```fren
+pub fn shift(level: Int, cutoff: Int): Int := if level >= cutoff then level + 1 else level
+
+pub fn shift_form(form: Form, cutoff: Int): Form := match form {
+    CoreF::Local(level) => CoreF::Local(shift(level, cutoff)),
+    _ => form,
+}
+```
+
+## Surface elaboration
+
+This section belongs to the derived-forms chapter, which will own it once
+that chapter is written. It states how written annotations and binder names
+become Core types; the Core itself has no names. Resolution applies these
+rules to a [`let`](#r-names.expression.layer) and to a function's
+[parameters](#r-names.collection.functions). The [syntax
+chapter](Syntax.md#r-syntax.tree.types)'s `let` has no annotation, so
+resolution applies `let_annotation?` with no written type.
+
+r[names.surface.suffix] spec::names::{suffix_rule?, let_annotation?}
+The *`?` suffix rule*: a parameter or let binder whose name ends in `?` must
+have type `Bool`, including when it has an explicit annotation, which the
+suffix does not overwrite. A let binder `x?` without an annotation
+elaborates to a Core let annotated `Bool`.
+
+```fren
+pub fn suffix_rule?(question?, ty: Ty) := not question? or ty = Ty::Boolean
+
+pub fn let_annotation?(written: Option<Ty>, question?, core: Option<Ty>) := match written {
+    Some(annotation) => suffix_rule?(question?, annotation) and core = written,
+    None => core = (if question? then Some(Ty::Boolean) else None),
+}
+```
+
+r[names.surface.annotation] spec::names::parameter_type?
+A parameter's type is its written annotation. An omitted parameter
+annotation denotes `Bool` only when the parameter's name ends in `?`.
+
+```fren
+pub fn parameter_type?(written: Option<Ty>, question?, ty: Ty) :=
+    suffix_rule?(question?, ty)
+    and match written {
+        Some(annotation) => ty = annotation,
+        None => question?,
+    }
+```
 
 ## Scopes and levels
 
@@ -88,36 +366,6 @@ entry.
 ```
 
 ```fren
-pub mod spec
-pub mod spec::names
-
-use spec::surface::{BinaryOp, UnaryOp}
-
-use spec::types::{
-    ArmF,
-    Ctx,
-    Entry,
-    ExprF,
-    Form,
-    ItemId,
-    ItemKind,
-    Sig,
-    Snoc,
-    Symb,
-    Ty,
-    entry,
-    length,
-    let_annotation?,
-    lookup,
-    parameter_type?,
-    shift,
-    shift_form,
-    suffix_rule?,
-    symb_ok?,
-}
-
-use spec::types::Snoc::{Empty, Extend}
-
 pub type Scope := Snoc<String>
 
 pub fn resolve_local(scope: Scope, name: String): Option<Int> := match scope {
@@ -160,8 +408,8 @@ r[names.locals.weakening] spec::names::{insert_name, shifted, local_weakening::s
 Inserting a binder of another name y at level n of S, with `0 ≤ n ≤ |S|`,
 shifts the levels of at least n by one and changes nothing else: `S(x)` is
 defined exactly when the new scope's is, and the new level is the old one
-shifted at n. `shift` is the shift of [typing's
-weakening](Types.md#r-types.layer.weakening).
+[shifted](#r-names.core.shift) at n, as [typing's
+weakening](Types.md#r-types.layer.weakening) shifts a context's levels.
 
 ```fren
 pub fn insert_name(scope: Scope, cutoff: Int, extra: String): Scope := match scope {
@@ -253,13 +501,13 @@ pub fn module_of(env: Env): ItemId := child(env.parent, env.name)
 
 ## Paths
 
-r[names.paths.syntax] spec::names::{Path, Target}
-A *path* is a name or a shorter path followed by `::` and a name. A path
+r[names.paths.syntax] spec::names::Target
+A *path* is a name or a shorter path followed by `::` and a name; it is
+the [syntax chapter's `Path`](Syntax.md#r-syntax.tree.types). A path
 denotes a *target*: a local, by its level; an item, by its identity; or
 the module itself.
 
 ```fren
-pub enum Path { Name(String), Member(Path, String) }
 pub enum Target { Local(Int), Item(ItemId), Module }
 ```
 
@@ -382,11 +630,11 @@ Core has no function as a value and no local or variant as a callee. They
 have no diagnostic code of this chapter.
 
 ```fren
-pub fn value_form<E>(env: Env, scope: Scope, path: Path): Option<ExprF<E>> :=
+pub fn value_form<E>(env: Env, scope: Scope, path: Path): Option<CoreF<E>> :=
     match path_target(env, scope, path) {
-        Some(Target::Local(level)) => Some(ExprF::Local(level)),
+        Some(Target::Local(level)) => Some(CoreF::Local(level)),
         Some(Target::Item(item)) => match entry(env.symb, item) {
-            Some(ItemKind::Constructor(_)) => Some(ExprF::Constructor(item)),
+            Some(ItemKind::Constructor(_)) => Some(CoreF::Constructor(item)),
             _ => None,
         },
         _ => None,
@@ -411,8 +659,9 @@ pub fn pattern_item(env: Env, scope: Scope, path: Path): Option<ItemId> :=
     }
 ```
 
-r[names.paths.types] spec::names::{TypeName, type_item, resolve_type}
-A written type is `Bool`, `Int` or a path. `Bool` and `Int` are
+r[names.paths.types] spec::names::{type_item, resolve_type}
+A written type, the [syntax chapter's
+`TypeName`](Syntax.md#r-syntax.tree.types), is `Bool`, `Int` or a path. `Bool` and `Int` are
 [reserved](#r-names.paths.reserved) and denote the built-in types. A path in type position resolves
 in the empty scope, so no local is visible in it, and denotes an
 enumeration a, giving the type `Nominal(a)` (else `F0210`, `expected a
@@ -425,8 +674,6 @@ type`).
 ```
 
 ```fren
-pub enum TypeName { Boolean, Integer, Named(Path) }
-
 pub fn type_item(env: Env, path: Path): Option<ItemId> := match path_target(env, Empty, path) {
     Some(Target::Item(item)) => match entry(env.symb, item) {
         Some(ItemKind::Enumeration(_)) => Some(item),
@@ -459,42 +706,26 @@ pub fn reserved?(name: String) := name is "Bool" | "Int"
 
 ## Expressions
 
-r[names.expression.syntax] spec::names::{SrcArm, SrcF}
-A *source layer* is one written expression form over its children. It
-differs from a [Core layer](Types.md#r-types.expression.syntax) only where
-the Core has an identity or a level: a source layer has a path in value
-position, a path as a call's callee, a path as each arm's pattern, and a
-binder name and an optional written type in a `let`.
+r[names.expression.syntax]
+A *source layer* is one written expression form over its children: a
+value of the [syntax chapter's `SurfaceF<E>`](Syntax.md#r-syntax.tree.types),
+where E is the position of a child. Resolution reads the tree that the
+parser gives and has no expression type of its own. A source layer differs
+from a [Core layer](#r-names.core.syntax) only where the Core has an
+identity or a level: a source layer has a path in value position, a path
+as a call's callee, a path as each arm's variant pattern, and a binder
+name in a `let`.
 
-```fren
-pub struct SrcArm<E> { pattern: Path, body: E }
-
-pub enum SrcF<E> {
-    BooleanLiteral(Bool),
-    IntegerLiteral(Int),
-    Name(Path),
-    Unary(UnaryOp, E),
-    Binary(BinaryOp, E, E),
-    Call(Path, Snoc<E>),
-    Let(String, Option<TypeName>, E, E),
-    If(E, E, E),
-    Match(E, Snoc<SrcArm<E>>),
-}
-```
-
-r[names.expression.layer] spec::names::{resolve_arms, resolve_annotation, resolve_layer, let_handoff::{omitted, kept, refused, reserved}}
+r[names.expression.layer] spec::names::{resolve_arms, resolve_annotation, resolve_layer, let_handoff::{omitted, reserved}}
 A source layer resolves, in R and S, to the Core layer of the same form
-with the same children. Its paths resolve in S as their positions require,
-and a `let`'s written type resolves as a type. The layer has no resolution
-when one of them has none, and when a `let` binder's name is
-[reserved](#r-names.paths.reserved). A `let` binder without a written type has the
-Core annotation `Bool` when its name ends in `?` and none otherwise, which
-is how the [suffix rule](Types.md#r-types.surface.suffix) of typing
-elaborates it. A binder whose name ends in `?` and that has a written
-type must have the type `Bool`: the layer has no resolution when its
-written type resolves to another type. The Core has no binder names, so
-this condition of the suffix rule is decided here. In both cases the Core
-annotation is the one that rule's `let_annotation?` admits.
+with the same children. Its paths resolve in S as their positions
+require, and the layer has no resolution when one of them has none. A
+`let` layer has no resolution when its binder's name is
+[reserved](#r-names.paths.reserved). A written `let` has no type, and its
+Core annotation is `Bool` when its binder's name ends in `?` and none
+otherwise. That is the annotation which the
+[suffix rule](#r-names.surface.suffix)'s `let_annotation?` admits for a
+`let` without a written type.
 
 ```text
   R; S ⊢ p ⇒ local i      R; S ⊢ p ⇒ item c   Σ(c) = constructor
@@ -504,10 +735,6 @@ annotation is the one that rule's `let_annotation?` admits.
   R; S ⊢ p ⇒ item f   Σ(f) = function
   ─────────────────────────────────────
   R; S ⊢ p(e₀, …, eₙ) ⇒ f(e₀, …, eₙ)
-
-  x is not reserved   R ⊢ T ⇒ τ   x does not end in `?`, or τ = Bool
-  ──────────────────────────────────────────────────────────────────
-  R; S ⊢ let x: T := e₁ in e₂ ⇒ let τ := e₁ in e₂
 
   x is not reserved   x ends in `?`
   ───────────────────────────────────────────────
@@ -524,66 +751,49 @@ annotation is the one that rule's `let_annotation?` admits.
 ```
 
 ```fren
-pub fn resolve_arms<E>(env: Env, scope: Scope, arms: Snoc<SrcArm<E>>): Option<Snoc<ArmF<E>>> :=
+pub fn resolve_arms<E>(env: Env, scope: Scope, arms: Snoc<SurfaceArm<E>>): Option<Snoc<ArmF<E>>> :=
     match arms {
         Empty => Some(Empty),
         Extend(earlier, arm) =>
-            match resolve_arms(env, scope, earlier), pattern_item(env, scope, arm.pattern) {
+            match resolve_arms(env, scope, earlier), pattern_item(env, scope, arm.variant) {
                 Some(resolved), Some(constructor) =>
                     Some(Extend(resolved, ArmF { constructor, body := arm.body })),
                 _, _ => None,
             },
     }
 
-pub fn resolve_annotation(
-    env: Env,
-    binder: String,
-    written: Option<TypeName>
-): Option<Option<Ty>> := if reserved?(binder) then None else match written {
-    None => Some(if binder.ends_with?("?") then Some(Ty::Boolean) else None),
-    Some(name) => match resolve_type(env, name) {
-        Some(ty) => if suffix_rule?(binder.ends_with?("?"), ty) then Some(Some(ty)) else None,
-        None => None,
-    },
-}
+pub fn resolve_annotation(binder: String): Option<Option<Ty>> :=
+    if reserved?(binder) then None
+    else Some(if binder.ends_with?("?") then Some(Ty::Boolean) else None)
 
-pub fn resolve_layer<E>(env: Env, scope: Scope, form: SrcF<E>): Option<ExprF<E>> := match form {
-    SrcF::BooleanLiteral(value?) => Some(ExprF::BooleanLiteral(value?)),
-    SrcF::IntegerLiteral(value) => Some(ExprF::IntegerLiteral(value)),
-    SrcF::Name(path) => value_form(env, scope, path),
-    SrcF::Unary(op, operand) => Some(ExprF::Unary(op, operand)),
-    SrcF::Binary(op, left, right) => Some(ExprF::Binary(op, left, right)),
-    SrcF::Call(path, args) => match callee_item(env, scope, path) {
-        Some(item) => Some(ExprF::Call(item, args)),
+pub fn resolve_layer<E>(env: Env, scope: Scope, form: SurfaceF<E>): Option<CoreF<E>> := match form {
+    SurfaceF::Boolean(value?) => Some(CoreF::BooleanLiteral(value?)),
+    SurfaceF::Integer(value) => Some(CoreF::IntegerLiteral(value)),
+    SurfaceF::Name(path) => value_form(env, scope, path),
+    SurfaceF::Unary(op, operand) => Some(CoreF::Unary(op, operand)),
+    SurfaceF::Binary(op, left, right) => Some(CoreF::Binary(op, left, right)),
+    SurfaceF::Call(path, args) => match callee_item(env, scope, path) {
+        Some(item) => Some(CoreF::Call(item, args)),
         None => None,
     },
-    SrcF::Let(name, annotation, value, body) => match resolve_annotation(env, name, annotation) {
-        Some(core) => Some(ExprF::Let(core, value, body)),
+    SurfaceF::Let(name, value, body) => match resolve_annotation(name) {
+        Some(core) => Some(CoreF::Let(core, value, body)),
         None => None,
     },
-    SrcF::If(condition, then_branch, else_branch) =>
-        Some(ExprF::If(condition, then_branch, else_branch)),
-    SrcF::Match(scrutinee, arms) => match resolve_arms(env, scope, arms) {
-        Some(resolved) => Some(ExprF::Match(scrutinee, resolved)),
+    SurfaceF::If(condition, then_branch, else_branch) =>
+        Some(CoreF::If(condition, then_branch, else_branch)),
+    SurfaceF::Match(scrutinee, arms) => match resolve_arms(env, scope, arms) {
+        Some(resolved) => Some(CoreF::Match(scrutinee, resolved)),
         None => None,
     },
 }
 
 set_option fren.evidence "random" in
-pub proc let_handoff(env: Env, name: String, written: TypeName, ty: Ty, core: Option<Ty>): (
-    holds?,
-) {
+pub proc let_handoff(name: String, core: Option<Ty>): (holds?) {
     ensure output: holds?
-    ensure omitted: when resolve_annotation(env, name, None) = Some(core),
+    ensure omitted: when resolve_annotation(name) = Some(core),
         let_annotation?(None, name.ends_with?("?"), core)
-    ensure kept: when resolve_type(env, written) = Some(ty)
-        and resolve_annotation(env, name, Some(written)) = Some(core),
-        let_annotation?(Some(ty), name.ends_with?("?"), core)
-    ensure refused: when resolve_type(env, written) = Some(ty)
-        and not suffix_rule?(name.ends_with?("?"), ty),
-        resolve_annotation(env, name, Some(written)) = None
-    ensure reserved: when reserved?(name),
-        resolve_annotation(env, name, None) = None and resolve_annotation(env, name, Some(written)) = None
+    ensure reserved: when reserved?(name), resolve_annotation(name) = None
 }
 ```
 
@@ -597,15 +807,15 @@ set_option fren.evidence "random" in
 pub proc bound_items(
     env: Env,
     scope: Scope,
-    form: SrcF<Int>,
+    form: SurfaceF<Int>,
     path: Path,
     args: Snoc<Int>,
     item: ItemId,
 ): (holds?) {
     ensure output: holds?
-    ensure constructor: when resolve_layer(env, scope, form) = Some(ExprF::Constructor(item)),
+    ensure constructor: when resolve_layer(env, scope, form) = Some(CoreF::Constructor(item)),
         entry(env.symb, item) is Some(ItemKind::Constructor(_))
-    ensure function: when resolve_layer(env, scope, form) = Some(ExprF::Call(item, args)),
+    ensure function: when resolve_layer(env, scope, form) = Some(CoreF::Call(item, args)),
         entry(env.symb, item) is Some(ItemKind::Function(_))
     ensure pattern: when pattern_item(env, scope, path) = Some(item),
         entry(env.symb, item) is Some(ItemKind::Constructor(_))
@@ -616,8 +826,8 @@ r[names.expression.weakening] spec::names::{path_head, arms_mention?, mentions?,
 A layer *mentions* a name when it is the first name of one of the layer's
 paths in value, callee or pattern position. Inserting a binder of a name
 that the layer does not mention at level n of S, with `0 ≤ n ≤ |S|`, shifts
-the layer's resolution at n and changes nothing else, as `shift_form` of
-[typing's weakening](Types.md#r-types.derivation.weakening) does. The law
+the layer's resolution at n and changes nothing else, as
+[`shift_form`](#r-names.core.shift) does. The law
 for a whole table is [stated below](#r-names.expression.table-weakening).
 
 ```fren
@@ -626,15 +836,15 @@ pub fn path_head(path: Path): String := match path {
     Path::Member(qualifier, _) => path_head(qualifier),
 }
 
-pub fn arms_mention?(arms: Snoc<SrcArm<Int>>, name: String) := match arms {
+pub fn arms_mention?(arms: Snoc<SurfaceArm<Int>>, name: String) := match arms {
     Empty => false,
-    Extend(earlier, arm) => path_head(arm.pattern) = name or arms_mention?(earlier, name),
+    Extend(earlier, arm) => path_head(arm.variant) = name or arms_mention?(earlier, name),
 }
 
-pub fn mentions?(form: SrcF<Int>, name: String) := match form {
-    SrcF::Name(path) => path_head(path) = name,
-    SrcF::Call(path, _) => path_head(path) = name,
-    SrcF::Match(_, arms) => arms_mention?(arms, name),
+pub fn mentions?(form: SurfaceF<Int>, name: String) := match form {
+    SurfaceF::Name(path) => path_head(path) = name,
+    SurfaceF::Call(path, _) => path_head(path) = name,
+    SurfaceF::Match(_, arms) => arms_mention?(arms, name),
     _ => false,
 }
 
@@ -644,7 +854,7 @@ pub fn shifted_form(form: Option<Form>, cutoff: Int): Option<Form> := match form
 }
 
 set_option fren.evidence "random" in
-pub proc layer_weakening(env: Env, scope: Scope, form: SrcF<Int>, cutoff: Int, extra: String): (
+pub proc layer_weakening(env: Env, scope: Scope, form: SurfaceF<Int>, cutoff: Int, extra: String): (
     holds?,
 ) {
     ensure output: holds?
@@ -663,7 +873,7 @@ own scope, with one exception: the body of `let x := e₁ in e₂` is read in
 fails.
 
 ```fren
-pub struct SrcRow { form: SrcF<Int>, scope: Scope }
+pub struct SrcRow { form: SurfaceF<Int>, scope: Scope }
 
 pub fn has_scope?(rows: Snoc<SrcRow>, position: Int, scope: Scope) := match lookup(rows, position) {
     Some(row) => row.scope = scope,
@@ -676,24 +886,24 @@ pub fn arguments_scoped?(rows: Snoc<SrcRow>, args: Snoc<Int>, scope: Scope) := m
         arguments_scoped?(rows, earlier, scope) and has_scope?(rows, arg, scope),
 }
 
-pub fn arms_scoped?(rows: Snoc<SrcRow>, arms: Snoc<SrcArm<Int>>, scope: Scope) := match arms {
+pub fn arms_scoped?(rows: Snoc<SrcRow>, arms: Snoc<SurfaceArm<Int>>, scope: Scope) := match arms {
     Empty => true,
     Extend(earlier, arm) =>
         arms_scoped?(rows, earlier, scope) and has_scope?(rows, arm.body, scope),
 }
 
-pub fn children_scoped?(rows: Snoc<SrcRow>, scope: Scope, form: SrcF<Int>) := match form {
-    SrcF::Unary(_, operand) => has_scope?(rows, operand, scope),
-    SrcF::Binary(_, left, right) =>
+pub fn children_scoped?(rows: Snoc<SrcRow>, scope: Scope, form: SurfaceF<Int>) := match form {
+    SurfaceF::Unary(_, operand) => has_scope?(rows, operand, scope),
+    SurfaceF::Binary(_, left, right) =>
         has_scope?(rows, left, scope) and has_scope?(rows, right, scope),
-    SrcF::Call(_, args) => arguments_scoped?(rows, args, scope),
-    SrcF::Let(name, _, value, body) =>
+    SurfaceF::Call(_, args) => arguments_scoped?(rows, args, scope),
+    SurfaceF::Let(name, value, body) =>
         has_scope?(rows, value, scope) and has_scope?(rows, body, Extend(scope, name)),
-    SrcF::If(condition, then_branch, else_branch) =>
+    SurfaceF::If(condition, then_branch, else_branch) =>
         has_scope?(rows, condition, scope)
         and has_scope?(rows, then_branch, scope)
         and has_scope?(rows, else_branch, scope),
-    SrcF::Match(scrutinee, arms) =>
+    SurfaceF::Match(scrutinee, arms) =>
         has_scope?(rows, scrutinee, scope) and arms_scoped?(rows, arms, scope),
     _ => true,
 }
@@ -710,17 +920,16 @@ pub proc siblings(
     rows: Snoc<SrcRow>,
     scope: Scope,
     name: String,
-    annotation: Option<TypeName>,
     op: BinaryOp,
     first: Int,
     second: Int,
     row: SrcRow,
 ): (holds?) {
     ensure output: holds?
-    ensure value: when children_scoped?(rows, scope, SrcF::Let(name, annotation, first, second))
+    ensure value: when children_scoped?(rows, scope, SurfaceF::Let(name, first, second))
         and lookup(rows, first) = Some(row),
         row.scope = scope
-    ensure operand: when children_scoped?(rows, scope, SrcF::Binary(op, first, second))
+    ensure operand: when children_scoped?(rows, scope, SurfaceF::Binary(op, first, second))
         and lookup(rows, second) = Some(row),
         row.scope = scope
 }
@@ -732,7 +941,8 @@ by row, when every row's children have their scopes and every row's layer
 resolves; a resolved row keeps its level, so child levels mean the same in
 both tables. An expression resolves in S when its table resolves and its
 root, the last row, has scope S. Rows that no other row uses are resolved
-too.
+too. A source table has at most one resolution, since `resolve_expression`
+is a function.
 
 ```fren
 pub fn resolve_rows(env: Env, rows: Snoc<SrcRow>): Option<Snoc<Form>> := match rows {
@@ -768,9 +978,9 @@ that several occurrences share and in rows that no child names.
 r[names.expression.unique-expression]
 Resolution is deterministic for an expression: when two source tables
 denote the same expression in the same scope and both resolve, the newest
-rows of their results unfold alike. Fren states
-[determinism](#r-names.overview.determinism) for one source table only.
-This law across tables is stated here and open.
+rows of their results unfold alike. The [function of the
+overview](#r-names.overview.function) gives determinism for one source
+table only. This law across tables is stated here and open.
 
 r[names.handoff.scoped] spec::names::table_scoping::{aligned, in_scope}
 Resolution's result is well scoped for typing. A resolved table has one
@@ -793,7 +1003,7 @@ pub proc table_scoping(
     ensure aligned: when resolve_rows(env, rows) = Some(forms), length(forms) = length(rows)
     ensure in_scope: when resolve_rows(env, rows) = Some(forms)
         and lookup(rows, position) = Some(row)
-        and lookup(forms, position) = Some(ExprF::Local(level)),
+        and lookup(forms, position) = Some(CoreF::Local(level)),
         0 <= level < length(row.scope)
 }
 ```
@@ -848,18 +1058,21 @@ trusted table_weakening: "open: weakening of a whole source table is proved in L
 
 ## Declarations and collection
 
-r[names.collection.syntax] spec::names::{Param, SrcDecl, decl_name, item_names, param_names}
+r[names.collection.syntax] spec::names::{SrcDecl, decl_name, item_names, param_names}
 A module's declarations are enumerations, each with a name and its
 variants' names in written order, and functions, each with a name, its
 parameters in written order, a written result type and the source table of
-its body. A parameter has a name and an optional written type.
+its body. A parameter is the [syntax chapter's
+`Parameter`](Syntax.md#r-syntax.tree.types), with a name and an optional
+written type. A `SrcDecl` is the syntax chapter's enumeration or function
+declaration with its sequences as snoc sequences, over which collection
+recurs, and with the function's body as a source table; the other fields
+of a written declaration, such as `pub`, do not affect resolution.
 
 ```fren
-pub struct Param { name: String, ty: Option<TypeName> }
-
 pub enum SrcDecl {
     Enumeration(String, Snoc<String>),
-    Function(String, Snoc<Param>, TypeName, Snoc<SrcRow>),
+    Function(String, Snoc<Parameter>, TypeName, Snoc<SrcRow>),
 }
 
 pub fn decl_name(decl: SrcDecl): String := match decl {
@@ -872,7 +1085,7 @@ pub fn item_names(decls: Snoc<SrcDecl>): Scope := match decls {
     Extend(earlier, decl) => Extend(item_names(earlier), decl_name(decl)),
 }
 
-pub fn param_names(params: Snoc<Param>): Scope := match params {
+pub fn param_names(params: Snoc<Parameter>): Scope := match params {
     Empty => Empty,
     Extend(earlier, param) => Extend(param_names(earlier), param.name),
 }
@@ -961,9 +1174,10 @@ pub fn annotation_clear?(all: Snoc<SrcDecl>, annotation: Option<TypeName>) := ma
     None => true,
 }
 
-pub fn params_clear?(all: Snoc<SrcDecl>, params: Snoc<Param>) := match params {
+pub fn params_clear?(all: Snoc<SrcDecl>, params: Snoc<Parameter>) := match params {
     Empty => true,
-    Extend(earlier, param) => params_clear?(all, earlier) and annotation_clear?(all, param.ty),
+    Extend(earlier, param) =>
+        params_clear?(all, earlier) and annotation_clear?(all, param.annotation),
 }
 
 pub fn decls_clear?(all: Snoc<SrcDecl>, decls: Snoc<SrcDecl>) := match decls {
@@ -1029,8 +1243,8 @@ of the first step, which binds every enumeration of the module; no
 parameter is in scope in them. A parameter's type is its written type,
 which must be `Bool` when the parameter's name ends in `?`. A parameter
 written without a type must have a name that ends in `?`, and its type is
-`Bool`. These are the conditions of [typing's parameter
-rule](Types.md#r-types.surface.annotation), which the Core, having no
+`Bool`. These are the conditions of the [parameter
+rule](#r-names.surface.annotation), which the Core, having no
 names, cannot decide. The signature's parameter context has the
 parameters' types in written order. Collection yields the environment of
 both steps, and yields none when the declarations are not admitted or a
@@ -1046,7 +1260,7 @@ parameter or result has no type.
 ```
 
 ```fren
-pub fn param_type(env: Env, param: Param): Option<Ty> := match param.ty {
+pub fn param_type(env: Env, param: Parameter): Option<Ty> := match param.annotation {
     Some(written) => match resolve_type(env, written) {
         Some(ty) => if suffix_rule?(param.name.ends_with?("?"), ty) then Some(ty) else None,
         None => None,
@@ -1054,7 +1268,7 @@ pub fn param_type(env: Env, param: Param): Option<Ty> := match param.ty {
     None => if param.name.ends_with?("?") then Some(Ty::Boolean) else None,
 }
 
-pub fn resolve_params(env: Env, params: Snoc<Param>): Option<Ctx> := match params {
+pub fn resolve_params(env: Env, params: Snoc<Parameter>): Option<Ctx> := match params {
     Empty => Some(Empty),
     Extend(earlier, param) => match resolve_params(env, earlier), param_type(env, param) {
         Some(ctx), Some(ty) => Some(Extend(ctx, ty)),
@@ -1062,7 +1276,7 @@ pub fn resolve_params(env: Env, params: Snoc<Param>): Option<Ctx> := match param
     },
 }
 
-pub fn signature(env: Env, params: Snoc<Param>, result: TypeName): Option<Sig> :=
+pub fn signature(env: Env, params: Snoc<Parameter>, result: TypeName): Option<Sig> :=
     match resolve_params(env, params), resolve_type(env, result) {
         Some(ctx), Some(ty) => Some(Sig { params := ctx, result := ty }),
         _, _ => None,
@@ -1101,7 +1315,7 @@ pub fn collect(parent: ItemId, name: String, decls: Snoc<SrcDecl>): Option<Symb>
 ```
 
 r[names.collection.parameters] spec::names::parameter_handoff::{omitted, kept, refused}
-A parameter's type is one that typing's `parameter_type?` admits for its
+A parameter's type is one that [`parameter_type?`](#r-names.surface.annotation) admits for its
 name and written type, and a parameter whose name ends in `?` and whose
 written type resolves to another type than `Bool` has none.
 
@@ -1111,14 +1325,14 @@ pub proc parameter_handoff(env: Env, name: String, written: TypeName, annotation
     holds?,
 ) {
     ensure output: holds?
-    ensure omitted: when param_type(env, Param { name, ty := None }) = Some(ty),
+    ensure omitted: when param_type(env, Parameter { name, annotation := None }) = Some(ty),
         parameter_type?(None, name.ends_with?("?"), ty)
     ensure kept: when resolve_type(env, written) = Some(annotation)
-        and param_type(env, Param { name, ty := Some(written) }) = Some(ty),
+        and param_type(env, Parameter { name, annotation := Some(written) }) = Some(ty),
         parameter_type?(Some(annotation), name.ends_with?("?"), ty)
     ensure refused: when resolve_type(env, written) = Some(annotation)
         and not suffix_rule?(name.ends_with?("?"), annotation),
-        param_type(env, Param { name, ty := Some(written) }) = None
+        param_type(env, Parameter { name, annotation := Some(written) }) = None
 }
 ```
 
@@ -1126,9 +1340,7 @@ r[names.collection.agreement] spec::names::signature_agreement::agree
 When collection yields Σ, a clear written type resolves in Σ₀ exactly as
 it does in Σ. Every written type of a signature is clear, so the
 signatures that collection computes in Σ₀ are the ones that the whole
-environment gives. The annotation of a `let` resolves in Σ and need not
-be clear: one whose first name is a function of the module has no
-resolution, though Σ₀ could read it through the module's name.
+environment gives.
 
 ```fren
 set_option fren.evidence "random" in
@@ -1201,7 +1413,12 @@ pub proc rejected(
         module,
         Extend(
             Empty,
-            SrcDecl::Function("Int", Extend(Empty, Param { name := variant, ty := Some(ty) }), ty, body)
+            SrcDecl::Function(
+                "Int",
+                Extend(Empty, Parameter { name := variant, annotation := Some(ty) }),
+                ty,
+                body
+            )
         )
     ) = None
     ensure reserved_parameter: collect(
@@ -1209,7 +1426,12 @@ pub proc rejected(
         module,
         Extend(
             Empty,
-            SrcDecl::Function(name, Extend(Empty, Param { name := "Bool", ty := Some(ty) }), ty, body)
+            SrcDecl::Function(
+                name,
+                Extend(Empty, Parameter { name := "Bool", annotation := Some(ty) }),
+                ty,
+                body
+            )
         )
     ) = None
     ensure repeated_parameter: collect(
@@ -1220,8 +1442,8 @@ pub proc rejected(
             SrcDecl::Function(
                 name,
                 Extend(
-                    Extend(Empty, Param { name := variant, ty := Some(ty) }),
-                    Param { name := variant, ty := Some(ty) }
+                    Extend(Empty, Parameter { name := variant, annotation := Some(ty) }),
+                    Parameter { name := variant, annotation := Some(ty) }
                 ),
                 ty,
                 body
@@ -1242,6 +1464,8 @@ pub proc rejected(
         )
     ) = None
 }
+
+tested rejected: "src/FrenTest/SpecChapters/Syntax.lean"
 ```
 
 r[names.collection.order] spec::names::collection_order::{accepted, bindings}
@@ -1355,7 +1579,9 @@ collect to an environment Σ and every function's body resolves in
 
 ```fren
 set_option fren.evidence "random" in
-pub proc parameters_parallel(env: Env, params: Snoc<Param>, result: TypeName, sig: Sig): (holds?) {
+pub proc parameters_parallel(env: Env, params: Snoc<Parameter>, result: TypeName, sig: Sig): (
+    holds?,
+) {
     ensure output: holds?
     ensure parallel: when signature(env, params, result) = Some(sig),
         length(sig.params) = length(param_names(params))
@@ -1381,7 +1607,7 @@ pub fn module_resolves?(parent: ItemId, name: String, decls: Snoc<SrcDecl>) :=
 
 ## Examples
 
-r[names.examples.resolved] spec::names::{row, ROOT, LIGHT_PATH, RED_PATH, GREEN_PATH, NEXT_BODY, NEXT_DECLS, NEXT_SYMB, NEXT_ENV, NEXT_FORMS, COLLECT_EXAMPLE, BODY_EXAMPLE, MODULE_EXAMPLE, SHADOW_ROWS, SHADOW_EXAMPLE, SIBLING_ROWS, SIBLING_EXAMPLE, worked_examples::valid}
+r[names.examples.resolved] spec::names::{row, ROOT, LIGHT, LIGHT_RED, LIGHT_GREEN, LIGHT_PATH, RED_PATH, GREEN_PATH, NEXT_BODY, NEXT_DECLS, NEXT_SYMB, NEXT_ENV, NEXT_FORMS, COLLECT_EXAMPLE, BODY_EXAMPLE, MODULE_EXAMPLE, SHADOW_ROWS, SHADOW_EXAMPLE, SIBLING_ROWS, SIBLING_EXAMPLE, worked_examples::valid}
 The module `M` declares `enum Light { Red, Green }` and
 
 ```text
@@ -1409,25 +1635,26 @@ the right operand is read in the empty scope, as its sibling's binder is
 not in scope there, and has no resolution.
 
 ```fren
-use spec::types::{LIGHT, LIGHT_GREEN, LIGHT_RED, four, one, two}
-
-pub fn row(form: SrcF<Int>, scope: Scope): SrcRow := SrcRow { form, scope }
+pub fn row(form: SurfaceF<Int>, scope: Scope): SrcRow := SrcRow { form, scope }
 
 pub const ROOT: ItemId := []
+pub const LIGHT: ItemId := ["M", "Light"]
+pub const LIGHT_RED: ItemId := ["M", "Light", "Red"]
+pub const LIGHT_GREEN: ItemId := ["M", "Light", "Green"]
 pub const LIGHT_PATH: Path := Path::Name("Light")
 pub const RED_PATH: Path := Path::Member(LIGHT_PATH, "Red")
 pub const GREEN_PATH: Path := Path::Member(LIGHT_PATH, "Green")
 
 pub const NEXT_BODY: Snoc<SrcRow> := four(
-    row(SrcF::Name(Path::Name("l")), one("l")),
-    row(SrcF::Name(GREEN_PATH), one("l")),
-    row(SrcF::Name(RED_PATH), one("l")),
+    row(SurfaceF::Name(Path::Name("l")), one("l")),
+    row(SurfaceF::Name(GREEN_PATH), one("l")),
+    row(SurfaceF::Name(RED_PATH), one("l")),
     row(
-        SrcF::Match(
+        SurfaceF::Match(
             0,
             two(
-                SrcArm { pattern := RED_PATH, body := 1 },
-                SrcArm { pattern := GREEN_PATH, body := 2 }
+                SurfaceArm { variant := RED_PATH, body := 1 },
+                SurfaceArm { variant := GREEN_PATH, body := 2 }
             )
         ),
         one("l")
@@ -1439,9 +1666,9 @@ pub const NEXT_DECLS: Snoc<SrcDecl> := two(
     SrcDecl::Function(
         "next",
         one(
-            Param {
+            Parameter {
                 name := "l",
-                ty := Some(TypeName::Named(LIGHT_PATH)),
+                annotation := Some(TypeName::Named(LIGHT_PATH)),
             }
         ),
         TypeName::Named(LIGHT_PATH),
@@ -1480,10 +1707,10 @@ pub const NEXT_ENV: Env := Env {
 }
 
 pub const NEXT_FORMS: Snoc<Form> := four(
-    ExprF::Local(0),
-    ExprF::Constructor(LIGHT_GREEN),
-    ExprF::Constructor(LIGHT_RED),
-    ExprF::Match(
+    CoreF::Local(0),
+    CoreF::Constructor(LIGHT_GREEN),
+    CoreF::Constructor(LIGHT_RED),
+    CoreF::Match(
         0,
         two(
             ArmF { constructor := LIGHT_RED, body := 1 },
@@ -1498,35 +1725,35 @@ pub const MODULE_EXAMPLE: Bool := module_resolves?(ROOT, "M", NEXT_DECLS)
 
 pub const SHADOW_ROWS: Snoc<SrcRow> := Extend(
     four(
-        row(SrcF::IntegerLiteral(1), Empty),
-        row(SrcF::BooleanLiteral(true), one("x")),
-        row(SrcF::Name(Path::Name("x")), two("x", "x")),
-        row(SrcF::Let("x", None, 1, 2), one("x"))
+        row(SurfaceF::Integer(1), Empty),
+        row(SurfaceF::Boolean(true), one("x")),
+        row(SurfaceF::Name(Path::Name("x")), two("x", "x")),
+        row(SurfaceF::Let("x", 1, 2), one("x"))
     ),
-    row(SrcF::Let("x", None, 0, 3), Empty)
+    row(SurfaceF::Let("x", 0, 3), Empty)
 )
 
 pub const SHADOW_EXAMPLE: Bool :=
     resolve_expression(NEXT_ENV, Empty, SHADOW_ROWS) = Some(
         Extend(
             four(
-                ExprF::IntegerLiteral(1),
-                ExprF::BooleanLiteral(true),
-                ExprF::Local(1),
-                ExprF::Let(None, 1, 2)
+                CoreF::IntegerLiteral(1),
+                CoreF::BooleanLiteral(true),
+                CoreF::Local(1),
+                CoreF::Let(None, 1, 2)
             ),
-            ExprF::Let(None, 0, 3)
+            CoreF::Let(None, 0, 3)
         )
     )
 
 pub const SIBLING_ROWS: Snoc<SrcRow> := Extend(
     four(
-        row(SrcF::IntegerLiteral(1), Empty),
-        row(SrcF::Name(Path::Name("x")), one("x")),
-        row(SrcF::Let("x", None, 0, 1), Empty),
-        row(SrcF::Name(Path::Name("x")), Empty)
+        row(SurfaceF::Integer(1), Empty),
+        row(SurfaceF::Name(Path::Name("x")), one("x")),
+        row(SurfaceF::Let("x", 0, 1), Empty),
+        row(SurfaceF::Name(Path::Name("x")), Empty)
     ),
-    row(SrcF::Binary(BinaryOp::Add, 2, 3), Empty)
+    row(SurfaceF::Binary(BinaryOp::Add, 2, 3), Empty)
 )
 
 pub const SIBLING_EXAMPLE: Bool := resolve_expression(NEXT_ENV, Empty, SIBLING_ROWS) = None
@@ -1605,7 +1832,7 @@ pub proc path_examples(): (holds?) {
 }
 ```
 
-r[names.examples.positions] spec::names::{layer, CALL_EXAMPLE, LOCAL_CALLEE, FUNCTION_VALUE, NON_VARIANT_PATTERN, ANNOTATED_LET, QUESTION_LET, QUESTION_LET_REFUSED, RESERVED_LET, position_examples::valid}
+r[names.examples.positions] spec::names::{layer, CALL_EXAMPLE, LOCAL_CALLEE, FUNCTION_VALUE, NON_VARIANT_PATTERN, QUESTION_LET, RESERVED_LET, position_examples::valid}
 Again in the module `M`, with the children of each layer at levels 0
 and 1:
 
@@ -1616,43 +1843,30 @@ and 1:
   not a value;
 - the pattern `Light` of `match l { Light => … }` denotes the enumeration,
   not a variant (`F0210`);
-- in the scope `Light`, `let x: Light := … in …` resolves with the
-  annotation `Nominal(M · Light)`: a written type is read in the empty
-  scope and does not see the local `Light`;
-- `let x? := … in …` resolves with the annotation `Bool`, and
-  `let x?: Int := … in …` has no resolution;
+- `let x? := … in …` resolves with the annotation `Bool`;
 - `let Int := … in …` has no resolution, since its binder is reserved.
 
 ```fren
-pub fn layer(scope: Scope, form: SrcF<Int>): Option<Form> := resolve_layer(NEXT_ENV, scope, form)
+pub fn layer(scope: Scope, form: SurfaceF<Int>): Option<Form> :=
+    resolve_layer(NEXT_ENV, scope, form)
 
 pub const CALL_EXAMPLE: Bool :=
-    layer(one("l"), SrcF::Call(Path::Name("next"), one(0)))
-    = Some(ExprF::Call(["M", "next"], one(0)))
+    layer(one("l"), SurfaceF::Call(Path::Name("next"), one(0)))
+    = Some(CoreF::Call(["M", "next"], one(0)))
 
-pub const LOCAL_CALLEE: Bool := layer(one("next"), SrcF::Call(Path::Name("next"), Empty)) = None
-pub const FUNCTION_VALUE: Bool := layer(Empty, SrcF::Name(Path::Name("next"))) = None
+pub const LOCAL_CALLEE: Bool := layer(one("next"), SurfaceF::Call(Path::Name("next"), Empty)) = None
+pub const FUNCTION_VALUE: Bool := layer(Empty, SurfaceF::Name(Path::Name("next"))) = None
 
 pub const NON_VARIANT_PATTERN: Bool :=
     layer(
         one("l"),
-        SrcF::Match(0, one(SrcArm { pattern := LIGHT_PATH, body := 1 }))
+        SurfaceF::Match(0, one(SurfaceArm { variant := LIGHT_PATH, body := 1 }))
     ) = None
 
-pub const ANNOTATED_LET: Bool :=
-    layer(
-        one("Light"),
-        SrcF::Let("x", Some(TypeName::Named(LIGHT_PATH)), 0, 1)
-    )
-    = Some(ExprF::Let(Some(Ty::Nominal(LIGHT)), 0, 1))
-
 pub const QUESTION_LET: Bool :=
-    layer(Empty, SrcF::Let("x?", None, 0, 1)) = Some(ExprF::Let(Some(Ty::Boolean), 0, 1))
+    layer(Empty, SurfaceF::Let("x?", 0, 1)) = Some(CoreF::Let(Some(Ty::Boolean), 0, 1))
 
-pub const QUESTION_LET_REFUSED: Bool :=
-    layer(Empty, SrcF::Let("x?", Some(TypeName::Integer), 0, 1)) = None
-
-pub const RESERVED_LET: Bool := layer(Empty, SrcF::Let("Int", None, 0, 1)) = None
+pub const RESERVED_LET: Bool := layer(Empty, SurfaceF::Let("Int", 0, 1)) = None
 
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "random" in
@@ -1662,46 +1876,8 @@ pub proc position_examples(): (holds?) {
         and LOCAL_CALLEE
         and FUNCTION_VALUE
         and NON_VARIANT_PATTERN
-        and ANNOTATED_LET
         and QUESTION_LET
-        and QUESTION_LET_REFUSED
         and RESERVED_LET
-}
-```
-
-## Interface
-
-r[names.overview.interface] spec::resolution::{resolved, resolves?}
-The overview's interface: `resolves?` and `resolved` are uninterpreted
-functions over this chapter's types, whose contract states that the
-resolution of a source table is the value of a function of the
-environment, the scope and the table, and that it has one Core layer for
-each source row. The chapter's wrapper interprets `resolves?` by
-`resolve_expression` and so proves the contract for the detailed
-definitions: the interpretation is the refinement relation.
-
-```fren
-pub mod spec::resolution
-
-use spec::names::{Env, Scope, SrcRow}
-use spec::types::{Form, Snoc, length}
-
-pub fn resolved(Env, Scope, Snoc<SrcRow>): Snoc<Form>
-
-pub fn resolves?(env: Env, scope: Scope, rows: Snoc<SrcRow>, forms: Snoc<Form>): (holds?) {
-    ensure function: when holds?, forms = resolved(env, scope, rows)
-    ensure aligned: when holds?, length(forms) = length(rows)
-}
-```
-
-r[names.overview.determinism] spec::resolution::determinism::unique
-A source table has at most one resolution. That an expression has at
-most one, whatever table denotes it, is the [open law
-above](#r-names.expression.unique-expression).
-
-```fren
-expect determinism(env: Env, scope: Scope, rows: Snoc<SrcRow>, a: Snoc<Form>, b: Snoc<Form>) {
-    expect unique: not resolves?(env, scope, rows, a) or not resolves?(env, scope, rows, b) or a = b
 }
 ```
 

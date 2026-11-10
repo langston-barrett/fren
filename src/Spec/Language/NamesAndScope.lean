@@ -2,7 +2,7 @@ import Fren.Impl
 import Fren.Literate
 import Fren.Trace
 import FrenAstToHir
-import Spec.Language.Types
+import Spec.Language.Syntax
 
 open Fren.Lang
 
@@ -13,8 +13,26 @@ set_option warningAsError true in
 
 namespace Spec.Language.NamesAndScope
 
-open spec.types spec.names
-open Spec.Language.Types (lookup_bound lookup_none)
+open spec.surface spec.names
+
+/-! ## Lookup -/
+
+theorem lookup_bound {α : Type} [Inhabited α] (xs : Snoc α) (level : Int) (x : α)
+    (h : lookup _ xs level = some x) : 0 ≤ level ∧ level < length _ xs := by
+  induction xs with
+  | Empty => simp [lookup] at h
+  | Extend earlier last ih =>
+    simp only [lookup] at h
+    simp only [length]
+    split at h
+    · rename_i eq; subst eq; omega
+    · have := ih h; omega
+
+theorem lookup_none {α : Type} [Inhabited α] (xs : Snoc α) (level : Int)
+    (h : ¬ (0 ≤ level ∧ level < length _ xs)) : lookup _ xs level = none := by
+  cases hl : lookup _ xs level with
+  | none => rfl
+  | some x => exact absurd (lookup_bound xs level x hl) h
 
 /-! ## Scopes -/
 
@@ -138,7 +156,7 @@ theorem nearest_converse (scope : Snoc String) (name : String) :
 
 /-! ## Tables -/
 
-theorem resolve_params_length (env : Env) (params : Snoc Param) (ctx : Snoc Ty)
+theorem resolve_params_length (env : Env) (params : Snoc Parameter) (ctx : Snoc Ty)
     (h : resolve_params env params = some ctx) :
     length _ ctx = length _ (param_names params) := by
   induction params generalizing ctx with
@@ -195,7 +213,7 @@ theorem path_target_local (env : Env) (scope : Snoc String) (path : Path) (level
     · exact absurd h (descend_not_local env _ name level)
     · simp at h
 
-theorem layer_local (env : Env) (scope : Snoc String) (form : SrcF Int) (level : Int)
+theorem layer_local (env : Env) (scope : Snoc String) (form : SurfaceF Int) (level : Int)
     (h : resolve_layer Int env scope form = some (.Local level)) :
     0 ≤ level ∧ level < length _ scope := by
   cases form with
@@ -208,11 +226,11 @@ theorem layer_local (env : Env) (scope : Snoc String) (form : SrcF Int) (level :
     · split at h <;> simp at h
     · simp at h
   | Call path args => simp only [resolve_layer] at h; split at h <;> simp at h
-  | Let name annotation value body => simp only [resolve_layer] at h; split at h <;> simp at h
+  | Let name value body => simp only [resolve_layer] at h; split at h <;> simp at h
   | Match scrutinee arms => simp only [resolve_layer] at h; split at h <;> simp at h
   | _ => simp [resolve_layer] at h
 
-theorem rows_aligned (env : Env) (rows : Snoc SrcRow) (forms : Snoc (ExprF Int))
+theorem rows_aligned (env : Env) (rows : Snoc SrcRow) (forms : Snoc (CoreF Int))
     (h : resolve_rows env rows = some forms) : length _ forms = length _ rows := by
   induction rows generalizing forms with
   | Empty => simp [resolve_rows] at h; simp [← h, length]
@@ -226,7 +244,7 @@ theorem rows_aligned (env : Env) (rows : Snoc SrcRow) (forms : Snoc (ExprF Int))
       · simp at h
     · simp at h
 
-theorem rows_scoped (env : Env) (rows : Snoc SrcRow) (forms : Snoc (ExprF Int))
+theorem rows_scoped (env : Env) (rows : Snoc SrcRow) (forms : Snoc (CoreF Int))
     (position : Int) (row : SrcRow) (level : Int)
     (h : resolve_rows env rows = some forms) (hr : lookup _ rows position = some row)
     (hf : lookup _ forms position = some (.Local level)) :
@@ -655,7 +673,7 @@ theorem constructors_ok_of (S : Snoc Entry) (o : Fren.Seq String) (vs : Snoc Str
     subst this
     exact hd.1 hw
 
-theorem resolve_type_ok (env : Env) (S : Snoc Entry) (t : spec.names.TypeName) (ty : Ty)
+theorem resolve_type_ok (env : Env) (S : Snoc Entry) (t : spec.surface.TypeName) (ty : Ty)
     (h : resolve_type env t = some ty)
     (mono : ∀ i k, entry env.symb i = some k → entry S i = some k) : ty_ok? S ty = true := by
   cases t with
@@ -681,7 +699,7 @@ theorem resolve_type_ok (env : Env) (S : Snoc Entry) (t : spec.names.TypeName) (
       · simp at hitem
     · simp at h
 
-theorem param_type_ok (env : Env) (S : Snoc Entry) (p : Param) (ty : Ty)
+theorem param_type_ok (env : Env) (S : Snoc Entry) (p : Parameter) (ty : Ty)
     (h : param_type env p = some ty)
     (mono : ∀ i k, entry env.symb i = some k → entry S i = some k) : ty_ok? S ty = true := by
   obtain ⟨name, pty⟩ := p
@@ -705,7 +723,7 @@ theorem param_type_ok (env : Env) (S : Snoc Entry) (p : Param) (ty : Ty)
         exact resolve_type_ok env S w _ ht mono
       · simp at h
 
-theorem resolve_params_ok (env : Env) (S : Snoc Entry) (ps : Snoc Param) (ctx : Snoc Ty)
+theorem resolve_params_ok (env : Env) (S : Snoc Entry) (ps : Snoc Parameter) (ctx : Snoc Ty)
     (h : resolve_params env ps = some ctx)
     (mono : ∀ i k, entry env.symb i = some k → entry S i = some k) : ctx_ok? S ctx = true := by
   induction ps generalizing ctx with
@@ -799,7 +817,7 @@ theorem path_target_congr (p : Fren.Seq String) (n : String) (A B : Snoc Entry)
     | some target => cases target <;> simp only [descend, item_target, hE]
 
 theorem signature_congr (p : Fren.Seq String) (n : String) (A B : Snoc Entry)
-    (hE : ∀ i, entry A i = entry B i) (ps : Snoc Param) (r : spec.names.TypeName) :
+    (hE : ∀ i, entry A i = entry B i) (ps : Snoc Parameter) (r : spec.surface.TypeName) :
     signature { parent := p, name := n, symb := A } ps r =
       signature { parent := p, name := n, symb := B } ps r := by
   have ty : ∀ t, resolve_type { parent := p, name := n, symb := A } t =
@@ -849,7 +867,7 @@ theorem collect_functions_none (env : Env) (ds : Snoc SrcDecl) :
             cases this
 
 theorem mem_collect_functions_fn (env : Env) (ds : Snoc SrcDecl) (S : Snoc Entry) (f : String)
-    (ps : Snoc Param) (r : spec.names.TypeName) (body : Snoc SrcRow) (sig : Sig)
+    (ps : Snoc Parameter) (r : spec.surface.TypeName) (body : Snoc SrcRow) (sig : Sig)
     (h : collect_functions env ds = some S) (hd : SMem (SrcDecl.Function f ps r body) ds)
     (hsig : signature env ps r = some sig) :
     SMem { item := child (module_of env) f, kind := .Function sig } S := by
@@ -990,8 +1008,8 @@ theorem nodup_of_ok (S : Snoc Entry) (h : symb_ok? S = true) : SNodup S := by
 
 /-! ## Agreement of the two environments of collection -/
 
-theorem declares_function_mem (ds : Snoc SrcDecl) (f : String) (ps : Snoc Param)
-    (r : spec.names.TypeName) (body : Snoc SrcRow) (h : SMem (SrcDecl.Function f ps r body) ds) :
+theorem declares_function_mem (ds : Snoc SrcDecl) (f : String) (ps : Snoc Parameter)
+    (r : spec.surface.TypeName) (body : Snoc SrcRow) (h : SMem (SrcDecl.Function f ps r body) ds) :
     declares_function? ds f = true := by
   induction ds with
   | Empty => exact h.elim
@@ -1081,7 +1099,7 @@ theorem path_target_agree (p : Fren.Seq String) (n : String) (ds : Snoc SrcDecl)
 
 /-- A clear written type resolves in Σ₀ as it does in Σ. -/
 theorem resolve_type_agree (p : Fren.Seq String) (n : String) (ds : Snoc SrcDecl) (S : Snoc Entry)
-    (h : collect p n ds = some S) (t : spec.names.TypeName) (hc : type_clear? ds t = true) :
+    (h : collect p n ds = some S) (t : spec.surface.TypeName) (hc : type_clear? ds t = true) :
     resolve_type { parent := p, name := n, symb := collect_types (child p n) ds } t =
       resolve_type { parent := p, name := n, symb := S } t := by
   cases t with
@@ -1253,7 +1271,7 @@ theorem pattern_item_weakens (env : Env) (scope : Snoc String) (cutoff : Int) (e
   | some target => cases target <;> simp [shiftTarget]
 
 theorem resolve_arms_weakens (env : Env) (scope : Snoc String) (cutoff : Int) (extra : String)
-    (arms : Snoc (SrcArm Int)) (h0 : 0 ≤ cutoff) (h1 : cutoff ≤ length _ scope)
+    (arms : Snoc (SurfaceArm Int)) (h0 : 0 ≤ cutoff) (h1 : cutoff ≤ length _ scope)
     (ne : arms_mention? arms extra = false) :
     resolve_arms Int env (insert_name scope cutoff extra) arms = resolve_arms Int env scope arms := by
   induction arms with
@@ -1261,9 +1279,9 @@ theorem resolve_arms_weakens (env : Env) (scope : Snoc String) (cutoff : Int) (e
   | Extend earlier arm ih =>
     simp [arms_mention?] at ne
     simp only [resolve_arms, ih ne.2,
-      pattern_item_weakens env scope cutoff extra arm.pattern h0 h1 ne.1]
+      pattern_item_weakens env scope cutoff extra arm.variant h0 h1 ne.1]
 
-theorem layer_weakens (env : Env) (scope : Snoc String) (form : SrcF Int) (cutoff : Int)
+theorem layer_weakens (env : Env) (scope : Snoc String) (form : SurfaceF Int) (cutoff : Int)
     (extra : String) (h0 : 0 ≤ cutoff) (h1 : cutoff ≤ length _ scope)
     (ne : mentions? form extra = false) :
     resolve_layer Int env (insert_name scope cutoff extra) form
@@ -1280,9 +1298,9 @@ theorem layer_weakens (env : Env) (scope : Snoc String) (form : SrcF Int) (cutof
     simp [mentions?, fren_spec] at ne
     simp only [resolve_layer, resolve_arms_weakens env scope cutoff extra arms h0 h1 ne]
     cases resolve_arms Int env scope arms <;> simp [shifted_form, shift_form]
-  | Let name annotation value body =>
+  | Let name value body =>
     simp only [resolve_layer]
-    cases resolve_annotation env name annotation <;> simp [shifted_form, shift_form]
+    cases resolve_annotation name <;> simp [shifted_form, shift_form]
   | _ => simp [resolve_layer, shifted_form, shift_form]
 
 /-! ## Bound items -/
@@ -1324,17 +1342,17 @@ theorem pattern_item_constructor (env : Env) (scope : Snoc String) (path : Path)
     · simp at h
   · simp at h
 
-theorem layer_constructor (env : Env) (scope : Snoc String) (form : SrcF Int)
+theorem layer_constructor (env : Env) (scope : Snoc String) (form : SurfaceF Int)
     (item : Fren.Seq String) (h : resolve_layer Int env scope form = some (.Constructor item)) :
     ∃ owner, entry env.symb item = some (.Constructor owner) := by
   cases form with
   | Name path => exact value_form_constructor env scope path item (by simpa [resolve_layer] using h)
   | Call path args => simp only [resolve_layer] at h; split at h <;> simp at h
-  | Let name annotation value body => simp only [resolve_layer] at h; split at h <;> simp at h
+  | Let name value body => simp only [resolve_layer] at h; split at h <;> simp at h
   | Match scrutinee arms => simp only [resolve_layer] at h; split at h <;> simp at h
   | _ => simp [resolve_layer] at h
 
-theorem layer_callee (env : Env) (scope : Snoc String) (form : SrcF Int)
+theorem layer_callee (env : Env) (scope : Snoc String) (form : SurfaceF Int)
     (item : Fren.Seq String) (args : Snoc Int)
     (h : resolve_layer Int env scope form = some (.Call item args)) :
     ∃ sig, entry env.symb item = some (.Function sig) := by
@@ -1352,7 +1370,7 @@ theorem layer_callee (env : Env) (scope : Snoc String) (form : SrcF Int)
       simp at h
       exact callee_item_function env scope path item (by simpa [h.1] using eq)
     · simp at h
-  | Let name annotation value body => simp only [resolve_layer] at h; split at h <;> simp at h
+  | Let name value body => simp only [resolve_layer] at h; split at h <;> simp at h
   | Match scrutinee arms => simp only [resolve_layer] at h; split at h <;> simp at h
   | _ => simp [resolve_layer] at h
 
@@ -1360,7 +1378,7 @@ end Spec.Language.NamesAndScope
 
 pub mod spec::names
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl local_binding_proof: local_binding for (scope : Snoc String) (name : String)
     (level other : Int) {
   scope := scope, name := name, level := level, other := other, holds? := true
@@ -1372,7 +1390,7 @@ impl local_binding_proof: local_binding for (scope : Snoc String) (name : String
     fun h => Spec.Language.NamesAndScope.local_nearest scope name level other h.1 h.2,
     Spec.Language.NamesAndScope.local_complete scope name other⟩
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl local_weakening_proof: local_weakening for (scope : Snoc String) (cutoff : Int)
     (extra name : String) {
   scope := scope, cutoff := cutoff, extra := extra, name := name, holds? := true
@@ -1383,7 +1401,7 @@ impl local_weakening_proof: local_weakening for (scope : Snoc String) (cutoff : 
   intro h
   exact Spec.Language.NamesAndScope.local_weakens scope cutoff extra name h.1.1 h.1.2 h.2
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl nearest_index_production: nearest_index for (scope : Snoc String) (name : String) {
   scope := scope, name := name,
   index := (FrenAstToHir.nearest (Spec.Language.NamesAndScope.nearestFirst scope) name).map Int.ofNat
@@ -1400,9 +1418,9 @@ impl same_name_production: same_name for (first second : String) {
   intro first second _
   simp [same_name.ensures, same_name.ensure.meaning, FrenAstToHir.sameName]
 
-open spec.types spec.names in
-impl parameters_parallel_proof: parameters_parallel for (env : Env) (params : Snoc Param)
-    (result : spec.names.TypeName) (sig : Sig) {
+open spec.surface spec.names in
+impl parameters_parallel_proof: parameters_parallel for (env : Env) (params : Snoc Parameter)
+    (result : spec.surface.TypeName) (sig : Sig) {
   env := env, params := params, result := result, sig := sig, holds? := true
 } by
   intro env params result sig _
@@ -1417,7 +1435,7 @@ impl parameters_parallel_proof: parameters_parallel for (env : Env) (params : Sn
     simp [← h, Spec.Language.NamesAndScope.resolve_params_length env params ctx hc]
   · simp at h
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl names_worked_examples_proof: worked_examples { holds? := true } by
   intro _
   simp only [spec.names.worked_examples.ensures, spec.names.worked_examples.ensure.output,
@@ -1425,7 +1443,7 @@ impl names_worked_examples_proof: worked_examples { holds? := true } by
   refine ⟨trivial, ?_⟩
   decide
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl names_path_examples_proof: path_examples { holds? := true } by
   intro _
   simp only [spec.names.path_examples.ensures, spec.names.path_examples.ensure.output,
@@ -1433,7 +1451,7 @@ impl names_path_examples_proof: path_examples { holds? := true } by
   refine ⟨trivial, ?_⟩
   decide
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl names_position_examples_proof: position_examples { holds? := true } by
   intro _
   simp only [spec.names.position_examples.ensures, spec.names.position_examples.ensure.output,
@@ -1441,9 +1459,9 @@ impl names_position_examples_proof: position_examples { holds? := true } by
   refine ⟨trivial, ?_⟩
   decide
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl names_table_scoping_proof: table_scoping for (env : Env) (rows : Snoc SrcRow)
-    (forms : Snoc (ExprF Int)) (position : Int) (row : SrcRow) (level : Int) {
+    (forms : Snoc (CoreF Int)) (position : Int) (row : SrcRow) (level : Int) {
   env := env, rows := rows, forms := forms, position := position, row := row, level := level,
   holds? := true
 } by
@@ -1456,9 +1474,9 @@ impl names_table_scoping_proof: table_scoping for (env : Env) (rows : Snoc SrcRo
   · intro h
     exact Spec.Language.NamesAndScope.rows_scoped env rows forms position row level h.1.1 h.1.2 h.2
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl names_rejected_proof: rejected for (parent : Fren.Seq String) (module name variant : String)
-    (first second : Snoc String) (ty : spec.names.TypeName) (body : Snoc SrcRow) {
+    (first second : Snoc String) (ty : spec.surface.TypeName) (body : Snoc SrcRow) {
   parent := parent, module := module, name := name, variant := variant, first := first,
   second := second, ty := ty, body := body, holds? := true
 } by
@@ -1471,9 +1489,9 @@ impl names_rejected_proof: rejected for (parent : Fren.Seq String) (module name 
     type_clear?, annotation_clear?, params_clear?, path_head, collect, admitted?, names_ok?, distinct?, item_names, decl_name,
     resolve_local, decl_names_ok?, decls_names_ok?, param_names, reserved?, unreserved?, fren_spec]
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl names_layer_weakening_proof: layer_weakening for (env : Env) (scope : Snoc String)
-    (form : SrcF Int) (cutoff : Int) (extra : String) {
+    (form : SurfaceF Int) (cutoff : Int) (extra : String) {
   env := env, scope := scope, form := form, cutoff := cutoff, extra := extra, holds? := true
 } by
   intro env scope form cutoff extra _
@@ -1484,8 +1502,8 @@ impl names_layer_weakening_proof: layer_weakening for (env : Env) (scope : Snoc 
   exact Spec.Language.NamesAndScope.layer_weakens env scope form cutoff extra h.1.1 h.1.2
     (Bool.eq_false_iff.mpr h.2)
 
-open spec.types spec.names in
-impl bound_items_proof: bound_items for (env : Env) (scope : Snoc String) (form : SrcF Int)
+open spec.surface spec.names in
+impl bound_items_proof: bound_items for (env : Env) (scope : Snoc String) (form : SurfaceF Int)
     (path : Path) (args : Snoc Int) (item : Fren.Seq String) {
   env := env, scope := scope, form := form, path := path, args := args, item := item,
   holds? := true
@@ -1504,13 +1522,13 @@ impl bound_items_proof: bound_items for (env : Env) (scope : Snoc String) (form 
     obtain ⟨owner, eq⟩ := Spec.Language.NamesAndScope.pattern_item_constructor env scope path item h
     simp [eq, fren_spec]
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl siblings_proof: siblings for (rows : Snoc SrcRow) (scope : Snoc String) (name : String)
-    (annotation : Option spec.names.TypeName) (op : spec.surface.BinaryOp) (first second : Int) (row : SrcRow) {
-  rows := rows, scope := scope, name := name, annotation := annotation, op := op,
+    (op : spec.surface.BinaryOp) (first second : Int) (row : SrcRow) {
+  rows := rows, scope := scope, name := name, op := op,
   first := first, second := second, row := row, holds? := true
 } by
-  intro rows scope name annotation op first second row _
+  intro rows scope name op first second row _
   simp only [siblings.ensures, siblings.ensure.output, siblings.ensure.value,
     siblings.ensure.operand]
   refine ⟨trivial, ?_, ?_⟩
@@ -1523,7 +1541,7 @@ impl siblings_proof: siblings for (rows : Snoc SrcRow) (scope : Snoc String) (na
     simp [children_scoped?, has_scope?, h.2, fren_spec] at c
     exact c.2
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl collection_well_formed_proof: collection_well_formed for (parent : Fren.Seq String)
     (name : String) (decls : Snoc SrcDecl) (symb : Snoc Entry) {
   parent := parent, name := name, decls := decls, symb := symb, holds? := true
@@ -1534,7 +1552,7 @@ impl collection_well_formed_proof: collection_well_formed for (parent : Fren.Seq
   refine ⟨trivial, ?_⟩
   exact Spec.Language.NamesAndScope.collect_ok parent name decls symb
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl collection_order_proof: collection_order for (parent : Fren.Seq String) (name : String)
     (decls : Snoc SrcDecl) (first second : SrcDecl) (left right : Snoc Entry)
     (item : Fren.Seq String) {
@@ -1547,15 +1565,14 @@ impl collection_order_proof: collection_order for (parent : Fren.Seq String) (na
   have h := Spec.Language.NamesAndScope.collect_exchange parent name decls first second
   exact ⟨trivial, h.1, fun hc => h.2 left right item hc.1 hc.2⟩
 
-open spec.types spec.names in
-impl let_handoff_proof: let_handoff for (env : Env) (name : String) (written : spec.names.TypeName)
-    (ty : Ty) (core : Option Ty) {
-  env := env, name := name, written := written, ty := ty, core := core, holds? := true
+open spec.surface spec.names in
+impl let_handoff_proof: let_handoff for (name : String) (core : Option Ty) {
+  name := name, core := core, holds? := true
 } by
-  intro env name written ty core _
+  intro name core _
   simp only [let_handoff.ensures, let_handoff.ensure.output, let_handoff.ensure.omitted,
-    let_handoff.ensure.kept, let_handoff.ensure.refused, let_handoff.ensure.reserved]
-  refine ⟨trivial, ?_, ?_, ?_, ?_⟩
+    let_handoff.ensure.reserved]
+  refine ⟨trivial, ?_, ?_⟩
   · intro h
     simp only [resolve_annotation] at h
     split at h
@@ -1564,34 +1581,15 @@ impl let_handoff_proof: let_handoff for (env : Env) (name : String) (written : s
       subst h
       simp [let_annotation?]
   · intro h
-    obtain ⟨h1, h2⟩ := h
-    simp only [resolve_annotation, h1] at h2
-    split at h2
-    · simp at h2
-    · split at h2
-      · rename_i hs
-        simp only [Option.some.injEq] at h2
-        subst h2
-        simpa [let_annotation?, suffix_rule?, fren_spec] using hs
-      · simp at h2
-  · intro h
-    simp only [decide_eq_true_eq] at h
-    obtain ⟨h1, h2⟩ := h
-    simp only [resolve_annotation, h1]
-    split
-    · rfl
-    · simp at h2
-      simp [h2]
-  · intro h
     simp only [resolve_annotation]
     split
     · simp
     · rename_i hr
       exact absurd h hr
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl parameter_handoff_proof: parameter_handoff for (env : Env) (name : String)
-    (written : spec.names.TypeName) (annotation ty : Ty) {
+    (written : spec.surface.TypeName) (annotation ty : Ty) {
   env := env, name := name, written := written, annotation := annotation, ty := ty, holds? := true
 } by
   intro env name written annotation ty _
@@ -1623,9 +1621,9 @@ impl parameter_handoff_proof: parameter_handoff for (env : Env) (name : String)
     simp at h2
     simp [h2]
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl signature_agreement_proof: signature_agreement for (parent : Fren.Seq String)
-    (name : String) (decls : Snoc SrcDecl) (symb : Snoc Entry) (written : spec.names.TypeName) {
+    (name : String) (decls : Snoc SrcDecl) (symb : Snoc Entry) (written : spec.surface.TypeName) {
   parent := parent, name := name, decls := decls, symb := symb, written := written,
   holds? := true
 } by
@@ -1639,7 +1637,7 @@ impl signature_agreement_proof: signature_agreement for (parent : Fren.Seq Strin
       | Named q => simpa [type_clear?, fren_spec] using h.2
       | _ => simp [type_clear?])
 
-open spec.types spec.names in
+open spec.surface spec.names in
 impl collection_permutation_proof: collection_permutation for (parent : Fren.Seq String)
     (name : String) (first second : Snoc SrcDecl) (left right : Snoc Entry)
     (item : Fren.Seq String) {
@@ -1655,25 +1653,6 @@ impl collection_permutation_proof: collection_permutation for (parent : Fren.Seq
       (by simpa [admitted?, names_ok?] using h.1.2) (by simpa [admitted?, names_ok?] using h.2)
   · exact (Spec.Language.NamesAndScope.collect_same parent name first second h.1.1.1 h.1.1.2).2
       left right item h.1.2 h.2
-
-pub mod spec::resolution
-
-interp resolved := fun env scope rows => (spec.names.resolve_expression env scope rows).getD default
-interp resolves? := fun env scope rows forms =>
-    decide (spec.names.resolve_expression env scope rows = some forms) by
-  intro env scope rows forms
-  simp only [spec.resolution.resolves?.function, spec.resolution.resolves?.aligned,
-    spec.resolution.resolved]
-  refine ⟨fun h => ?_, fun h => ?_⟩
-  · simp at h; simp [h]
-  · simp at h
-    cases rows with
-    | Empty => simp [spec.names.resolve_expression] at h
-    | Extend earlier root =>
-      simp only [spec.names.resolve_expression] at h
-      split at h
-      · exact Spec.Language.NamesAndScope.rows_aligned env _ forms h
-      · simp at h
 
 set_option fren.requireEvidence "trusted" in
 #fren_trace

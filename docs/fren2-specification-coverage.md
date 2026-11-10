@@ -15,11 +15,13 @@ and laws. It ends with an interface of uninterpreted functions whose
 contract states that a derivation records its type, which it therefore
 determines, and regularity, interpreted in the wrapper by the detailed
 definitions. That an expression's type is unique, whatever table types it,
-is open (`types.derivation.unique-expression`). It then defines semantic objects and their
-well-formedness, the grammar and the one-layer view `ExprF<E>`, one Fren
+is open (`types.derivation.unique-expression`). The semantic objects and their
+well-formedness, the Core's grammar and its one-layer view `CoreF<E>` are
+defined by the resolution chapter, which comes before it and produces
+them. The chapter imports them and then defines one Fren
 function per typing rule with a small figure, derivation tables and what a
 table's root unfolds to, the judgment over tables, declarations and
-programs, the metatheory, a marked surface-elaboration section and
+programs, the metatheory and
 examples. It contains no Lean code. The [style guide](../src/Spec/dev/Style.md)
 specifies the standard, of which this chapter is an example and not a
 template. Most of the reference has not yet adopted it.
@@ -27,11 +29,14 @@ template. Most of the reference has not yet adopted it.
 Evidence is Fren's own. A property the solver proves is an `expect`. A
 property proved in Lean is a procedure bound by an `impl` in the wrapper,
 and one that is open is a procedure without one; `#fren_trace` in the
-wrapper reports their levels. For this chapter it reports:
+wrapper reports their levels. For this chapter it reports the following;
+11 of the proved procedures and one trusted are its own, and the rest
+belong to the syntax and resolution chapters, which it imports:
 
 ```text
-evidence: 11 proved, 0 solver, 0 tested, 1 trusted, 0 missing
-trusted: `spec::types::expression_uniqueness`
+evidence: 30 proved, 0 solver, 5 tested, 3 trusted, 0 missing
+tested: `spec::lexical::division`, `spec::surface::accepted_trees_well_formed`, `spec::surface::extent`, `spec::surface::grammar_terminals`, `spec::surface::print_parse`
+trusted: `spec::names::naming_order`, `spec::names::table_weakening`, `spec::types::expression_uniqueness`
 ```
 
 The one `trusted` procedure is the open `types.derivation.unique-expression`,
@@ -39,8 +44,13 @@ whose claim's reason starts `open:`. Types.md, Expressions.md,
 NamesAndScope.md, LexicalStructure.md, Syntax.md, AstAndParsing.md,
 [PropertiesAndChecks.md](#definedness-and-verification-correspondence) and the THIR
 chapter are the converted chapters: their wrappers trace with `trusted` as the required
-level, so a property that loses its evidence fails `lake build --wfail`,
-and the `ruleReqs` job checks that they do. It also checks, for all of
+level, so a property that loses all its evidence fails `lake build --wfail`,
+and the `ruleReqs` job checks that they do. The build does not notice a
+check that moves from the solver to random testing: that shows only as an
+`fren.evidence` option in the chapter. `types.context.bound` keeps its
+solver check across the move of `Snoc` to the syntax chapter's module,
+because `lookup` states the bound as its postcondition
+(`names.sequence.snoc`), which resolution's module checks by induction. It also checks, for all of
 them but the THIR chapter, that every Fren item is linked by the nearest rule
 before it and every linking rule is followed by its Fren. The THIR
 chapter's correspondence theorems over production Lean types are named in
@@ -54,10 +64,10 @@ are not yet converted.
   ([generic types](../src/Reqs/Lang/Generics.md)), so a Core expression
   tree, whose call arguments and match arms are sequences of expressions,
   cannot be declared. The chapter presents expressions through their
-  one-layer view `ExprF<E>`, defines the judgment over derivation tables,
+  one-layer view `CoreF<E>`, defines the judgment over derivation tables,
   and says which expression a table's root unfolds to. A direct recursive
   form will come with nested recursive types in Fren2 (or a Fren 2.5
-  checker); `ExprF<E>` is that form's one-layer view, so the rules will not
+  checker); `CoreF<E>` is that form's one-layer view, so the rules will not
   change. The wrapper's Lean theorems are stated over tables too.
 - **Recursion is opaque to the solver past one step.** Snoc sequences are
   read by structural recursion. Properties that need induction with a
@@ -152,15 +162,15 @@ correspondence. The informative source examples' diagnostics, such as
   `types.judgment.decidability`.
 - [ ] Generate this section's evidence inventory from `#fren_trace` output
   rather than copying it.
-- [ ] Replace the per-form maps over `ExprF` (`annotate`, `weaken_layer`,
+- [ ] Replace the per-form maps over `CoreF` (`annotate`, `weaken_layer`,
   `children`, `layers_paired?` and their sequence helpers) with one generic
   traversal using Fren's second-class higher-order functions, and derive
   `infer_layer` from the rules instead of restating them.
 - [ ] State the dynamic semantics as a Fren definition and prove `types.safety`.
 - [ ] Restate the judgment over recursive expression trees once Fren
   supports nested recursive types.
-- [ ] Move the surface-elaboration section to the derived-forms chapter and
-  rename its `types.surface.*` rules.
+- [ ] Move the surface-elaboration section, which is now in the resolution
+  chapter (`names.surface.*`), to the derived-forms chapter.
 - [ ] Drop the THIR chapter's `spec::thir` primitive operator contracts,
   which duplicate `binary_type?` and production, once `core_unary` and
   `core_binary` cover their `impl` uses.
@@ -195,13 +205,13 @@ satisfaction at an assignment, validity, verdicts, and defined and
 verified programs. Satisfaction reads row values from the evaluator of the
 [expressions chapter](../src/Spec/Language/Expressions.md#evaluation).
 Its wrapper's `#fren_trace` reports the following; 13 of the proved
-procedures, the six tested and one trusted belong to the chapters it
+procedures, the five tested and three trusted belong to the chapters it
 imports, and 15 proved and one trusted are its own:
 
 ```text
-evidence: 28 proved, 0 solver, 6 tested, 2 trusted, 0 missing
-tested: `spec::lexical::division`, `spec::surface::accepted_trees_well_formed`, `spec::surface::extent`, `spec::surface::grammar_terminals`, `spec::surface::print_parse`, `spec::surface::reserved_names`
-trusted: `spec::types::expression_uniqueness`, `spec::verification::complete`
+evidence: 47 proved, 0 solver, 5 tested, 4 trusted, 0 missing
+tested: `spec::lexical::division`, `spec::surface::accepted_trees_well_formed`, `spec::surface::extent`, `spec::surface::grammar_terminals`, `spec::surface::print_parse`
+trusted: `spec::names::naming_order`, `spec::names::table_weakening`, `spec::types::expression_uniqueness`, `spec::verification::complete`
 ```
 
 | Rule | Evidence |
@@ -1180,8 +1190,14 @@ prerequisite to extend Fren's recursive specification features.
 ## Retained record: src/Spec/Language/NamesAndScope.md
 
 The chapter is converted: it defines resolution in Fren as total functions
-from source forms to the item identities, scopes of de Bruijn levels and
-symbol environment of Core typing, and its wrapper traces its evidence.
+from the syntax chapter's tree (`SurfaceF<E>`) to the Core, and its wrapper
+traces its evidence. It comes before Core typing and defines what
+resolution produces: item identities, types, contexts, the symbol
+environment and their well-formedness, snoc-sequence lookup, and the
+Core's one-layer forms `CoreF<E>`. It has no expression type of its own;
+its source table is rows of the syntax chapter's nodes. Its declarations
+(`SrcDecl`) are still its own type, with snoc sequences where the syntax
+chapter's declarations have `Seq`s.
 The wrapper proves in Lean the laws of local lookup, weakening by an
 unmentioned name, the resolved table's scoping and alignment, the item
 kinds that each resolved position names, sibling scopes, the parallel
@@ -1191,8 +1207,7 @@ nothing that collection binds, that two sequences of the same
 admitted declarations collect alike, that a clear written type, one whose first name is no function of the
 module, resolves in the environment of enumerations exactly as in the
 collected one (`names.collection.agreement`); admission makes every
-signature type clear, but not the annotation of a `let`, which resolves
-in the collected environment only, that a resolved `let` and a
+signature type clear, that a resolved `let` and a
 resolved parameter satisfy the `?` suffix rule of typing and that one
 breaking it is refused (`names.expression.layer`,
 `names.collection.parameters`), that an item shadows the module's name,
@@ -1215,8 +1230,7 @@ not by level; it may find a path's target before it knows the position,
 and reports a function used as a value or a local used as a callee when
 it forms the typed term; it collects expectations into the item namespace and resolves
 their parameter types and bodies, which the chapter's domain leaves
-out; its `let`
-has no written type, so no front end exercises the annotated `let`; and
+out; and
 it collects names only, while the chapter's `collect` also resolves
 signature types.
 
@@ -1234,6 +1248,19 @@ signature types.
 - [ ] Prove `table_weakening` (`names.expression.table-weakening`), which
   is `trusted` and open; `names.expression.weakening` proves the law for
   one layer.
+- [ ] Read declarations as the syntax chapter's `Function` and
+  `Enumeration` rather than `SrcDecl`, with an explicit conversion from
+  `Seq` to `Snoc`.
+- [ ] Decide the `let` annotation. The Fren2 parser's `let` has no written
+  type, so the syntax tree's `Let` has none and resolution gives a Core
+  `let` an annotation only for a `?` binder. Core typing's annotated `let`
+  and `names.surface.annotation` still state rules for a written
+  annotation, which no source can write.
+- [ ] Let `types.examples.rejected` drop the extra fact of its call
+  example, that one argument does not fit an empty parameter list. The
+  solver needs it since `Snoc` moved to the syntax chapter's module: Fren
+  tries no induction over an enumeration of another module (#669), and
+  the induction's deeper unfolding used to supply the step.
 - [ ] Define resolution for expectations, which the production resolver
   collects into the item namespace and resolves; the chapter's domain
   (`names.overview.domain`) leaves them out.
@@ -1621,8 +1648,10 @@ Decisions:
 - **G1.** Decided: deferred to Fren 2.5's nested types and element
   constraints, with no new features in today's Fren. Today's Fren has no
   recursive datatype whose recursion passes through a `Seq`, so the
-  abstract syntax is the one-layer `ExprF<E>`. A `Seq` whose element type
+  abstract syntax is the one-layer `SurfaceF<E>`. A `Seq` whose element type
   has a constraint is outside the decidable core, so a name is a `String`,
+  and a type with a constraint cannot be an argument of a recursive
+  enumeration, so an integer literal carries an `Int`,
   and `syntax.tree.well-formed` states the conditions on names as Fren
   functions of one node or declaration, whose subexpressions have the
   one-value type `Elided`. Two of them, over arms and parameters, are
@@ -1631,7 +1660,7 @@ Decisions:
   a generic enumeration to a definition that cannot run.
 - **G2.** The grammar's productions are EBNF, with no second statement in
   Fren: `syntax.tree.productions` binds `type_name`, and a test abstracts
-  the parser's trees to `ExprF`, checking each operator's written token
+  the parser's trees to `SurfaceF`, checking each operator's written token
   against `unary_spelling` and `binary_spelling`.
 
 `BinaryOp::Rem` names the remainder, which is written `%` (S2).

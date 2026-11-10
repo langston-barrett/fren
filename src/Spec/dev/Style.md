@@ -70,16 +70,25 @@ rule before it.
 A chapter opens with an overview: a table of its judgment forms, their
 meanings and the Fren that states them, and a short figure of the main
 relation's signature and key laws, with each law linked to the rule that
-states it. The chapter ends with the interface: uninterpreted functions
-for the main relation, over the chapter's own types, whose contracts state
-the laws that a contract can state, or expectations that the contracts
-prove. The chapter's wrapper interprets each function by its detailed
-definition (`interp`), which proves the contracts for the detailed
-definitions: the interpretation is the refinement relation. Say exactly
-what a contract law states; a derivation that records its type determines
-it, which is not uniqueness of an expression's type.
+states it.
 
-Two Fren limits shape this. A contract on a function that returns an
+A chapter whose main judgment is a relation that derivations give, such as
+typing, ends with an interface section. The section declares one function
+without a body for each part of the main relation, over the chapter's own
+types, and the functions' contracts state the laws that a contract can
+state. The chapter's wrapper gives each function its detailed definition
+as its body (`interp`), and Lean then proves each contract for that body.
+The section's prose says what each function means, what each law states,
+and which definition gives each body. Say exactly what a contract law
+states; a derivation that records its type determines it, which is not
+uniqueness of an expression's type.
+
+A chapter whose main judgment is a function that the chapter defines, such
+as resolution, has no interface section: the overview names the function,
+and the function's own definition is what later chapters use. That it is
+deterministic needs no law.
+
+Two Fren limits shape an interface. A contract on a function that returns an
 abstract or recursive value, such as a `weaken` that returns a derivation,
 has a realizability check outside the decidable core, so such a law links
 to the property that states it. And the interface uses the chapter's
@@ -113,7 +122,7 @@ Fren identifiers and figures use one set of abbreviations:
 | `rows` | a derivation table, as a Fren value | |
 | `deriv`, `Derivation` | a derivation, in an abstract interface | d |
 | `form`, `Form` | a layer whose children are row positions | |
-| layer | one form `ExprF<E>` with its children | l |
+| layer | one form `CoreF<E>` with its children | l |
 | `ok?` suffix | a well-formedness check | `⊢ … ok` |
 
 ## Semantic objects
@@ -133,9 +142,9 @@ enumeration, and every constructor's owner lists it.
 
 ## One-layer relations
 
-Give a recursive position as a type parameter, for example `ExprF<E>`, with
+Give a recursive position as a type parameter, for example `CoreF<E>`, with
 arguments and match arms as `Snoc<E>` and `Snoc<ArmF<E>>`, and present the
-rules over this one-layer view. Where `ExprF<E>` is introduced, say in one
+rules over this one-layer view. Where `CoreF<E>` is introduced, say in one
 sentence what makes the encoding possible and what the one form type is
 for; record the limit of Fren behind it, and the feature that would remove
 it, in the development coverage document. The Core syntax is shared with
@@ -144,7 +153,7 @@ a let carries its written type annotation. Concrete syntax such as
 parentheses, and spelling such as a `?` suffix, has no Core form; it
 belongs to the Syntax or derived-forms chapter.
 
-The one-layer rule takes `ExprF<Typing>`: each child position holds the
+The one-layer rule takes `CoreF<Typing>`: each child position holds the
 child's typing, with its exact context and type. Each typing rule is its own
 Fren function under its paragraph, and the one-layer rule only dispatches
 on the form. Compute deciding facts from forms, signatures and contexts. A

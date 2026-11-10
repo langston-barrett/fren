@@ -7,10 +7,10 @@ program no meaning: names are resolved, types checked and checks verified
 by later rules. `y + 1` is a syntactically valid body even where no `y` is
 in scope, and `l + 1` is valid even where `l` is not an integer.
 
-The abstract syntax keeps a program's names as written paths. The
-[Core](Types.md) is the resolved form, with items by identity and locals by
-index; name resolution and the derived forms relate the two. The lossless
-tree, which also keeps parentheses, trivia and every token, is the subject
+The abstract syntax keeps a program's names as written paths.
+[Resolution](NamesAndScope.md) takes this tree and gives the Core, the
+resolved form with items by identity and locals by index, which
+[Core typing](Types.md) types. The lossless tree, which also keeps parentheses, trivia and every token, is the subject
 of [AST and parsing](../Compiler/AstAndParsing.md).
 
 ## Notation
@@ -70,22 +70,16 @@ QualifiedPath ::= Identifier ("::" Identifier)+
 Type          ::= Path
 ```
 
-r[syntax.name.reserved] spec::surface::reserved_names
+r[syntax.name.reserved]
 `Bool` and `Int` are reserved names: no module, enumeration, variant,
 function, global expectation, parameter or member label is named `Bool` or
 `Int`, and no `let` binds either name. They are identifiers, so the
-grammar accepts such a name, and name resolution rejects it; [names and
-scope](NamesAndScope.md) enforces this rule.
-
-```fren
-pub mod spec::surface
-
-use spec::lexical
-
-pub proc reserved_names(): (holds?) { ensure output: holds? }
-
-tested reserved_names: "src/FrenTest/SpecChapters/Syntax.lean"
-```
+grammar accepts such a name, and resolution rejects it.
+[`reserved?`](NamesAndScope.md#r-names.paths.reserved) defines the reserved
+names, and [Resolution](NamesAndScope.md) states where it rejects one: in
+[collection](NamesAndScope.md#r-names.collection.reserved), for a
+declaration's names and a function's parameters, and in the
+[`let` layer](NamesAndScope.md#r-names.expression.layer), for a binder.
 
 > **Rationale:** A type written `Bool` or `Int` always denotes the built-in
 > type, so a declaration of that name could never be referred to as a
@@ -218,6 +212,10 @@ reads only at the start of a member and which is otherwise an identifier.
 `Bool` and `Int` are identifiers, which only the tree of a type interprets.
 
 ```fren
+pub mod spec::surface
+
+use spec::lexical
+
 pub const GRAMMAR_KEYWORDS: Set<String> := {
     "mod",
     "pub",
@@ -329,25 +327,42 @@ f(x) + g(y, z) * 2 -- f(x) + (g(y, z) * 2)
 Each accepted text has one abstract syntax tree, which keeps what the text
 means and drops how it is written.
 
-r[syntax.tree.types] spec::surface::{Path, UnaryOp, BinaryOp, ExprF, Arm, TypeName, Parameter, MemberKind, Member, ModuleDeclaration, EnumDeclaration, FunctionDeclaration, ExpectationDeclaration, DeclarationF}
-An expression tree is a fixed point of `ExprF`: `ExprF<E>` is one node,
-whose subexpressions are of type `E`. A file's tree is the sequence of its
+r[syntax.tree.types] spec::surface::{Snoc, Path, UnaryOp, BinaryOp, SurfaceF, SurfaceArm, TypeName, Parameter, MemberKind, Member, ModuleDeclaration, EnumDeclaration, FunctionDeclaration, ExpectationDeclaration, DeclarationF}
+An expression tree is a fixed point of `SurfaceF`: `SurfaceF<E>` is one
+node of the surface tree, whose subexpressions are of type `E`. A path is
+a name, or a path and one more name: `a::b::c` is
+`Member(Member(Name("a"), "b"), "c")`. A call's arguments and a match's
+arms are *snoc sequences* in written order: a snoc sequence is empty, or
+an earlier one extended by one last entry. This is the one definition of
+the parsed tree: [Resolution](NamesAndScope.md) resolves these nodes and
+gives the Core's, `CoreF`. A file's tree is the sequence of its
 declarations' trees, each a `DeclarationF` whose expressions are expression
 trees. The trees keep names as written paths and have no parentheses. The
 types admit more than the trees of texts: `syntax.tree.well-formed` says
 which of their values are well formed.
 
-> **Note:** `ExprF` takes its subexpressions as a parameter, rather than
-> being a recursive enumeration, because a call's arguments and a match's
-> arms are sequences of subexpressions, and today's Fren has no recursive
-> datatype whose recursion passes through a `Seq`. A name is a `String`,
+> **Note:** An `Integer` node carries an `Int`, though a numeral's value is
+> never negative, because resolution holds nodes in snoc sequences, and
+> today's Fren admits no constrained type, such as `Nat`, inside a
+> recursive enumeration's argument. `syntax.tree.well-formed` states the
+> bound.
+
+> **Note:** `SurfaceF` takes its subexpressions as a parameter, rather
+> than being a recursive enumeration, because a call's arguments and a
+> match's arms are sequences of subexpressions, and today's Fren has no
+> recursive datatype whose recursion passes through a sequence. A path, the
+> arguments and the arms are recursive enumerations rather than `Seq`s
+> because a Fren function recurs only over a recursive enumeration, and
+> resolution walks all three. A declaration's variants, parameters and
+> members, which this chapter only quantifies over, are `Seq`s. A name is
+> a `String`,
 > not a type of identifiers, because most names are in sequences, and a
 > `Seq` whose element type has a constraint is outside Fren's decidable
 > core. A quantifier over a sequence's elements is inside it, unless it
-> passes an element that itself holds a sequence, an arm or a parameter,
-> to a function. `syntax.tree.well-formed` states every condition on names
-> with such quantifiers, and the two over arms and parameters are
-> definitions outside the decidable core. This is decision G1 in the
+> passes an element that itself holds a sequence, such as a parameter,
+> to a function. `syntax.tree.well-formed` states every condition on a
+> declaration's names with such quantifiers, and the one over parameters
+> is a definition outside the decidable core. This is decision G1 in the
 > [development coverage](../../../docs/fren2-specification-coverage.md#syntax-decisions-and-design-debt).
 
 ```fren
@@ -355,23 +370,26 @@ pub enum UnaryOp { Neg, Not }
 
 pub enum BinaryOp { Add, Sub, Mul, Div, Rem, Eq, Ne, Lt, Le, Gt, Ge, And, Or, Iff }
 
--- A path, as its identifiers in order.
-pub type Path := Seq<String>
+-- A snoc sequence: empty, or an earlier one and its last entry.
+pub enum Snoc<T> { Empty, Extend(Snoc<T>, T) }
 
--- A match arm: a variant's path and a body.
-pub struct Arm<E> { variant: Path, body: E }
+-- A path: its first identifier, or a path and its last identifier.
+pub enum Path { Name(String), Member(Path, String) }
 
--- One expression node, with subexpressions of type `E`.
-pub enum ExprF<E> {
+-- A match arm of the surface tree: a variant's path and a body.
+pub struct SurfaceArm<E> { variant: Path, body: E }
+
+-- One node of the surface tree, with subexpressions of type `E`.
+pub enum SurfaceF<E> {
     Boolean(Bool),
-    Integer(Nat),
+    Integer(Int),
     Name(Path),
-    Call(Path, Seq<E>),
+    Call(Path, Snoc<E>),
     Unary(UnaryOp, E),
     Binary(BinaryOp, E, E),
     If(E, E, E),
     Let(String, E, E),
-    Match(E, Seq<Arm<E>>),
+    Match(E, Snoc<SurfaceArm<E>>),
 }
 
 pub enum TypeName { Boolean, Integer, Named(Path) }
@@ -408,8 +426,8 @@ pub enum DeclarationF<E> {
 r[syntax.tree.productions] spec::surface::type_name
 Each production gives its tree. `true` and `false` are `Boolean` nodes, and
 a numeral an `Integer` node with its value. A `Path` is a `Name` node of its
-identifiers, and a call a `Call` node of the path and the arguments' trees,
-in order. `( e )` is the tree of `e`. A prefix operator and its operand are a
+path, and a call a `Call` node of the path and the arguments' trees, in
+order. `( e )` is the tree of `e`. A prefix operator and its operand are a
 `Unary` node; a binary operator and its operands are a `Binary` node, and a
 repetition such as `a - b - c` gives the nodes `(a - b) - c`, from the left.
 `if`, `let` and `match` give `If`, `Let` and `Match` nodes of their parts. A
@@ -420,16 +438,16 @@ its parts, with `public?` true when it is written with `pub`.
 ```fren
 -- The tree of a type written as `path`.
 pub fn type_name(path: Path): TypeName :=
-    if path = ["Bool"] then TypeName::Boolean
-    else if path = ["Int"] then TypeName::Integer
+    if path = Path::Name("Bool") then TypeName::Boolean
+    else if path = Path::Name("Int") then TypeName::Integer
     else TypeName::Named(path)
 ```
 
-r[syntax.tree.well-formed] spec::surface::{identifier?, path?, Elided, arm_well_formed?, node_well_formed?, type_well_formed?, parameter_well_formed?, parameters_well_formed?, declaration_well_formed?}
+r[syntax.tree.well-formed] spec::surface::{identifier?, path?, qualified?, Elided, arm_well_formed?, arms_well_formed?, node_well_formed?, type_well_formed?, parameter_well_formed?, parameters_well_formed?, declaration_well_formed?}
 A tree is *well formed* when each of its nodes, types, parameters and
 declarations is. An identifier is a word that is not a keyword, and a path
-one or more identifiers. An expression node is well formed when its path
-is a path, a call has at least one argument, a `let` binds an identifier,
+is a path when each of its names is an identifier. An expression node is well formed when its integer
+is not negative, its path is a path, a call has at least one argument, a `let` binds an identifier,
 and each arm's path has at least two segments. A named type is well formed
 when its path is a path other than `Bool` and `Int` alone, which
 `type_name` never names. A parameter is well formed when its name is an
@@ -445,21 +463,31 @@ subexpressions, which the functions take as `Elided`.
 pub fn identifier?(word: String) :=
     lexical::in_class?(lexical::Class::Word, word) and not word in lexical::KEYWORDS
 
--- Whether `path` is one or more identifiers.
-pub fn path?(path: Path) :=
-    path != [] and (forall (segment: String), when segment in path, identifier?(segment))
+-- Whether each name of `path` is an identifier.
+pub fn path?(path: Path) := match path {
+    Path::Name(name) => identifier?(name),
+    Path::Member(qualifier, name) => path?(qualifier) and identifier?(name),
+}
+
+-- Whether `path` has at least two segments.
+pub fn qualified?(path: Path) := path is Path::Member(_, _)
 
 -- A subexpression that is left out.
 pub enum Elided { Elided }
 
-pub fn arm_well_formed?(arm: Arm<Elided>) := path?(arm.variant) and arm.variant.len >= 2
+pub fn arm_well_formed?(arm: SurfaceArm<Elided>) := path?(arm.variant) and qualified?(arm.variant)
 
-set_option fren.lint.undecidable "allow" in  -- an element that holds a sequence is the argument of a function
-pub fn node_well_formed?(node: ExprF<Elided>) := match node {
-    ExprF::Name(path) => path?(path),
-    ExprF::Call(path, arguments) => path?(path) and arguments != [],
-    ExprF::Let(binder, _, _) => identifier?(binder),
-    ExprF::Match(_, arms) => (forall (arm: Arm<Elided>), when arm in arms, arm_well_formed?(arm)),
+pub fn arms_well_formed?(arms: Snoc<SurfaceArm<Elided>>) := match arms {
+    Snoc::Empty => true,
+    Snoc::Extend(earlier, arm) => arms_well_formed?(earlier) and arm_well_formed?(arm),
+}
+
+pub fn node_well_formed?(node: SurfaceF<Elided>) := match node {
+    SurfaceF::Integer(value) => value >= 0,
+    SurfaceF::Name(path) => path?(path),
+    SurfaceF::Call(path, arguments) => path?(path) and arguments != Snoc::Empty,
+    SurfaceF::Let(binder, _, _) => identifier?(binder),
+    SurfaceF::Match(_, arms) => arms_well_formed?(arms),
     _ => true,
 }
 
@@ -524,7 +552,8 @@ pub fn binary_spelling(op: BinaryOp): String := match op {
 ### Examples
 
 Each line gives a text and, after `--`, its tree, written with the names of
-`ExprF` and `DeclarationF`; a path is written with its `::`.
+`SurfaceF` and `DeclarationF`; a path is written with its `::`, an arm as
+`Arm`, and the entries of a snoc sequence one after another.
 
 ```fren2 trees
 -1 -- (Unary Neg (Integer 1))
@@ -695,31 +724,31 @@ pub fn fits?(child: Shape, place: Place) :=
 pub fn placed(category: Category, left_operand?): Place := Place { category, left_operand? }
 
 -- The place of the subexpression `k` of `node`, counting from 0 in the
--- order of `ExprF`: a call's arguments and a match's arms follow one
+-- order of `SurfaceF`: a call's arguments and a match's arms follow one
 -- another.
-pub fn place<E>(node: ExprF<E>, k: Int): Place := match node {
-    ExprF::Unary(op, _) => placed(unary_category(op), false),
-    ExprF::Binary(op, _, _) =>
+pub fn place<E>(node: SurfaceF<E>, k: Int): Place := match node {
+    SurfaceF::Unary(op, _) => placed(unary_category(op), false),
+    SurfaceF::Binary(op, _, _) =>
         if k = 0 then placed(left_category(op), true) else placed(right_category(op), false),
-    ExprF::Let(_, _, _) => placed(if k = 0 then Category::Iff else Category::Expression, false),
-    ExprF::Match(_, _) => placed(if k = 0 then Category::Primary else Category::Iff, false),
+    SurfaceF::Let(_, _, _) => placed(if k = 0 then Category::Iff else Category::Expression, false),
+    SurfaceF::Match(_, _) => placed(if k = 0 then Category::Primary else Category::Iff, false),
     _ => placed(Category::Expression, false),
 }
 
 pub fn shaped(category: Category, open?): Shape := Shape { category, open? }
 
 -- The shape of `node`, given the shapes of its subexpressions.
-pub fn shape(node: ExprF<Shape>): Shape := match node {
-    ExprF::Unary(op, operand) => shaped(
+pub fn shape(node: SurfaceF<Shape>): Shape := match node {
+    SurfaceF::Unary(op, operand) => shaped(
         unary_category(op),
         operand.open? and fits?(operand, place(node, 0))
     ),
-    ExprF::Binary(op, _, right) => shaped(
+    SurfaceF::Binary(op, _, right) => shaped(
         binary_category(op),
         right.open? and fits?(right, place(node, 1))
     ),
-    ExprF::If(_, _, _) => shaped(Category::Primary, true),
-    ExprF::Let(_, _, _) => shaped(Category::Expression, true),
+    SurfaceF::If(_, _, _) => shaped(Category::Primary, true),
+    SurfaceF::Let(_, _, _) => shaped(Category::Expression, true),
     _ => shaped(Category::Primary, false),
 }
 

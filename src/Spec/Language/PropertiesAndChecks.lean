@@ -12,7 +12,8 @@ set_option warningAsError true in
 
 namespace Spec.Language.Verification
 
-open spec.surface (BinaryOp UnaryOp)
+open spec.surface (BinaryOp UnaryOp Snoc)
+open spec.names hiding collect
 open spec.types spec.expressions spec.verification
 
 /-- Collecting a condition's obligations preserves its meaning in every assignment. -/
@@ -60,7 +61,7 @@ theorem weaken_length (rows : Snoc Row) (cutoff : Int) (extra : Ty) :
   | Extend earlier row ih => simp [weaken, length, ih]
 
 /-- Shifting a local changes no condition: generation never reads a local. -/
-theorem generate_shift (prior : Snoc Condition) (pos : Int) (form : ExprF Int) (cutoff : Int) :
+theorem generate_shift (prior : Snoc Condition) (pos : Int) (form : CoreF Int) (cutoff : Int) :
     generate prior pos (shift_form form cutoff) = generate prior pos form := by
   cases form <;> simp [generate]
 
@@ -85,7 +86,8 @@ end Spec.Language.Verification
 
 pub mod spec::verification
 
-open spec.surface (BinaryOp UnaryOp)
+open spec.surface (BinaryOp UnaryOp Snoc)
+open spec.names hiding collect
 open spec.types spec.expressions spec.verification in
 impl flattening_proof: flattening for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (condition : Condition) (hyps : Snoc Fact) (found : Snoc Obligation) {
@@ -98,7 +100,8 @@ impl flattening_proof: flattening for (prog : Snoc Declared) (rows : Snoc Row) (
   rw [Spec.Language.Verification.collect_exact prog rows env condition hyps found]
   simp [fren_spec]
 
-open spec.surface (BinaryOp UnaryOp)
+open spec.surface (BinaryOp UnaryOp Snoc)
+open spec.names hiding collect
 open spec.types spec.verification in
 impl context_weakening_proof: context_weakening for (rows : Snoc Row) (cutoff : Int) (extra : Ty) {
   rows := rows, cutoff := cutoff, extra := extra, holds? := true
@@ -109,7 +112,8 @@ impl context_weakening_proof: context_weakening for (rows : Snoc Row) (cutoff : 
   refine ⟨trivial, ?_⟩
   simp [Spec.Language.Verification.conditions_weaken rows cutoff extra]
 
-open spec.surface (BinaryOp UnaryOp)
+open spec.surface (BinaryOp UnaryOp Snoc)
+open spec.names hiding collect
 open spec.types spec.expressions spec.verification in
 impl strictness_proof: strictness for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (op : BinaryOp) (left right : Condition) (row : Int) {
@@ -123,7 +127,8 @@ impl strictness_proof: strictness for (prog : Snoc Declared) (rows : Snoc Row) (
   cases op <;> simp [fren_spec, operator_condition, partial?, condition_holds?] <;>
     grind
 
-open spec.surface (BinaryOp UnaryOp)
+open spec.surface (BinaryOp UnaryOp Snoc)
+open spec.names hiding collect
 open spec.types spec.expressions spec.verification in
 impl guards_proof: guards for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (condition : Condition) (guard : Int) (yes no : Condition) {
@@ -136,7 +141,8 @@ impl guards_proof: guards for (prog : Snoc Declared) (rows : Snoc Row) (env : Sn
   refine ⟨trivial, ?_⟩
   simp [fren_spec, condition_holds?] <;> grind
 
-open spec.surface (BinaryOp UnaryOp)
+open spec.surface (BinaryOp UnaryOp Snoc)
+open spec.names hiding collect
 open spec.types spec.expressions spec.verification in
 impl divisor_proof: divisor for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (op : BinaryOp) (row : Int) (d : Int) {
@@ -147,7 +153,8 @@ impl divisor_proof: divisor for (prog : Snoc Declared) (rows : Snoc Row) (env : 
   refine ⟨trivial, ?_⟩
   cases op <;> simp [fren_spec, goal_holds?, integer_domain?, partial?] <;> grind
 
-open spec.surface (BinaryOp UnaryOp)
+open spec.surface (BinaryOp UnaryOp Snoc)
+open spec.names hiding collect
 open spec.types spec.expressions spec.verification in
 impl hypotheses_proof: hypotheses for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (hyps : Snoc Fact) (fact : Fact) (goal : Goal) (row : Int) {
@@ -162,7 +169,8 @@ impl hypotheses_proof: hypotheses for (prog : Snoc Declared) (rows : Snoc Row) (
   · simp [satisfied?, some_refuted?, fren_spec] <;> grind
   · simp [fact_refuted?, fren_spec] <;> grind
 
-open spec.surface (BinaryOp UnaryOp)
+open spec.surface (BinaryOp UnaryOp Snoc)
+open spec.names hiding collect
 open spec.types spec.expressions spec.verification in
 impl cut_proof: cut for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Value)
     (hyps : Snoc Fact) (root : Int) (goal : Goal) {
@@ -173,7 +181,8 @@ impl cut_proof: cut for (prog : Snoc Declared) (rows : Snoc Row) (env : Snoc Val
   refine ⟨trivial, ?_⟩
   simp [satisfied?, some_refuted?, fact_refuted?, goal_holds?, fren_spec] <;> grind
 
-open spec.surface (BinaryOp UnaryOp)
+open spec.surface (BinaryOp UnaryOp Snoc)
+open spec.names hiding collect
 open spec.types spec.expressions spec.verification in
 impl member_scope_proof: member_scope for (rows : Snoc Row) (env : Snoc Value)
     (members : Snoc Member) (member other : Member) (keyword : Keyword) {
@@ -198,10 +207,10 @@ impl member_scope_proof: member_scope for (rows : Snoc Row) (env : Snoc Value)
 open spec.verification in
 impl verification_examples_proof: worked_examples { holds? := true } by
   intro _
-  simp only [worked_examples.ensures, worked_examples.ensure.output, worked_examples.ensure.guarded,
-    worked_examples.ensure.conjunction, worked_examples.ensure.unused, worked_examples.ensure.bound,
-    worked_examples.ensure.shared, worked_examples.ensure.call, worked_examples.ensure.negation,
-    worked_examples.ensure.matched]
+  simp only [spec.verification.worked_examples.ensures, spec.verification.worked_examples.ensure.output, spec.verification.worked_examples.ensure.guarded,
+    spec.verification.worked_examples.ensure.conjunction, spec.verification.worked_examples.ensure.unused, spec.verification.worked_examples.ensure.bound,
+    spec.verification.worked_examples.ensure.shared, spec.verification.worked_examples.ensure.call, spec.verification.worked_examples.ensure.negation,
+    spec.verification.worked_examples.ensure.matched]
   decide
 
 open spec.verification in
@@ -242,7 +251,8 @@ impl tables_proof: tables { holds? := true } by
     tables.ensure.unmoved]
   decide
 
-open spec.surface (BinaryOp UnaryOp)
+open spec.surface (BinaryOp UnaryOp Snoc)
+open spec.names hiding collect
 open spec.types spec.expressions spec.verification in
 impl represented_proof: represented for (symb : Snoc Entry) (decls : Snoc Decl)
     (prog : Snoc Declared) (item : Fren.Seq String) (body : Snoc Row) {

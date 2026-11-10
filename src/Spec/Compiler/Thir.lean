@@ -470,31 +470,31 @@ private def nested := FrenBase.ItemId.named (FrenBase.ItemId.named .root "bad") 
 /-! ## Correspondence with Core typing -/
 
 /-- Production contexts list the Core's entries nearest first. -/
-def nearest {α : Type} : spec.types.Snoc α → List α
+def nearest {α : Type} : spec.surface.Snoc α → List α
   | .Empty => []
   | .Extend earlier x => x :: nearest earlier
 
 /-- The level-to-index refinement: the Core entry at level `level` is the
 production entry at nearest-first index `|xs| - 1 - level`. -/
-theorem lookup_nearest {α : Type} [Inhabited α] (xs : spec.types.Snoc α) (level : Nat)
-    (bound : level < spec.types.length _ xs) :
-    spec.types.lookup _ xs level =
-      FrenBase.Binding.lookup (nearest xs) (spec.types.length _ xs - 1 - level) := by
+theorem lookup_nearest {α : Type} [Inhabited α] (xs : spec.surface.Snoc α) (level : Nat)
+    (bound : level < spec.names.length _ xs) :
+    spec.names.lookup _ xs level =
+      FrenBase.Binding.lookup (nearest xs) (spec.names.length _ xs - 1 - level) := by
   induction xs with
-  | Empty => simp [spec.types.length] at bound
+  | Empty => simp [spec.names.length] at bound
   | Extend earlier x ih =>
-    simp only [spec.types.length] at bound ⊢
-    simp only [spec.types.lookup, nearest]
-    by_cases h : level = spec.types.length _ earlier
+    simp only [spec.names.length] at bound ⊢
+    simp only [spec.names.lookup, nearest]
+    by_cases h : level = spec.names.length _ earlier
     · subst h; simp
-    · have lt : level < spec.types.length _ earlier := by omega
-      have eq : spec.types.length _ earlier + 1 - 1 - level =
-          (spec.types.length _ earlier - 1 - level) + 1 := by omega
+    · have lt : level < spec.names.length _ earlier := by omega
+      have eq : spec.names.length _ earlier + 1 - 1 - level =
+          (spec.names.length _ earlier - 1 - level) + 1 := by omega
       simp only [Int.natCast_inj, h, if_false, eq, FrenBase.Binding.lookup_older]
       exact ih lt
 
 /-- The Core's types as the generic production type carrier. -/
-def coreType : spec.types.Ty → FrenExpr.ValueType (Fren.Seq String)
+def coreType : spec.names.Ty → FrenExpr.ValueType (Fren.Seq String)
   | .Boolean => .bool
   | .Integer => .int
   | .Nominal owner => .enum owner
@@ -508,7 +508,7 @@ def coreBinary : spec.surface.BinaryOp → FrenAst.BinaryOp
   | .And => .and | .Or => .or | .Iff => .iff | .Eq => .eq | .Ne => .ne
 
 /-- The Core unary rule agrees with the actual generic primitive. -/
-theorem core_unary (op : spec.surface.UnaryOp) (operand result : spec.types.Ty) :
+theorem core_unary (op : spec.surface.UnaryOp) (operand result : spec.names.Ty) :
     @FrenExpr.unary (Fren.Seq String) ⟨fun x y => decide (x = y)⟩
       (coreUnary op) (coreType operand) = some (coreType result) ↔
         spec.types.unary_type? op operand result := by
@@ -517,7 +517,7 @@ theorem core_unary (op : spec.surface.UnaryOp) (operand result : spec.types.Ty) 
       FrenExpr.ValueType.compatible, fren_spec]
 
 /-- Every operator and nominal identity is covered; there is no bounded enum domain. -/
-theorem core_binary (op : spec.surface.BinaryOp) (left right result : spec.types.Ty) :
+theorem core_binary (op : spec.surface.BinaryOp) (left right result : spec.names.Ty) :
     @FrenExpr.binary (Fren.Seq String) ⟨fun x y => decide (x = y)⟩
       (coreBinary op) (coreType left) (coreType right) = some (coreType result) ↔
         spec.types.binary_type? op left right result := by

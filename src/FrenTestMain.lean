@@ -841,11 +841,11 @@ def guardRuleChapter (md text gap : String) : Array String :=
 /-- The chapters whose Fren follows the rule that it serves
 (`Spec/dev/Style#statements-and-their-fren`). -/
 def ruleAdjacentChapters : Array String :=
-  #["src/Spec/Language/Types.md", "src/Spec/Language/Expressions.md",
-    "src/Spec/Language/LexicalStructure.md", "src/Spec/Language/Syntax.md",
+  #["src/Spec/Language/LexicalStructure.md", "src/Spec/Language/Syntax.md",
+    "src/Spec/Language/NamesAndScope.md", "src/Spec/Language/Types.md",
+    "src/Spec/Language/Expressions.md",
     "src/Spec/Compiler/AstAndParsing.md",
-    "src/Spec/Language/PropertiesAndChecks.md",
-    "src/Spec/Language/NamesAndScope.md"]
+    "src/Spec/Language/PropertiesAndChecks.md"]
 
 /-- The chapters whose properties carry Fren's own evidence
 (`Spec/dev/Style#properties-and-evidence`): the list grows as chapters are

@@ -4,14 +4,17 @@ Source programs are defined by translation into the Core, a small typed
 language; the [THIR chapter](../Compiler/Thir.md) relates it to the
 compiler's typed representation. Static semantics comprises resolution,
 typing, and verification, including definedness. This chapter defines
-typing; [resolution](NamesAndScope.md) supplies identities, and
+typing; [resolution](NamesAndScope.md), the chapter before this one,
+defines the Core's expressions and the semantic objects that this chapter
+types them with, and supplies identities, and
 [Definedness and verification](PropertiesAndChecks.md) defines the
 obligations that verification proves. Dynamic semantics applies only to
 well-typed, verified programs. Typing alone establishes neither definedness nor logical truth.
 
 ## Overview
 
-The chapter's judgments, and the Fren definitions that state them:
+The chapter's judgments, and the Fren definitions that state them; the
+first three are [defined by resolution](NamesAndScope.md#r-names.symbols.types-ok):
 
 | Judgment | Meaning | Fren |
 | --- | --- | --- |
@@ -54,60 +57,54 @@ open, [decidability of the judgment](#r-types.judgment.decidability).
 
 ## Semantic objects
 
-r[types.object.identity] spec::types::{ItemId, Ty}
-An *item identity* is the canonical sequence of enclosing module and item
-names supplied by resolution. Value types are `Bool`, the mathematical
-integers `Int`, and nominal enumeration types `Nominal(a)`; in Fren their
-constructors are `Ty::Boolean`, `Ty::Integer` and `Ty::Nominal`. Types are
-compared by equality, including every component of a nominal identity.
+r[types.object.resolution]
+The semantic objects of typing are those that
+[resolution](NamesAndScope.md#semantic-objects) defines, and this chapter
+imports them: item identities and types
+([`ItemId`, `Ty`](NamesAndScope.md#r-names.object.identity)), snoc sequences
+with their lengths and lookups
+([`Snoc`, `length`, `lookup`](NamesAndScope.md#r-names.sequence.snoc)),
+contexts ([`Ctx`](NamesAndScope.md#r-names.context.slots)) and symbol
+environments ([`Symb`](NamesAndScope.md#r-names.symbols.environment)) with
+their well-formedness judgments
+([`ty_ok?`, `ctx_ok?`](NamesAndScope.md#r-names.symbols.types-ok) and
+[`symb_ok?`](NamesAndScope.md#r-names.symbols.well-formed)).
 
 ```fren
 pub mod spec
 pub mod spec::types
 
-pub type ItemId := Seq<String>
-pub enum Ty { Boolean, Integer, Nominal(ItemId) }
-```
-
-r[types.sequence.snoc] spec::types::{Snoc, length, lookup}
-A *snoc sequence* is either empty, written `·`, or an earlier snoc sequence
-extended by one newest entry x, written `xs, x`. Its length `|xs|` counts
-its entries. The *level* of an entry is the number of entries before it, so
-the oldest entry has level 0 and the newest has level `|xs| - 1`. `xs(i)`
-is the entry at level i, defined exactly when `0 ≤ i < |xs|`.
-
-```fren
-pub enum Snoc<T> { Empty, Extend(Snoc<T>, T) }
-
-use self::Snoc::{Empty, Extend}
-
-pub fn length<T>(xs: Snoc<T>): Nat := match xs {
-    Empty => 0,
-    Extend(earlier, _) => length(earlier) + 1,
+use spec::names::{
+    ArmF,
+    CoreF,
+    Ctx,
+    Entry,
+    Form,
+    ItemId,
+    ItemKind,
+    LIGHT,
+    LIGHT_GREEN,
+    LIGHT_RED,
+    Sig,
+    Symb,
+    Ty,
+    ctx_ok?,
+    entry,
+    four,
+    length,
+    lookup,
+    one,
+    shift,
+    shift_form,
+    symb_ok?,
+    three,
+    two,
+    ty_ok?,
 }
 
-pub fn lookup<T>(xs: Snoc<T>, level: Int): Option<T> := match xs {
-    Empty => None,
-    Extend(earlier, x) => if level = length(earlier) then Some(x) else lookup(earlier, level),
-}
-```
+use spec::surface::{BinaryOp, Snoc, UnaryOp}
 
-r[types.sequence.builders] spec::types::{one, two, three, four}
-`one` to `four` build snoc sequences of one to four entries, oldest first.
-
-```fren
-pub fn one<T>(a: T): Snoc<T> := Extend(Empty, a)
-pub fn two<T>(a: T, b: T): Snoc<T> := Extend(one(a), b)
-pub fn three<T>(a: T, b: T, c: T): Snoc<T> := Extend(two(a, b), c)
-pub fn four<T>(a: T, b: T, c: T, d: T): Snoc<T> := Extend(three(a, b, c), d)
-```
-
-r[types.context.slots] spec::types::Ctx
-A *context* Γ is a snoc sequence of value types. Extending Γ by τ produces
-`Γ, τ`, whose new entry has level `|Γ|`. A local refers to its entry by level.
-
-```fren
-pub type Ctx := Snoc<Ty>
+use spec::surface::Snoc::{Empty, Extend}
 ```
 
 r[types.context.bound] spec::types::lookup_bound::below
@@ -131,114 +128,6 @@ expect lookup_weakening(ctx: Ctx, extra: Ty, level: Int) {
 }
 ```
 
-r[types.symbols.environment] spec::types::{Sig, ItemKind, Entry, Symb, entry}
-A *symbol environment* Σ binds item identities to entries. An entry is a
-function signature, a constructor's owning enumeration, or an enumeration
-with its constructors. A signature has the parameter types as a context, in
-written order, and a result type. `Σ(x)` is the newest entry bound to x.
-The environment is shared by every body of a program.
-
-```fren
-pub struct Sig { params: Ctx, result: Ty }
-pub enum ItemKind { Function(Sig), Constructor(ItemId), Enumeration(Snoc<ItemId>) }
-pub struct Entry { item: ItemId, kind: ItemKind }
-pub type Symb := Snoc<Entry>
-
-pub fn entry(symb: Symb, item: ItemId): Option<ItemKind> := match symb {
-    Empty => None,
-    Extend(earlier, binding) =>
-        if binding.item = item then Some(binding.kind) else entry(earlier, item),
-}
-```
-
-r[types.symbols.types-ok] spec::types::{ty_ok?, ctx_ok?}
-A type is *well formed* in Σ when it is `Bool`, `Int`, or `Nominal(a)` with
-`Σ(a)` an enumeration; a context is well formed when each of its types is.
-
-```text
-                                  Σ(a) = enumeration
-  Σ ⊢ Bool ok     Σ ⊢ Int ok      ──────────────────
-                                  Σ ⊢ Nominal(a) ok
-
-                  Σ ⊢ Γ ok   Σ ⊢ τ ok
-  Σ ⊢ · ok        ───────────────────
-                  Σ ⊢ Γ, τ ok
-```
-
-```fren
-pub fn ty_ok?(symb: Symb, ty: Ty) := match ty {
-    Ty::Nominal(owner) => entry(symb, owner) is Some(ItemKind::Enumeration(_)),
-    _ => true,
-}
-
-pub fn ctx_ok?(symb: Symb, ctx: Ctx) := match ctx {
-    Empty => true,
-    Extend(earlier, ty) => ty_ok?(symb, ty) and ctx_ok?(symb, earlier),
-}
-```
-
-r[types.symbols.well-formed] spec::types::{member?, constructors_ok?, binding_ok?, bindings_ok?, symb_ok?}
-Σ is well formed when it binds each item once, every signature's types are
-well formed, every constructor's owner is an enumeration that lists it, and
-every enumeration lists distinct constructors, each bound as a constructor
-of that enumeration. In the figure, `Σ' ⊢ Σ ok` checks the bindings of
-Σ against the whole environment Σ', as `bindings_ok?(Σ', Σ)` does,
-x ∉ Σ says that Σ binds no x, and the list c₀, …, cₙ of an enumeration's
-constructors may be empty.
-
-```text
-                Σ' ⊢ Σ ok   x ∉ Σ   Σ' ⊢ Δ ok   Σ' ⊢ τ ok
-  Σ' ⊢ · ok     ─────────────────────────────────────────
-                Σ' ⊢ Σ, x = function (Δ) → τ ok
-
-  Σ' ⊢ Σ ok   x ∉ Σ   Σ'(a) = enumeration listing x
-  ─────────────────────────────────────────────────
-  Σ' ⊢ Σ, x = constructor of a ok
-
-  Σ' ⊢ Σ ok   x ∉ Σ   c₀, …, cₙ distinct   Σ'(cₖ) = constructor of x
-  ──────────────────────────────────────────────────────────────────
-  Σ' ⊢ Σ, x = enumeration listing c₀, …, cₙ ok
-
-  Σ ⊢ Σ ok
-  ────────
-  ⊢ Σ ok
-```
-
-```fren
-pub fn member?(items: Snoc<ItemId>, item: ItemId) := match items {
-    Empty => false,
-    Extend(earlier, other) => other = item or member?(earlier, item),
-}
-
-pub fn constructors_ok?(symb: Symb, constructors: Snoc<ItemId>, owner: ItemId) :=
-    match constructors {
-        Empty => true,
-        Extend(earlier, constructor) =>
-            entry(symb, constructor) = Some(ItemKind::Constructor(owner))
-            and not member?(earlier, constructor)
-            and constructors_ok?(symb, earlier, owner),
-    }
-
-pub fn binding_ok?(symb: Symb, binding: Entry) := match binding.kind {
-    ItemKind::Function(sig) => ctx_ok?(symb, sig.params) and ty_ok?(symb, sig.result),
-    ItemKind::Constructor(owner) => match entry(symb, owner) {
-        Some(ItemKind::Enumeration(constructors)) => member?(constructors, binding.item),
-        _ => false,
-    },
-    ItemKind::Enumeration(constructors) => constructors_ok?(symb, constructors, binding.item),
-}
-
-pub fn bindings_ok?(symb: Symb, bindings: Symb) := match bindings {
-    Empty => true,
-    Extend(earlier, binding) =>
-        entry(earlier, binding.item) = None
-        and binding_ok?(symb, binding)
-        and bindings_ok?(symb, earlier),
-}
-
-pub fn symb_ok?(symb: Symb) := bindings_ok?(symb, symb)
-```
-
 r[types.symbols.resolution]
 The symbol environment that [resolution](NamesAndScope.md) produces for a
 program is well formed; in particular, resolution rejects an item declared
@@ -249,58 +138,16 @@ environment of collection](NamesAndScope.md#r-names.handoff.environment).
 
 ## Core expressions and layers
 
-The Core has the following grammar. Figures and prose name locals, as in
+The Core's grammar and the forms of its expressions, `CoreF<E>`, are
+[defined by resolution](NamesAndScope.md#r-names.core.syntax), which
+produces them. Figures and prose name locals, as in
 `let x := e₁ in e₂`, but each name stands for a de Bruijn level: the Core
 writes a local as `#i`, for the entry at level i, and a let binds the next
 level. In a figure, `Γ, x : σ` is the context `Γ, σ`, with x naming its new
 level `|Γ|`, and `Γ(x) = τ` says that x's entry is τ.
 
-```text
-τ ::= Bool | Int | Nominal(a)
-Γ ::= · | Γ, τ
-e ::= b | n | x | c | ⊖ e | e ⊕ e | f(e, …, e)
-    | let x := e in e | let x : τ := e in e
-    | if e then e else e | match e { c ⇒ e | … | c ⇒ e }
-```
-
-Here b is a Boolean, n an integer, c a constructor and f a function, each
-item named by its canonical identity; ⊖ is a unary and ⊕ a binary operator.
-A match has at least one arm.
-
-r[types.expression.syntax] spec::types::{ArmF, ExprF}
-A Core expression is a finite tree whose nodes have the forms of `ExprF<E>`,
-where E is the position of a child. A literal carries its value, and a let
-carries the type annotation written on it, if any. A call's arguments and a
-match's arms are snoc sequences in written order. An arm has a resolved
-constructor pattern and a body, with no binder. Parentheses are concrete
-syntax, removed before the Core, and have no form here. Fren cannot declare
-a type of trees whose children sit inside snoc sequences, so a whole
-expression is given as a derivation table whose rows name their children by
-row level; `ExprF<E>` is the one form type that the tables (`E` a row
-level), the rules' premises (`E` a child's typing) and the maps between
-them share.
-
-```fren
-use spec::surface::{BinaryOp, UnaryOp}
-
-pub struct ArmF<E> { constructor: ItemId, body: E }
-
-pub enum ExprF<E> {
-    BooleanLiteral(Bool),
-    IntegerLiteral(Int),
-    Local(Int),
-    Constructor(ItemId),
-    Unary(UnaryOp, E),
-    Binary(BinaryOp, E, E),
-    Call(ItemId, Snoc<E>),
-    Let(Option<Ty>, E, E),
-    If(E, E, E),
-    Match(E, Snoc<ArmF<E>>),
-}
-```
-
 r[types.expression.layer] spec::types::Typing
-A *layer* is one form `ExprF<E>` whose children are E: each child's typing,
+A *layer* is one form `CoreF<E>` whose children are E: each child's typing,
 or the level of a row of a table. A *typing* records a context and a type.
 
 ```fren
@@ -542,30 +389,30 @@ pub fn match_rule?(symb: Symb, ctx: Ctx, scrutinee: Typing, arms: Snoc<ArmF<Typi
 ```
 
 r[types.judgment.layer] spec::types::rule?
-The one-layer judgment `Σ; Γ ⊢ l ▷ τ` takes Σ, Γ, a layer `ExprF<Typing>`
+The one-layer judgment `Σ; Γ ⊢ l ▷ τ` takes Σ, Γ, a layer `CoreF<Typing>`
 whose child positions hold the children's typings, and τ. It checks exactly
 the rule above for l's form.
 
 ```fren
-pub fn rule?(symb: Symb, ctx: Ctx, form: ExprF<Typing>, ty: Ty) := match form {
-    ExprF::BooleanLiteral(_) => boolean_rule?(ty),
-    ExprF::IntegerLiteral(_) => integer_rule?(ty),
-    ExprF::Local(level) => local_rule?(ctx, level, ty),
-    ExprF::Constructor(item) => constructor_rule?(symb, item, ty),
-    ExprF::Unary(op, operand) => unary_rule?(ctx, op, operand, ty),
-    ExprF::Binary(op, left, right) => binary_rule?(ctx, op, left, right, ty),
-    ExprF::Call(item, args) => call_rule?(symb, ctx, item, args, ty),
-    ExprF::Let(None, value, body) => let_rule?(ctx, value, body, ty),
-    ExprF::Let(Some(written), value, body) => let_annotated_rule?(ctx, written, value, body, ty),
-    ExprF::If(condition, then_branch, else_branch) =>
+pub fn rule?(symb: Symb, ctx: Ctx, form: CoreF<Typing>, ty: Ty) := match form {
+    CoreF::BooleanLiteral(_) => boolean_rule?(ty),
+    CoreF::IntegerLiteral(_) => integer_rule?(ty),
+    CoreF::Local(level) => local_rule?(ctx, level, ty),
+    CoreF::Constructor(item) => constructor_rule?(symb, item, ty),
+    CoreF::Unary(op, operand) => unary_rule?(ctx, op, operand, ty),
+    CoreF::Binary(op, left, right) => binary_rule?(ctx, op, left, right, ty),
+    CoreF::Call(item, args) => call_rule?(symb, ctx, item, args, ty),
+    CoreF::Let(None, value, body) => let_rule?(ctx, value, body, ty),
+    CoreF::Let(Some(written), value, body) => let_annotated_rule?(ctx, written, value, body, ty),
+    CoreF::If(condition, then_branch, else_branch) =>
         if_rule?(ctx, condition, then_branch, else_branch, ty),
-    ExprF::Match(scrutinee, arms) => match_rule?(symb, ctx, scrutinee, arms, ty),
+    CoreF::Match(scrutinee, arms) => match_rule?(symb, ctx, scrutinee, arms, ty),
 }
 ```
 
 ## Derivations
 
-r[types.derivation.table] spec::types::{Form, Arm, Row, typing_at, annotate_arguments, annotate_arms, annotate, rows_valid?}
+r[types.derivation.table] spec::types::{Arm, Row, typing_at, annotate_arguments, annotate_arms, annotate, rows_valid?}
 A *derivation table* is a snoc sequence of rows. A row has a layer whose
 children are the levels of earlier rows, a context and a type. A table is
 valid in Σ when every row's context is well formed and every row satisfies
@@ -574,7 +421,6 @@ child level that names no earlier row fails. Every row is checked,
 including rows that no other row uses.
 
 ```fren
-pub type Form := ExprF<Int>
 pub type Arm := ArmF<Int>
 pub struct Row { form: Form, ctx: Ctx, ty: Ty }
 
@@ -600,37 +446,37 @@ pub fn annotate_arms(rows: Snoc<Row>, arms: Snoc<Arm>): Option<Snoc<ArmF<Typing>
     },
 }
 
-pub fn annotate(rows: Snoc<Row>, form: Form): Option<ExprF<Typing>> := match form {
-    ExprF::BooleanLiteral(value?) => Some(ExprF::BooleanLiteral(value?)),
-    ExprF::IntegerLiteral(value) => Some(ExprF::IntegerLiteral(value)),
-    ExprF::Local(level) => Some(ExprF::Local(level)),
-    ExprF::Constructor(item) => Some(ExprF::Constructor(item)),
-    ExprF::Unary(op, operand) => match typing_at(rows, operand) {
-        Some(child) => Some(ExprF::Unary(op, child)),
+pub fn annotate(rows: Snoc<Row>, form: Form): Option<CoreF<Typing>> := match form {
+    CoreF::BooleanLiteral(value?) => Some(CoreF::BooleanLiteral(value?)),
+    CoreF::IntegerLiteral(value) => Some(CoreF::IntegerLiteral(value)),
+    CoreF::Local(level) => Some(CoreF::Local(level)),
+    CoreF::Constructor(item) => Some(CoreF::Constructor(item)),
+    CoreF::Unary(op, operand) => match typing_at(rows, operand) {
+        Some(child) => Some(CoreF::Unary(op, child)),
         None => None,
     },
-    ExprF::Binary(op, left, right) => match typing_at(rows, left), typing_at(rows, right) {
-        Some(l), Some(r) => Some(ExprF::Binary(op, l, r)),
+    CoreF::Binary(op, left, right) => match typing_at(rows, left), typing_at(rows, right) {
+        Some(l), Some(r) => Some(CoreF::Binary(op, l, r)),
         _, _ => None,
     },
-    ExprF::Call(item, args) => match annotate_arguments(rows, args) {
-        Some(typed) => Some(ExprF::Call(item, typed)),
+    CoreF::Call(item, args) => match annotate_arguments(rows, args) {
+        Some(typed) => Some(CoreF::Call(item, typed)),
         None => None,
     },
-    ExprF::Let(annotation, value, body) => match typing_at(rows, value), typing_at(rows, body) {
-        Some(v), Some(b) => Some(ExprF::Let(annotation, v, b)),
+    CoreF::Let(annotation, value, body) => match typing_at(rows, value), typing_at(rows, body) {
+        Some(v), Some(b) => Some(CoreF::Let(annotation, v, b)),
         _, _ => None,
     },
-    ExprF::If(condition, then_branch, else_branch) =>
+    CoreF::If(condition, then_branch, else_branch) =>
         match typing_at(rows, condition), typing_at(rows, then_branch), typing_at(
             rows,
             else_branch
         ) {
-            Some(c), Some(t), Some(e) => Some(ExprF::If(c, t, e)),
+            Some(c), Some(t), Some(e) => Some(CoreF::If(c, t, e)),
             _, _, _ => None,
         },
-    ExprF::Match(scrutinee, arms) => match typing_at(rows, scrutinee), annotate_arms(rows, arms) {
-        Some(typed), Some(typed_arms) => Some(ExprF::Match(typed, typed_arms)),
+    CoreF::Match(scrutinee, arms) => match typing_at(rows, scrutinee), annotate_arms(rows, arms) {
+        Some(typed), Some(typed_arms) => Some(CoreF::Match(typed, typed_arms)),
         _, _ => None,
     },
 }
@@ -716,17 +562,17 @@ expect coverage_separate(
     let typed? := rule?(
         symb,
         ctx,
-        ExprF::Match(scrutinee, Extend(earlier, last)),
+        CoreF::Match(scrutinee, Extend(earlier, last)),
         ty
     )
     expect repeated: not typed?
         or rule?(
             symb,
             ctx,
-            ExprF::Match(scrutinee, Extend(Extend(earlier, last), last)),
+            CoreF::Match(scrutinee, Extend(Extend(earlier, last), last)),
             ty
         )
-    expect omitted: not typed? or earlier = Empty or rule?(symb, ctx, ExprF::Match(scrutinee, earlier), ty)
+    expect omitted: not typed? or earlier = Empty or rule?(symb, ctx, CoreF::Match(scrutinee, earlier), ty)
 }
 ```
 
@@ -838,7 +684,7 @@ r[types.layer.determinism] spec::types::layer_unique::unique
 For fixed Σ, Γ and child typings, a layer has at most one type.
 
 ```fren
-expect layer_unique(symb: Symb, ctx: Ctx, form: ExprF<Typing>, a: Ty, b: Ty) {
+expect layer_unique(symb: Symb, ctx: Ctx, form: CoreF<Typing>, a: Ty, b: Ty) {
     expect unique: when rule?(symb, ctx, form, a) and rule?(symb, ctx, form, b), a = b
 }
 ```
@@ -866,33 +712,33 @@ pub fn binary_result(op: BinaryOp, left: Ty, right: Ty): Option<Ty> :=
 -- The type `ty`, provided that the premises `holds?` hold.
 pub fn provided(holds?, ty: Option<Ty>): Option<Ty> := if holds? then ty else None
 
-pub fn infer_layer(symb: Symb, ctx: Ctx, form: ExprF<Typing>): Option<Ty> := match form {
-    ExprF::BooleanLiteral(_) => Some(Ty::Boolean),
-    ExprF::IntegerLiteral(_) => Some(Ty::Integer),
-    ExprF::Local(level) => lookup(ctx, level),
-    ExprF::Constructor(item) => match entry(symb, item) {
+pub fn infer_layer(symb: Symb, ctx: Ctx, form: CoreF<Typing>): Option<Ty> := match form {
+    CoreF::BooleanLiteral(_) => Some(Ty::Boolean),
+    CoreF::IntegerLiteral(_) => Some(Ty::Integer),
+    CoreF::Local(level) => lookup(ctx, level),
+    CoreF::Constructor(item) => match entry(symb, item) {
         Some(ItemKind::Constructor(owner)) => Some(Ty::Nominal(owner)),
         _ => None,
     },
-    ExprF::Unary(op, operand) => provided(operand.ctx = ctx, unary_result(op, operand.ty)),
-    ExprF::Binary(op, left, right) => provided(
+    CoreF::Unary(op, operand) => provided(operand.ctx = ctx, unary_result(op, operand.ty)),
+    CoreF::Binary(op, left, right) => provided(
         left.ctx = ctx and right.ctx = ctx,
         binary_result(op, left.ty, right.ty)
     ),
-    ExprF::Call(item, args) => match entry(symb, item) {
+    CoreF::Call(item, args) => match entry(symb, item) {
         Some(ItemKind::Function(sig)) => provided(
             in_context?(args, ctx) and argument_types?(args, sig.params),
             Some(sig.result)
         ),
         _ => None,
     },
-    ExprF::Let(annotation, value, body) => provided(
+    CoreF::Let(annotation, value, body) => provided(
         value.ctx = ctx
             and (annotation = None or annotation = Some(value.ty))
             and body.ctx = Extend(ctx, value.ty),
         Some(body.ty)
     ),
-    ExprF::If(condition, then_branch, else_branch) => provided(
+    CoreF::If(condition, then_branch, else_branch) => provided(
         condition.ctx = ctx
             and condition.ty = Ty::Boolean
             and then_branch.ctx = ctx
@@ -900,7 +746,7 @@ pub fn infer_layer(symb: Symb, ctx: Ctx, form: ExprF<Typing>): Option<Ty> := mat
             and then_branch.ty = else_branch.ty,
         Some(then_branch.ty)
     ),
-    ExprF::Match(scrutinee, arms) => match scrutinee.ty, arms {
+    CoreF::Match(scrutinee, arms) => match scrutinee.ty, arms {
         Ty::Nominal(owner), Extend(_, last) => provided(
             scrutinee.ctx = ctx
                 and arm_bodies?(arms, ctx, last.body.ty)
@@ -911,7 +757,7 @@ pub fn infer_layer(symb: Symb, ctx: Ctx, form: ExprF<Typing>): Option<Ty> := mat
     },
 }
 
-expect layer_inference(symb: Symb, ctx: Ctx, form: ExprF<Typing>, ty: Ty) {
+expect layer_inference(symb: Symb, ctx: Ctx, form: CoreF<Typing>, ty: Ty) {
     expect exact: rule?(symb, ctx, form, ty) iff infer_layer(symb, ctx, form) = Some(ty)
 }
 ```
@@ -946,22 +792,22 @@ pub fn arm_typings(arms: Snoc<ArmF<Typing>>): Snoc<Typing> := match arms {
 }
 
 -- A layer's child typings, in order.
-pub fn children(form: ExprF<Typing>): Snoc<Typing> := match form {
-    ExprF::Unary(_, operand) => one(operand),
-    ExprF::Binary(_, left, right) => two(left, right),
-    ExprF::Call(_, args) => args,
-    ExprF::Let(_, value, body) => two(value, body),
-    ExprF::If(condition, then_branch, else_branch) => three(condition, then_branch, else_branch),
-    ExprF::Match(scrutinee, arms) => Extend(arm_typings(arms), scrutinee),
+pub fn children(form: CoreF<Typing>): Snoc<Typing> := match form {
+    CoreF::Unary(_, operand) => one(operand),
+    CoreF::Binary(_, left, right) => two(left, right),
+    CoreF::Call(_, args) => args,
+    CoreF::Let(_, value, body) => two(value, body),
+    CoreF::If(condition, then_branch, else_branch) => three(condition, then_branch, else_branch),
+    CoreF::Match(scrutinee, arms) => Extend(arm_typings(arms), scrutinee),
     _ => Empty,
 }
 
-pub fn children_ok?(symb: Symb, form: ExprF<Typing>) := typings_ok?(symb, children(form))
+pub fn children_ok?(symb: Symb, form: CoreF<Typing>) := typings_ok?(symb, children(form))
 
 -- TODO: make this law an `expect` once Fren lets a Lean proof discharge one;
 -- `holds?` exists only to carry the evidence of the `impl` in the wrapper.
 set_option fren.evidence "random" in
-pub proc layer_regularity(symb: Symb, ctx: Ctx, form: ExprF<Typing>, ty: Ty): (holds?) {
+pub proc layer_regularity(symb: Symb, ctx: Ctx, form: CoreF<Typing>, ty: Ty): (holds?) {
     ensure output: holds?
     ensure regular: when symb_ok?(symb) and ctx_ok?(symb, ctx) and children_ok?(symb, form)
         and rule?(symb, ctx, form, ty),
@@ -1008,7 +854,7 @@ set_option fren.evidence "random" in
 pub proc table_scoping(symb: Symb, rows: Snoc<Row>, pos: Int, found: Row, level: Int): (holds?) {
     ensure output: holds?
     ensure in_scope: when rows_valid?(symb, rows) and lookup(rows, pos) = Some(found)
-        and found.form = ExprF::Local(level),
+        and found.form = CoreF::Local(level),
         0 <= level < length(found.ctx)
 }
 ```
@@ -1035,14 +881,12 @@ pub proc table_uniqueness(symb: Symb, left: Snoc<Row>, right: Snoc<Row>): (holds
 }
 ```
 
-r[types.layer.weakening] spec::types::{shift, insert_type, weaken_typing, weaken_typings, weaken_arms, weaken_layer, layer_weakening::weakened}
+r[types.layer.weakening] spec::types::{insert_type, weaken_typing, weaken_typings, weaken_arms, weaken_layer, layer_weakening::weakened}
 A layer stays typed when a type σ is inserted at level n of its context and
 of every child's context and every local level of at least n is shifted by
 one, provided `0 ≤ n ≤ |Γ|`.
 
 ```fren
-pub fn shift(level: Int, cutoff: Int): Int := if level >= cutoff then level + 1 else level
-
 pub fn insert_type(ctx: Ctx, cutoff: Int, extra: Ty): Ctx := match ctx {
     Empty => if cutoff = 0 then Extend(Empty, extra) else Empty,
     Extend(earlier, ty) =>
@@ -1076,29 +920,29 @@ pub fn weaken_arms(arms: Snoc<ArmF<Typing>>, cutoff: Int, extra: Ty): Snoc<ArmF<
         ),
     }
 
-pub fn weaken_layer(form: ExprF<Typing>, cutoff: Int, extra: Ty): ExprF<Typing> := match form {
-    ExprF::BooleanLiteral(value?) => ExprF::BooleanLiteral(value?),
-    ExprF::IntegerLiteral(value) => ExprF::IntegerLiteral(value),
-    ExprF::Local(level) => ExprF::Local(shift(level, cutoff)),
-    ExprF::Constructor(item) => ExprF::Constructor(item),
-    ExprF::Unary(op, operand) => ExprF::Unary(op, weaken_typing(operand, cutoff, extra)),
-    ExprF::Binary(op, left, right) => ExprF::Binary(
+pub fn weaken_layer(form: CoreF<Typing>, cutoff: Int, extra: Ty): CoreF<Typing> := match form {
+    CoreF::BooleanLiteral(value?) => CoreF::BooleanLiteral(value?),
+    CoreF::IntegerLiteral(value) => CoreF::IntegerLiteral(value),
+    CoreF::Local(level) => CoreF::Local(shift(level, cutoff)),
+    CoreF::Constructor(item) => CoreF::Constructor(item),
+    CoreF::Unary(op, operand) => CoreF::Unary(op, weaken_typing(operand, cutoff, extra)),
+    CoreF::Binary(op, left, right) => CoreF::Binary(
         op,
         weaken_typing(left, cutoff, extra),
         weaken_typing(right, cutoff, extra)
     ),
-    ExprF::Call(item, args) => ExprF::Call(item, weaken_typings(args, cutoff, extra)),
-    ExprF::Let(annotation, value, body) => ExprF::Let(
+    CoreF::Call(item, args) => CoreF::Call(item, weaken_typings(args, cutoff, extra)),
+    CoreF::Let(annotation, value, body) => CoreF::Let(
         annotation,
         weaken_typing(value, cutoff, extra),
         weaken_typing(body, cutoff, extra)
     ),
-    ExprF::If(condition, then_branch, else_branch) => ExprF::If(
+    CoreF::If(condition, then_branch, else_branch) => CoreF::If(
         weaken_typing(condition, cutoff, extra),
         weaken_typing(then_branch, cutoff, extra),
         weaken_typing(else_branch, cutoff, extra)
     ),
-    ExprF::Match(scrutinee, arms) => ExprF::Match(
+    CoreF::Match(scrutinee, arms) => CoreF::Match(
         weaken_typing(scrutinee, cutoff, extra),
         weaken_arms(arms, cutoff, extra)
     ),
@@ -1110,7 +954,7 @@ set_option fren.evidence "random" in
 pub proc layer_weakening(
     symb: Symb,
     ctx: Ctx,
-    form: ExprF<Typing>,
+    form: CoreF<Typing>,
     ty: Ty,
     cutoff: Int,
     extra: Ty,
@@ -1142,17 +986,12 @@ pub proc lookup_shifting(ctx: Ctx, cutoff: Int, extra: Ty, level: Int): (holds?)
 }
 ```
 
-r[types.derivation.weakening] spec::types::{shift_form, weaken, contexts_reach?, table_weakening::valid}
+r[types.derivation.weakening] spec::types::{weaken, contexts_reach?, table_weakening::valid}
 A valid table stays valid when a well-formed type is inserted at level n of
 every row's context and every local level of at least n is shifted by one,
 provided `0 ≤ n` and every row's context has at least n entries.
 
 ```fren
-pub fn shift_form(form: Form, cutoff: Int): Form := match form {
-    ExprF::Local(level) => ExprF::Local(shift(level, cutoff)),
-    _ => form,
-}
-
 pub fn weaken(rows: Snoc<Row>, cutoff: Int, extra: Ty): Snoc<Row> := match rows {
     Empty => Empty,
     Extend(earlier, row) => Extend(
@@ -1250,16 +1089,16 @@ pub fn arms_paired?(pairs: Snoc<Pair>, left: Snoc<Arm>, right: Snoc<Arm>) := mat
 }
 
 pub fn layers_paired?(pairs: Snoc<Pair>, left: Form, right: Form) := match left, right {
-    ExprF::Unary(l_op, l), ExprF::Unary(r_op, r) => l_op = r_op and paired?(pairs, l, r),
-    ExprF::Binary(l_op, l1, l2), ExprF::Binary(r_op, r1, r2) =>
+    CoreF::Unary(l_op, l), CoreF::Unary(r_op, r) => l_op = r_op and paired?(pairs, l, r),
+    CoreF::Binary(l_op, l1, l2), CoreF::Binary(r_op, r1, r2) =>
         l_op = r_op and paired?(pairs, l1, r1) and paired?(pairs, l2, r2),
-    ExprF::Call(l_item, l_args), ExprF::Call(r_item, r_args) =>
+    CoreF::Call(l_item, l_args), CoreF::Call(r_item, r_args) =>
         l_item = r_item and children_paired?(pairs, l_args, r_args),
-    ExprF::Let(l_annotation, l1, l2), ExprF::Let(r_annotation, r1, r2) =>
+    CoreF::Let(l_annotation, l1, l2), CoreF::Let(r_annotation, r1, r2) =>
         l_annotation = r_annotation and paired?(pairs, l1, r1) and paired?(pairs, l2, r2),
-    ExprF::If(l1, l2, l3), ExprF::If(r1, r2, r3) =>
+    CoreF::If(l1, l2, l3), CoreF::If(r1, r2, r3) =>
         paired?(pairs, l1, r1) and paired?(pairs, l2, r2) and paired?(pairs, l3, r3),
-    ExprF::Match(l1, l_arms), ExprF::Match(r1, r_arms) =>
+    CoreF::Match(l1, l_arms), CoreF::Match(r1, r_arms) =>
         paired?(pairs, l1, r1) and arms_paired?(pairs, l_arms, r_arms),
     _, _ => left = right,
 }
@@ -1324,43 +1163,9 @@ Typing is decidable: an algorithm, given Σ, Γ and e, finds the τ with
 with `infer_layer`, in the contexts that `rule?` prescribes for the
 children, is such an algorithm. This is open.
 
-## Surface elaboration
-
-This section belongs to the derived-forms chapter, which will own it once
-that chapter is written. It states how written annotations and binder names
-become Core types; the Core itself has no names.
-
-r[types.surface.suffix] spec::types::{suffix_rule?, let_annotation?}
-The *`?` suffix rule*: a parameter or let binder whose name ends in `?` must
-have type `Bool`, including when it has an explicit annotation, which the
-suffix does not overwrite. A let binder `x?` without an annotation
-elaborates to a Core let annotated `Bool`.
-
-```fren
-pub fn suffix_rule?(question?, ty: Ty) := not question? or ty = Ty::Boolean
-
-pub fn let_annotation?(written: Option<Ty>, question?, core: Option<Ty>) := match written {
-    Some(annotation) => suffix_rule?(question?, annotation) and core = written,
-    None => core = (if question? then Some(Ty::Boolean) else None),
-}
-```
-
-r[types.surface.annotation] spec::types::parameter_type?
-A parameter's type is its written annotation. An omitted parameter
-annotation denotes `Bool` only when the parameter's name ends in `?`.
-
-```fren
-pub fn parameter_type?(written: Option<Ty>, question?, ty: Ty) :=
-    suffix_rule?(question?, ty)
-    and match written {
-        Some(annotation) => ty = annotation,
-        None => question?,
-    }
-```
-
 ## Examples
 
-r[types.examples.derivations] spec::types::{LIGHT, LIGHT_RED, LIGHT_GREEN, SIGNAL, SIGNAL_RED, F, bind, EXAMPLE_SYMB, SYMB, row, BOOLEAN_INTEGER, OLDEST_LEVEL_EXAMPLE, LET_EXAMPLE, MATCH_EXAMPLE, CALL_EXAMPLE, PROGRAM_EXAMPLE, worked_examples::valid}
+r[types.examples.derivations] spec::types::{SIGNAL, SIGNAL_RED, F, bind, EXAMPLE_SYMB, SYMB, row, BOOLEAN_INTEGER, OLDEST_LEVEL_EXAMPLE, LET_EXAMPLE, MATCH_EXAMPLE, CALL_EXAMPLE, PROGRAM_EXAMPLE, worked_examples::valid}
 Each accepted example below gives a Core judgment and a table that types
 it, shown as rows numbered by level; its root, the last row, unfolds to the
 judgment's expression. The procedure `worked_examples` states that each
@@ -1373,9 +1178,6 @@ The examples use an enumeration `M::Light` with constructors `Red` and
 `M::f` from Int to Int.
 
 ```fren
-pub const LIGHT: ItemId := ["M", "Light"]
-pub const LIGHT_RED: ItemId := ["M", "Light", "Red"]
-pub const LIGHT_GREEN: ItemId := ["M", "Light", "Green"]
 pub const SIGNAL: ItemId := ["M", "Signal"]
 pub const SIGNAL_RED: ItemId := ["M", "Signal", "Red"]
 pub const F: ItemId := ["M", "f"]
@@ -1452,7 +1254,7 @@ pub const BOOLEAN_INTEGER: Ctx := two(Ty::Boolean, Ty::Integer)
 
 pub const OLDEST_LEVEL_EXAMPLE: Bool := derivation?(
     SYMB,
-    one(row(ExprF::Local(0), BOOLEAN_INTEGER, Ty::Boolean)),
+    one(row(CoreF::Local(0), BOOLEAN_INTEGER, Ty::Boolean)),
     BOOLEAN_INTEGER,
     Ty::Boolean
 )
@@ -1460,9 +1262,9 @@ pub const OLDEST_LEVEL_EXAMPLE: Bool := derivation?(
 pub const LET_EXAMPLE: Bool := derivation?(
     SYMB,
     three(
-        row(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
-        row(ExprF::Local(0), one(Ty::Integer), Ty::Integer),
-        row(ExprF::Let(Some(Ty::Integer), 0, 1), Empty, Ty::Integer)
+        row(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+        row(CoreF::Local(0), one(Ty::Integer), Ty::Integer),
+        row(CoreF::Let(Some(Ty::Integer), 0, 1), Empty, Ty::Integer)
     ),
     Empty,
     Ty::Integer
@@ -1471,11 +1273,11 @@ pub const LET_EXAMPLE: Bool := derivation?(
 pub const MATCH_EXAMPLE: Bool := derivation?(
     SYMB,
     four(
-        row(ExprF::Constructor(LIGHT_RED), Empty, Ty::Nominal(LIGHT)),
-        row(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
-        row(ExprF::IntegerLiteral(2), Empty, Ty::Integer),
+        row(CoreF::Constructor(LIGHT_RED), Empty, Ty::Nominal(LIGHT)),
+        row(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+        row(CoreF::IntegerLiteral(2), Empty, Ty::Integer),
         row(
-            ExprF::Match(
+            CoreF::Match(
                 0,
                 two(
                     ArmF { constructor := LIGHT_RED, body := 1 },
@@ -1493,8 +1295,8 @@ pub const MATCH_EXAMPLE: Bool := derivation?(
 pub const CALL_EXAMPLE: Bool := derivation?(
     SYMB,
     two(
-        row(ExprF::IntegerLiteral(1), Empty, Ty::Integer),
-        row(ExprF::Call(F, one(0)), Empty, Ty::Integer)
+        row(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+        row(CoreF::Call(F, one(0)), Empty, Ty::Integer)
     ),
     Empty,
     Ty::Integer
@@ -1506,10 +1308,10 @@ pub const PROGRAM_EXAMPLE: Bool := prog_ok?(
         Decl::Function(
             F,
             three(
-                row(ExprF::Local(0), one(Ty::Integer), Ty::Integer),
-                row(ExprF::IntegerLiteral(1), one(Ty::Integer), Ty::Integer),
+                row(CoreF::Local(0), one(Ty::Integer), Ty::Integer),
+                row(CoreF::IntegerLiteral(1), one(Ty::Integer), Ty::Integer),
                 row(
-                    ExprF::Binary(BinaryOp::Add, 0, 1),
+                    CoreF::Binary(BinaryOp::Add, 0, 1),
                     one(Ty::Integer),
                     Ty::Integer
                 )
@@ -1536,6 +1338,8 @@ whose branches have types Int and Bool, such as `1` and `false`; a
 match on a value of `Nominal(a)` whose one arm's pattern is a constructor
 of another enumeration; a match with no arms; and a call with two arguments
 of a function with one parameter.
+The call example also states the step it rests
+on: one argument does not fit an empty parameter list.
 
 ```fren
 expect rejected(
@@ -1549,23 +1353,26 @@ expect rejected(
     third: Typing,
     ty: Ty,
 ) {
-    expect out_of_scope: not rule?(symb, Empty, ExprF::Local(0), ty)
+    expect out_of_scope: not rule?(symb, Empty, CoreF::Local(0), ty)
     expect branches: when second.ty = Ty::Integer and third.ty = Ty::Boolean,
-        not rule?(symb, ctx, ExprF::If(first, second, third), ty)
+        not rule?(symb, ctx, CoreF::If(first, second, third), ty)
     expect foreign_pattern: when first.ty = Ty::Nominal(owner)
         and entry(symb, item) = Some(ItemKind::Constructor(other))
         and other != owner,
         not rule?(
             symb,
             ctx,
-            ExprF::Match(first, one(ArmF { constructor := item, body := second })),
+            CoreF::Match(first, one(ArmF { constructor := item, body := second })),
             ty
         )
-    expect no_arms: not rule?(symb, ctx, ExprF::Match(first, Empty), ty)
+    expect no_arms: not rule?(symb, ctx, CoreF::Match(first, Empty), ty)
     expect extra_argument: when entry(symb, item) = Some(
         ItemKind::Function(Sig { params := one(third.ty), result := ty })
     ),
-        not rule?(symb, ctx, ExprF::Call(item, two(first, second)), ty)
+        -- The first conjunct is the step that the second needs: a check unfolds
+        -- `argument_types?` once, and this call fails at its second unfolding.
+        not argument_types?(one(first), Empty)
+        and not rule?(symb, ctx, CoreF::Call(item, two(first, second)), ty)
 }
 ```
 
@@ -1583,7 +1390,9 @@ definitions: the interpretation is the refinement relation.
 ```fren
 pub mod spec::typing
 
-use spec::types::{Ctx, Row, Snoc, Symb, Ty, ctx_ok?, symb_ok?, ty_ok?}
+use spec::names::{Ctx, Symb, Ty, ctx_ok?, symb_ok?, ty_ok?}
+use spec::surface::Snoc
+use spec::types::Row
 
 pub fn type_of(Symb, Ctx, Snoc<Row>): Ty
 
@@ -1626,7 +1435,7 @@ pub fn f(n: Int): Int := let b: Bool := n in 0  --~ error: the definition of `b`
 ```
 
 ```fren example
---@ reference: types.surface.suffix
+--@ reference: names.surface.suffix
 pub mod bad
 
 pub fn f(b?: Int): Int := b?  --~ error: `b?` ends in `?` but is not a `Bool`

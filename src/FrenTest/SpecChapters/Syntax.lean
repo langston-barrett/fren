@@ -546,18 +546,50 @@ def nearTexts (text : String) (pairsOnly : Bool := false) : List String :=
 
 /-! ## Abstract syntax -/
 
-/-- An expression tree: the fixed point of the chapter's `ExprF`, one
+/-- The chapter's `Path` of a list of identifiers, first identifier first.
+The parser gives a path as a list, and this is the converter to the
+chapter's recursive `Path`. No path is empty, so the empty list becomes the
+name `""`, which is no identifier. -/
+def mkPath (names : List String) : spec.surface.Path :=
+  match names with
+  | [] => .Name ""
+  | first :: rest => rest.foldl .Member (.Name first)
+
+/-- The identifiers of a path, first identifier first. -/
+def pathNames : spec.surface.Path → List String
+  | .Name name => [name]
+  | .Member qualifier name => pathNames qualifier ++ [name]
+
+/-- The chapter's `Snoc` of a list, in the list's order: the converter from
+the parser's lists of arguments and arms. -/
+def snocOf (items : List α) : spec.surface.Snoc α := items.foldl .Extend .Empty
+
+/-- The entries of a snoc sequence, oldest first. -/
+def snocList : spec.surface.Snoc α → List α
+  | .Empty => []
+  | .Extend earlier last => snocList earlier ++ [last]
+
+theorem snocList_foldl (items : List α) (earlier : spec.surface.Snoc α) :
+    snocList (items.foldl .Extend earlier) = snocList earlier ++ items := by
+  induction items generalizing earlier with
+  | nil => simp
+  | cons item rest ih => simp [ih, snocList]
+
+@[simp] theorem snocList_snocOf (items : List α) : snocList (snocOf items) = items := by
+  simp [snocOf, snocList_foldl, snocList]
+
+/-- An expression tree: the fixed point of the chapter's `SurfaceF`, one
 constructor for each of its constructors. -/
 inductive Tree where
   | boolean (b : Bool)
   | integer (n : Nat)
-  | name (path : List String)
-  | call (path : List String) (args : List Tree)
+  | name (path : spec.surface.Path)
+  | call (path : spec.surface.Path) (args : List Tree)
   | unary (op : SUnary) (e : Tree)
   | binary (op : SBinary) (l r : Tree)
   | ifE (c t e : Tree)
   | letE (x : String) (v b : Tree)
-  | matchE (s : Tree) (arms : List (List String × Tree))
+  | matchE (s : Tree) (arms : List (spec.surface.Path × Tree))
   deriving Inhabited
 
 def unaryOps : List SUnary := [.Neg, .Not]
@@ -567,7 +599,7 @@ def binaryOps : List SBinary :=
 theorem all_binary (op : SBinary) : op ∈ binaryOps := by cases op <;> simp [binaryOps]
 theorem all_unary (op : SUnary) : op ∈ unaryOps := by cases op <;> simp [unaryOps]
 
-def pathOf (p : Path) : List String := p.tokens.filter (·.text != "::") |>.map (·.text)
+def pathOf (p : Path) : spec.surface.Path := mkPath (p.tokens.filter (·.text != "::") |>.map (·.text))
 
 def unaryOf : FrenAst.UnaryOp → SUnary
   | .neg => .Neg | .not => .Not
@@ -584,19 +616,19 @@ def spellUnary (op : SUnary) : String := spec.surface.unary_spelling op
 /-- `syntax.tree.productions`: the tree of each expression production. An
 operator node has the operator whose spelling (`unary_spelling`,
 `binary_spelling`) was written; with any other spelling the result is the
-empty name, which is no tree of the chapter. -/
+name `""`, which is no tree of the chapter. -/
 partial def abstract : Expr → Tree
   | .name path => .name (pathOf path)
   | .bool _ b => .boolean b
   | .integer _ n => .integer n
   | .paren _ body _ => abstract body
   | .unary token op body =>
-    if spellUnary (unaryOf op) == token.text then .unary (unaryOf op) (abstract body) else .name []
+    if spellUnary (unaryOf op) == token.text then .unary (unaryOf op) (abstract body) else .name (mkPath [])
   | .binary l token op r =>
     if spellBinary (binaryOf op) == token.text then .binary (binaryOf op) (abstract l) (abstract r)
-    else .name []
+    else .name (mkPath [])
   | .call (.name path) _ args _ _ => .call (pathOf path) (args.toList.map abstract)
-  | .call _ _ args _ _ => .call [] (args.toList.map abstract)
+  | .call _ _ args _ _ => .call (mkPath []) (args.toList.map abstract)
   | .ifE _ c _ t _ e => .ifE (abstract c) (abstract t) (abstract e)
   | .letE _ x _ v _ b => .letE x.text (abstract v) (abstract b)
   | .matchE _ s _ arms _ => .matchE (abstract s) (arms.toList.map fun a => (pathOf a.1, abstract a.2.2.1))
@@ -607,68 +639,68 @@ def binaryName : SBinary → String
   | .Ne => "Ne" | .Lt => "Lt" | .Le => "Le" | .Gt => "Gt" | .Ge => "Ge" | .And => "And"
   | .Or => "Or" | .Iff => "Iff"
 
-/-- A tree's top node, as the chapter's `ExprF` over its subtrees. -/
-def Tree.layer : Tree → spec.surface.ExprF Tree
+/-- A tree's top node, as the chapter's `SurfaceF` over its subtrees. -/
+def Tree.layer : Tree → spec.surface.SurfaceF Tree
   | .boolean b => .Boolean b
   | .integer n => .Integer n
-  | .name p => .Name (Fren.Seq.ofList p)
-  | .call p args => .Call (Fren.Seq.ofList p) (Fren.Seq.ofList args)
+  | .name p => .Name p
+  | .call p args => .Call p (snocOf args)
   | .unary op e => .Unary op e
   | .binary op l r => .Binary op l r
   | .ifE c t e => .If c t e
   | .letE x v b => .Let x v b
-  | .matchE s arms => .Match s (Fren.Seq.ofList (arms.map fun (p, b) => .mk! (Fren.Seq.ofList p) b))
+  | .matchE s arms => .Match s (snocOf (arms.map fun (p, b) => .mk! p b))
 
-/-- A tree from its top node: `Tree` is the fixed point of `ExprF`. -/
-def Tree.ofLayer : spec.surface.ExprF Tree → Tree
+/-- A tree from its top node: `Tree` is the fixed point of `SurfaceF`. -/
+def Tree.ofLayer : spec.surface.SurfaceF Tree → Tree
   | .Boolean b => .boolean b
-  | .Integer n => .integer n
-  | .Name p => .name p.toList
-  | .Call p args => .call p.toList args.toList
+  | .Integer n => .integer n.toNat
+  | .Name p => .name p
+  | .Call p args => .call p (snocList args)
   | .Unary op e => .unary op e
   | .Binary op l r => .binary op l r
   | .If c t e => .ifE c t e
   | .Let x v b => .letE x v b
-  | .Match s arms => .matchE s (arms.toList.map fun a => (a.variant.toList, a.body))
+  | .Match s arms => .matchE s ((snocList arms).map fun a => (a.variant, a.body))
 
 theorem Tree.ofLayer_layer (t : Tree) : Tree.ofLayer t.layer = t := by
-  cases t <;> simp [Tree.layer, Tree.ofLayer, Fren.Seq.ofList, Fren.Seq.toList, Function.comp_def]
+  cases t <;> simp [Tree.layer, Tree.ofLayer, Function.comp_def]
 
-/-- `ExprF` maps over its subexpressions. -/
-def mapLayer (f : α → β) : spec.surface.ExprF α → spec.surface.ExprF β
+/-- `SurfaceF` maps over its subexpressions. -/
+def mapLayer (f : α → β) : spec.surface.SurfaceF α → spec.surface.SurfaceF β
   | .Boolean b => .Boolean b
   | .Integer n => .Integer n
   | .Name p => .Name p
-  | .Call p args => .Call p (Fren.Seq.ofList (args.toList.map f))
+  | .Call p args => .Call p (snocOf ((snocList args).map f))
   | .Unary op e => .Unary op (f e)
   | .Binary op l r => .Binary op (f l) (f r)
   | .If c t e => .If (f c) (f t) (f e)
   | .Let x v b => .Let x (f v) (f b)
-  | .Match s arms => .Match (f s) (Fren.Seq.ofList (arms.toList.map fun a => .mk! a.variant (f a.body)))
+  | .Match s arms => .Match (f s) (snocOf ((snocList arms).map fun a => .mk! a.variant (f a.body)))
 
-def pathText (p : Fren.Seq String) : String := "::".intercalate p.toList
+def pathText (p : spec.surface.Path) : String := "::".intercalate (pathNames p)
 
-/-- One `ExprF` node, whose subtrees are already written, in the chapter's
+/-- One `SurfaceF` node, whose subtrees are already written, in the chapter's
 `fren2 trees` notation: the constructor's name and its fields. -/
-def layerSexp : spec.surface.ExprF String → String
+def layerSexp : spec.surface.SurfaceF String → String
   | .Boolean b => s!"(Boolean {b})"
   | .Integer n => s!"(Integer {n})"
   | .Name p => s!"(Name {pathText p})"
-  | .Call p args => s!"(Call {pathText p}" ++ String.join (args.toList.map (" " ++ ·)) ++ ")"
+  | .Call p args => s!"(Call {pathText p}" ++ String.join ((snocList args).map (" " ++ ·)) ++ ")"
   | .Unary op e => s!"(Unary {unaryName op} {e})"
   | .Binary op l r => s!"(Binary {binaryName op} {l} {r})"
   | .If c t e => s!"(If {c} {t} {e})"
   | .Let x v b => s!"(Let {x} {v} {b})"
   | .Match s arms => s!"(Match {s}" ++
-      String.join (arms.toList.map fun a => s!" (Arm {pathText a.variant} {a.body})") ++ ")"
+      String.join ((snocList arms).map fun a => s!" (Arm {pathText a.variant} {a.body})") ++ ")"
 
 partial def Tree.sexp (t : Tree) : String := layerSexp (mapLayer Tree.sexp t.layer)
 
 /-- The tree of a type: the chapter's `type_name` of its written path
 (`syntax.tree.productions`). -/
 def typeTree : Ty → spec.surface.TypeName
-  | .bool token | .int token => spec.surface.type_name (Fren.Seq.ofList [token.text])
-  | .named p => spec.surface.type_name (Fren.Seq.ofList (pathOf p))
+  | .bool token | .int token => spec.surface.type_name (mkPath [token.text])
+  | .named p => spec.surface.type_name (pathOf p)
 
 def typeSexp : spec.surface.TypeName → String
   | .Boolean => "Boolean"
@@ -686,7 +718,7 @@ def paramSexp (p : spec.surface.Parameter) : String :=
 /-- The tree of a declaration (`syntax.tree.productions`), as the chapter's
 `DeclarationF` over expression trees. -/
 def declTree : Decl → spec.surface.DeclarationF Tree
-  | .moduleDecl v _ p => .Module ⟨v.isSome, Fren.Seq.ofList (pathOf p)⟩
+  | .moduleDecl v _ p => .Module ⟨v.isSome, pathOf p⟩
   | .enumDecl v _ n _ vs _ _ => .Enumeration ⟨v.isSome, n.text, Fren.Seq.ofList (vs.toList.map (·.text))⟩
   | .function v _ n ps _ r _ b =>
     .Function (.mk! v.isSome n.text (Fren.Seq.ofList (ps.values.toList.map paramTree)) (typeTree r) (abstract b))
@@ -718,15 +750,15 @@ def fileSexp? (source : String) : Option String :=
   | .ok { root := .declarations ds, .. } => some ("(File" ++ String.join (ds.toList.map fun d => " " ++ declSexp (declTree d)) ++ ")")
   | _ => none
 
-/-- The subexpressions of a node, in the order of `ExprF`. -/
-def layerChildren : spec.surface.ExprF α → List α
+/-- The subexpressions of a node, in the order of `SurfaceF`. -/
+def layerChildren : spec.surface.SurfaceF α → List α
   | .Boolean _ | .Integer _ | .Name _ => []
-  | .Call _ args => args.toList
+  | .Call _ args => snocList args
   | .Unary _ e => [e]
   | .Binary _ l r => [l, r]
   | .If c t e => [c, t, e]
   | .Let _ v b => [v, b]
-  | .Match s arms => s :: arms.toList.map (·.body)
+  | .Match s arms => s :: (snocList arms).map (·.body)
 
 /-- `syntax.tree.well-formed`: the chapter's `node_well_formed?` holds of
 every node of the tree, with its subexpressions elided. -/
@@ -779,8 +811,8 @@ instance : Inhabited Printed := ⟨⟨[], ⟨.Primary, false⟩⟩⟩
 /-- A token after a space. -/
 def word (text : String) : String × Bool := (text, false)
 
-def pathTokens (p : Fren.Seq String) : List (String × Bool) :=
-  (p.toList.map word).intersperse (word "::")
+def pathTokens (p : spec.surface.Path) : List (String × Bool) :=
+  ((pathNames p).map word).intersperse (word "::")
 
 /-- The tokens of a node, given its printed subtrees
 (`syntax.property.print-parse`): the node's tokens in the order of its
@@ -788,7 +820,7 @@ production, with a subtree in parentheses exactly where the chapter's `fits?`
 says that its `shape` does not fit its `place`. With `full`, the text instead
 has what the trees do not distinguish: every subtree in parentheses, a
 trailing comma in every list and a leading zero on every numeral. -/
-def layerTokens (full : Bool) (node : spec.surface.ExprF Printed) : List (String × Bool) :=
+def layerTokens (full : Bool) (node : spec.surface.SurfaceF Printed) : List (String × Bool) :=
   let child (k : Nat) (c : Printed) : List (String × Bool) :=
     if !full && spec.surface.«fits?» c.shape (spec.surface.place Printed node (Int.ofNat k)) then c.tokens
     else word "(" :: c.tokens ++ [word ")"]
@@ -799,14 +831,14 @@ def layerTokens (full : Bool) (node : spec.surface.ExprF Printed) : List (String
   | .Integer n => [word ((if full then "0" else "") ++ toString n)]
   | .Name p => pathTokens p
   | .Call p args =>
-    pathTokens p ++ [("(", true)] ++ list (args.toList.zipIdx.map fun (a, k) => child k a) ++ [word ")"]
+    pathTokens p ++ [("(", true)] ++ list ((snocList args).zipIdx.map fun (a, k) => child k a) ++ [word ")"]
   | .Unary op e => word (spellUnary op) :: child 0 e
   | .Binary op l r => child 0 l ++ [word (spellBinary op)] ++ child 1 r
   | .If c t e => word "if" :: child 0 c ++ [word "then"] ++ child 1 t ++ [word "else"] ++ child 2 e
   | .Let x v b => [word "let", word x, word ":="] ++ child 0 v ++ [word "in"] ++ child 1 b
   | .Match s arms =>
     word "match" :: child 0 s ++ [word "{"] ++
-      list (arms.toList.zipIdx.map fun (a, k) => pathTokens a.variant ++ [word "=>"] ++ child (k + 1) a.body) ++
+      list ((snocList arms).zipIdx.map fun (a, k) => pathTokens a.variant ++ [word "=>"] ++ child (k + 1) a.body) ++
       [word "}"]
 
 /-- A tree printed: each node's tokens by `layerTokens`, and its shape by the
@@ -852,8 +884,8 @@ nodes below its root, so of at most `depth + 1` levels. -/
 partial def randomTree (seed : Nat) : Nat → Tree × Nat
   | 0 => let s := lcg seed
     (match s / 2 ^ 33 % 4 with
-      | 0 => .name ["x"] | 1 => .integer (s / 2 ^ 40 % 100) | 2 => .boolean (s / 2 ^ 41 % 2 == 0)
-      | _ => .name ["E", "A"], s)
+      | 0 => .name (mkPath ["x"]) | 1 => .integer (s / 2 ^ 40 % 100) | 2 => .boolean (s / 2 ^ 41 % 2 == 0)
+      | _ => .name (mkPath ["E", "A"]), s)
   | depth + 1 =>
     let s := lcg seed
     let pick := s / 2 ^ 33 % 12
@@ -866,9 +898,9 @@ partial def randomTree (seed : Nat) : Nat → Tree × Nat
     | 3 | 4 | 5 | 6 => (.binary (binaryOps[s / 2 ^ 35 % 14]!) a b, s)
     | 7 => (.ifE a b c, s)
     | 8 => (.letE "v" a b, s)
-    | 9 => (.call ["f"] [a, b], s)
-    | 10 => (.matchE a [(["E", "A"], b), (["E", "B"], c)], s)
-    | _ => (.call ["g"] [a], s)
+    | 9 => (.call (mkPath ["f"]) [a, b], s)
+    | 10 => (.matchE a [(mkPath ["E", "A"], b), (mkPath ["E", "B"], c)], s)
+    | _ => (.call (mkPath ["g"]) [a], s)
 
 def randomTrees (count depth seed : Nat) : List Tree := Id.run do
   let mut seed := seed
@@ -932,7 +964,7 @@ first and is the left operand of the second, and the same at the start of an
 `else`: dropping their parentheses makes the operators meet where an `else`
 branch ends. -/
 def elseTrees : List Tree :=
-  let (x, y, z) := (Tree.name ["x"], Tree.name ["y"], Tree.name ["z"])
+  let (x, y, z) := (Tree.name (mkPath ["x"]), Tree.name (mkPath ["y"]), Tree.name (mkPath ["z"]))
   binaryOps.flatMap fun a => binaryOps.map fun b =>
     .binary b (.ifE x y (.binary a x y)) (.binary b y z)
 
@@ -1049,17 +1081,17 @@ operators and every unary operator around binary operands, and seven
 ill-formed trees; the converse on those trees' texts in full parentheses and
 on the texts near those of 300 more random trees of at most five levels. -/
 def roundtrip_agrees : Bool := Id.run do
-  let x := Tree.name ["x"]
-  let y := Tree.name ["y"]
-  let z := Tree.name ["z"]
+  let x := Tree.name (mkPath ["x"])
+  let y := Tree.name (mkPath ["y"])
+  let z := Tree.name (mkPath ["z"])
   let mut trees := randomTrees 1000 5 2026
   for a in binaryOps do
     for b in binaryOps do
       trees := .binary a (.binary b x y) z :: .binary a x (.binary b y z) :: trees
     for u in unaryOps do
       trees := .unary u (.binary a x y) :: .binary a (.unary u x) y :: .binary a x (.unary u y) :: trees
-  let illFormed : List Tree := [.call ["f"] [], .name [], .call [] [x],
-    .matchE x [(["A"], y)], .letE "true" x y, .name ["E", "not"], .binary .Add (.name ["if"]) x]
+  let illFormed : List Tree := [.call (mkPath ["f"]) [], .name (mkPath []), .call (mkPath []) [x],
+    .matchE x [(mkPath ["A"], y)], .letE "true" x y, .name (mkPath ["E", "not"]), .binary .Add (.name (mkPath ["if"])) x]
   let same (t : Tree) (text : String) := (tree? text).map (·.sexp) == some t.sexp
   let separated (p : Printed) := (toks p.text).toList.map (·.text) == p.tokens.map (·.1)
   let converse (text : String) := match tree? text with
@@ -1107,10 +1139,10 @@ def randomDecl (seed : Nat) : spec.surface.DeclarationF Tree × Nat := Id.run do
   let name (s : Nat) := names[pick s 4]!
   let isPub := pick s 2 == 0
   s := lcg s
-  let path := Fren.Seq.ofList ((List.range (1 + pick s 3)).map fun i => names[(pick s 7 + i) % 7]!)
+  let path := mkPath ((List.range (1 + pick s 3)).map fun i => names[(pick s 7 + i) % 7]!)
   s := lcg s
-  let types : List spec.surface.TypeName := [.Boolean, .Integer, .Named (Fren.Seq.ofList ["E"]),
-    .Named (Fren.Seq.ofList ["Int", "T"])]
+  let types : List spec.surface.TypeName := [.Boolean, .Integer, .Named (mkPath ["E"]),
+    .Named (mkPath ["Int", "T"])]
   let params := (List.range (1 + pick s 3)).map fun i =>
     let n := names[(pick s 5 + i) % 4]!
     let t := types[(pick s 11 + i) % 4]!
@@ -1139,20 +1171,20 @@ seven ill-formed declaration trees, which the chapter's
 a call without arguments, which `declaration_well_formed?` accepts and
 `node_well_formed?` must refuse. -/
 def declarations_agree : Bool := Id.run do
-  let x := Tree.name ["x"]
+  let x := Tree.name (mkPath ["x"])
   let p : spec.surface.Parameter := ⟨"x", some .Integer⟩
   let illFormed : List (spec.surface.DeclarationF Tree) := [
-    .Module ⟨false, Fren.Seq.ofList []⟩,
+    .Module ⟨false, mkPath []⟩,
     .Enumeration ⟨false, "E", Fren.Seq.ofList []⟩,
     .Enumeration ⟨false, "if", Fren.Seq.ofList ["A"]⟩,
     .Function (.mk! false "f" (Fren.Seq.ofList []) .Integer x),
     .Function (.mk! false "f" (Fren.Seq.ofList [⟨"y", none⟩]) .Integer x),
-    .Function (.mk! false "f" (Fren.Seq.ofList [p]) (.Named (Fren.Seq.ofList ["Bool"])) x),
+    .Function (.mk! false "f" (Fren.Seq.ofList [p]) (.Named (mkPath ["Bool"])) x),
     .Expectation (.mk! "e" (Fren.Seq.ofList []) (Fren.Seq.ofList [.mk! .Expect "then" x]))]
   if illFormed.any fun d => spec.surface.«declaration_well_formed?» (mapDecl (fun _ => .Elided) d) then
     return false
   let illBody : spec.surface.DeclarationF Tree :=
-    .Function (.mk! false "f" (Fren.Seq.ofList [p]) .Integer (.call ["g"] []))
+    .Function (.mk! false "f" (Fren.Seq.ofList [p]) .Integer (.call (mkPath ["g"]) []))
   unless spec.surface.«declaration_well_formed?» (mapDecl (fun _ => .Elided) illBody) &&
       !declWellFormed illBody do
     return false
@@ -1230,7 +1262,7 @@ def examples_agree (md : String) : Except String Unit := do
       unless lineOf body f.diagnostic.span.start == k && "expected " ++ f.diagnostic.expected == note do
         throw s!"Syntax.md:{line}: the parser says {f.diagnostic.render} on line {lineOf body f.diagnostic.span.start}"
 
--- fren-covers: spec::surface::reserved_names
+-- fren-covers: spec::names::rejected
 /-- Each `fren2 unresolved` block parses, and name resolution rejects it with
 the message that its `--~ error:` annotation states on the annotated line;
 the sentence before the block names the rule it breaks. -/
