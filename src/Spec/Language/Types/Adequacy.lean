@@ -20,10 +20,10 @@ generic theorems hold of any one-layer form and rule, so a later chapter
 that writes its derivations as tables proves its adequacy the same way: an
 instance of `Layer`, a `View` of its rows, and its table check as `Valid`.
 
-With adequacy, the laws that the chapter proves of tables hold of
-expressions: regularity (`typed_regular`), weakening with the shifted
-expression (`typed_weakens`), and uniqueness (`typed_unique`, in the
-wrapper).
+With adequacy, two laws that the chapter proves of tables hold of
+expressions: regularity (`typed_regular`) and weakening with the shifted
+expression (`typed_weakens`). Uniqueness goes the other way: the wrapper
+proves it of trees (`typed_unique`), and the table law follows from that.
 -/
 
 open Fren.Lang
@@ -38,7 +38,7 @@ open Spec.Tables
 theorem typings_ok_iff (symbols : Snoc Entry) (xs : Snoc Typing) :
     typings_ok? symbols xs = true ↔ ∀ c ∈ toList xs, ty_ok? symbols c.ty = true := by
   induction xs with
-  | Empty => simp [typings_ok?, toList]
+  | Empty => simp [typings_ok?]
   | Extend earlier x ih =>
     rw [typings_ok_extend, ih]
     simp only [toList, List.mem_cons]
@@ -51,8 +51,8 @@ theorem typings_ok_iff (symbols : Snoc Entry) (xs : Snoc Typing) :
 theorem toList_arm_typings (arms : Snoc (ArmF Typing)) :
     toList (arm_typings arms) = (toList arms).map (·.body) := by
   induction arms with
-  | Empty => simp [arm_typings, toList]
-  | Extend earlier arm ih => simp [arm_typings, toList, ih]
+  | Empty => simp [arm_typings]
+  | Extend earlier arm ih => simp [arm_typings, ih]
 
 theorem mem_children_iff (l : CoreF Typing) (c : Typing) :
     c ∈ toList (Fren.Generated.spec.types.children l) ↔ c ∈ childrenF l := by
@@ -90,7 +90,7 @@ theorem derives_regular (symbols : Snoc Entry) (hs : symb_ok? symbols = true) {e
         rcases hcm with rfl | rfl
         · exact hvok
         · rw [hb, context_ok_extend]
-          exact ⟨(ih v (by simp [Layer.children, childrenF]) hvok).2, hc⟩
+          exact ⟨(ih v (by simp [Layer.children]) hvok).2, hc⟩
       | _ =>
         intro c hcm
         have := hctx c.2 (mem_map_of_mem (F := CoreF) Prod.snd hcm)
@@ -98,11 +98,8 @@ theorem derives_regular (symbols : Snoc Entry) (hs : symb_ok? symbols = true) {e
     have hty : ty_ok? symbols j.ty = true := by
       refine layer_regular symbols j.ctx (mapF Prod.snd a) j.ty hs hc ?_ hra
       rw [children_ok_iff]
-      intro c hcm
-      rw [show childrenF (mapF Prod.snd a) = (childrenF a).map Prod.snd from
-        Layer.children_map (F := CoreF) Prod.snd a] at hcm
-      obtain ⟨c0, hc0, rfl⟩ := List.mem_map.1 hcm
-      exact (ih c0 hc0 (hall c0 hc0)).2
+      exact (forall_mem_children_map (F := CoreF) Prod.snd a _).2 fun c0 hc0 =>
+        (ih c0 hc0 (hall c0 hc0)).2
     exact ⟨Derives.node a j (fun c hcm => (ih c hcm (hall c hcm)).1) ⟨hc, hra⟩, hty⟩
 
 /-! ## Every context of a tree extends the root's -/
@@ -121,7 +118,7 @@ theorem rows_extend_of_lookup (rows : Snoc Row) (base : Snoc Ty)
   | Empty => simp [rows_extend?]
   | Extend earlier row ih =>
     simp only [rows_extend?, decide_eq_true_eq]
-    refine ⟨h (length Row earlier) row (by rw [lookup_extend, if_pos rfl]), ih ?_⟩
+    refine ⟨h (length Row earlier) row (lookup_last earlier row), ih ?_⟩
     exact fun p r hl => h p r (Extends.extend earlier row p r hl)
 
 theorem rule_extends (symbols : Snoc Entry) (base : Snoc Ty) (l : CoreF Typing) (j : Typing)

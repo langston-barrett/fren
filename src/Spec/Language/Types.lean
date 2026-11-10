@@ -791,41 +791,25 @@ theorem annotate_arguments_iff (rows : Snoc Row) (args : Snoc Int) (typed : Snoc
   | Empty =>
     constructor
     · intro h
-      simp [annotate_arguments] at h
+      simp only [annotate_arguments, Option.some.injEq] at h
       exact ⟨.Empty, rfl, h, fun _ hc => nomatch hc⟩
-    · rintro ⟨zs, h1, h2, -⟩
-      cases zs with
-      | Empty => simp [annotate_arguments]; exact h2
-      | Extend _ _ => simp [mapS] at h1
+    · rintro ⟨_ | _, h1, rfl, -⟩
+      · rfl
+      · nomatch h1
   | Extend earlier arg ih =>
     constructor
     · intro h
       simp only [annotate_arguments] at h
-      cases he : annotate_arguments rows earlier with
-      | none => simp [he] at h
-      | some te =>
-        cases ha : typing_at rows arg with
-        | none => simp [he, ha] at h
-        | some t =>
-          simp [he, ha] at h
-          obtain ⟨zs, h1, h2, h3⟩ := (ih te).1 he
-          refine ⟨.Extend zs (arg, t), by simp [mapS, h1], by simp [mapS, h2, h], ?_⟩
-          intro c hc
-          rcases List.mem_cons.1 hc with rfl | hc
-          · exact ha
-          · exact h3 c hc
-    · rintro ⟨zs, h1, h2, h3⟩
-      cases zs with
-      | Empty => simp [mapS] at h1
-      | Extend zs z =>
-        simp only [mapS, Snoc.Extend.injEq] at h1
-        simp only [mapS] at h2
-        have he := (ih (mapS Prod.snd zs)).2
-          ⟨zs, h1.1, rfl, fun c hc => h3 c (List.mem_cons_of_mem _ hc)⟩
-        have ha := h3 z List.mem_cons_self
-        rw [h1.2] at ha
-        simp only [annotate_arguments, he, ha]
-        rw [← h2]
+      split at h <;> cases h
+      rename_i te t he ha
+      obtain ⟨zs, rfl, rfl, h3⟩ := (ih te).1 he
+      exact ⟨.Extend zs (arg, t), rfl, rfl, List.forall_mem_cons.2 ⟨ha, h3⟩⟩
+    · rintro ⟨_ | ⟨zs, z⟩, h1, rfl, h3⟩
+      · nomatch h1
+      · simp only [mapS, Snoc.Extend.injEq] at h1
+        obtain ⟨rfl, rfl⟩ := h1
+        obtain ⟨ha, h3⟩ := List.forall_mem_cons.1 h3
+        simp only [annotate_arguments, (ih _).2 ⟨zs, rfl, rfl, h3⟩, ha, mapS]
 
 theorem annotate_arms_iff (rows : Snoc Row) (arms : Snoc (ArmF Int)) (typed : Snoc (ArmF Typing)) :
     annotate_arms rows arms = some typed ↔
@@ -836,42 +820,26 @@ theorem annotate_arms_iff (rows : Snoc Row) (arms : Snoc (ArmF Int)) (typed : Sn
   | Empty =>
     constructor
     · intro h
-      simp [annotate_arms] at h
+      simp only [annotate_arms, Option.some.injEq] at h
       exact ⟨.Empty, rfl, h, fun _ hc => nomatch hc⟩
-    · rintro ⟨zs, h1, h2, -⟩
-      cases zs with
-      | Empty => simp [annotate_arms]; exact h2
-      | Extend _ _ => simp [mapS] at h1
+    · rintro ⟨_ | _, h1, rfl, -⟩
+      · rfl
+      · nomatch h1
   | Extend earlier arm ih =>
     constructor
     · intro h
       simp only [annotate_arms] at h
-      cases he : annotate_arms rows earlier with
-      | none => simp [he] at h
-      | some te =>
-        cases ha : typing_at rows arm.body with
-        | none => simp [he, ha] at h
-        | some t =>
-          simp [he, ha] at h
-          obtain ⟨zs, h1, h2, h3⟩ := (ih te).1 he
-          refine ⟨.Extend zs ⟨arm.constructor, (arm.body, t)⟩, by simp [mapS, mapArm, h1],
-            by simp [mapS, mapArm, h2, h], ?_⟩
-          intro c hc
-          rcases List.mem_cons.1 hc with rfl | hc
-          · exact ha
-          · exact h3 c hc
-    · rintro ⟨zs, h1, h2, h3⟩
-      cases zs with
-      | Empty => simp [mapS] at h1
-      | Extend zs z =>
-        simp only [mapS, Snoc.Extend.injEq] at h1
-        simp only [mapS] at h2
-        obtain ⟨h1a, rfl⟩ := h1
-        have he := (ih (mapS (mapArm Prod.snd) zs)).2
-          ⟨zs, h1a, rfl, fun c hc => h3 c (List.mem_cons_of_mem _ hc)⟩
-        have ha := h3 z List.mem_cons_self
-        simp only [annotate_arms, he, mapArm, ha]
-        rw [← h2]; rfl
+      split at h <;> cases h
+      rename_i te t he ha
+      obtain ⟨zs, rfl, rfl, h3⟩ := (ih te).1 he
+      exact ⟨.Extend zs ⟨arm.constructor, (arm.body, t)⟩, rfl, rfl,
+        List.forall_mem_cons.2 ⟨ha, h3⟩⟩
+    · rintro ⟨_ | ⟨zs, ⟨zc, zb⟩⟩, h1, rfl, h3⟩
+      · nomatch h1
+      · simp only [mapS, Snoc.Extend.injEq] at h1
+        obtain ⟨rfl, rfl⟩ := h1
+        obtain ⟨ha, h3⟩ := List.forall_mem_cons.1 h3
+        simp only [annotate_arms, (ih _).2 ⟨zs, rfl, rfl, h3⟩, mapArm, ha, mapS]
 
 theorem annotate_iff (rows : Snoc Row) (form : CoreF Int) (typed : CoreF Typing) :
     annotate rows form = some typed ↔
@@ -879,106 +847,47 @@ theorem annotate_iff (rows : Snoc Row) (form : CoreF Int) (typed : CoreF Typing)
         ∀ c ∈ childrenF a, typing_at rows c.1 = some c.2 := by
   constructor
   · intro h
-    cases form with
-    | BooleanLiteral b =>
-      simp [annotate] at h; exact ⟨.BooleanLiteral b, rfl, h, by simp [childrenF]⟩
-    | IntegerLiteral b =>
-      simp [annotate] at h; exact ⟨.IntegerLiteral b, rfl, h, by simp [childrenF]⟩
-    | Local b => simp [annotate] at h; exact ⟨.Local b, rfl, h, by simp [childrenF]⟩
-    | Constructor b =>
-      simp [annotate] at h; exact ⟨.Constructor b, rfl, h, by simp [childrenF]⟩
-    | Unary op x =>
-      cases hx : typing_at rows x with
-      | none => simp [annotate, hx] at h
-      | some t =>
-        simp [annotate, hx] at h
-        exact ⟨.Unary op (x, t), rfl, h, by simp [childrenF, hx]⟩
-    | Binary op x y =>
-      cases hx : typing_at rows x with
-      | none => simp [annotate, hx] at h
-      | some t =>
-        cases hy : typing_at rows y with
-        | none => simp [annotate, hx, hy] at h
-        | some u =>
-          simp [annotate, hx, hy] at h
-          exact ⟨.Binary op (x, t) (y, u), rfl, h, by simp [childrenF, hx, hy]⟩
-    | Call item args =>
-      cases hx : annotate_arguments rows args with
-      | none => simp [annotate, hx] at h
-      | some ts =>
-        simp [annotate, hx] at h
-        obtain ⟨zs, h1, h2, h3⟩ := (annotate_arguments_iff rows args ts).1 hx
-        exact ⟨.Call item zs, by simp [mapF, h1], by simp [mapF, h2, h], h3⟩
-    | Let ann x y =>
-      cases hx : typing_at rows x with
-      | none => simp [annotate, hx] at h
-      | some t =>
-        cases hy : typing_at rows y with
-        | none => simp [annotate, hx, hy] at h
-        | some u =>
-          simp [annotate, hx, hy] at h
-          exact ⟨.Let ann (x, t) (y, u), rfl, h, by simp [childrenF, hx, hy]⟩
-    | If x y z =>
-      cases hx : typing_at rows x with
-      | none => simp [annotate, hx] at h
-      | some t =>
-        cases hy : typing_at rows y with
-        | none => simp [annotate, hx, hy] at h
-        | some u =>
-          cases hz : typing_at rows z with
-          | none => simp [annotate, hx, hy, hz] at h
-          | some v =>
-            simp [annotate, hx, hy, hz] at h
-            exact ⟨.If (x, t) (y, u) (z, v), rfl, h, by simp [childrenF, hx, hy, hz]⟩
-    | Match x arms =>
-      cases hx : typing_at rows x with
-      | none => simp [annotate, hx] at h
-      | some t =>
-        cases hy : annotate_arms rows arms with
-        | none => simp [annotate, hx, hy] at h
-        | some ts =>
-          simp [annotate, hx, hy] at h
-          obtain ⟨zs, h1, h2, h3⟩ := (annotate_arms_iff rows arms ts).1 hy
-          refine ⟨.Match (x, t) zs, by simp [mapF, h1], by simp [mapF, h2, h], ?_⟩
-          intro c hc
-          simp only [childrenF, List.mem_cons, List.mem_map] at hc
-          rcases hc with rfl | ⟨c0, hc0, rfl⟩
-          · exact hx
-          · exact h3 c0 hc0
+    cases form <;> simp only [annotate] at h <;> (try split at h) <;> cases h
+    · exact ⟨.BooleanLiteral _, rfl, rfl, fun _ hc => nomatch hc⟩
+    · exact ⟨.IntegerLiteral _, rfl, rfl, fun _ hc => nomatch hc⟩
+    · exact ⟨.Local _, rfl, rfl, fun _ hc => nomatch hc⟩
+    · exact ⟨.Constructor _, rfl, rfl, fun _ hc => nomatch hc⟩
+    · next hx => exact ⟨.Unary _ (_, _), rfl, rfl, List.forall_mem_cons.2 ⟨hx, fun _ hc => nomatch hc⟩⟩
+    · next hx hy =>
+      exact ⟨.Binary _ (_, _) (_, _), rfl, rfl,
+        List.forall_mem_cons.2 ⟨hx, List.forall_mem_cons.2 ⟨hy, fun _ hc => nomatch hc⟩⟩⟩
+    · next ts hx =>
+      obtain ⟨zs, rfl, rfl, h3⟩ := (annotate_arguments_iff rows _ ts).1 hx
+      exact ⟨.Call _ zs, rfl, rfl, h3⟩
+    · next hx hy =>
+      exact ⟨.Let _ (_, _) (_, _), rfl, rfl,
+        List.forall_mem_cons.2 ⟨hx, List.forall_mem_cons.2 ⟨hy, fun _ hc => nomatch hc⟩⟩⟩
+    · next hx hy hz =>
+      exact ⟨.If (_, _) (_, _) (_, _), rfl, rfl, List.forall_mem_cons.2 ⟨hx,
+        List.forall_mem_cons.2 ⟨hy, List.forall_mem_cons.2 ⟨hz, fun _ hc => nomatch hc⟩⟩⟩⟩
+    · next t ts hx hy =>
+      obtain ⟨zs, rfl, rfl, h3⟩ := (annotate_arms_iff rows _ ts).1 hy
+      exact ⟨.Match (_, t) zs, rfl, rfl,
+        List.forall_mem_cons.2 ⟨hx, fun _ hc => let ⟨c, hc, e⟩ := List.mem_map.1 hc; e ▸ h3 c hc⟩⟩
   · rintro ⟨a, rfl, rfl, hc⟩
     cases a with
-    | BooleanLiteral _ | IntegerLiteral _ | Local _ | Constructor _ => rfl
-    | Unary op x =>
-      have hx := hc x (by simp [childrenF])
-      simp [annotate, mapF, hx]
-    | Binary op x y =>
-      have hx := hc x (by simp [childrenF])
-      have hy := hc y (by simp [childrenF])
-      simp [annotate, mapF, hx, hy]
-    | Call item zs =>
-      have := (annotate_arguments_iff rows _ _).2 ⟨zs, rfl, rfl, hc⟩
-      simp [annotate, mapF, this]
-    | Let ann x y =>
-      have hx := hc x (by simp [childrenF])
-      have hy := hc y (by simp [childrenF])
-      simp [annotate, mapF, hx, hy]
-    | If x y z =>
-      have hx := hc x (by simp [childrenF])
-      have hy := hc y (by simp [childrenF])
-      have hz := hc z (by simp [childrenF])
-      simp [annotate, mapF, hx, hy, hz]
+    | Call item zs => simp [annotate, (annotate_arguments_iff rows _ _).2 ⟨zs, rfl, rfl, hc⟩]
     | Match x zs =>
-      have hx := hc x (by simp [childrenF])
-      have := (annotate_arms_iff rows _ _).2 ⟨zs, rfl, rfl, fun c hc' =>
-        hc c.body (by simp only [childrenF]; exact List.mem_cons_of_mem _ (List.mem_map.2 ⟨c, hc', rfl⟩))⟩
-      simp [annotate, mapF, hx, this]
+      simp only [childrenF, List.mem_cons, List.mem_map, forall_eq_or_imp, forall_exists_index,
+        and_imp, forall_apply_eq_imp_iff₂] at hc
+      simp [annotate, hc.1, (annotate_arms_iff rows _ _).2 ⟨zs, rfl, rfl, hc.2⟩]
+    | BooleanLiteral _ | IntegerLiteral _ | Local _ | Constructor _ => rfl
+    | Unary op x => simp only [annotate, mapF, hc x (.head _)]
+    | Binary op x y | Let op x y =>
+      simp only [annotate, mapF, hc x (.head _), hc y (.tail _ (.head _))]
+    | If x y z =>
+      simp only [annotate, mapF, hc x (.head _), hc y (.tail _ (.head _)),
+        hc z (.tail _ (.tail _ (.head _)))]
 
 theorem typing_at_iff (rows : Snoc Row) (p : Int) (t : Typing) :
     typing_at rows p = some t ↔ ∃ r, lookup Row rows p = some r ∧ rowView.concl r = t := by
   simp only [typing_at, rowView]
-  cases lookup Row rows p with
-  | none => simp
-  | some r => simp
+  cases lookup Row rows p <;> simp
 
 theorem justified_iff (symbols : Snoc Entry) (earlier : Snoc Row) (row : Row) :
     Justified rowView (RuleOk symbols) earlier (length Row earlier) row ↔
@@ -1021,24 +930,18 @@ theorem valid_iff (symbols : Snoc Entry) (rows : Snoc Row) :
 theorem in_context_mem (args : Snoc Typing) (context : Snoc Ty)
     (h : in_context? args context = true) : ∀ c ∈ toList args, c.ctx = context := by
   induction args with
-  | Empty => intro c hc; nomatch hc
+  | Empty => exact fun _ hc => nomatch hc
   | Extend earlier arg ih =>
     simp only [in_context?, decide_eq_true_eq] at h
-    intro c hc
-    rcases List.mem_cons.1 hc with rfl | hc
-    · exact h.1
-    · exact ih h.2 c hc
+    exact List.forall_mem_cons.2 ⟨h.1, ih h.2⟩
 
 theorem arm_bodies_mem (arms : Snoc (ArmF Typing)) (context : Snoc Ty) (ty : Ty)
     (h : arm_bodies? arms context ty = true) : ∀ c ∈ toList arms, c.body.ctx = context := by
   induction arms with
-  | Empty => intro c hc; nomatch hc
+  | Empty => exact fun _ hc => nomatch hc
   | Extend earlier arm ih =>
     simp only [arm_bodies?, decide_eq_true_eq] at h
-    intro c hc
-    rcases List.mem_cons.1 hc with rfl | hc
-    · exact h.1.1
-    · exact ih h.2 c hc
+    exact List.forall_mem_cons.2 ⟨h.1.1, ih h.2⟩
 
 /-- The contexts of a rule's premises: a let's body is typed in the context
 extended by its value's type, and every other premise in the conclusion's
@@ -1049,33 +952,32 @@ theorem rule_child_ctx (symbols : Snoc Entry) (context : Snoc Ty) (l : CoreF Typ
     | .Let _ value body => value.ctx = context ∧ body.ctx = .Extend context value.ty
     | l => ∀ c ∈ childrenF l, c.ctx = context := by
   cases l with
-  | BooleanLiteral _ | IntegerLiteral _ | Local _ | Constructor _ => intro c hc; nomatch hc
+  | BooleanLiteral _ | IntegerLiteral _ | Local _ | Constructor _ => simp
   | Unary op x =>
-    simp [rule?, unary_rule?, fren_spec] at h
-    simp [childrenF, h.1]
+    simp only [rule?, unary_rule?, fren_spec, decide_eq_true_eq, Bool.decide_and,
+      Bool.and_eq_true] at h
+    simp [h.1]
   | Binary op x y =>
-    simp [rule?, binary_rule?, fren_spec] at h
-    simp [childrenF, h.1.1, h.1.2]
+    simp only [rule?, binary_rule?, fren_spec, decide_eq_true_eq, Bool.decide_and,
+      Bool.and_eq_true] at h
+    simp [h.1]
   | Call item args =>
     simp only [rule?, call_rule?, decide_eq_true_eq] at h
     split at h
     · exact in_context_mem args context h.1.2
     · nomatch h
   | Let ann x y =>
-    cases ann with
-    | none => simp [rule?, let_rule?, fren_spec] at h; exact ⟨h.1.1, h.1.2⟩
-    | some w =>
-      simp [rule?, let_annotated_rule?, let_rule?, fren_spec] at h; exact ⟨h.2.1.1, h.2.1.2⟩
+    cases ann <;> simp only [rule?, let_annotated_rule?, let_rule?, fren_spec, decide_eq_true_eq,
+      Bool.decide_and, Bool.and_eq_true] at h
+    · exact h.1
+    · exact h.2.1
   | If x y z =>
-    simp [rule?, if_rule?, fren_spec] at h
-    simp [childrenF, h]
+    simp only [rule?, if_rule?, fren_spec, decide_eq_true_eq, Bool.decide_and,
+      Bool.and_eq_true] at h
+    simp [h]
   | Match x arms =>
     simp only [rule?, match_rule?, decide_eq_true_eq] at h
-    intro c hc
-    simp only [childrenF, List.mem_cons, List.mem_map] at hc
-    rcases hc with rfl | ⟨c0, hc0, rfl⟩
-    · exact h.1.1.1
-    · exact arm_bodies_mem arms context ty h.1.2 c0 hc0
+    simpa [h.1.1.1] using arm_bodies_mem arms context ty h.1.2
 
 /-! ### A derivation's root unfolds to a typed expression -/
 
@@ -1099,10 +1001,10 @@ theorem derivation_typed (symbols : Snoc Entry) (rows : Snoc Row) (context : Sno
     have hs : symb_ok? symbols = true := by
       simp only [symb_ok?, decide_eq_true_eq]; exact h.1.1.1.1
     have hroot := h.2
-    simp [fren_spec] at hroot
-    have hl : lookup Row (.Extend earlier root) (length Row earlier) = some root := by
-      rw [lookup_extend, if_pos rfl]
-    obtain ⟨t, hut, hdt⟩ := Valid.derives Core.mk ((valid_iff symbols _).1 h.1.1.2) hl
+    simp only [fren_spec, reduceCtorEq, ↓reduceIte, decide_eq_true_eq, Bool.decide_and,
+      Bool.and_eq_true] at hroot
+    obtain ⟨t, hut, hdt⟩ :=
+      Valid.derives Core.mk ((valid_iff symbols _).1 h.1.1.2) (lookup_last earlier root)
     have hj : rowView.concl root = ⟨context, ty⟩ := by
       rw [← hroot.1, ← hroot.2]; rfl
     rw [hj] at hdt
@@ -1122,12 +1024,12 @@ theorem rule_deterministic (symbols : Snoc Entry) (z : CoreF (Typing × Typing))
     | Let ann v b =>
       obtain ⟨hv, hb⟩ : v.1.ctx = j.ctx ∧ b.1.ctx = .Extend j.ctx v.1.ty := hctx
       obtain ⟨hv', hb'⟩ : v.2.ctx = j'.ctx ∧ b.2.ctx = .Extend j'.ctx v.2.ty := hctx'
-      have hvv : v.1 = v.2 := hz v (by simp [childrenF]) (by rw [hv, hv', hk])
+      have hvv : v.1 = v.2 := hz v (by simp) (by rw [hv, hv', hk])
       intro c hcm
       simp only [childrenF, List.mem_cons, List.mem_nil_iff, or_false] at hcm
       rcases hcm with rfl | rfl
       · exact hvv
-      · exact hz c (by simp [childrenF]) (by rw [hb, hb', hk, hvv])
+      · exact hz c (by simp) (by rw [hb, hb', hk, hvv])
     | _ =>
       intro c hcm
       refine hz c hcm ?_
@@ -1155,22 +1057,15 @@ theorem children_paired_zip (pairs : Snoc Pair) (xs : Snoc Int) :
         ∀ c ∈ toList zs, paired? pairs c.1 c.2 = true := by
   induction xs with
   | Empty =>
-    intro ys h
-    cases ys with
-    | Empty => exact ⟨.Empty, rfl, rfl, fun _ hc => nomatch hc⟩
-    | Extend _ _ => simp [children_paired?] at h
+    rintro (_ | _) h
+    · exact ⟨.Empty, rfl, rfl, fun _ hc => nomatch hc⟩
+    · simp [children_paired?] at h
   | Extend e x ih =>
-    intro ys h
-    cases ys with
-    | Empty => simp [children_paired?] at h
-    | Extend e' y =>
-      simp only [children_paired?, decide_eq_true_eq] at h
-      obtain ⟨zs, h1, h2, h3⟩ := ih e' h.2
-      refine ⟨.Extend zs (x, y), by simp [mapS, h1], by simp [mapS, h2], ?_⟩
-      intro c hc
-      rcases List.mem_cons.1 hc with rfl | hc
-      · exact h.1
-      · exact h3 c hc
+    rintro (_ | ⟨e', y⟩) h
+    · simp [children_paired?] at h
+    · simp only [children_paired?, decide_eq_true_eq] at h
+      obtain ⟨zs, rfl, rfl, h3⟩ := ih e' h.2
+      exact ⟨.Extend zs (x, y), rfl, rfl, List.forall_mem_cons.2 ⟨h.1, h3⟩⟩
 
 theorem arms_paired_zip (pairs : Snoc Pair) (xs : Snoc (ArmF Int)) :
     ∀ ys : Snoc (ArmF Int), arms_paired? pairs xs ys = true →
@@ -1179,83 +1074,60 @@ theorem arms_paired_zip (pairs : Snoc Pair) (xs : Snoc (ArmF Int)) :
         ∀ c ∈ toList zs, paired? pairs c.body.1 c.body.2 = true := by
   induction xs with
   | Empty =>
-    intro ys h
-    cases ys with
-    | Empty => exact ⟨.Empty, rfl, rfl, fun _ hc => nomatch hc⟩
-    | Extend _ _ => simp [arms_paired?] at h
+    rintro (_ | _) h
+    · exact ⟨.Empty, rfl, rfl, fun _ hc => nomatch hc⟩
+    · simp [arms_paired?] at h
   | Extend e x ih =>
-    intro ys h
-    cases ys with
-    | Empty => simp [arms_paired?] at h
-    | Extend e' y =>
-      simp only [arms_paired?, decide_eq_true_eq] at h
-      obtain ⟨zs, h1, h2, h3⟩ := ih e' h.2
-      obtain ⟨xc, xb⟩ := x
-      obtain ⟨yc, yb⟩ := y
-      have hcn : xc = yc := h.1.1
-      subst hcn
-      refine ⟨.Extend zs ⟨xc, (xb, yb)⟩, by simp [mapS, mapArm, h1], by simp [mapS, mapArm, h2], ?_⟩
-      intro c hc
-      rcases List.mem_cons.1 hc with rfl | hc
-      · exact h.1.2
-      · exact h3 c hc
+    rintro (_ | ⟨e', ⟨_, yb⟩⟩) h
+    · simp [arms_paired?] at h
+    · simp only [arms_paired?, decide_eq_true_eq] at h
+      obtain ⟨zs, rfl, rfl, h3⟩ := ih e' h.2
+      obtain ⟨⟨rfl, hb⟩, -⟩ := h
+      exact ⟨.Extend zs ⟨x.constructor, (x.body, yb)⟩, rfl, rfl, List.forall_mem_cons.2 ⟨hb, h3⟩⟩
 
 /-- Paired layers have one shape: a layer of pairs projects to both. -/
 theorem layers_paired_zip (pairs : Snoc Pair) (f g : CoreF Int)
     (h : layers_paired? pairs f g = true) :
     ∃ z : CoreF (Int × Int), mapF Prod.fst z = f ∧ mapF Prod.snd z = g ∧
       ∀ c ∈ childrenF z, paired? pairs c.1 c.2 = true := by
-  cases f with
-  | BooleanLiteral b =>
-    cases g <;> simp [layers_paired?, fren_spec] at h
-    subst h; exact ⟨.BooleanLiteral b, rfl, rfl, fun _ hc => nomatch hc⟩
-  | IntegerLiteral n =>
-    cases g <;> simp [layers_paired?, fren_spec] at h
-    subst h; exact ⟨.IntegerLiteral n, rfl, rfl, fun _ hc => nomatch hc⟩
-  | Local level =>
-    cases g <;> simp [layers_paired?, fren_spec] at h
-    subst h; exact ⟨.Local level, rfl, rfl, fun _ hc => nomatch hc⟩
-  | Constructor item =>
-    cases g <;> simp [layers_paired?, fren_spec] at h
-    subst h; exact ⟨.Constructor item, rfl, rfl, fun _ hc => nomatch hc⟩
-  | Unary op x =>
-    cases g <;> simp [layers_paired?, fren_spec] at h
-    rename_i op' y
-    obtain ⟨rfl, hp⟩ := h
-    exact ⟨.Unary op (x, y), rfl, rfl, by simpa [childrenF] using hp⟩
-  | Binary op x1 x2 =>
-    cases g <;> simp [layers_paired?, fren_spec] at h
-    rename_i op' y1 y2
-    obtain ⟨⟨rfl, hp1⟩, hp2⟩ := h
-    exact ⟨.Binary op (x1, y1) (x2, y2), rfl, rfl, by simp [childrenF, hp1, hp2]⟩
-  | Call item xs =>
-    cases g <;> simp [layers_paired?, fren_spec] at h
-    rename_i item' ys
-    obtain ⟨rfl, hp⟩ := h
-    obtain ⟨zs, h1, h2, h3⟩ := children_paired_zip pairs xs ys hp
-    exact ⟨.Call item zs, by simp [mapF, h1], by simp [mapF, h2], h3⟩
-  | Let ann x1 x2 =>
-    cases g <;> simp [layers_paired?, fren_spec] at h
-    rename_i ann' y1 y2
-    obtain ⟨⟨rfl, hp1⟩, hp2⟩ := h
-    exact ⟨.Let ann (x1, y1) (x2, y2), rfl, rfl, by simp [childrenF, hp1, hp2]⟩
-  | If x1 x2 x3 =>
-    cases g <;> simp [layers_paired?, fren_spec] at h
-    rename_i y1 y2 y3
-    obtain ⟨⟨hp1, hp2⟩, hp3⟩ := h
-    exact ⟨.If (x1, y1) (x2, y2) (x3, y3), rfl, rfl, by simp [childrenF, hp1, hp2, hp3]⟩
-  | Match x xs =>
-    cases g <;> simp [layers_paired?, fren_spec] at h
-    rename_i y ys
-    obtain ⟨hp, hps⟩ := h
-    obtain ⟨zs, h1, h2, h3⟩ := arms_paired_zip pairs xs ys hps
-    refine ⟨.Match (x, y) zs, by simp [mapF, h1], by simp [mapF, h2], ?_⟩
-    intro c hc
-    simp only [childrenF, List.mem_cons, List.mem_map] at hc
-    rcases hc with rfl | ⟨c0, hc0, rfl⟩
-    · exact hp
-    · exact h3 c0 hc0
-
+  open CoreF List in
+  simp only [layers_paired?, decide_eq_true_eq] at h
+  rcases ite_cases h with ⟨hs, h⟩ | ⟨hu, h⟩
+  · exact ⟨.Unary _ (Unary.x1 f, Unary.x1 g), hs.1.symm, (congrArg (Unary · _) h.1).trans hs.2.symm,
+      forall_mem_cons.2 ⟨h.2, fun _ hc => nomatch hc⟩⟩
+  rcases ite_cases h with ⟨hs, h⟩ | ⟨hb, h⟩
+  · exact ⟨.Binary _ (Binary.x1 f, Binary.x1 g) (Binary.x2 f, Binary.x2 g), hs.1.symm,
+      (congrArg (Binary · _ _) h.1.1).trans hs.2.symm,
+      forall_mem_cons.2 ⟨h.1.2, forall_mem_cons.2 ⟨h.2, fun _ hc => nomatch hc⟩⟩⟩
+  rcases ite_cases h with ⟨hs, h⟩ | ⟨hc, h⟩
+  · obtain ⟨zs, h1, h2, h3⟩ := children_paired_zip pairs _ _ h.2
+    exact ⟨.Call (Call.x0 f) zs, (congrArg (Call _) h1).trans hs.1.symm,
+      (congr (congrArg Call h.1) h2).trans hs.2.symm, h3⟩
+  rcases ite_cases h with ⟨hs, h⟩ | ⟨hl, h⟩
+  · exact ⟨.Let _ (Let.x1 f, Let.x1 g) (Let.x2 f, Let.x2 g), hs.1.symm,
+      (congrArg (Let · _ _) h.1.1).trans hs.2.symm,
+      forall_mem_cons.2 ⟨h.1.2, forall_mem_cons.2 ⟨h.2, fun _ hc => nomatch hc⟩⟩⟩
+  rcases ite_cases h with ⟨hs, h⟩ | ⟨hi, h⟩
+  · exact ⟨.If (If.x0 f, If.x0 g) (If.x1 f, If.x1 g) (If.x2 f, If.x2 g), hs.1.symm, hs.2.symm,
+      forall_mem_cons.2 ⟨h.1.1, forall_mem_cons.2 ⟨h.1.2,
+        forall_mem_cons.2 ⟨h.2, fun _ hc => nomatch hc⟩⟩⟩⟩
+  rcases ite_cases h with ⟨hs, h⟩ | ⟨hm, h⟩
+  · obtain ⟨zs, h1, h2, h3⟩ := arms_paired_zip pairs _ _ h.2
+    exact ⟨.Match (Match.x0 f, Match.x0 g) zs, (congrArg (Match _) h1).trans hs.1.symm,
+      (congrArg (Match _) h2).trans hs.2.symm, forall_mem_cons.2
+        ⟨h.1, fun _ hc => let ⟨c, hc, e⟩ := mem_map.1 hc; e ▸ h3 c hc⟩⟩
+  · subst h
+    cases f with
+    | Unary => exact (hu ⟨rfl, rfl⟩).elim
+    | Binary => exact (hb ⟨rfl, rfl⟩).elim
+    | Call => exact (hc ⟨rfl, rfl⟩).elim
+    | Let => exact (hl ⟨rfl, rfl⟩).elim
+    | If => exact (hi ⟨rfl, rfl⟩).elim
+    | Match => exact (hm ⟨rfl, rfl⟩).elim
+    | BooleanLiteral b => exact ⟨.BooleanLiteral b, rfl, rfl, fun _ hc => nomatch hc⟩
+    | IntegerLiteral n => exact ⟨.IntegerLiteral n, rfl, rfl, fun _ hc => nomatch hc⟩
+    | Local level => exact ⟨.Local level, rfl, rfl, fun _ hc => nomatch hc⟩
+    | Constructor item => exact ⟨.Constructor item, rfl, rfl, fun _ hc => nomatch hc⟩
 theorem pairs_agree_lookup (left right : Snoc Row) (pairs remaining : Snoc Pair)
     (h : pairs_agree? left right pairs remaining = true) :
     ∀ p q, paired? remaining p q = true → ∀ l r, lookup Row left p = some l →

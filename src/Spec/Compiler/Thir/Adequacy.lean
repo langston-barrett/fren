@@ -79,11 +79,7 @@ theorem synth_desugars (symb : Snoc Entry) {e : Hir} {j : Typing}
           (Layer.map_map (F := CoreF) (fun c : Hir × Typing => (desugar c.1, c.2)) Prod.fst b).symm)
       rw [he]
       refine Derives.node (F := CoreF) _ j ?_ ?_
-      · intro c hc
-        rw [show Layer.children (mapF (fun c : Hir × Typing => (desugar c.1, c.2)) b) = _ from
-          Layer.children_map (F := CoreF) _ b] at hc
-        obtain ⟨c0, hc0, rfl⟩ := List.mem_map.1 hc
-        exact ih c0 hc0
+      · exact (forall_mem_children_map (F := CoreF) _ b _).2 ih
       · have hs : Layer.map Prod.snd (mapF (fun c : Hir × Typing => (desugar c.1, c.2)) b)
             = mapF Prod.snd b := Layer.map_map (F := CoreF) _ _ _
         rw [hs]
@@ -188,11 +184,15 @@ theorem desugar_rows_inv (earlier : Snoc HirRow) (row : HirRow) (core : Snoc Row
   | some c =>
     rcases row with ⟨form, rc, rt⟩
     cases form with
-    | Core f => simp [hd', core_row] at hd; exact ⟨c, f, rfl, hd.symm, rfl⟩
+    | Core f =>
+      simp only [hd', core_row, Option.some.injEq] at hd
+      exact ⟨c, f, rfl, hd.symm, rfl⟩
     | Paren body =>
       cases hl : lookup _ c body with
       | none => simp [hd', hl] at hd
-      | some d => simp [hd', hl, core_row] at hd; exact ⟨c, d.form, rfl, hd.symm, d, hl, rfl⟩
+      | some d =>
+        simp only [hd', hl, core_row, Option.some.injEq] at hd
+        exact ⟨c, d.form, rfl, hd.symm, d, hl, rfl⟩
 
 /-- The desugared row at the level of a HIR row: it has that row's context
 and type, and its layer or, for a parenthesis, the layer of its body's
@@ -237,7 +237,7 @@ theorem desugar_typing_at (rows : Snoc HirRow) (core : Snoc Row)
     typing_at core p = some t ↔ ∃ r, lookup HirRow rows p = some r ∧ hirView.concl r = t := by
   rw [typing_at_iff]
   induction rows generalizing core with
-  | Empty => simp [desugar_rows] at hd; subst hd; simp [lookup]
+  | Empty => simp only [desugar_rows, Option.some.injEq] at hd; subst hd; simp [lookup]
   | Extend earlier row ih =>
     obtain ⟨c, f, hc, rfl, -⟩ := desugar_rows_inv earlier row core hd
     have hlen := desugar_length earlier c hc
@@ -258,7 +258,7 @@ theorem hir_annotate_iff (core : Snoc Row) (form : HirF Int) (typed : HirF Typin
       cases ha : annotate core l with
       | none => simp [ha] at h
       | some t =>
-        simp [ha] at h; subst h
+        simp only [ha, Option.some.injEq] at h; subst h
         obtain ⟨a, h1, h2, h3⟩ := (annotate_iff _ _ _).1 ha
         exact ⟨.Core a, congrArg HirF.Core h1, congrArg HirF.Core h2, h3⟩
     · rintro ⟨a, h1, h2, h3⟩
@@ -276,7 +276,7 @@ theorem hir_annotate_iff (core : Snoc Row) (form : HirF Int) (typed : HirF Typin
       cases ht : typing_at core b with
       | none => simp [ht] at h
       | some t =>
-        simp [ht] at h; subst h
+        simp only [ht, Option.some.injEq] at h; subst h
         exact ⟨.Paren (b, t), rfl, rfl, by simp [childrenH, ht]⟩
     · rintro ⟨a, h1, h2, h3⟩
       cases a with
@@ -354,11 +354,7 @@ theorem desugared_unfolding (rows : Snoc HirRow) (core : Snoc Row)
       · show Layer.map Prod.fst (mapF (fun c : Int × Hir => (c.1, desugar c.2)) b) = r'.form
         rw [hform]
         exact Layer.map_map (F := CoreF) (fun c : Int × Hir => (c.1, desugar c.2)) Prod.fst b
-      · intro c hc
-        rw [show Layer.children (mapF (fun c : Int × Hir => (c.1, desugar c.2)) b) = _ from
-          Layer.children_map (F := CoreF) _ b] at hc
-        obtain ⟨c0, hc0, rfl⟩ := List.mem_map.1 hc
-        exact ih c0 hc0
+      · exact (forall_mem_children_map (F := CoreF) _ b _).2 ih
     | Paren x =>
       have hf' : r.form = .Paren x.1 := hf.symm
       simp only [hf'] at hform
@@ -385,7 +381,7 @@ theorem hir_rows_extend_of_lookup (rows : Snoc HirRow) (base : Snoc Ty)
   | Empty => simp [hir_rows_extend?]
   | Extend earlier row ih =>
     simp only [hir_rows_extend?, decide_eq_true_eq]
-    refine ⟨h (length HirRow earlier) row (by rw [lookup_extend, if_pos rfl]), ih ?_⟩
+    refine ⟨h (length HirRow earlier) row (lookup_last earlier row), ih ?_⟩
     exact fun p r hl => h p r (Extends.extend earlier row p r hl)
 
 /-- Every context of a tree of synthesis rule instances extends the root's. -/
@@ -408,9 +404,9 @@ theorem synthesis_synth (symb : Snoc Entry) (rows : Snoc HirRow) (ctx : Snoc Ty)
   | Extend earlier root =>
     simp only [synthesis?, decide_eq_true_eq] at h
     have hroot := h.2
-    simp [fren_spec] at hroot
-    have hl : lookup HirRow (.Extend earlier root) (length HirRow earlier) = some root := by
-      rw [lookup_extend, if_pos rfl]
+    simp only [reduceCtorEq, ↓reduceIte, Snoc.Extend.x1, Bool.decide_and, Fren.lastArm_eq,
+      Bool.and_eq_true, decide_eq_true_eq] at hroot
+    have hl := lookup_last earlier root
     obtain ⟨t, hut, hdt⟩ := Valid.derives Hir.mk ((hir_valid_iff symb _).1 h.1.1.2) hl
     have hj : hirView.concl root = ⟨ctx, ty⟩ := by
       rw [← hroot.1, ← hroot.2]; rfl
