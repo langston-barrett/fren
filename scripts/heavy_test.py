@@ -2576,8 +2576,10 @@ def test_forecast_fresh_and_stale_adviser():
         verify()  # Fresh checkout builds the adviser before its first job.
         # Simulate an old executable with surviving Lake traces: the old
         # interface rejects the new protocol and must be rebuilt, not trusted.
+        os.unlink(adviser)
         with open(adviser, "w") as old:
             old.write("#!/bin/sh\nexit 2\n")
+        os.chmod(adviser, 0o755)
         verify()
         # A protocol-compatible binary whose kernel source changed must also
         # be rejected and rebuilt, even if its executable and traces exist.

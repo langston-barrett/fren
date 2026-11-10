@@ -171,6 +171,8 @@ def lake_route(command, verb_only=False):
         return None
     verb = args.pop(0)
     if verb_only:
+        if verb == 'test':
+            leading()
         return None if help_requested else verb
     if verb == 'env' and not help_requested and args[:1] == ['lean']:
         # env forwards its entire tail, without another option pass. Its
