@@ -397,9 +397,16 @@ def SemanticDomain (p : Program) : Prop :=
     Thir.MatchCoverage p.input p.typed ∧ Thir.Nonrecursive p.input p.typed ∧
     SourceFunctionality p
 
+/-- The part of `SemanticDomain` that no theorem yet derives from admission.
+For every admitted program it is equivalent to `SemanticDomain`. -/
+def AdmissionResidue (p : Program) : Prop :=
+  Thir.NamedCallees p.input p.typed ∧ Thir.BodyInventory p.input p.typed ∧
+    Thir.MatchCoverage p.input p.typed ∧ Thir.Nonrecursive p.input p.typed ∧
+    SourceFunctionality p
+
 def ConfirmedCounterexample (p : Program) (t : Theory) (r : CheckRequest)
     (args : Array FrenEval.Value) : Prop :=
-  Produces p t ∧ Constructs p t ∧ SemanticDomain p ∧ r ∈ t.requests.toList ∧
+  Produces p t ∧ Constructs p t ∧ AdmissionResidue p ∧ r ∈ t.requests.toList ∧
     VerificationDomain p.typed (SourceDefinition p.typed) r ∧
     Assignment p.typed r.context args.toList.reverse ∧
     AllTrue p.typed (SourceDefinition p.typed) r.assumptions args ∧
@@ -440,8 +447,18 @@ in the same environment, including malformed assignments; confirmation separatel
 requires typed arguments. No additional environment premise is needed for
 this uniqueness claim.
 
+Admission establishes part of `SemanticDomain`. A program that the front end
+admits, and in which every call has a name as its callee, satisfies
+`Thir.BodyTyping`, `Thir.OccurrenceInventory` and `Thir.OccurrenceTyping`.
+`AdmissionResidue` names what remains a premise: `Thir.NamedCallees`,
+`Thir.BodyInventory`, `Thir.MatchCoverage`, `Thir.Nonrecursive` and
+`SourceFunctionality`. `semantic_domain_iff` proves that a program satisfies
+`SemanticDomain` exactly when it satisfies `AdmissionResidue`, so a contract
+that takes the residue as its premise is neither stronger nor weaker than one
+that takes the whole domain.
+
 `ConfirmedCounterexample` requires actual producer evidence, `Constructs`,
-this semantic domain, request membership, static verification, typed arguments,
+the residue of this semantic domain, request membership, static verification, typed arguments,
 true assumptions and the selected goal's defined false value.
 `produced_goal_root` derives the goal's MIR-root membership from its actual
 request. `counterexample_refutes` transports that membership through

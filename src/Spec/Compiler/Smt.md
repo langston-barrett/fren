@@ -395,7 +395,7 @@ def ReadbackContract : Prop := ∀ p out, Produces p out → ∀ entry ∈ out.q
 
 /-- Every confirmed answer, at every evaluation depth, is a source candidate. -/
 def ConfirmationContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.oir.lir →
-  Oir.Constructs out.oir → Mir.SemanticDomain p → ∀ index entry,
+  Oir.Constructs out.oir → Mir.AdmissionResidue p → ∀ index entry,
   out.queries[index]? = some entry → ∀ values depth answer,
   confirmAssignment p index values depth = answer →
   (answer = .witness ∨ answer = .counterexample) →
@@ -421,7 +421,7 @@ def VerifiedInventory (p : Input) (report : Report) : Prop :=
           ∃ values, SourceCandidate p out q values .witness) ∨
          (q.kind ≠ .assumptionsSatisfiable ∧ r.status = .verified))
 
-def CheckerContract : Prop := ∀ p command run, Mir.SemanticDomain p →
+def CheckerContract : Prop := ∀ p command run, Mir.AdmissionResidue p →
   (summarize p command run).verdict = .verified → VerifiedInventory p (summarize p command run)
 ```
 

@@ -239,7 +239,7 @@ domain is independent of OIR search results and does not assume this conclusion.
 def PassContract : Prop := ∀ p out, Produces p out → Constructs out
 
 def SearchContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.lir → Constructs out →
-  Mir.SemanticDomain p → ∀ symbols, Lir.Models p symbols → ∀ zero,
+  Mir.AdmissionResidue p → ∀ symbols, Lir.Models p symbols → ∀ zero,
   EquationsHold out symbols zero → ∀ q ∈ out.questions.toList, ∀ values, Assignment out q values →
     (SearchHolds symbols zero q values ↔
       if q.kind = .assumptionsSatisfiable then
@@ -247,7 +247,7 @@ def SearchContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.
       else Violation symbols zero q values)
 
 def RequestContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.lir → Constructs out →
-  Mir.SemanticDomain p → ∀ symbols, Lir.Models p symbols → ∀ zero,
+  Mir.AdmissionResidue p → ∀ symbols, Lir.Models p symbols → ∀ zero,
   EquationsHold out symbols zero → ∀ index r, out.lir.requests[index]? = some r →
   Lir.VerificationDomain out.lir symbols zero r →
     (RequestMeaning out symbols zero index ↔ Lir.QuestionMeaning out.lir symbols zero r) ∧
@@ -475,7 +475,7 @@ theorem unknown_retained (q : FrenOir.Question) (s : String) : q.interpret (.unk
 theorem request_to_source (lirContract : Lir.RequestContract) (oirContract : RequestContract)
     (p : Input) (out : FrenOir.Program) (produced : Produces p out)
     (lirConstructs : Lir.Constructs p out.lir) (oirConstructs : Constructs out)
-    (semantic : Mir.SemanticDomain p) (model : Lir.Models p symbols)
+    (semantic : Mir.AdmissionResidue p) (model : Lir.Models p symbols)
     (equations : EquationsHold out symbols zero) (index : Nat) (r : CheckRequest)
     (atIndex : out.lir.requests[index]? = some r) (member : r ∈ out.lir.requests.toList)
     (safe : Mir.VerificationDomain p.typed (Mir.SourceDefinition p.typed) r.source) :

@@ -139,6 +139,14 @@ def OccurrenceTyping (input : FrenModule.Resolved) (out : FrenModule.Typed) : Pr
       occurrence.context occurrence.expression ∧
     OccurrenceMeaning input out.signatures occurrence)
 
+/-- Every call written in a body has a name as its callee. `HasValue` types no
+other call, so `OccurrenceTyping` implies this. -/
+def NamedCallees (input : FrenModule.Resolved) (out : FrenModule.Typed) : Prop :=
+  ∀ body ∈ out.bodies.toList, ∀ ctx callee o args commas c,
+    AtContext input out.signatures body.context body.expression ctx
+      (.call callee o args commas c) →
+    ∃ path, callee = .name path
+
 /-- Source declarations determine body owner, result type and parameter context. -/
 inductive DeclaresBody (input : FrenModule.Resolved) (sigs : Array FrenModule.Signature) :
     FrenBase.ItemId → Option FrenAst.Member → FrenAst.Expr →

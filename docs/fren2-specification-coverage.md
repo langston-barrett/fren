@@ -397,6 +397,13 @@ It proves retention/admission, uniqueness, failure exclusion, static-boundary
 factorization and equivalence of the body obligation to `TypingSound`.
 It does not prove `TypePassContract`, `CoverageContract` or
 `NonrecursionContract`, or a complete source-to-Fren-derivation bridge.
+`Spec.Compiler.Thir.Admission` proves the type pass sound: for every
+successful production in which every call has a name as its callee
+(`NamedCallees`), `body_typing`, `occurrence_inventory` and
+`occurrence_typing` prove `BodyTyping`, `OccurrenceInventory` and
+`OccurrenceTyping`, and `bodies_declared` proves the first half of
+`BodyInventory` with no hypothesis. These are universal Lean proofs over the
+production `infer` and `bodies`.
 The desugaring unit below adds its own actual-code contracts. The MIR unit
 below adds theory-construction and semantic contracts. The LIR unit below
 adds actual term, scope and interpretation contracts.
@@ -712,7 +719,11 @@ roots and descendants. Functionality compares derivations in the same environmen
 confirmation additionally requires typed arguments.
 `ConfirmedCounterexample` requires actual admission/production, construction
 correspondence, this semantic domain, request membership, static safety, typed
-arguments, true assumptions and a false goal. `produced_goal_root` proves the
+arguments, true assumptions and a false goal. `AdmissionResidue` is the part of the
+semantic domain that admission does not yet establish, and
+`semantic_domain_iff` proves it equivalent to `SemanticDomain` for every
+admitted program. The MIR, LIR, OIR and SMT contracts and
+`ConfirmedCounterexample` take the residue as their premise. `produced_goal_root` proves the
 goal is an actual MIR root; `counterexample_refutes` uses `RootInventory` to
 establish source membership before invoking functionality. A solver SAT answer
 by itself does not establish source confirmation.
@@ -744,9 +755,33 @@ pass, driver, Lake configuration or global compiler budget changes here.
 - [ ] Prove `PassContract`, including complete ordered source declaration/member
   correspondence and both definition and static-root inventories, over every
   successful actual producer result.
-- [ ] Prove the shared THIR static contracts and defined-value functionality
-  that `SemanticDomain` requires; prove actual evaluator adequacy for `ValueOf`
-  under independent static verification and sufficient depth.
+- [x] Prove `BodyTyping`, `OccurrenceInventory` and `OccurrenceTyping` for
+  every admitted program with named callees, and restate the contracts over
+  `AdmissionResidue`.
+- [ ] Discharge the five conjuncts of `AdmissionResidue` from admission:
+  - `Thir.NamedCallees`: prove that the parser gives every call a name as
+    its callee, and that an admitted document is a parsed one. `Admitted`
+    says only that the resolver reproduces the scope and references of the
+    supplied document, so this needs either a parse premise in admission or
+    a resolver check of callees.
+  - `Thir.BodyInventory`: the first half is `bodies_declared`. The second
+    half needs the body loop's exact output, one entry per function and per
+    member in source order, and distinct owners, which rest on the
+    resolver's rejection of duplicate declarations and on the identity of
+    members within one expectation.
+  - `Thir.MatchCoverage` (`CoverageContract`): the validator finds a
+    scrutinee's type by the token sequence of the expression. The proof
+    needs that this lookup returns the entry of the occurrence it is asked
+    about, and that the validator's count of arms per constructor is
+    `Selects` uniqueness.
+  - `Thir.Nonrecursive` (`NonrecursionContract`): the proof needs that the
+    validator's call graph has an edge for every `Calls` pair, and that its
+    search finds every cycle.
+  - `SourceFunctionality`: needs determinism of `ValueOf` on covered,
+    well-typed roots, hence distinct function names in `SourceDefinition`
+    and unique matching arms from `MatchCoverage`.
+- [ ] Prove actual evaluator adequacy for `ValueOf` under independent static
+  verification and sufficient depth.
 - [ ] Prove completeness of the recursive static interpretation, including
   all bindings and guard environments, before claiming universal verification
   or source-model confirmation from implementation output.
@@ -843,7 +878,10 @@ legacy checker's boundary, not an output of desugaring;
 
 - [ ] Prove `TypePassContract`, `CoverageContract` and `NonrecursionContract`
   for actual THIR production. Identity's static transfer does not discharge
-  these antecedent contracts.
+  these antecedent contracts. Of `TypePassContract`, body typing, the
+  occurrence inventory and occurrence typing are proved under `NamedCallees`,
+  and the first half of `BodyInventory` outright; the MIR section lists what
+  each remaining part needs.
 - [x] Specify reverse output-to-source soundness, exact occurrence multiplicity
   and written-child postorder in the independently reviewed THIR contract,
   with surplus/wrong-type/context/duplicate and order mutation controls.

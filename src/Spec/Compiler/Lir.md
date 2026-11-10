@@ -98,7 +98,7 @@ only explicit branches. It is distinct from the raw lazy evaluator.
 positional assignments: the domain is Boolean and true exactly when the
 source body has a defined value; each such value equals the value symbol.
 No unproved goal supplies an equation or domain fact. Functionality is
-required only for actual covered roots through `Mir.SemanticDomain`, never
+required only for actual covered roots through `Mir.AdmissionResidue`, never
 for arbitrary fabricated expressions. Typing alone does not exclude duplicate
 matching arms. A concrete sufficient constant-definition model and literal
 body correspondence have universal Lean proofs in the wrapper.
@@ -469,9 +469,9 @@ def QuestionMeaning (out : Program) (symbols : Symbols) (zero : ZeroValues) (r :
 def PassContract : Prop := ∀ p out, Produces p out → Constructs p out
 
 def InterpretationContract : Prop := ∀ p out, Produces p out → Constructs p out →
-  Mir.SemanticDomain p → ∀ symbols, Models p symbols → ∀ zero b, Root out b → BodyMeaning p b symbols zero
+  Mir.AdmissionResidue p → ∀ symbols, Models p symbols → ∀ zero b, Root out b → BodyMeaning p b symbols zero
 
-def RequestContract : Prop := ∀ p out, Produces p out → Constructs p out → Mir.SemanticDomain p →
+def RequestContract : Prop := ∀ p out, Produces p out → Constructs p out → Mir.AdmissionResidue p →
   ∀ symbols, Models p symbols → ∀ zero r, r ∈ out.requests.toList →
   Mir.VerificationDomain p.typed (Mir.SourceDefinition p.typed) r.source →
     VerificationDomain out symbols zero r ∧

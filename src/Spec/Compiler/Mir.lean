@@ -1,6 +1,7 @@
 import Fren.Impl
 import Fren.Literate
 import Spec.Compiler.Walking
+import Spec.Compiler.Thir.Admission
 import FrenThirToMir
 
 open Fren.Lang
@@ -226,9 +227,16 @@ def SemanticDomain (p : Program) : Prop :=
     Thir.MatchCoverage p.input p.typed ∧ Thir.Nonrecursive p.input p.typed ∧
     SourceFunctionality p
 
+/-- The part of `SemanticDomain` that no theorem yet derives from admission.
+For every admitted program it is equivalent to `SemanticDomain`. -/
+def AdmissionResidue (p : Program) : Prop :=
+  Thir.NamedCallees p.input p.typed ∧ Thir.BodyInventory p.input p.typed ∧
+    Thir.MatchCoverage p.input p.typed ∧ Thir.Nonrecursive p.input p.typed ∧
+    SourceFunctionality p
+
 def ConfirmedCounterexample (p : Program) (t : Theory) (r : CheckRequest)
     (args : Array FrenEval.Value) : Prop :=
-  Produces p t ∧ Constructs p t ∧ SemanticDomain p ∧ r ∈ t.requests.toList ∧
+  Produces p t ∧ Constructs p t ∧ AdmissionResidue p ∧ r ∈ t.requests.toList ∧
     VerificationDomain p.typed (SourceDefinition p.typed) r ∧
     Assignment p.typed r.context args.toList.reverse ∧
     AllTrue p.typed (SourceDefinition p.typed) r.assumptions args ∧
@@ -386,6 +394,17 @@ theorem produced_goal_root (p : Program) (t : Theory) (h : Produces p t)
       have hm := (FrenMir.goals_exact b goal).mp hg
       simpa using hm.1⟩
 
+/-- Admission gives the typing of every body and the typed table of its
+occurrences, so `SemanticDomain` holds exactly when its residue does. -/
+theorem semantic_domain_iff (p : Program) : AdmissionResidue p ↔ SemanticDomain p := by
+  have produced : Thir.Produces p.input p.typed := (FrenWalking.static p).1
+  constructor
+  · intro ⟨named, inventory, coverage, nonrecursive, functional⟩
+    exact ⟨inventory, Thir.body_typing produced named, Thir.occurrence_inventory produced named,
+      Thir.occurrence_typing produced named, coverage, nonrecursive, functional⟩
+  · intro ⟨inventory, _, _, typing, coverage, nonrecursive, functional⟩
+    exact ⟨Thir.named_callees typing, inventory, coverage, nonrecursive, functional⟩
+
 /-- Confirmation establishes source-root membership before using functionality. -/
 theorem counterexample_refutes (h : ConfirmedCounterexample p t r args) :
     ¬ QuestionMeaning p.typed (SourceDefinition p.typed) r := by
@@ -397,7 +416,7 @@ theorem counterexample_refutes (h : ConfirmedCounterexample p t r args) :
   unfold QuestionMeaning at valid
   rw [question] at valid
   have trueValue := valid args assignment assumptions
-  have unique := domain.2.2.2.2.2.2 goal sourceRoot _ _ _ trueValue falseValue
+  have unique := domain.2.2.2.2 goal sourceRoot _ _ _ trueValue falseValue
   cases unique
 
 /-- Every observation of a specified request follows its exact relational fields. -/

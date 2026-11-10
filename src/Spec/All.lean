@@ -18,6 +18,7 @@ import Spec.Compiler.Overview
 import Spec.Compiler.Smt
 import Spec.Compiler.Thir
 import Spec.Compiler.Thir.Adequacy
+import Spec.Compiler.Thir.Admission
 import Spec.Compiler.Thir.Hir
 import Spec.Compiler.Thir.Infer
 import Spec.Compiler.Walking

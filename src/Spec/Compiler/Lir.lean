@@ -252,9 +252,9 @@ def QuestionMeaning (out : Program) (symbols : Symbols) (zero : ZeroValues) (r :
 def PassContract : Prop := ∀ p out, Produces p out → Constructs p out
 
 def InterpretationContract : Prop := ∀ p out, Produces p out → Constructs p out →
-  Mir.SemanticDomain p → ∀ symbols, Models p symbols → ∀ zero b, Root out b → BodyMeaning p b symbols zero
+  Mir.AdmissionResidue p → ∀ symbols, Models p symbols → ∀ zero b, Root out b → BodyMeaning p b symbols zero
 
-def RequestContract : Prop := ∀ p out, Produces p out → Constructs p out → Mir.SemanticDomain p →
+def RequestContract : Prop := ∀ p out, Produces p out → Constructs p out → Mir.AdmissionResidue p →
   ∀ symbols, Models p symbols → ∀ zero r, r ∈ out.requests.toList →
   Mir.VerificationDomain p.typed (Mir.SourceDefinition p.typed) r.source →
     VerificationDomain out symbols zero r ∧

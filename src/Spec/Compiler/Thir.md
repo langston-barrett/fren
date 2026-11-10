@@ -79,8 +79,18 @@ The `body_contract_iff` theorem equates the body component with the existing
 `FrenHirToThir.TypingSound` obligation. It does not prove that obligation.
 The wrapper proves admission/retention, uniqueness, failure exclusion and the
 exact factorization of the public static boundary using actual-code theorems.
-`TypePassContract`, including the general occurrence inventory and context
-correspondence, remains unproved. The wrapper proves the exact table relation
+The [admission module](Thir/Admission.lean) proves the type pass sound for
+every successful production. `infer_sound` proves that a successful traversal
+of an expression gives its meaning and its exact occurrence table, when every
+call below it has a name as its callee. `NamedCallees` states that condition
+for every body. The parser writes no other callee, but no theorem derives the
+condition from admission, so it is a hypothesis. Under it, `body_typing`,
+`occurrence_inventory` and `occurrence_typing` prove `BodyTyping`,
+`OccurrenceInventory` and `OccurrenceTyping`. `bodies_declared` proves,
+without that hypothesis, that every retained body has a source declaration,
+which is the first half of `BodyInventory`. The second half, that every
+source body has exactly one entry, remains unproved, and so does
+`TypePassContract` as a whole. The wrapper proves the exact table relation
 and actual inference law for integer addition with literal operands, for all
 inputs, tokens and contexts. Its raw-output mutation controls check a proved
 necessary projection of that relation. These laws and controls do not prove

@@ -217,7 +217,7 @@ independent sufficient `Lir.VerificationDomain`. These are named obligations,
 not axioms or assumed universal producer theorems.
 
 Their premises retain actual production, LIR construction, OIR construction,
-`Mir.SemanticDomain`, source-definition models and LIR equation meanings.
+`Mir.AdmissionResidue`, source-definition models and LIR equation meanings.
 In particular, root-restricted source functionality/coverage, model existence,
 LIR interpretation and sorting/checker correspondence are not consequences
 of a finite OIR check. The source contract composes this request equivalence
@@ -460,7 +460,7 @@ domain is independent of OIR search results and does not assume this conclusion.
 def PassContract : Prop := ∀ p out, Produces p out → Constructs out
 
 def SearchContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.lir → Constructs out →
-  Mir.SemanticDomain p → ∀ symbols, Lir.Models p symbols → ∀ zero,
+  Mir.AdmissionResidue p → ∀ symbols, Lir.Models p symbols → ∀ zero,
   EquationsHold out symbols zero → ∀ q ∈ out.questions.toList, ∀ values, Assignment out q values →
     (SearchHolds symbols zero q values ↔
       if q.kind = .assumptionsSatisfiable then
@@ -468,7 +468,7 @@ def SearchContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.
       else Violation symbols zero q values)
 
 def RequestContract : Prop := ∀ p out, Produces p out → Lir.Constructs p out.lir → Constructs out →
-  Mir.SemanticDomain p → ∀ symbols, Lir.Models p symbols → ∀ zero,
+  Mir.AdmissionResidue p → ∀ symbols, Lir.Models p symbols → ∀ zero,
   EquationsHold out symbols zero → ∀ index r, out.lir.requests[index]? = some r →
   Lir.VerificationDomain out.lir symbols zero r →
     (RequestMeaning out symbols zero index ↔ Lir.QuestionMeaning out.lir symbols zero r) ∧
