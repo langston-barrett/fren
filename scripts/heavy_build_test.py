@@ -96,7 +96,7 @@ class OwnedRun:
                 errors.append('kernel task census changed')
             for pid in pids:
                 try:
-                    row = self.heavy.process_stat(Path(f'/proc/{pid}/stat').read_text())
+                    row = self.stat_row(f'/proc/{pid}/stat')
                     if row['ppid'] == os.getpid():
                         rows[(row['pid'], row['start'])] = row
                 except (FileNotFoundError, ProcessLookupError):
@@ -125,15 +125,27 @@ class OwnedRun:
                 if message not in self.errors:
                     self.errors.append(message)
 
+    def stat_row(self, path):
+        """One procfs stat sample of a process that may be exiting.
+
+        State X is a dead process that the kernel is releasing: it has been
+        reaped, and has no parent, group or session left (0, -1, -1), which
+        Heavy's parser rejects. It is gone, like one whose stat file vanished,
+        so it raises ProcessLookupError, which every census here skips. A
+        zombie (Z) still parses and is returned: it stays ours until reaped.
+        """
+        text = Path(path).read_text()
+        try:
+            return self.heavy.process_stat(text)
+        except ValueError as error:
+            if text[text.rfind(')') + 1:].split()[:1] == ['X']:
+                raise ProcessLookupError(f'{path}: process is dead') from error
+            # Preserve an actual rejected procfs sample for review. Keep
+            # the existing fail/cleanup boundary; never omit the worker.
+            raise ValueError(f'{path}: {error}; raw stat={text!r}') from error
+
     def collect(self):
-        def observed_stat(path):
-            text = path.read_text()
-            try:
-                return self.heavy.process_stat(text)
-            except ValueError as error:
-                # Preserve an actual rejected procfs sample for review. Keep
-                # the existing fail/cleanup boundary; never omit the worker.
-                raise ValueError(f'{path}: {error}; raw stat={text!r}') from error
+        observed_stat = self.stat_row
         marker = ('HEAVY_TEST_OWNER=' + self.token).encode()
         inherited = ('HEAVY_TEST_OWNED_' + self.token + '=1').encode()
         rows = {}
