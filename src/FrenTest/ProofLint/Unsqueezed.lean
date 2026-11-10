@@ -138,35 +138,53 @@ itself, or the declarations of a `mutual` block and the like. -/
 private partial def pieces (stx : Syntax) : Array Syntax :=
   if declIds stx ≤ 1 then #[stx] else stx.getArgs.flatMap pieces
 
+/-- The source text of `stx` with each run of white space as one space, so
+that neither layout nor position changes it. -/
+private def squeezed (stx : Syntax) : String :=
+  let text := match stx.getSubstring? (withLeading := false) (withTrailing := false) with
+    | some text => text.toString
+    | none => stx.reprint.getD ""
+  (text.foldl (init := ("", false)) fun (out, gap) c =>
+    if c.isWhitespace then (out, true)
+    else ((if gap && !out.isEmpty then out.push ' ' else out).push c, false)).1
+
 /-- A name for a declaration that does not depend on where it stands: the
-name it declares, else the kind of an unnamed declaration (`example`,
-`instance`), else the first identifier after the keyword of another command,
-such as `impl` and `interp`, else the command's kind. `open ... in` and the
-like are looked through. -/
+name it declares; else, for an unnamed declaration (`example`, `instance`),
+its kind, `@` and a hash of its signature's text, which tells the unnamed
+declarations of a file apart; else the first identifier after the keyword of
+another command, such as `impl` and `interp`; else the command's kind.
+`open ... in` and the like are looked through. -/
 private partial def label (stx : Syntax) : String :=
   if stx.isOfKind ``Parser.Command.in then label stx[2] else
   let inner := (stx.find? (·.isOfKind ``Parser.Command.declaration)).getD stx
   let name := match inner.find? (·.isOfKind ``Parser.Command.declId) with
     | some id => toString id[0].getId
     | none =>
-      if inner.isOfKind ``Parser.Command.declaration then toString (inner[1].getKind.components.getLast?.getD `declaration)
+      if inner.isOfKind ``Parser.Command.declaration then
+        let signature := inner[1].find? fun part =>
+          part.isOfKind ``Parser.Command.declSig || part.isOfKind ``Parser.Command.optDeclSig
+        let digits := Nat.toDigits 16 ((hash (squeezed (signature.getD inner[1]))).toNat % 2 ^ 32)
+        s!"{inner[1].getKind.components.getLast?.getD `declaration}@{String.ofList digits}"
       else match inner[1].find? (·.isIdent) with
         | some id => toString id.getId
         | none => toString (inner.getKind.components.getLast?.getD `command)
   name.replace " " "_"
 
 /-- The unsqueezed `simp` and `grind` calls of a file's commands, each with
-its identity in the file: the label of its declaration, `#` and its number
-among the calls reported under that label, from 1. A label that several
-declarations share, such as `example`, numbers their calls together. -/
+its identity in the file: the label of its declaration, `: ` and the call's
+squeezed source text, so that the identity changes with neither the call's
+position nor its layout, and a call that replaces another has another
+identity. Only calls of the same text under the same label are numbered: the
+second and later ones end in ` #n`. -/
 def unsqueezed (commands : Array Syntax) : Array (String × Syntax) := Id.run do
   let mut found : Array (String × Syntax) := #[]
-  let mut labels : Array String := #[]
+  let mut keys : Array String := #[]
   for piece in commands.flatMap pieces do
     for stx in visit false piece #[] do
-      let name := label piece
-      labels := labels.push name
-      found := found.push (s!"{name}#{(labels.filter (· == name)).size}", stx)
+      let key := s!"{label piece}: {squeezed stx}"
+      keys := keys.push key
+      let nth := (keys.filter (· == key)).size
+      found := found.push (if nth == 1 then key else s!"{key} #{nth}", stx)
   return found
 
 /-- Whether any of the commands gives a declaration the `simp` attribute. -/

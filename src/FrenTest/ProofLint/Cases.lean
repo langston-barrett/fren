@@ -30,6 +30,8 @@ def r3 (n : Nat) : Nat := n
 def r4 (n : Nat) : Nat := n
 def r5 (n : Nat) : Nat := n
 @[reducible] def again (n : Nat) : Nat := twice n
+def turn (n _k : Nat) : Nat := n
+def grow (_n : Nat) : Nat := 0
 
 /-! ## Simp lemmas that pass -/
 
@@ -44,6 +46,8 @@ def r5 (n : Nat) : Nat := n
 public section
 @[simp] theorem twice_one : twice 1 = 2 := by unfold twice; omega
 end
+-- Two rewrites and no finding.
+@[simp] theorem twice_pair : twice 3 = 6 ∧ twice 4 = 8 := ⟨rfl, rfl⟩
 
 /-! ## Simp lemmas that `simpNF` reports -/
 
@@ -53,7 +57,8 @@ end
 @[simp] theorem same_same (n : Nat) : same (same n) = n := rfl
 -- Both sides are the same term once the reducible `again` unfolds.
 @[simp] theorem again_eq (n : Nat) : again n = twice n := rfl
--- One conjunct of two is not in normal form.
+-- Two rewrites, each with its own finding. The first never applies: simp
+-- cannot find `n` from `twice 2`. The second is not in normal form.
 @[simp] theorem twice_both (n : Nat) : twice 2 = 4 ∧ twice (0 + n) = n + n :=
   ⟨rfl, by unfold twice; omega⟩
 
@@ -66,6 +71,12 @@ public section
 end
 
 /-! ## Simp lemmas that `simpLoop` reports -/
+
+-- Two rewrites, of which only the second loops: its findings end in `@2`,
+-- and the first rewrite has none.
+@[simp] theorem turn_both (n : Nat) : turn n 0 = n ∧ turn n 1 = turn (turn n 1) 1 := ⟨rfl, rfl⟩
+-- Simp runs out of steps here before it runs out of depth.
+@[simp] theorem grow_eq (n : Nat) : grow n = grow (n + 1 + 1 + 1 + 1) := rfl
 
 -- The right-hand side is the left-hand side with `a` and `b` exchanged.
 @[simp] theorem mix_comm (a b : Nat) : mix a b = mix b a := Nat.add_comm a b
@@ -84,10 +95,11 @@ end
 @[simp] theorem q3_eq (n : Nat) : q3 n = q4 n := rfl
 @[simp] theorem q4_eq (n : Nat) : q4 n = q1 n := rfl
 
-/-! ## A loop beyond the bound of `simpLoop`
+/-! ## A loop beyond the bound of the cycle search
 
-A cycle of five lemmas: `simpLoop` reports none of them, and `simpNF` reports
-each because simp fails on its left-hand side. -/
+A cycle of five lemmas, one more than the search follows: `simpLoop` reports
+each because simp runs away on its left-hand side, and `simpNF` because simp
+fails there. -/
 
 @[simp] theorem r1_eq (n : Nat) : r1 n = r2 n := rfl
 @[simp] theorem r2_eq (n : Nat) : r2 n = r3 n := rfl
