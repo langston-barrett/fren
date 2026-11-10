@@ -225,13 +225,15 @@ def run (args : List String) : IO UInt32 := do
   let mut requestDemand := 0
   let mut provenance := ""
   let mut adviceSamples := 0
+  let mut admissionLimitMs := 0
   let raw ← if gated then do
     let dir := FilePath.mk gateDir.get!
     let some configBytes ← readRegular (dir / "config").toString fingerprintAllowed
       | throw (IO.userError "unreadable budget config")
     let some config := String.fromUTF8? configBytes | throw (IO.userError "invalid budget config")
-    let [allowance, parent, fallback, _] := BudgetAdapter.words config.trimAscii.copy
+    let [allowance, parent, fallback, limitMs] := BudgetAdapter.words config.trimAscii.copy
       | throw (IO.userError "malformed budget config")
+    admissionLimitMs := limitMs.toNat?.getD 0
     let some fallback := fallback.toNat? | throw (IO.userError "malformed fallback")
     let some allowance := allowance.toInt? | throw (IO.userError "malformed allowance")
     let some parent := parent.toInt? | throw (IO.userError "malformed parent headroom")
@@ -291,9 +293,10 @@ def run (args : List String) : IO UInt32 := do
     catch _ => pure () -- Optional IO failure leaves the positive fallback.
     observeBudget real.toString args.toArray dir.toString requestDemand.toUInt64 cpuLimit.toUInt64 wallLimit.toUInt64 memoryLimit.toUInt64 BudgetAdapter.snapshot BudgetAdapter.control
     else observe real.toString args.toArray
-  if raw.size != (if gated then 41 else 18) then throw (IO.userError "invalid FFI observation length")
-  let v := fun i => raw[i]!.toNat
+  if raw.size != (if gated then 43 else 18) then throw (IO.userError "invalid FFI observation length")
+  let v : Nat → Nat := fun i => raw[i]!.toNat
   let gateError := if gated then v 18 else 0
+  let timedOut := if gated then Heavy.Budget.timedOutWait gateError (v 41) (v 42) else 0
   let childPresent := !gated || v 5 != 0
   let outcome := result (v 0) (v 1) (v 2) (v 4)
   let wall := if childPresent then elapsed (v 3) (v 6) (v 7) else none
@@ -311,7 +314,8 @@ def run (args : List String) : IO UInt32 := do
     let artifacts ← outputs.mapM artifact
     let sourceAfter ← source.mapM fun s => fingerprint s
     let gateFields := if gated then [
-      ("gate_errno", toString gateError), ("admission_wait_ns", toString (v 19)),
+      ("gate_errno", toString gateError), ("admission_timeout_wait", toString timedOut),
+      ("admission_wait_ns", toString (v 19)),
       ("admission_granted_ns", toString (v 24)),
       ("reservation_ticket", toString (v 20)), ("held_before_kib", toString (v 21)),
       ("allowance_kib", toString (v 22)), ("parent_headroom_kib", toString (v 23)),
@@ -423,6 +427,15 @@ def run (args : List String) : IO UInt32 := do
     return 124
   if gated && v 36 != 0 then
     warn s!"module memory cleanup unknown (errno {v 36}); physical root status {v 4}"
+    return 125
+  if timedOut != 0 then
+    -- An expired admission deadline is the session's stated bound, not a
+    -- control fault: name the wait, the bound and the budget it waited for.
+    let waited := if timedOut == 1 then "the registry lock"
+      else if timedOut == 2 then
+        s!"compiler budget: reserved {v 21} of {v 22 - v 23} KiB, requested {requestDemand} KiB, ticket {v 20}"
+      else "grant publication"
+    warn s!"admission timed out after {v 19 / 1000000} ms (limit {admissionLimitMs} ms, the session's admission wait) waiting for {waited}; compiler not started"
     return 125
   if gateError != 0 then
     warn s!"budget control failed (errno {gateError}); child present={childPresent}"

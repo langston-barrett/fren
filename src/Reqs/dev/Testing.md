@@ -2460,6 +2460,21 @@ same fixed deadline, including after lock acquisition and after publishing
 a running row. A successful check permits eligibility at that sample; it
 does not prevent preemption before the subsequent fork.
 
+The deadline is a fixed bound on one invocation's admission, counted from
+its entry to the gate. An invocation that reaches it must fail without
+starting its compiler and must report an admission timeout that names the
+wait in progress: the registry lock, the budget or its turn, or grant
+publication, together with the bound and, for a budget wait, the reserved,
+available and requested KiB. It must not report an expired deadline as an
+unexplained control error. The report follows the raw deadline decision,
+not the error number: an operating-system error may itself be a timeout,
+and such an error is not an expired deadline. A retry of the registry lock
+that no holder refused counts as a wait for budget. Since held reservations
+do not expire, a waiter can be admitted only if the bound exceeds the time
+the holders ahead of it run. The build entry point therefore defaults to
+600,000 ms, the longest bound a session accepts; a compiler queued for
+longer than that behind running holders still fails with this report.
+
 Before fork, the session and gated observer require SIGCHLD's raw handler
 to be SIG_DFL with no SA_NOCLDWAIT. They reject unsupported dispositions
 without changing SIGCHLD. Each group signal additionally checks raw waitid
@@ -2516,6 +2531,15 @@ pub proc heavy_compile_deadline(clock_error: Int, now: Int, deadline: Int): (det
     expect expiry: when clock_error = 0 and now >= deadline >= 0, decision = 1
 }
 
+-- The wait an expired admission deadline names: 0 none, 1 the registry lock,
+-- 2 budget or turn, 3 grant publication. decision is the last raw
+-- heavy_compile_deadline decision and stage the wait then in progress.
+pub proc heavy_compile_admission_timeout(gate_error: Int, decision: Int, stage: Int): (det wait: Int) {
+    out wait := if gate_error != 0 and decision = 1 and 1 <= stage <= 3 then stage else 0
+    expect named: when wait != 0, gate_error != 0 and decision = 1 and wait = stage and 1 <= wait <= 3
+    expect expiry_named: when gate_error != 0 and decision = 1 and 1 <= stage <= 3, wait = stage
+}
+
 -- Linux SIG_DFL has raw handler value 0. The adapter supplies the actual
 -- sa_flags and SA_NOCLDWAIT bit value, not an already-decided ownership flag.
 -- This Linux boundary supports bit value 2 and rejects a different ABI.
@@ -2541,6 +2565,7 @@ pub proc heavy_compile_lifecycle(
 }
 
 #fren_check heavy_compile_deadline
+#fren_check heavy_compile_admission_timeout
 #fren_check heavy_compile_lifecycle
 #fren_check heavy_compile_budget
 ```

@@ -129,15 +129,20 @@ static int wall_deadline(b_lean_obj_arg control, uint64_t limit, uint64_t *sampl
     if (answer > 2) { *error = EPROTO; return 2; }
     return (int)answer;
 }
+/* The last raw admission-deadline decision (0 eligible, 1 expired, 2 error),
+ * kept apart from the errno it maps to: an OS error may itself be ETIMEDOUT. */
+static uint64_t budget_last_deadline;
 static int budget_deadline(b_lean_obj_arg control, uint64_t limit, uint64_t *sample) {
     struct timespec t;
     uint64_t error = 0;
     *sample = 0;
+    budget_last_deadline = 2;
     if (clock_gettime(CLOCK_MONOTONIC, &t) < 0) error = errno;
     else *sample = (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
     uint64_t raw[] = {0, error, *sample, limit}, answer;
     int e = budget_control(control, raw, 4, 1, 0, &answer);
     if (e) return e;
+    budget_last_deadline = answer <= 1 ? answer : 2;
     return answer == 0 ? 0 : answer == 1 ? ETIMEDOUT : answer == 2 ? (error ? (int)error : EIO) : EPROTO;
 }
 static int budget_lifecycle(b_lean_obj_arg control, int previous, int wait_error,
@@ -162,7 +167,10 @@ static int budget_group_signal(b_lean_obj_arg control, pid_t child, int signal,
     if (kill(-child, signal) < 0 && errno != ESRCH) return errno;
     return 0;
 }
-static int budget_lock(b_lean_obj_arg control, int fd, uint64_t deadline) {
+/* *contended records that another holder refused the lock at least once, so
+ * an expiry here was a wait for the lock and not only for the caller's turn. */
+static int budget_lock(b_lean_obj_arg control, int fd, uint64_t deadline, int *contended) {
+    *contended = 0;
     for (;;) {
         if (budget_cancelled) return ECANCELED;
         uint64_t now;
@@ -171,10 +179,11 @@ static int budget_lock(b_lean_obj_arg control, int fd, uint64_t deadline) {
         if (flock(fd, LOCK_EX | LOCK_NB) == 0) {
             /* Acquisition itself can be preempted across the deadline. */
             e = budget_deadline(control, deadline, &now);
-            if (e && flock(fd, LOCK_UN) < 0) return errno;
+            if (e && flock(fd, LOCK_UN) < 0) { budget_last_deadline = 2; return errno; }
             return e;
         }
         if (errno != EAGAIN && errno != EWOULDBLOCK) return errno;
+        *contended = 1;
         struct timespec pause = {0, 10000000}; nanosleep(&pause, NULL);
     }
 }
@@ -187,12 +196,14 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
     uint64_t extra[7] = {0}; /* error, admission wait ns, ticket, held, allowance, parent */
     lean_object *result = NULL;
     int dir = -1, registry = -1, owner = -1, ticketfd = -1, counter = -1, config = -1;
-    int locked = 0, e = 0, handlers = 0, ownerfd = -1;
+    /* The admission wait in progress, for an expired deadline's report:
+     * 1 registry lock, 2 budget or turn, 3 grant publication, 0 none. */
+    int locked = 0, e = 0, handlers = 0, ownerfd = -1, stage = 0, contended = 0;
     char self[256], owner_text[512], observed[256], buf[1024], name[80] = {0}, wall_name[33] = {0};
     unsigned long long allowance, parent, fallback, wait_ms, next, group;
     long owner_pid;
     uint64_t begin = budget_now(), deadline = 0;
-    struct sigaction old[3]; budget_cancelled = 0;
+    struct sigaction old[3]; budget_cancelled = 0; budget_last_deadline = 0;
     if ((e = budget_lifecycle(control, 0, 0, 0, 0, 0, 0))) goto done;
     if ((e = budget_handlers(old, 1))) goto done;
     handlers = 1;
@@ -220,8 +231,9 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
     extra[4] = allowance; extra[5] = parent;
     deadline = begin + wait_ms * 1000000;
     if (deadline < begin) { e = EOVERFLOW; goto done; }
-    if ((e = budget_lock(control, registry, deadline))) goto done;
-    locked = 1;
+    stage = 1;
+    if ((e = budget_lock(control, registry, deadline, &contended))) goto done;
+    locked = 1; stage = 0;
     if ((e = budget_read(counter, buf, sizeof(buf)))) goto done;
     cursor = buf;
     if (budget_number(&cursor, &next) || *cursor || next == 0 || next >= (1ULL << 50)) { e = EINVAL; goto done; }
@@ -238,9 +250,13 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
     if ((e = budget_text(ticketfd, buf))) goto done;
     for (;;) {
         if (!locked) {
-            if ((e = budget_lock(control, registry, deadline))) goto done;
+            /* An uncontended retry that finds the deadline passed was still
+             * waiting for budget; only a refused lock is a lock wait. */
+            e = budget_lock(control, registry, deadline, &contended);
+            if (e) { stage = contended ? 1 : 2; goto done; }
             locked = 1;
         }
+        stage = 0;
         /* Session identity is checked every snapshot; unlocked/dead owners
          * retire the session. Never take over or repair another owner's row. */
         if (flock(owner, LOCK_EX | LOCK_NB) == 0) { e = EOWNERDEAD; goto done; }
@@ -312,13 +328,14 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
         if (budget_cancelled) { e = ECANCELED; goto done; }
         if (code == 1) {
             uint64_t now;
+            stage = 3;
             if ((e = budget_deadline(control, deadline, &now))) goto done;
             snprintf(buf, sizeof(buf), "%llu 1 %llu %s\n", next, (unsigned long long)demand, self);
             if ((e = budget_text(ticketfd, buf))) goto done;
             /* Publication/decoding may cross expiry too. No child is started
              * unless this actual commit sample is still eligible. */
             if ((e = budget_deadline(control, deadline, &now))) goto done;
-            extra[1] = now - begin; extra[6] = now;
+            extra[1] = now - begin; extra[6] = now; stage = 0;
             if (flock(registry, LOCK_UN) < 0) { e = errno; goto done; }
             locked = 0;
             if (wall_ms) {
@@ -336,7 +353,9 @@ LEAN_EXPORT lean_obj_res heavy_budget_observe(b_lean_obj_arg exe, b_lean_obj_arg
         locked = 0;
         if (budget_cancelled) { e = ECANCELED; goto done; }
         uint64_t now;
+        stage = 2;
         if ((e = budget_deadline(control, deadline, &now))) goto done;
+        stage = 0;
         struct timespec pause = {0, 10000000}; nanosleep(&pause, NULL);
     }
 done:
@@ -362,6 +381,9 @@ done:
     for (int i = 0; i < 7; ++i) a = lean_array_push(a, lean_box_uint64(extra[i]));
     mm_finish(&memory);
     for (int i = 0; i < 16; ++i) a = lean_array_push(a, lean_box_uint64(memory.v[i]));
+    /* Raw facts for the admission-timeout report; Lean decides what to name. */
+    a = lean_array_push(a, lean_box_uint64(budget_last_deadline));
+    a = lean_array_push(a, lean_box_uint64((uint64_t)stage));
     return lean_io_result_mk_ok(a);
 }
 

@@ -254,6 +254,13 @@ def outer_allowance(cap):
     return min(1300000, cap - 100000)
 
 
+# How long one compiler invocation waits for admission before it fails. A held
+# reservation does not expire, so a waiter outlasts ordinary compiles only if
+# this exceeds their duration: 30 s failed builds whose modules compile for
+# minutes. 600000 is the longest wait a budget session accepts.
+ADMISSION_WAIT_MS = '600000'
+
+
 def selected_lake(command, env):
     """Resolve the executable the caller requested, including elan selection."""
     selected = Path(shutil.which(command[0]) or command[0]).resolve(strict=True)
@@ -369,7 +376,7 @@ def main():
                       '--allowance-kib', str(requested),
                       '--headroom-kib', env.get('FREN_BUILD_HEADROOM_KIB', '100000'),
                       '--fallback-kib', env.get('FREN_BUILD_FALLBACK_KIB', '600000'),
-                      '--timeout-ms', env.get('FREN_BUILD_TIMEOUT_MS', '30000'),
+                      '--timeout-ms', env.get('FREN_BUILD_TIMEOUT_MS', ADMISSION_WAIT_MS),
                       '--requests', str(requests), '--', *command], env, work)
         except BaseException:
             if work.exists():

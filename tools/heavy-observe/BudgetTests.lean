@@ -33,6 +33,12 @@ def main : IO Unit := do
   for error in [0, 5] do
     for now in [-1, 0, 9, 10, 11] do
       check (deadline error now 10 == (if error != 0 || now < 0 then 2 else if now < 10 then 0 else 1)) "raw deadline"
+  for error in [0, 5, 110] do
+    for decision in [0, 1, 2] do
+      for stage in [-1, 0, 1, 2, 3, 4] do
+        check (timedOutWait error decision stage ==
+          (if error != 0 && decision == 1 && 1 ≤ stage && stage ≤ 3 then stage else 0)) "named admission timeout"
+  check (timedOutWait 110 0 2 == 0) "an OS ETIMEDOUT is not an expired deadline"
   for handler in [0, 1, 42] do
     for flags in [0, 2, 4, 6] do
       check (waitable 0 handler flags 2 == (handler == 0 && flags / 2 % 2 == 0)) "raw disposition"
