@@ -1562,9 +1562,9 @@ Decisions:
   expectation's parameters and a match's arms may be empty.
 - **S2.** The remainder is written `%`, and `mod` is only the module keyword.
 
-- **D2.** `Bool` and `Int` are reserved type names: no module,
-  enumeration, variant, function, expectation or parameter is named by one.
-  Name resolution enforces it (F0212).
+- **D2.** `Bool` and `Int` are reserved names: no module, enumeration,
+  variant, function, expectation, parameter or member label is named by
+  one, and no `let` binds one. Name resolution enforces it (F0212).
 - **G1.** Decided: deferred to Fren 2.5's nested types and element
   constraints, with no new features in today's Fren. Today's Fren has no
   recursive datatype whose recursion passes through a `Seq`, so the

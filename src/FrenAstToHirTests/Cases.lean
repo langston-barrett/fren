@@ -86,7 +86,13 @@ def runCases : IO Unit := do
     ("enum Bool { A }", "F0212", "built-in"), ("enum Int { A }", "F0212", "`Int`"),
     ("enum Light { Red, Int }", "F0212", "`Int`"), ("fn Bool(x: Int): Int := x", "F0212", "`Bool`"),
     ("fn f(Int: Bool): Bool := true", "F0212", "`Int`"), ("expect Int() {}", "F0212", "`Int`"),
-    ("expect e(Bool: Int) {}", "F0212", "`Bool`") ] do
+    ("expect e(Bool: Int) {}", "F0212", "`Bool`"),
+    ("expect e(x: Int) { expect Int: true }", "F0212", "`Int`"),
+    ("expect e(x: Int) { assume Bool: true }", "F0212", "`Bool`"),
+    ("fn f(x: Int): Int := let Int := x in x", "F0212", "`Int`"),
+    ("fn f(x: Int): Int := let Bool := x in x", "F0212", "`Bool`"),
+    ("expect e(x: Int) { expect q: let Int := x in true }", "F0212", "`Int`"),
+    ("fn f(x: Int): Int := x + (let y := 1 in let Bool := y in y)", "F0212", "`Bool`") ] do
     discard <| failure (moduleText ++ text) code name
   -- `Bool` and `Int` are reserved type names (`syntax.name.reserved`), for modules too.
   discard <| failure "mod Bool\nfn f(x: Int): Int := x" "F0212" "`Bool`"

@@ -412,8 +412,8 @@ pub fn pattern_item(env: Env, scope: Scope, path: Path): Option<ItemId> :=
 ```
 
 r[names.paths.types] spec::names::{TypeName, type_item, resolve_type}
-A written type is `Bool`, `Int` or a path. `Bool` and `Int` are reserved
-type names and denote the built-in types. A path in type position resolves
+A written type is `Bool`, `Int` or a path. `Bool` and `Int` are
+[reserved](#r-names.paths.reserved) and denote the built-in types. A path in type position resolves
 in the empty scope, so no local is visible in it, and denotes an
 enumeration a, giving the type `Nominal(a)` (else `F0210`, `expected a
 type`).
@@ -445,6 +445,18 @@ pub fn resolve_type(env: Env, written: TypeName): Option<Ty> := match written {
 }
 ```
 
+r[names.paths.reserved] spec::names::reserved?
+`Bool` and `Int` are [reserved names](Syntax.md#r-syntax.name.reserved),
+which nothing that a module declares or binds takes: no enumeration,
+variant, function, parameter or `let` binder is named `Bool` or `Int`
+(`F0212`). [Collection](#r-names.collection.reserved) rejects the
+declarations, and a [`let` layer](#r-names.expression.layer) whose binder
+is reserved has no resolution.
+
+```fren
+pub fn reserved?(name: String) := name is "Bool" | "Int"
+```
+
 ## Expressions
 
 r[names.expression.syntax] spec::names::{SrcArm, SrcF}
@@ -470,11 +482,12 @@ pub enum SrcF<E> {
 }
 ```
 
-r[names.expression.layer] spec::names::{resolve_arms, resolve_annotation, resolve_layer, let_handoff::{omitted, kept, refused}}
+r[names.expression.layer] spec::names::{resolve_arms, resolve_annotation, resolve_layer, let_handoff::{omitted, kept, refused, reserved}}
 A source layer resolves, in R and S, to the Core layer of the same form
 with the same children. Its paths resolve in S as their positions require,
 and a `let`'s written type resolves as a type. The layer has no resolution
-when one of them has none. A `let` binder without a written type has the
+when one of them has none, and when a `let` binder's name is
+[reserved](#r-names.paths.reserved). A `let` binder without a written type has the
 Core annotation `Bool` when its name ends in `?` and none otherwise, which
 is how the [suffix rule](Types.md#r-types.surface.suffix) of typing
 elaborates it. A binder whose name ends in `?` and that has a written
@@ -492,16 +505,16 @@ annotation is the one that rule's `let_annotation?` admits.
   ─────────────────────────────────────
   R; S ⊢ p(e₀, …, eₙ) ⇒ f(e₀, …, eₙ)
 
-  R ⊢ T ⇒ τ   x does not end in `?`, or τ = Bool
-  ────────────────────────────────────────────────
+  x is not reserved   R ⊢ T ⇒ τ   x does not end in `?`, or τ = Bool
+  ──────────────────────────────────────────────────────────────────
   R; S ⊢ let x: T := e₁ in e₂ ⇒ let τ := e₁ in e₂
 
-  x ends in `?`
-  ────────────────────────────────────────────
+  x is not reserved   x ends in `?`
+  ───────────────────────────────────────────────
   R; S ⊢ let x := e₁ in e₂ ⇒ let Bool := e₁ in e₂
 
-  x does not end in `?`
-  ──────────────────────────────────────
+  x is not reserved   x does not end in `?`
+  ─────────────────────────────────────────
   R; S ⊢ let x := e₁ in e₂ ⇒ let e₁ in e₂
 
   R; S ⊢ pₖ ⇒ item cₖ   Σ(cₖ) = constructor   (each k)
@@ -526,7 +539,7 @@ pub fn resolve_annotation(
     env: Env,
     binder: String,
     written: Option<TypeName>
-): Option<Option<Ty>> := match written {
+): Option<Option<Ty>> := if reserved?(binder) then None else match written {
     None => Some(if binder.ends_with?("?") then Some(Ty::Boolean) else None),
     Some(name) => match resolve_type(env, name) {
         Some(ty) => if suffix_rule?(binder.ends_with?("?"), ty) then Some(Some(ty)) else None,
@@ -569,6 +582,8 @@ pub proc let_handoff(env: Env, name: String, written: TypeName, ty: Ty, core: Op
     ensure refused: when resolve_type(env, written) = Some(ty)
         and not suffix_rule?(name.ends_with?("?"), ty),
         resolve_annotation(env, name, Some(written)) = None
+    ensure reserved: when reserved?(name),
+        resolve_annotation(env, name, None) = None and resolve_annotation(env, name, Some(written)) = None
 }
 ```
 
@@ -863,13 +878,16 @@ pub fn param_names(params: Snoc<Param>): Scope := match params {
 }
 ```
 
-r[names.collection.reserved] spec::names::reserved?
-`Bool` and `Int` are reserved type names, which no declaration redefines:
-an enumeration of either name is an error (`F0212`). A function may have
-either name, since a function is never what a written type denotes.
+r[names.collection.reserved] spec::names::unreserved?
+A sequence of names is *unreserved* when none of them is
+[reserved](#r-names.paths.reserved). An enumeration, variant, function or
+parameter named `Bool` or `Int` is an error (`F0212`).
 
 ```fren
-pub fn reserved?(name: String) := name is "Bool" | "Int"
+pub fn unreserved?(names: Scope) := match names {
+    Empty => true,
+    Extend(earlier, name) => not reserved?(name) and unreserved?(earlier),
+}
 ```
 
 r[names.collection.members] spec::names::{distinct?, decl_names_ok?, decls_names_ok?}
@@ -877,7 +895,7 @@ The variant names of one enumeration are distinct, and so are the
 parameter names of one function; a repeated name is an error (`F0213`).
 Two enumerations may declare variants of the same name: their identities
 differ. A declaration's *own names are admitted* when they are distinct
-and, for an enumeration, its name is not reserved.
+and unreserved and the declaration's name is not reserved.
 
 ```fren
 pub fn distinct?(names: Scope) := match names {
@@ -886,8 +904,10 @@ pub fn distinct?(names: Scope) := match names {
 }
 
 pub fn decl_names_ok?(decl: SrcDecl) := match decl {
-    SrcDecl::Enumeration(name, variants) => not reserved?(name) and distinct?(variants),
-    SrcDecl::Function(_, params, _, _) => distinct?(param_names(params)),
+    SrcDecl::Enumeration(name, variants) =>
+        not reserved?(name) and unreserved?(variants) and distinct?(variants),
+    SrcDecl::Function(name, params, _, _) =>
+        not reserved?(name) and unreserved?(param_names(params)) and distinct?(param_names(params)),
 }
 
 pub fn decls_names_ok?(decls: Snoc<SrcDecl>) := match decls {
@@ -1133,10 +1153,11 @@ pub proc signature_agreement(
 }
 ```
 
-r[names.collection.rejected] spec::names::rejected::{duplicate, repeated_variant, reserved_name, repeated_parameter, function_as_qualifier}
+r[names.collection.rejected] spec::names::rejected::{duplicate, repeated_variant, reserved_name, reserved_function, reserved_parameter, repeated_parameter, function_as_qualifier}
 Collection yields no environment for two declarations of one name, for an
-enumeration with a repeated variant, for an enumeration named `Bool`, or
-for a function with a repeated parameter. It yields none either for a
+enumeration with a repeated variant, for an enumeration named `Bool`, for
+a function named `Int` or with a parameter named `Bool`, or for a function
+with a repeated parameter. It yields none either for a
 module `M` that declares a function `M` and a signature with the written
 type `M::E`: there `M` is the function, which has no member.
 
@@ -1175,6 +1196,22 @@ pub proc rejected(
         Extend(Empty, SrcDecl::Enumeration("Bool", first))
     )
         = None
+    ensure reserved_function: collect(
+        parent,
+        module,
+        Extend(
+            Empty,
+            SrcDecl::Function("Int", Extend(Empty, Param { name := variant, ty := Some(ty) }), ty, body)
+        )
+    ) = None
+    ensure reserved_parameter: collect(
+        parent,
+        module,
+        Extend(
+            Empty,
+            SrcDecl::Function(name, Extend(Empty, Param { name := "Bool", ty := Some(ty) }), ty, body)
+        )
+    ) = None
     ensure repeated_parameter: collect(
         parent,
         module,
@@ -1568,7 +1605,7 @@ pub proc path_examples(): (holds?) {
 }
 ```
 
-r[names.examples.positions] spec::names::{layer, CALL_EXAMPLE, LOCAL_CALLEE, FUNCTION_VALUE, NON_VARIANT_PATTERN, ANNOTATED_LET, QUESTION_LET, QUESTION_LET_REFUSED, position_examples::valid}
+r[names.examples.positions] spec::names::{layer, CALL_EXAMPLE, LOCAL_CALLEE, FUNCTION_VALUE, NON_VARIANT_PATTERN, ANNOTATED_LET, QUESTION_LET, QUESTION_LET_REFUSED, RESERVED_LET, position_examples::valid}
 Again in the module `M`, with the children of each layer at levels 0
 and 1:
 
@@ -1583,7 +1620,8 @@ and 1:
   annotation `Nominal(M · Light)`: a written type is read in the empty
   scope and does not see the local `Light`;
 - `let x? := … in …` resolves with the annotation `Bool`, and
-  `let x?: Int := … in …` has no resolution.
+  `let x?: Int := … in …` has no resolution;
+- `let Int := … in …` has no resolution, since its binder is reserved.
 
 ```fren
 pub fn layer(scope: Scope, form: SrcF<Int>): Option<Form> := resolve_layer(NEXT_ENV, scope, form)
@@ -1614,6 +1652,8 @@ pub const QUESTION_LET: Bool :=
 pub const QUESTION_LET_REFUSED: Bool :=
     layer(Empty, SrcF::Let("x?", Some(TypeName::Integer), 0, 1)) = None
 
+pub const RESERVED_LET: Bool := layer(Empty, SrcF::Let("Int", None, 0, 1)) = None
+
 set_option fren.lint.assertions_on_constants "allow" in
 set_option fren.evidence "random" in
 pub proc position_examples(): (holds?) {
@@ -1625,6 +1665,7 @@ pub proc position_examples(): (holds?) {
         and ANNOTATED_LET
         and QUESTION_LET
         and QUESTION_LET_REFUSED
+        and RESERVED_LET
 }
 ```
 

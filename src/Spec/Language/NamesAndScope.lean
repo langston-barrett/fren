@@ -1465,10 +1465,11 @@ impl names_rejected_proof: rejected for (parent : Fren.Seq String) (module name 
   intro parent module name variant first second ty body _
   simp [spec.names.rejected.ensures, spec.names.rejected.ensure.output,
     spec.names.rejected.ensure.duplicate, spec.names.rejected.ensure.repeated_variant,
-    spec.names.rejected.ensure.reserved_name, spec.names.rejected.ensure.repeated_parameter,
+    spec.names.rejected.ensure.reserved_name, spec.names.rejected.ensure.reserved_function,
+    spec.names.rejected.ensure.reserved_parameter, spec.names.rejected.ensure.repeated_parameter,
     spec.names.rejected.ensure.function_as_qualifier, decls_clear?, declares_function?,
     type_clear?, annotation_clear?, params_clear?, path_head, collect, admitted?, names_ok?, distinct?, item_names, decl_name,
-    resolve_local, decl_names_ok?, decls_names_ok?, param_names, reserved?, fren_spec]
+    resolve_local, decl_names_ok?, decls_names_ok?, param_names, reserved?, unreserved?, fren_spec]
 
 open spec.types spec.names in
 impl names_layer_weakening_proof: layer_weakening for (env : Env) (scope : Snoc String)
@@ -1553,27 +1554,40 @@ impl let_handoff_proof: let_handoff for (env : Env) (name : String) (written : s
 } by
   intro env name written ty core _
   simp only [let_handoff.ensures, let_handoff.ensure.output, let_handoff.ensure.omitted,
-    let_handoff.ensure.kept, let_handoff.ensure.refused]
-  refine ⟨trivial, ?_, ?_, ?_⟩
+    let_handoff.ensure.kept, let_handoff.ensure.refused, let_handoff.ensure.reserved]
+  refine ⟨trivial, ?_, ?_, ?_, ?_⟩
   · intro h
-    simp [resolve_annotation] at h
-    subst h
-    simp [let_annotation?]
+    simp only [resolve_annotation] at h
+    split at h
+    · simp at h
+    · simp at h
+      subst h
+      simp [let_annotation?]
   · intro h
     obtain ⟨h1, h2⟩ := h
     simp only [resolve_annotation, h1] at h2
     split at h2
-    · rename_i hs
-      simp only [Option.some.injEq] at h2
-      subst h2
-      simpa [let_annotation?, suffix_rule?, fren_spec] using hs
     · simp at h2
+    · split at h2
+      · rename_i hs
+        simp only [Option.some.injEq] at h2
+        subst h2
+        simpa [let_annotation?, suffix_rule?, fren_spec] using hs
+      · simp at h2
   · intro h
     simp only [decide_eq_true_eq] at h
     obtain ⟨h1, h2⟩ := h
     simp only [resolve_annotation, h1]
-    simp at h2
-    simp [h2]
+    split
+    · rfl
+    · simp at h2
+      simp [h2]
+  · intro h
+    simp only [resolve_annotation]
+    split
+    · simp
+    · rename_i hr
+      exact absurd h hr
 
 open spec.types spec.names in
 impl parameter_handoff_proof: parameter_handoff for (env : Env) (name : String)

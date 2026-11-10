@@ -15,9 +15,10 @@ private def distinct (previous : List Token) (token : Token) (what : String) :
   if previous.any (fun p => sameName p.text token.text) then
     throw ⟨some "F0213", s!"{what} `{token.text}` is defined multiple times", token.span⟩
 
-/-- `Bool` and `Int` are reserved type names (`syntax.name.reserved`): no
-declaration, variant or parameter is named by one. -/
-private def unreserved (name : Token) : Except FrenDiag.Diagnostic Unit := do
+/-- `Bool` and `Int` are reserved names (`syntax.name.reserved`): no
+declaration, variant, parameter or member label is named by one, and no
+`let` binds one. Collection and the body walk both check names with this. -/
+def unreserved (name : Token) : Except FrenDiag.Diagnostic Unit := do
   if name.text == "Bool" || name.text == "Int" then
     throw ⟨some "F0212", s!"`{name.text}` is a built-in type and cannot be redefined", name.span⟩
 
@@ -71,6 +72,7 @@ def collect (decls : Array Decl) (fallback : FrenSource.Span) :
       parameters params
       let mut previous := params.values.toList.map (·.name)
       for m in members do
+        unreserved m.label
         distinct previous m.label "label"
         previous := m.label :: previous
   return scope

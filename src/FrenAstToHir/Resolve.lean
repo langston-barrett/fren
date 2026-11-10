@@ -52,6 +52,7 @@ private def walk : Nat → Scope → Context → Expr →
       let second ← walk fuel scope ctx yes
       return first ++ second ++ (← walk fuel scope ctx no)
     | .letE _ name _ value _ body =>
+      unreserved name
       let first ← walk fuel scope ctx value
       return first ++ (← walk fuel scope (name :: ctx) body)
     | .matchE _ scrutinee _ arms _ =>

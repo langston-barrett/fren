@@ -71,12 +71,11 @@ Type          ::= Path
 ```
 
 r[syntax.name.reserved] spec::surface::reserved_names
-`Bool` and `Int` are reserved type names: no module, enumeration, variant,
-function, global expectation or parameter is named `Bool` or `Int`. They
-are identifiers, so the grammar accepts such a declaration, and name
-resolution rejects it; [names and scope](NamesAndScope.md) enforces this
-rule. A member's label and the name that a `let` binds are not reserved:
-either may be `Bool` or `Int`.
+`Bool` and `Int` are reserved names: no module, enumeration, variant,
+function, global expectation, parameter or member label is named `Bool` or
+`Int`, and no `let` binds either name. They are identifiers, so the
+grammar accepts such a name, and name resolution rejects it; [names and
+scope](NamesAndScope.md) enforces this rule.
 
 ```fren
 pub mod spec::surface
@@ -90,7 +89,9 @@ tested reserved_names: "src/FrenTest/SpecChapters/Syntax.lean"
 
 > **Rationale:** A type written `Bool` or `Int` always denotes the built-in
 > type, so a declaration of that name could never be referred to as a
-> type. This is decision D2 in the
+> type. A label or a local of either name could be referred to, but a
+> reader would take it for the type, so these names are reserved for every
+> binder. This is decision D2 in the
 > [development coverage](../../../docs/fren2-specification-coverage.md#syntax-decisions-and-design-debt).
 
 ### Examples
@@ -110,6 +111,22 @@ enum Int { Small, Large }  --~ error: `Int` is a built-in type and cannot be red
 ```fren2 unresolved
 mod shapes
 fn f(Bool: Int): Int := 1  --~ error: `Bool` is a built-in type and cannot be redefined
+```
+
+`syntax.name.reserved`: a member's label is `Int`.
+
+```fren2 unresolved
+mod shapes
+expect e(x: Int) {
+    expect Int: x = x  --~ error: `Int` is a built-in type and cannot be redefined
+}
+```
+
+`syntax.name.reserved`: a `let` binds `Bool`.
+
+```fren2 unresolved
+mod shapes
+fn g(x: Int): Int := let Bool := x in Bool  --~ error: `Bool` is a built-in type and cannot be redefined
 ```
 
 ## Declarations
