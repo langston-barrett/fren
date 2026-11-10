@@ -975,11 +975,29 @@ function. A function has no denotation where its declaration, or that of
 a function it depends on, is not verified, has opted out of the
 termination check or has a false assumption. Where all those functions
 have denotations, the member is *met* when every one of its obligations
-is discharged, and *refuted* when the check of one of them answers
-`Refuted(ρ)`. The report of a refuted member names the obligation, so an
-expression that has no value at ρ, as at a zero divisor or where a
-callee's `require` fails, is told apart from one that is false there.
-With an obligation left `Unknown` and none refuted, the member is again
+is discharged. A `Refuted(ρ)` does not by itself make it refuted. The
+verdict says that ρ does not
+[satisfy](#r-verification.assignment.obligation) the obligation in this
+chapter's sense, and the evaluator
+[gives no value](#r-verification.validity.uncomputed) to a row that
+depends on a product, a quotient, a remainder or a call. So a goal may
+fail to hold at ρ because its row is uncomputed, and a hypothesis may be
+unrefuted at ρ because its row is: where `g()` is verified with the body
+`0`, the member `expect g() = 0` is true, its `Asserted` goal holds at no
+assignment, and a sound check may answer `Refuted(ρ)`. The member is
+*refuted* only when the refutation is computed: at ρ the evaluator gives
+every hypothesis's row the value that the hypothesis states, and it
+gives the goal a value that contradicts it, which is `false` for the
+row of an `Asserted` goal, zero for the divisor of a `NonZero` goal, and
+`false` for a `require` root that a `Defined` goal reads. A row that has
+a value depends on no uncomputed operation, and that value is the row's
+denotation at ρ, so ρ then makes the hypotheses true and the expectation
+false or without a value. The report names the obligation, which tells
+the two apart. A `Refuted(ρ)` that is not computed is a candidate
+counterexample and no proof that the expectation is false: the member is
+not established, and the report gives ρ and the rows that have no value.
+With an obligation left `Unknown` and none refuted by a computed
+refutation, the member is again
 not established. None of the three reports makes a declaration
 undefined or unverified, and none changes a verdict of another member.
 
