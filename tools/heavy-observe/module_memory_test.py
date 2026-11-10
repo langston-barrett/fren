@@ -638,6 +638,8 @@ finally:
             ('driver-arguments',['test','--','--job','ui'],'prepared'),
             ('option',['-Kcoverage=RUNTIME','test'],'prepared'),
             ('toolchain',['+'+pin,'-R','test'],'prepared'),
+            ('help',['test','--help'],'unprepared'),
+            ('short-help',['test','-h'],'unprepared'),
             ('operand',['-Ktest','env'],'unprepared'),
             ('executable',['exe','test'],'unprepared')):
         home=work/('home-'+label);home.mkdir();setup=work/(label+'-setup.json')
@@ -654,7 +656,8 @@ finally:
                     ['lake','+'+pin,'-R','--dir='+str(work),'test'],['lake','-K','env','test'],['lake','','-q','test']):
         assert build.lake_test(command),command
     for command in (['lake','build','test'],['lake','-K','test','env'],['lake','-Ktest','build'],['lake','-d','test'],
-                    ['lake','env','test'],['lake','--help','test'],['lake'],['lake','--version'],['echo','lake','test']):
+                    ['lake','env','test'],['lake','--help','test'],['lake','test','--help'],['lake','test','-h'],
+                    ['lake'],['lake','--version'],['echo','lake','test']):
         assert not build.lake_test(command),command
     print(f'nested test preparation passed: {work}')
 

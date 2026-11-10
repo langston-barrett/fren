@@ -571,7 +571,11 @@ def command_forecast(command, state=STATE, environ=None, now=None):
                         os.unlink(stale)
                     except FileNotFoundError:
                         pass
-                subprocess.run(build, cwd=package, capture_output=True, timeout=120, check=True)
+                # Lake's shared artifact cache does not track include_str inputs.
+                # Do not restore a stale adapter from it after invalidation.
+                with tempfile.TemporaryDirectory(prefix="heavy-forecast-cache-") as cache:
+                    subprocess.run(build, cwd=package, capture_output=True, timeout=120, check=True,
+                                   env={**os.environ, "LAKE_CACHE_DIR": cache})
                 result = subprocess.run(query, capture_output=True, text=True, timeout=30, check=True)
             peak, count = json.loads(result.stdout)
             return peak, count
