@@ -223,7 +223,8 @@ expectation.
 
 ## Language and compiler
 
-A Language chapter states the language; the THIR chapter refines its Core.
+A Language chapter states the language. Its Core is the desugared THIR, and
+the THIR chapter relates the two.
 Correspondence with production code, such as a different numbering of
 locals, primitive contracts bound by `impl`, or the agreement of a checker
 with the judgment, belongs to the Compiler chapter of that pass.

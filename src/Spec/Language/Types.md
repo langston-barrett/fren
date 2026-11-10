@@ -2,8 +2,9 @@
 
 Source programs are defined by translation into the Core, a small typed
 language; the [THIR chapter](../Compiler/Thir.md) relates it to the
-compiler's typed representation, of which the Core is the desugared form. Static semantics comprises resolution,
-typing, and verification, including definedness. This chapter defines
+compiler's typed representation, of which the Core is the desugared form.
+Static semantics comprises resolution, typing, and verification, including
+definedness. This chapter defines
 typing; [resolution](NamesAndScope.md), the chapter before this one,
 defines the Core's expressions and the semantic objects that this chapter
 types them with, and supplies identities, and

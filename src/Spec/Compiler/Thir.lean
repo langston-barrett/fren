@@ -1177,5 +1177,13 @@ impl synthesis_unique_proof: synthesis_unique for (symb : Snoc Entry)
   intro h
   exact Spec.Compiler.Thir.hir_table_unique symb left right h.1.1 h.1.2 h.2
 
+open spec.surface spec.names spec.types spec.algorithmic in
+impl unfaithful_paren_proof: unfaithful_paren { holds? := true } by
+  intro _
+  simp only [unfaithful_paren.ensures, unfaithful_paren.ensure.output,
+    unfaithful_paren.ensure.desugaring_valid, unfaithful_paren.ensure.table_invalid,
+    unfaithful_paren.ensure.excluded]
+  decide
+
 set_option fren.requireEvidence "trusted" in
 #fren_trace

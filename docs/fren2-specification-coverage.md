@@ -150,10 +150,11 @@ compiler is specified later.
 | `thir.primitive.compatibility`, `thir.primitive.unary`, `thir.primitive.binary` | Procedures bound by `impl` in the THIR wrapper |
 | `thir.algorithmic.modes`, `thir.algorithmic.operators`, `thir.algorithmic.synthesis`, `thir.algorithmic.layer`, `thir.algorithmic.table`, `thir.algorithmic.judgment` | Definitions |
 | `thir.algorithmic.checking`, `thir.algorithmic.sound`, `thir.algorithmic.complete`, `thir.algorithmic.parens` | Fren expectations, one layer at a time; completeness assumes `thir.algorithmic.first-arm` for a match |
-| `thir.algorithmic.first-arm`, `thir.algorithmic.preservation`, `thir.algorithmic.reflection`, `thir.algorithmic.unique` | Procedures bound by `impl` in the THIR wrapper: `proved` |
+| `thir.algorithmic.first-arm`, `thir.algorithmic.preservation`, `thir.algorithmic.reflection`, `thir.algorithmic.unique` | Procedures bound by `impl` in the THIR wrapper: `proved`, for supplied tables; reflection carries the `parens_faithful?` hypothesis, and the `unfaithful_paren` procedure, proved by evaluation, shows it is needed |
 | `thir.algorithmic.primitive` | Fren expectations against the primitive contracts, and Lean theorems named in the rule's prose |
-| `thir.algorithmic.decidable` | Stated in prose; follows from the definitions being total functions and from `thir.algorithmic.unique` |
-| `thir.core.derivation` | Half proved by the `thir.algorithmic` rules; the production half is open |
+| `thir.algorithmic.decidable` | Stated in prose, for the verification of a supplied table only; follows from the definitions being total functions and from `thir.algorithmic.unique` |
+| `thir.core.derivation` | Open for expressions. The `thir.algorithmic` rules prove only the part for supplied derivation tables, the converse under the `parens_faithful?` hypothesis; the production half is open |
+| `thir.algorithmic.tree-lift`, `thir.algorithmic.expression-complete`, `thir.algorithmic.inference` | Open, stated in prose |
 | `thir.algorithmic.production` | Open, stated in prose |
 
 Definitions carry no evidence; they are not implementation proofs. Open
