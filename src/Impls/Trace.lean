@@ -33,6 +33,7 @@ tested modules::two_segments: "test/ui/lang/scoping.fren", "test/ui/lang/prelude
 tested testing::heavy_cpu: "scripts/heavy_test.py"
 tested testing::heavy_busy: "scripts/heavy_test.py"
 tested testing::heavy_counter_rate: "scripts/heavy_test.py"
+tested testing::heavy_process_sample: "scripts/heavy_test.py"
 tested testing::heavy_pressure: "scripts/heavy_test.py"
 tested testing::heavy_memory_prediction: "scripts/heavy_test.py"
 tested testing::heavy_registry: "scripts/heavy_test.py"

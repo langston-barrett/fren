@@ -22,6 +22,7 @@ import Impls.Guards
 import Impls.Heavy
 import Impls.HeavyAdmission
 import Impls.HeavyOwnership
+import Impls.HeavyProcStat
 import Impls.HigherOrder
 import Impls.Impl
 import Impls.Induction

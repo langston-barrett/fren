@@ -516,14 +516,27 @@ def sample_load(record, load_reader, now, last=None):
     return now
 
 
+def process_sample(state, pid, *counters):
+    """What one stat sample shows (`heavy_process_sample`): the state X
+    decides before the identity and the counters are judged."""
+    return "vanished" if state == "X" else "rejected" if pid <= 0 or min(counters) < 0 else "process"
+
+
 def process_stat(text):
-    """Identity, group and self CPU ticks; comm may contain spaces or ')'."""
+    """Identity, group and self CPU ticks; comm may contain spaces or ')'.
+    A sample in state X is of a process that was reaped and is being
+    released: it has no parent, group or session left, so it has vanished
+    (ProcessLookupError), as if its stat file were already gone. A zombie
+    (Z) is a process still, with its final counters, until it is reaped."""
     left, right = text.index("("), text.rindex(")")
     fields = text[right + 1:].split()  # Begins at field 3 (state).
+    # A released process may lack the fields that follow its state.
+    if process_sample(fields[0], 1, 0) == "vanished":
+        raise ProcessLookupError("process is dead")
     pid, ppid, pgrp, session, user, system, start, rss = (int(v) for v in
                                               (text[:left], fields[1], fields[2], fields[3], fields[11],
                                                fields[12], fields[19], fields[21]))
-    if pid <= 0 or min(ppid, pgrp, session, user, system, start, rss) < 0:
+    if process_sample(fields[0], pid, ppid, pgrp, session, user, system, start, rss) != "process":
         raise ValueError("invalid process counters")
     return {"pid": pid, "ppid": ppid, "comm": text[left + 1:right], "state": fields[0],
             "pgrp": pgrp, "session": session, "ticks": user + system, "start": start, "rss_pages": rss}

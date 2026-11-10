@@ -1436,7 +1436,14 @@ does not subtract one process's counters from another's. An executable
 change attributes the interval to its new name. A zombie retains its last
 known executable name when its `comm` is unchanged; otherwise the kernel's
 possibly shortened `comm` is used. Zombies contribute final counters but
-not concurrent live counts. Linux documents the [process stat fields](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html).
+not concurrent live counts. A sample in state X is of a process that was
+reaped and that the kernel is releasing, with parent 0 and group and
+session -1. `heavy_process_sample` reads it as a vanished process, as if
+its stat file were already gone, and `process_stat` raises
+`ProcessLookupError` for it, which every scan skips; any other sample with
+an invalid identity or a negative counter is rejected with `ValueError`.
+`Heavy.ProcStat` is that rule for the Lean port, bound in
+`Impls.HeavyProcStat`. Linux documents the [process stat fields](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html).
 
 After a successful scan, only lifetimes still visible in procfs retain
 counter baselines and the executable names they have used. A worker that
@@ -2611,6 +2618,37 @@ pub proc heavy_counter_rate(before: Nat, after: Nat, elapsed: Nat): (det rate: O
         Option::Some(r) => r.numerator >= 0 and r.denominator > 0,
         Option::None => true,
     }
+}
+
+pub enum ProcessSample { Vanished, Rejected, Process }
+
+-- One `/proc/<pid>/stat` sample. State X is a process that was reaped and
+-- that the kernel is releasing: it has no parent, group or session left,
+-- so it has vanished whatever its counters say. A zombie (state Z) is a
+-- process until it is reaped.
+pub proc heavy_process_sample(
+    state: String,
+    pid: Int,
+    parent: Int,
+    group: Int,
+    session: Int,
+    user: Int,
+    system: Int,
+    start: Int,
+    pages: Int,
+): (det sample: ProcessSample) {
+    ensure rule: sample = (if state = "X" then ProcessSample::Vanished
+        else if pid <= 0 or parent < 0 or group < 0 or session < 0
+        or user < 0 or system < 0 or start < 0 or pages < 0
+        then ProcessSample::Rejected
+        else ProcessSample::Process)
+
+    expect released: when state = "X" and parent = 0 and group = -1 and session = -1,
+        sample = ProcessSample::Vanished
+    expect zombie: when state = "Z" and pid > 0 and parent >= 0 and group >= 0 and session >= 0
+        and user >= 0 and system >= 0 and start >= 0 and pages >= 0,
+        sample = ProcessSample::Process
+    expect negative_counter: when state != "X" and user < 0, sample = ProcessSample::Rejected
 }
 
 pub proc heavy_pressure(running: Nat, cores: Nat): (det ratio: CpuRatio, det oversubscribed?) {

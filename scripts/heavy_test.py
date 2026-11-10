@@ -2258,6 +2258,26 @@ def test_process_readings():
     assert row["pid"] == 123 and row["pgrp"] == 7 and row["start"] == 100
     for text in ("", "123 (short) R", proc_line(user=-1)):
         assert raises(lambda: heavy.process_stat(text), (ValueError, IndexError))
+    # fren-covers: testing::heavy_process_sample
+    # A reaped process that the kernel is releasing shows state X with no
+    # parent, group or session. It has vanished, whatever else the sample
+    # says; a zombie is a process still; a name is never read as a state.
+    dead = "123 (lean) X 0 -1 -1 0 -1 " + " ".join(["0"] * 44)
+    for text in (dead, proc_line(state="X"), proc_line(state="X", user=-1), "123 (short) X"):
+        assert raises(lambda: heavy.process_stat(text), ProcessLookupError)
+    assert raises(lambda: heavy.process_stat(proc_line(state="Z", user=-1)), ValueError)
+    assert heavy.process_stat(proc_line(state="Z"))["state"] == "Z"
+    assert heavy.process_stat(proc_line(name="a ) X 0", state="S"))["state"] == "S"
+    assert [heavy.process_sample(s, *n) for s in "XZR" for n in ((1, 0, 0), (1, 0, -1), (0, 0, 0))] == [
+        "vanished"] * 3 + ["process", "rejected", "rejected"] * 2
+    with tempfile.TemporaryDirectory() as proc:
+        # A scan skips the dead member and keeps the zombie's final counters.
+        for pid, text in ((123, proc_line(state="Z")), (124, dead.replace("123", "124", 1))):
+            os.mkdir(os.path.join(proc, str(pid)))
+            with open(os.path.join(proc, str(pid), "stat"), "w") as f:
+                f.write(text)
+        found = heavy.group_processes(7, proc)
+        assert [(r["pid"], r["state"]) for r in found] == [(123, "Z")], found
     assert heavy.process_switches("voluntary_ctxt_switches: 99\nnonvoluntary_ctxt_switches: 7\n") == 7
     assert heavy.process_switches("nonvoluntary_ctxt_switches: -1\n") is None
     assert heavy.process_switches("voluntary_ctxt_switches: 99\n") is None

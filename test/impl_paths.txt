@@ -442,3 +442,4 @@ unbound: Fren.Impls.HeavyOwnership.direct_lean_file file?
 unbound: Fren.Impls.HeavyOwnership.module_memory_limit limit
 unbound: Fren.Impls.HeavyOwnership.module_memory_applied applied
 unbound: Fren.Impls.HeavyOwnership.module_memory_applied effective
+unbound: Fren.Impls.HeavyProcStat.process_sample sample
