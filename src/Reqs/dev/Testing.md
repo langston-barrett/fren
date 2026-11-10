@@ -1633,6 +1633,14 @@ before launching the build or direct compiler command and tells the user to run
 under `fd job`. This applies to the whole controlled session because a Lake build
 can select modules only after it starts.
 
+Preparation moves only the caller's own launch chain, so it needs that chain to
+be alone in the job's scope: a scope with other members is never migrated. The
+test driver runs its jobs in parallel in one scope, where no job's chain is alone.
+`scripts/heavy lake test` therefore prepares the scope before it starts Lake,
+while its launch chain is still alone, and the controlled builds that the jobs
+start reuse that scope without moving one another. If this preparation fails,
+the test run still starts, and its controlled builds fail before launch as above.
+
 The ordinary `scripts/heavy lake env lean FILE.lean` route uses the same selected
 source policy, observer and budget session as Lake builds. Leading Lake options
 and installed elan toolchain selection retain their meaning. The wrapper replaces

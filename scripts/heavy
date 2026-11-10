@@ -1987,6 +1987,20 @@ def main(argv, state=STATE, environ=None, load_reader=load_average):
                         return 125
                 entries = {os.path.join(os.path.dirname(os.path.realpath(__file__)), name)
                            for name in ("fren-build", "heavy-lean-build")}
+                if os.path.basename(command[0]) == "lake" and command[1:2] == ["test"]:
+                    # The test driver runs its jobs in parallel, and a scope with
+                    # members outside one launch chain is never migrated. Prepare
+                    # the delegated compiler memory scope now, while this chain is
+                    # alone, so that the jobs' controlled builds reuse it.
+                    loader = importlib.machinery.SourceFileLoader("heavy_module_memory", os.path.join(
+                        os.path.dirname(os.path.realpath(__file__)), "..", "tools", "heavy-observe", "module_memory.py"))
+                    spec = importlib.util.spec_from_loader(loader.name, loader)
+                    memory = importlib.util.module_from_spec(spec)
+                    try:
+                        loader.exec_module(memory)
+                        memory.prepare()
+                    except (OSError, ValueError, subprocess.SubprocessError):
+                        pass  # Without a suitable scope, controlled builds still fail before they start.
                 record["compiler_budget"] = os.path.realpath(launched[0]) in entries
                 return run(f, offline_wrapper + launched, shown, kind, record, admitted, state, environ, load_reader, offline_wrapper)
             finally:

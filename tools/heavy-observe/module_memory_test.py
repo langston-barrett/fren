@@ -212,12 +212,20 @@ def controls(work, part):
             signal.pidfd_send_signal(fd,signal.SIGTERM);foreign.wait(timeout=2);os.close(fd)
     if part=='negative':
         # First preparation must refuse a foreign member without moving it.
+        # Under `scripts/heavy lake test` the scope is already prepared, and
+        # the build must reuse it beside the foreign member, moving nothing.
+        from module_memory import location
+        prepared=location().name.startswith('heavy-driver-')
         foreign=subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(10)'])
         fd=os.pidfd_open(foreign.pid);before=Path(f'/proc/{foreign.pid}/cgroup').read_text()
         try:
-            a=case('foreign-preparation');assert a['status']==125 and a['marker'] is None,a
-            assert a['setup']['status']=='unavailable' and 'foreign' in a['setup']['error'],a
-            assert a['record'] is None and a['session'] is None and 'run under fd job' in a['stderr'],a
+            a=case('foreign-preparation')
+            if prepared:
+                assert a['status']==0 and a['setup']['reused'] and a['setup']['moved']==[],a
+            else:
+                assert a['status']==125 and a['marker'] is None,a
+                assert a['setup']['status']=='unavailable' and 'foreign' in a['setup']['error'],a
+                assert a['record'] is None and a['session'] is None and 'run under fd job' in a['stderr'],a
             assert foreign.poll() is None and Path(f'/proc/{foreign.pid}/cgroup').read_text()==before
         finally:
             signal.pidfd_send_signal(fd,signal.SIGTERM);foreign.wait(timeout=2);os.close(fd)
@@ -584,13 +592,45 @@ def actual_compile(work):
     assert Path(row['artifact']).is_file(),row
 
 
+def nested_controls(work):
+    """`scripts/heavy lake test` prepares the scope before its parallel jobs start."""
+    # This Lake stands for the test driver: one of its jobs is still running
+    # when another prepares a controlled build.
+    lake=work/'lake'
+    lake.write_text('#!'+sys.executable+'\n'+r'''
+import os,subprocess,sys
+sys.path.insert(0,os.environ['MODULE_TEST_TOOLS'])
+from module_memory import configure
+sibling=subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(30)'])
+try:
+ before=open(f'/proc/{sibling.pid}/cgroup').read()
+ result=configure({},os.environ['MODULE_TEST_RESULT'],os.environ['MODULE_TEST_SOURCE'])
+ assert result['status']=='available' and result['reused'] and result['moved']==[],result
+ os.rmdir(result['modules'])
+ assert open(f'/proc/{sibling.pid}/cgroup').read()==before
+finally:
+ sibling.kill();sibling.wait()
+''')
+    lake.chmod(0o755)
+    home=work/'home';home.mkdir()
+    env=dict(os.environ,HOME=str(home),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off',MODULE_TEST_TOOLS=str(HERE),
+             MODULE_TEST_RESULT=str(work/'nested-setup.json'),MODULE_TEST_SOURCE=str(ROOT/'src'))
+    for key in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG'):
+        env.pop(key,None)
+    p=run([str(ROOT/'scripts/heavy'),str(lake),'test'],directory=work,label='nested',cwd=ROOT,env=env,timeout=30,grace=3)
+    setup=work/'nested-setup.json'
+    assert p.returncode==0,(p.stdout,p.stderr,setup.read_text() if setup.exists() else None)
+    print(f'nested test preparation passed: {work}')
+
+
 if __name__=='__main__':
-    part=sys.argv[1];assert part in ('producer','negative','lifecycle','direct','directRun',
+    part=sys.argv[1];assert part in ('producer','negative','nested','lifecycle','direct','directRun',
         'directTerminator0','directTerminator1','directOperands0','directOperands1')
     parent=Path(os.environ.get('HEAVY_MODULE_TEST_ROOT',HERE/'test-work'));parent.mkdir(parents=True,exist_ok=True)
     work=Path(tempfile.mkdtemp(prefix='module-'+part+'-',dir=parent))
     atexit.register(shutil.rmtree, work, ignore_errors=True)
-    if part=='direct':direct_controls(work)
+    if part=='nested':nested_controls(work)
+    elif part=='direct':direct_controls(work)
     elif part=='directRun':direct_run_controls(work)
     elif part.startswith('directTerminator'):direct_option_controls(work,int(part[-1]))
     elif part.startswith('directOperands'):direct_option_controls(work,int(part[-1]),operand=True)
