@@ -71,7 +71,7 @@ domain sorts and all origin owner/member/occurrence data, using depth 10000.
 `Program.wellFormed` also checks declaration, member and request retention.
 
 r[lir.terms.constructors] spec::lir::constructor_sort::rule
-A constructor term `constructor owner c` has a sort in `s` exactly when
+A constructor term `constructor owner c` has a sort under `s` exactly when
 `enum owner c` is a valid value of `s`: `owner` is an enumeration item of
 the scope, `c` is a constructor item of the scope, and the parent of `c` is
 `owner`. Its sort is then `enum owner`, in every context.
@@ -112,17 +112,18 @@ term that it reads. The checker and the judgment agree as follows.
 ```
 
 So `Sorted s Γ t τ` holds exactly when some depth bound makes the checker
-return `τ`, and a bound that is too small makes the checker return nothing,
-never another sort. Rule (roots) is the sorting half of `BodyFor` for every
-root body of a successful production. It rests on `Body.wellSorted`, which
-`Program.wellFormed` requires of each root at depth 10000: an output with a
-root deeper than that is rejected, not accepted unsorted.
+return `τ`, and by (sound) and (unique) a bound that is too small makes the
+checker return nothing, never another sort. Rule (roots) is the sorting half
+of `BodyFor` for every root body of a successful production. It rests on
+`Body.wellSorted`, which `Program.wellFormed` requires of each root at depth
+10000: an output with a root deeper than that is rejected, not accepted
+unsorted.
 
-The wrapper `Spec.Compiler.Lir.Sorting` proves these rules of the production
-functions themselves. `infer_sorted` is (sound), `sorted_infer` is
-(complete), `sorted_iff_infer` joins them, `sorted_unique` is (unique), and
-`produced_sorted` is (roots), through `wellSorted_sorted` and
-`wellFormed_root`. The `impl` `constructor_sort` binds
+The wrapper `Spec.Compiler.Lir.Sorting` proves these rules about the
+production functions, not about a model of them. `infer_sorted` is (sound),
+`sorted_infer` is (complete), `sorted_iff_infer` joins them, `sorted_unique`
+is (unique), and `produced_sorted` is (roots), through `wellSorted_sorted`
+and `wellFormed_root`. The `impl` `constructor_sort` binds
 `lir.terms.constructors`. The other cases of the judgment are recursive in
 the term, and a Fren `proc` cannot yet range over `FrenLir.Term`, so those
 cases are bound by the theorems and not by an `impl`.

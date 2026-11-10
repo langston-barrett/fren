@@ -656,9 +656,11 @@ interpretation. The text interpretation is restricted to well-sorted declared
 terms; its name rule cannot override literal meanings. Euclidean operators
 reuse the shared primitive semantics and arbitrary zero totalizations.
 
-`EncodingContract`, `InterpretationContract` and `ValidationContract` are named
-universal obligations, not proved claims. `ValidationContract` refers to the
-actual bounded `Term.infer` checker and the shared unbounded sort judgment.
+`EncodingContract` and `InterpretationContract` are named universal
+obligations, not proved claims. `ValidationContract` relates the actual bounded
+`Term.infer` checker to the shared unbounded sort judgment, and is proved:
+`validation_contract` is the checker's soundness from the LIR chapter
+(`lir.terms.checker`, `infer_sorted`).
 Low-level printing deliberately does not typecheck arbitrary hand-built OIR:
 a wrong-sort arithmetic term still prints, but is rejected by `Term.infer`
 and public source admission. Missing enum/constructor/canonical signature and
@@ -706,8 +708,11 @@ upstream universal proof obligations are preserved in full.
 - [ ] Prove `EncodingContract`, including canonical name lookup/uniqueness,
   sort/arity/declaration references, complete stable definition order and
   exact query polarity/context for every admitted producer result.
-- [ ] Prove `ValidationContract` and depth adequacy where appropriate; do not
-  infer them from finite wrong-sort/name/arity controls.
+- [x] Prove `ValidationContract`: `validation_contract`, by the soundness of
+  the LIR sort checker (`infer_sorted`, rule `lir.terms.checker`).
+- [ ] Prove depth adequacy where appropriate: that the bound 10000 is never
+  the reason an admitted term is rejected, or state the bound as a rejection
+  rule. Do not infer it from finite wrong-sort/name/arity controls.
 - [x] Prove all rendered symbol families are injective and mutually disjoint,
   and that the chapter's `Naming` preserves active-scope freshness and
   capture freedom. `FrenOirToSmt.Symbol.render_inj` proves the first part of
@@ -866,12 +871,17 @@ Plausible jobs remain bounded evidence with explicit premise counts.
 - [ ] Prove whole-pass `PassContract`, including extraction-to-LIR `SiteFor`,
   source correspondence, complete group layout and dependency construction.
 - [ ] Prove structural-totality recognizer soundness (`structurallyTotal`)
-  for actual admitted bodies, and state as an OIR theorem that each produced
-  search formula is `Sorted` at `Bool`. The LIR chapter now proves that the
-  checker `FrenLir.Term.infer`, which obligation generation runs on each
-  search formula, is sound and complete for `Sorted` (`lir.terms.checker`),
-  so the second part is that rule applied to each produced question.
-  Neither part is established by `walk_extracts` or the empty-block witness.
+  for actual admitted bodies.
+- [ ] Prove that each search formula of a successful OIR production is
+  `Sorted` at `Bool`. What is missing is a producer theorem, the analogue of
+  `FrenFlatToLir.wellFormed`: every question of the output is a result of
+  `FrenLirToOir.checkedQuestion` on its final search formula. That function
+  runs `Term.infer` at depth 10000 and is called at three sites in
+  `src/FrenLirToOir/Questions.lean`, one of them through `set!` on a
+  question that is updated afterwards, so the theorem must follow each
+  question through the whole of generation. Given it, the checker's
+  soundness (`infer_sorted`, rule `lir.terms.checker`) finishes the proof.
+  Neither item is established by `walk_extracts` or the empty-block witness.
 - [ ] Prove `SearchContract` and `RequestContract`, including typed Boolean
   completeness/functionality of term/frame interpretation, guarded and bound
   environments, and complete domains. Do not infer them from finite tests.
@@ -1424,7 +1434,7 @@ wrong scope contexts and reversed verification algebra in their intended laws.
   `FrenEval.Value.valid`; the recursive cases are bound by the theorems,
   since a Fren `proc` cannot range over `FrenLir.Term`. The proofs use the
   derived `LawfulBEq` instances of the source types, signatures, tokens and
-  spans, which were added for them.
+  spans, which were added for these proofs.
   This work found a bug. The checker accepted `constructor owner c` when
   `owner` was not an enumeration item of the scope, which `Sorted` and
   `Value.valid` refuse. The checker now requires it, and the `lir` job has

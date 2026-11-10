@@ -347,7 +347,7 @@ lir.meaning.values -- actual recursive Lean Meaning judgment; universal typed in
 lir.meaning.symbols -- actual source-definition Models relation and constructive sufficient model proof; universal model existence remains unproved
 
 # src/Spec/Compiler/Oir.md
-oir.terms.sorts -- actual DomainFor/ParametersFor and LIR Sorted judgments; universal checker correspondence remains unproved
+oir.terms.sorts -- actual DomainFor/ParametersFor and LIR Sorted judgments; lir.terms.checker proves the checker sound; that every produced question passed checkedQuestion remains unproved
 oir.meaning.search -- actual frame/search interpretation relations and literal laws; universal SearchContract remains unproved
 
 # src/Spec/Compiler/Smt.md

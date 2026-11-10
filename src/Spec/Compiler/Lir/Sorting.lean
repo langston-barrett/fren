@@ -210,7 +210,9 @@ theorem sorted_iff_infer (s : Typed) (ctx : TypeContext) (term : Term) (ty : Fre
   ⟨fun h => (sorted_infer s ctx term ty h).imp fun n all => all n (Nat.le_refl n),
     fun ⟨n, h⟩ => infer_sorted n s ctx term ty h⟩
 
-/-- A term has at most one sort in a context. -/
+/-- A term has at most one sort in a context. The proof goes through the
+checker, which returns one sort at a bound large enough for both derivations;
+that avoids a second induction over the argument premise of `app`. -/
 --@ reference: lir.terms.checker
 theorem sorted_unique (s : Typed) (ctx : TypeContext) (term : Term) (a b : FrenExpr.Ty)
     (ha : Sorted s ctx term a) (hb : Sorted s ctx term b) : a = b := by

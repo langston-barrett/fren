@@ -217,9 +217,11 @@ failure. Hand-built OIR, scope checks or a supplied success flag are not public
 admission paths. `Term.infer` checks origin context, local slot/type, canonical
 constructor references, exact call signature, argument sorts/arity, operand
 sorts, branch result agreement, let value sort and Bool domain. Its bounded
-failure rejects upstream production. `ValidationContract` states the remaining
-unbounded sorting correspondence of that actual checker on admitted source
-metadata; it makes no claim about fabricated malformed `Typed` records.
+failure rejects upstream production. `ValidationContract` states that a sort
+which this checker returns, at any depth bound, is the sort of the unbounded
+judgment `Lir.Sorted`. It is the rule (sound) of `lir.terms.checker`, and
+`validation_contract` proves it. It makes no claim that a fabricated malformed
+`Typed` record is a scope that resolution could produce.
 
 The low-level `term`, `prelude` and `script` operations print supplied records;
 they do not revalidate every sort, arity or duplicate identity. In particular,

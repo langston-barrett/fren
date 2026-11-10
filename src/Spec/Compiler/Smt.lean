@@ -1,6 +1,7 @@
 import Fren.Impl
 import Fren.Literate
 import Spec.Compiler.Oir
+import Spec.Compiler.Lir.Sorting
 import FrenOirToSmt
 import Spec.Compiler.Thir
 
@@ -276,6 +277,12 @@ def VerifiedInventory (p : Input) (report : Report) : Prop :=
 def CheckerContract : Prop := ∀ p command run, Mir.AdmissionResidue p →
   (summarize p command run).verdict = .verified → VerifiedInventory p (summarize p command run)
 -- reference end
+
+/-- The validation contract holds: it is the soundness of the LIR sort checker
+(`lir.terms.checker`), at every depth bound and for every scope. -/
+--@ reference: smt.encoding.admission
+theorem validation_contract : ValidationContract :=
+  fun _ _ _ ctx t ty fuel h => Lir.infer_sorted fuel _ ctx t ty h
 
 /-- The proved part of the confirmation contract: a confirmed answer names a
 produced question that is ready. -/
@@ -703,6 +710,7 @@ theorem flipped_goal_model (p : FrenOir.Program) :
   unless pre.startsWith "(set-logic ALL)\n" do throw (IO.userError "logic prefix missing")
   IO.println "SMT contracts: admitted false-goal encoding with independent Renders/Sorted/Interprets proofs; retained real definition and later assumption; exact sort/polarity/declaration oracle; wrong operator and missing canonical references distinguished from raw printing. No solver run or source-model confirmation."
 
+#print axioms validation_contract
 #print axioms confirmed_ready
 #print axioms model_transport_nonzero
 #print axioms strict_operand_retained
