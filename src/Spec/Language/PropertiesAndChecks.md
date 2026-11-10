@@ -746,9 +746,10 @@ r[verification.validity.uncomputed]
 A row has no value in an assignment where the
 [evaluator](DynamicSemantics.md#r-expressions.meaning.evaluation) gives
 it an error or no outcome. Satisfaction reads the evaluator with the
-empty call record, so a product, a call, and a quotient or remainder
-whose divisor is not zero have no outcome, and a quotient or remainder
-by zero has an error. A row whose evaluation reads such a row has no
+empty call record. So where its operands or arguments have values, a
+product, a call, and a quotient or remainder whose divisor is not zero
+have no outcome, and a quotient or remainder by zero has an error; an
+operand's or an argument's error is the row's own. A row whose evaluation reads such a row has no
 value either. The evaluation of `and` and of `or` does not read the
 second operand where the first decides the result, nor that of a
 conditional or a match the branches not taken, so such a row may have a

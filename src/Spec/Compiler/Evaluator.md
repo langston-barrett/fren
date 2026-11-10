@@ -5,10 +5,12 @@ of its inputs. This chapter specifies the source domain of
 [typed syntax](Thir.md). It does not decide whether a property holds for
 all inputs. It defines the concrete value-debugging strategy.
 The [dynamic semantics](../Language/DynamicSemantics.md) is the language's
-evaluation. This evaluator agrees with it under the premises of its
+evaluation. Under the premises of its
 [implementation property](../Language/DynamicSemantics.md#r-dynamics.theorem.implementation),
-and [differs from its step relation](#differences-from-the-step-relation)
-elsewhere in four ways. The
+each value that this evaluator gives is that evaluation's; it gives one
+only for a program that it admits and within its depth bound. It
+[differs from the step relation](#differences-from-the-step-relation)
+in four ways. The
 [static semantics](../Language/StaticSemantics.md) separately defines
 declarative source verification.
 
@@ -40,7 +42,8 @@ in four ways, and each stays for the reason given.
   bound, so it always ends, where an evaluation of the dynamic semantics
   may [diverge](../Language/DynamicSemantics.md#r-dynamics.divergence).
   It reports a walk that exceeds the bound as exhausted and never as a
-  value. Recursion is outside the
+  value, so it can give no value where the step relation reaches one:
+  the implementation property speaks only of the values that it gives. Recursion is outside the
   [supported programs](#supported-values-and-verification).
 
 It agrees with the step relation on the order of evaluation except at a

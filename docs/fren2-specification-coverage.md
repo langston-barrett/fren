@@ -431,8 +431,11 @@ chapters is prose.
   the three differences of the first, and "Differences from the step
   relation" in the evaluator chapter the four of the second; each list
   gives the reason that the difference stays and cites the other.
-- [ ] The table evaluator gives no outcome to a product, or to a
-  quotient or a remainder at a nonzero divisor: Fren1 has no product of
+- [ ] Where the operands have values, the table evaluator gives no
+  outcome to a product, or to a quotient or a remainder at a nonzero
+  divisor; an operand's error passes through each, and through a call
+  that the record does not list (examples `product_propagated`,
+  `call_propagated`). Fren1 has no product of
   two variables and no quotient by a variable, and a defined function
   cannot apply an uninterpreted one. `binary_meaning?` only bounds the
   three. The zero-divisor and no-arm errors are computed.
@@ -452,13 +455,21 @@ chapters is prose.
   (`patterns.matching.dynamics`). That errors pass through each form in
   the order of evaluation is stated by the evaluator's definition and
   the examples only.
-- [ ] `dynamics.theorem.implementation` is restated with the premises of
-  adequacy and the typing premises of table agreement. It is open, and
-  no Lean theorem relates `FrenEval.walk` to the step relation.
-- [ ] The compiler's evaluator keeps its lazy let and its single
-  undefined outcome. Making the let strict, or giving the walk a no-arm
-  failure, changes what the debugger shows and the tests in
-  `src/FrenEvalTests/Cases.lean`; it needs the owner's decision.
+- [ ] `dynamics.theorem.implementation` is restated as a conditional
+  claim: under the premises of adequacy and the typing premises of table
+  agreement, each value that an implementation gives is the step
+  relation's. It does not say that a value is given. The compiler's
+  evaluator gives one only for a program that it admits (no recursion)
+  and within its depth bound, and `FrenEval.walk` reports exhaustion
+  even for a literal at depth zero; those conditions are not premises
+  that the chapter states, and no sufficient depth is defined. The
+  property is open, and no Lean theorem relates `FrenEval.walk` to the
+  step relation.
+- [ ] Open owner question: should the compiler's evaluator keep its lazy
+  let and its single undefined outcome? Making the let strict, or giving
+  the walk a no-arm failure, would remove two of its four differences
+  from the step relation, and changes what the debugger shows and the
+  tests in `src/FrenEvalTests/Cases.lean`.
 - [ ] `types.program.nonrecursive` and `verification.program.defined`
   exclude all recursion through bodies, which is narrower than the
   termination check where that admits structural recursion.

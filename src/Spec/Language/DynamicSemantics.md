@@ -499,11 +499,13 @@ a value: an operand, a condition, a scrutinee, an argument or a let's
 value. The outcome of a branch, of an arm and of a let's body is the
 row's own, an error included.
 
-A row has no outcome when a child that it needs has none, when a local
-is not in ρ, when an operator has no result at its operands' values, or
-when it is a call that C does not list. So a row that depends on a
-product, on a quotient or a remainder at a nonzero divisor, or on a call
-that C does not list has none. A conditional needs only its condition
+Where no error passes to it in this way, a row has no outcome when a
+child that it needs has none, when a local is not in ρ, when an operator
+has no result at its operands' values, or when it is a call whose
+arguments have values and which C does not list at them. So a row that
+needs the value of a product whose operands have values, of a quotient
+or a remainder at a nonzero divisor, or of a call that C does not list
+at its arguments' values has none. A conditional needs only its condition
 and the selected branch, a match only its scrutinee and the selected
 arm, and `and` and `or` need their second operand only where the first
 does not decide them. A let needs its value's outcome, whether or not
@@ -633,13 +635,16 @@ remain.
   is its counterpart, and
   [table agreement](#r-dynamics.theorem.table-agreement) relates it to
   the runs.
-- It gives no outcome to a product, or to a quotient or a remainder at a
-  nonzero divisor, where the step relation reduces each to a value.
+- It gives no outcome to a product whose operands have values, or to a
+  quotient or a remainder whose operands have values and whose divisor
+  is not zero, where the step relation reduces each to a value.
   [Fren1 cannot compute them](#r-expressions.meaning.values). The error
-  at a zero divisor is computed.
+  at a zero divisor is computed, and so is the error of an operand,
+  which passes to the product, quotient or remainder that reads it.
 - It does not find a call's outcome: it reads the outcome from a
   [call record](#r-dynamics.table.calls), and gives the call none where
-  the record does not list it. The step relation reduces every call to
+  its arguments have values and the record does not list it at them; an
+  argument's error passes to the call whatever the record lists. The step relation reduces every call to
   its callee's body. A function of Fren1 recurses only on a part of one
   of its parameters, and a callee's body is no part of the caller's
   table, so the evaluator cannot enter it; the justified record is the
@@ -654,7 +659,7 @@ The compiler's evaluator is a third function, and the
 lists the ways in which it differs from the step relation; the two lists
 are of different evaluators and are kept apart.
 
-r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, QUOTIENT_ROWS, DOUBLE, DOUBLE_ROWS, CALL_ROWS, doubled, DOUBLED, evaluation_examples::{bound, unbound, uncomputed, zero_divisor, decided, propagated, uncalled, called, justified, unjustified}}
+r[expressions.examples.evaluation] spec::dynamics::{typed, LET_ROWS, QUOTIENT_ROWS, DOUBLE, DOUBLE_ROWS, CALL_ROWS, ERROR_ROWS, doubled, DOUBLED, evaluation_examples::{bound, unbound, uncomputed, zero_divisor, decided, propagated, uncalled, product_propagated, call_propagated, called, justified, unjustified}}
 `let d := 2 in 10 - d` has this table; row 4 is the let.
 
 | Row | Layer | Context |
@@ -692,6 +697,12 @@ has no outcome. The record `DOUBLED` lists `double` at 2 with the
 outcome 4; with it the call has the value 4. `DOUBLED` is justified in
 the program that declares `double`, and the record that lists the
 outcome 5 is not.
+
+An operand's error passes to a product and to a call that the record
+does not list. The table `ERROR_ROWS` has the rows `1`, `0`,
+`row 0 div row 1`, `row 2 * row 0` and `double(row 2)`. With the empty
+call record the product's row 3 and the call's row 4 both have
+`error(zero-divisor)`, the outcome of row 2.
 
 ```fren
 pub fn typed(form: Form, ctx: Ctx, ty: Ty): Row := Row { form, ctx, ty }
@@ -739,6 +750,16 @@ pub const CALL_ROWS: Snoc<Row> := Extend(
     typed(CoreF::Call(DOUBLE, one(0)), Empty, Ty::Integer)
 )
 
+pub const ERROR_ROWS: Snoc<Row> := Extend(
+    four(
+        typed(CoreF::IntegerLiteral(1), Empty, Ty::Integer),
+        typed(CoreF::IntegerLiteral(0), Empty, Ty::Integer),
+        typed(CoreF::Binary(BinaryOp::Div, 0, 1), Empty, Ty::Integer),
+        typed(CoreF::Binary(BinaryOp::Mul, 2, 0), Empty, Ty::Integer)
+    ),
+    typed(CoreF::Call(DOUBLE, one(2)), Empty, Ty::Integer)
+)
+
 pub fn doubled(result: Int): Snoc<Call> := one(
     Call {
         callee := DOUBLE,
@@ -763,6 +784,10 @@ pub proc evaluation_examples(): (holds?) {
         = Some(Outcome::Error(ErrorKind::ZeroDivisor))
     ensure decided: eval(QUOTIENT_ROWS, 5, Empty) = Some(Value::Boolean(false))
     ensure uncalled: outcome(Empty, CALL_ROWS, 1, Empty) = None
+    ensure product_propagated: outcome(Empty, ERROR_ROWS, 3, Empty)
+        = Some(Outcome::Error(ErrorKind::ZeroDivisor))
+    ensure call_propagated: outcome(Empty, ERROR_ROWS, 4, Empty)
+        = Some(Outcome::Error(ErrorKind::ZeroDivisor))
     ensure called: outcome(DOUBLED, CALL_ROWS, 1, Empty) = Some(Outcome::Value(Value::Integer(4)))
     ensure justified: justified?(one(Decl::Function(DOUBLE, DOUBLE_ROWS)), DOUBLED)
     ensure unjustified: not justified?(one(Decl::Function(DOUBLE, DOUBLE_ROWS)), doubled(5))
@@ -930,20 +955,26 @@ relation's.
 
 r[dynamics.theorem.implementation]
 An implementation may evaluate in another order, leave an unused let's
-value unevaluated, evaluate in one pass and not by steps, or omit a
-check which verification has discharged. It agrees with this chapter
-under the premises of [adequacy](#r-dynamics.theorem.adequacy), with
-the typing premises of
+value unevaluated, evaluate in one pass and not by steps, omit a
+check which verification has discharged, or give no value: it may
+decline a program and may stop at a bound of its own. Where it gives a
+value, that value agrees with this chapter under the premises of
+[adequacy](#r-dynamics.theorem.adequacy), with the typing premises of
 [table agreement](#r-dynamics.theorem.table-agreement). Let P be a
 well-typed program, let e be an expression with `Γ ⊢ e : τ` in P that
 is defined under hypotheses Φ, let every function that e or Φ mentions
 have a denotation, and let ρ be an assignment of Γ that makes each
-hypothesis of Φ true. Then the implementation, run on e at ρ, ends in
-the value v with `P ⊢ ⟨e, ρ⟩ →* v`, which is `⟦e⟧ρ`. Outside these
-premises the property says nothing: there an implementation may give a
-value where this chapter gives an error or a divergence, since a skipped
-operand or an omitted check may be the one that errs. The property is
-open. For the compiler's evaluator, the
+hypothesis of Φ true. Then every value in which the implementation, run
+on e at ρ, ends is the value v with `P ⊢ ⟨e, ρ⟩ →* v`, which is `⟦e⟧ρ`.
+The property does not say that the implementation ends in a value.
+Outside these premises it says nothing: there an implementation may give
+a value where this chapter gives an error or a divergence, since a
+skipped operand or an omitted check may be the one that errs. The
+property is open. For the compiler's evaluator, the
 [evaluator chapter](../Compiler/Evaluator.md#differences-from-the-step-relation)
-lists how it differs from the step relation, and each difference is
-one that these premises make unobservable.
+lists how it differs from the step relation. Under these premises its
+one-pass walk, its lazy let and its single undefined outcome change no
+value that it gives. Its fourth difference is why the property is
+conditional: that evaluator gives a value only for a program that it
+admits, which has no recursion, and only within its depth bound, and
+these premises ensure neither.
