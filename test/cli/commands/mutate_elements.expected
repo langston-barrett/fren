@@ -1,37 +1,37 @@
 swap-comparison-m::ident-f11b13ac9aba test/cli/commands/mutate_elements.fren:20:31 `!=` changed to `=`
-drop-conjunct-m::guarded-adf1d6b5195c test/cli/commands/mutate_elements.fren:23:30 `v in names and v != "x"` changed to `v in names`
-swap-comparison-m::guarded-7f892fb3b671 test/cli/commands/mutate_elements.fren:23:47 `!=` changed to `=`
-drop-trigger-m::triggered-0e2321e5b07c test/cli/commands/mutate_elements.fren:26:25 `when a?, when v in names, when b?, ident?(v)` changed to `when v in names, when b?, ident?(v)`
-negate-trigger-m::triggered-bc0e05bb66ae test/cli/commands/mutate_elements.fren:26:51 `when` changed to `unless`
-drop-trigger-m::triggered-3ef8f95d1b24 test/cli/commands/mutate_elements.fren:26:51 `when b?, ident?(v)` changed to `ident?(v)`
-drop-conjunct-m::some-381e1506c8eb test/cli/commands/mutate_elements.fren:29:25 `v in names and ident?(v) and v != "y"` changed to `v in names and ident?(v)`
-drop-conjunct-m::some-267da994a8f8 test/cli/commands/mutate_elements.fren:29:25 `v in names and ident?(v)` changed to `v in names`
-swap-comparison-m::some-b87193fe9f8c test/cli/commands/mutate_elements.fren:29:56 `!=` changed to `=`
-swap-comparison-m::nested-bbaaf0434e1d test/cli/commands/mutate_elements.fren:32:82 `!=` changed to `=`
-drop-conjunct-m::around-f6c6c7e7be1a test/cli/commands/mutate_elements.fren:35:5 `a? and (forall (v: String), when v in names, ident?(v) and v != "q")` changed to `a?`
-drop-conjunct-m::around-fad0b1d58e44 test/cli/commands/mutate_elements.fren:35:5 `a? and (forall (v: String), when v in names, ident?(v) and v != "q")` changed to `(forall (v: String), when v in names, ident?(v) and v != "q")`
-swap-and-or-m::around-2d8a7247b910 test/cli/commands/mutate_elements.fren:35:8 `and` changed to `or`
-drop-conjunct-m::around-20bda397330e test/cli/commands/mutate_elements.fren:35:50 `ident?(v) and v != "q"` changed to `ident?(v)`
-drop-conjunct-m::around-01c0db928243 test/cli/commands/mutate_elements.fren:35:50 `ident?(v) and v != "q"` changed to `v != "q"`
-swap-and-or-m::around-c76cc2d2bebb test/cli/commands/mutate_elements.fren:35:60 `and` changed to `or`
-swap-comparison-m::around-7d71d2c19893 test/cli/commands/mutate_elements.fren:35:66 `!=` changed to `=`
-drop-conjunct-m::other-5ef766c4bdf9 test/cli/commands/mutate_elements.fren:38:25 `v in names and v in ["a"] and ident?(v)` changed to `v in names and v in ["a"]`
-drop-conjunct-m::other-f5e48fde7942 test/cli/commands/mutate_elements.fren:38:25 `v in names and v in ["a"]` changed to `v in names`
-drop-conjunct-m::other-644ce8645517 test/cli/commands/mutate_elements.fren:38:25 `v in names and v in ["a"]` changed to `v in ["a"]`
-drop-trigger-m::retriggered-b83d5f1633af test/cli/commands/mutate_elements.fren:41:25 `when v in names, when v in ["a"], ident?(v)` changed to `when v in ["a"], ident?(v)`
-negate-trigger-m::retriggered-89a63332f1ec test/cli/commands/mutate_elements.fren:41:42 `when` changed to `unless`
-drop-trigger-m::retriggered-d7f8b265ea97 test/cli/commands/mutate_elements.fren:41:42 `when v in ["a"], ident?(v)` changed to `ident?(v)`
-drop-conjunct-m::settled-8ffccd9a3121 test/cli/commands/mutate_elements.fren:44:25 `v in names and v in allowed and ident?(v)` changed to `v in names and v in allowed`
-drop-conjunct-m::settled-f4c0188d57f1 test/cli/commands/mutate_elements.fren:44:25 `v in names and v in allowed` changed to `v in names`
-drop-conjunct-m::blocked-81e52cef8c68 test/cli/commands/mutate_elements.fren:47:31 `v in names and ident?(v)` changed to `v in names`
-swap-comparison-m::blocked-989629dc85cb test/cli/commands/mutate_elements.fren:47:59 `!=` changed to `=`
-drop-conjunct-m::block_trigger-8d59d817de4e test/cli/commands/mutate_elements.fren:50:36 `v in names and v != "x"` changed to `v in names`
-swap-comparison-m::block_trigger-2b3eb0a1cd7f test/cli/commands/mutate_elements.fren:50:53 `!=` changed to `=`
-swap-comparison-m::block_trigger-c014509f3e61 test/cli/commands/mutate_elements.fren:50:63 `!=` changed to `=`
-drop-conjunct-m::block_nested-684cfef4ea69 test/cli/commands/mutate_elements.fren:53:37 `v in names and ident?(v)` changed to `v in names`
-swap-comparison-m::block_nested-a3e686f7cb93 test/cli/commands/mutate_elements.fren:53:65 `!=` changed to `=`
-swap-comparison-m::block_nested-f7f2248255da test/cli/commands/mutate_elements.fren:53:77 `!=` changed to `=`
-swap-quantifier-m::allowed-6edb030f6a3a test/cli/commands/mutate_elements.fren:57:5 `forall` changed to `exists`
-negate-trigger-m::allowed-4956f65a640f test/cli/commands/mutate_elements.fren:57:25 `when` changed to `unless`
-drop-trigger-m::allowed-740de4880827 test/cli/commands/mutate_elements.fren:57:25 `when v in names, ident?(v)` changed to `ident?(v)`
+drop-conjunct-m::guarded-adf1d6b5195c test/cli/commands/mutate_elements.fren:22:65 `v in names and v != "x"` changed to `v in names`
+swap-comparison-m::guarded-7f892fb3b671 test/cli/commands/mutate_elements.fren:22:82 `!=` changed to `=`
+drop-trigger-m::triggered-0e2321e5b07c test/cli/commands/mutate_elements.fren:25:25 `when a?, when v in names, when b?, ident?(v)` changed to `when v in names, when b?, ident?(v)`
+negate-trigger-m::triggered-bc0e05bb66ae test/cli/commands/mutate_elements.fren:25:51 `when` changed to `unless`
+drop-trigger-m::triggered-3ef8f95d1b24 test/cli/commands/mutate_elements.fren:25:51 `when b?, ident?(v)` changed to `ident?(v)`
+drop-conjunct-m::some-381e1506c8eb test/cli/commands/mutate_elements.fren:27:57 `v in names and ident?(v) and v != "y"` changed to `v in names and ident?(v)`
+drop-conjunct-m::some-267da994a8f8 test/cli/commands/mutate_elements.fren:27:57 `v in names and ident?(v)` changed to `v in names`
+swap-comparison-m::some-b87193fe9f8c test/cli/commands/mutate_elements.fren:27:88 `!=` changed to `=`
+swap-comparison-m::nested-bbaaf0434e1d test/cli/commands/mutate_elements.fren:30:82 `!=` changed to `=`
+drop-conjunct-m::around-f6c6c7e7be1a test/cli/commands/mutate_elements.fren:33:5 `a? and (forall (v: String), when v in names, ident?(v) and v != "q")` changed to `a?`
+drop-conjunct-m::around-fad0b1d58e44 test/cli/commands/mutate_elements.fren:33:5 `a? and (forall (v: String), when v in names, ident?(v) and v != "q")` changed to `(forall (v: String), when v in names, ident?(v) and v != "q")`
+swap-and-or-m::around-2d8a7247b910 test/cli/commands/mutate_elements.fren:33:8 `and` changed to `or`
+drop-conjunct-m::around-20bda397330e test/cli/commands/mutate_elements.fren:33:50 `ident?(v) and v != "q"` changed to `ident?(v)`
+drop-conjunct-m::around-01c0db928243 test/cli/commands/mutate_elements.fren:33:50 `ident?(v) and v != "q"` changed to `v != "q"`
+swap-and-or-m::around-c76cc2d2bebb test/cli/commands/mutate_elements.fren:33:60 `and` changed to `or`
+swap-comparison-m::around-7d71d2c19893 test/cli/commands/mutate_elements.fren:33:66 `!=` changed to `=`
+drop-conjunct-m::other-5ef766c4bdf9 test/cli/commands/mutate_elements.fren:35:58 `v in names and v in ["a"] and ident?(v)` changed to `v in names and v in ["a"]`
+drop-conjunct-m::other-f5e48fde7942 test/cli/commands/mutate_elements.fren:35:58 `v in names and v in ["a"]` changed to `v in names`
+drop-conjunct-m::other-644ce8645517 test/cli/commands/mutate_elements.fren:35:58 `v in names and v in ["a"]` changed to `v in ["a"]`
+drop-trigger-m::retriggered-b83d5f1633af test/cli/commands/mutate_elements.fren:38:25 `when v in names, when v in ["a"], ident?(v)` changed to `when v in ["a"], ident?(v)`
+negate-trigger-m::retriggered-89a63332f1ec test/cli/commands/mutate_elements.fren:38:42 `when` changed to `unless`
+drop-trigger-m::retriggered-d7f8b265ea97 test/cli/commands/mutate_elements.fren:38:42 `when v in ["a"], ident?(v)` changed to `ident?(v)`
+drop-conjunct-m::settled-8ffccd9a3121 test/cli/commands/mutate_elements.fren:41:25 `v in names and v in allowed and ident?(v)` changed to `v in names and v in allowed`
+drop-conjunct-m::settled-f4c0188d57f1 test/cli/commands/mutate_elements.fren:41:25 `v in names and v in allowed` changed to `v in names`
+drop-conjunct-m::blocked-81e52cef8c68 test/cli/commands/mutate_elements.fren:44:31 `v in names and ident?(v)` changed to `v in names`
+swap-comparison-m::blocked-989629dc85cb test/cli/commands/mutate_elements.fren:44:59 `!=` changed to `=`
+drop-conjunct-m::block_trigger-8d59d817de4e test/cli/commands/mutate_elements.fren:47:36 `v in names and v != "x"` changed to `v in names`
+swap-comparison-m::block_trigger-2b3eb0a1cd7f test/cli/commands/mutate_elements.fren:47:53 `!=` changed to `=`
+swap-comparison-m::block_trigger-c014509f3e61 test/cli/commands/mutate_elements.fren:47:63 `!=` changed to `=`
+drop-conjunct-m::block_nested-684cfef4ea69 test/cli/commands/mutate_elements.fren:50:37 `v in names and ident?(v)` changed to `v in names`
+swap-comparison-m::block_nested-a3e686f7cb93 test/cli/commands/mutate_elements.fren:50:65 `!=` changed to `=`
+swap-comparison-m::block_nested-f7f2248255da test/cli/commands/mutate_elements.fren:50:77 `!=` changed to `=`
+swap-quantifier-m::allowed-6edb030f6a3a test/cli/commands/mutate_elements.fren:53:40 `forall` changed to `exists`
+negate-trigger-m::allowed-4956f65a640f test/cli/commands/mutate_elements.fren:53:60 `when` changed to `unless`
+drop-trigger-m::allowed-740de4880827 test/cli/commands/mutate_elements.fren:53:60 `when v in names, ident?(v)` changed to `ident?(v)`
 exit=0

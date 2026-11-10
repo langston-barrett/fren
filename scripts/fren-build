@@ -94,12 +94,13 @@ def run_private(entry, argv, env, work):
         finish_private_state(work, child is not None and child.returncode == 0)
 
 
-def lake_route(command):
+def lake_route(command, verb_only=False):
     """Effective build configuration or env command under pinned Lake grammar.
 
     Mirror Util/Cli's token insertion and Main's two leading-option passes,
     then build's collectArgs pass. Only this private token copy is rewritten.
     Unknown grammar fails closed; forwarded caller argv is never normalized.
+    With verb_only, the result is instead the command's verb, or None.
     """
     if Path(command[0]).name != 'lake':
         return None
@@ -169,6 +170,8 @@ def lake_route(command):
     if not args:
         return None
     verb = args.pop(0)
+    if verb_only:
+        return None if help_requested else verb
     if verb == 'env' and not help_requested and args[:1] == ['lean']:
         # env forwards its entire tail, without another option pass. Its
         # command is an untouched suffix even after leading token insertion.
@@ -188,6 +191,11 @@ def lake_route(command):
 def lake_build(command):
     route = lake_route(command)
     return route[:2] if route is not None and route[2] is None else None
+
+
+def lake_test(command):
+    """Whether the command starts Lake's test driver, after any leading options."""
+    return lake_route(command, verb_only=True) == 'test'
 
 
 def heavy_command(command, cap):

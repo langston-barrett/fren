@@ -5,9 +5,12 @@ import shutil
 import json
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
+import importlib.machinery
+import importlib.util
 import os
 from pathlib import Path
 import re
+import secrets
 import signal
 import subprocess
 import sys
@@ -78,6 +81,17 @@ else:
     driver.write_text("import json,os,subprocess,sys\np=subprocess.run([os.environ['LEAN_SYSROOT']+'/bin/lean',*json.loads(os.environ.get('EXTRA_ARGS','[]')),sys.argv[1],'-o',sys.argv[2]])\nsys.exit(p.returncode if p.returncode>=0 else 128-p.returncode)\n")
     home=work/'home';home.mkdir();manifest=work/'requests';manifest.write_text('')
     return compiler,driver,home,manifest
+
+
+def fresh_scope(command):
+    """The command, to run in a new job scope that nothing has prepared.
+
+    The scope that this suite runs in is prepared before its jobs start, so a
+    control of an unprepared scope needs one of its own.
+    """
+    return ['systemd-run','--user','--scope','--unit','heavy-test-'+secrets.token_hex(8)+'.scope',
+            '--property=MemoryMax=2147483648','--property=MemorySwapMax=0','--property=Delegate=yes',
+            '--property=OOMPolicy=continue','--quiet','--',*map(str,command)]
 
 
 def controls(work, part):
@@ -210,8 +224,11 @@ def controls(work, part):
             assert foreign.poll() is None and Path(f'/proc/{foreign.pid}/cgroup').read_text()==before
         finally:
             signal.pidfd_send_signal(fd,signal.SIGTERM);foreign.wait(timeout=2);os.close(fd)
-    if part=='negative':
-        # First preparation must refuse a foreign member without moving it.
+    if part=='foreign':
+        # Preparation must refuse an unprepared scope that has a foreign
+        # member, without moving it.
+        from module_memory import location
+        assert location().name.startswith('heavy-test-') and location().name.endswith('.scope'),location()
         foreign=subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(10)'])
         fd=os.pidfd_open(foreign.pid);before=Path(f'/proc/{foreign.pid}/cgroup').read_text()
         try:
@@ -221,6 +238,9 @@ def controls(work, part):
             assert foreign.poll() is None and Path(f'/proc/{foreign.pid}/cgroup').read_text()==before
         finally:
             signal.pidfd_send_signal(fd,signal.SIGTERM);foreign.wait(timeout=2);os.close(fd)
+    if part=='negative':
+        p=run(fresh_scope([sys.executable,__file__,'foreign']),directory=work,label='foreign',cwd=ROOT,timeout=30,grace=3)
+        assert p.returncode==0 and b'"part": "foreign", "cases": 1' in p.stdout,(p.stdout,p.stderr)
         a=case('invalid',cap='0');assert a['status']==125 and a['marker'] is None,a
         assert a['record']['compiler_memory_applied_bytes'] is None,a
         for setting in ('-1','abc','1125899906842625',''):
@@ -584,13 +604,69 @@ def actual_compile(work):
     assert Path(row['artifact']).is_file(),row
 
 
+def nested_controls(work):
+    """`scripts/heavy lake test` prepares the scope before its parallel jobs start."""
+    # This Lake stands for the test driver: one of its jobs is still running
+    # when another prepares a controlled build.
+    lake=work/'lake'
+    lake.write_text('#!'+sys.executable+'\n'+r"""
+import os,subprocess,sys
+sys.path.insert(0,os.environ['MODULE_TEST_TOOLS'])
+from module_memory import configure,location
+expected=os.environ['MODULE_TEST_EXPECT'];current=location().name
+if expected=='unprepared':
+ assert current.startswith('heavy-test-') and current.endswith('.scope'),current
+ sys.exit(0)
+assert current.startswith('heavy-driver-') and location().parent.name.startswith('heavy-test-'),location()
+sibling=subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(30)'])
+try:
+ before=open(f'/proc/{sibling.pid}/cgroup').read()
+ result=configure({},os.environ['MODULE_TEST_RESULT'],os.environ['MODULE_TEST_SOURCE'])
+ assert result['status']=='available' and result['reused'] and result['moved']==[],result
+ os.rmdir(result['modules'])
+ assert open(f'/proc/{sibling.pid}/cgroup').read()==before
+finally:
+ sibling.kill();sibling.wait()
+""")
+    lake.chmod(0o755)
+    pin=(ROOT/'lean-toolchain').read_text().strip()
+    # Each spelling starts in a scope of its own that nothing has prepared, so
+    # the tree that the driver finds is the one this invocation made. A verb
+    # other than `test` leaves the scope as it was.
+    for label,arguments,expected in (
+            ('bare',['test'],'prepared'),
+            ('driver-arguments',['test','--','--job','ui'],'prepared'),
+            ('option',['-Kcoverage=RUNTIME','test'],'prepared'),
+            ('toolchain',['+'+pin,'-R','test'],'prepared'),
+            ('operand',['-Ktest','env'],'unprepared'),
+            ('executable',['exe','test'],'unprepared')):
+        home=work/('home-'+label);home.mkdir();setup=work/(label+'-setup.json')
+        env=dict(os.environ,HOME=str(home),HEAVY_MEM_GB='6',HEAVY_MAX_LOAD='off',MODULE_TEST_TOOLS=str(HERE),
+                 MODULE_TEST_EXPECT=expected,MODULE_TEST_RESULT=str(setup),MODULE_TEST_SOURCE=str(ROOT/'src'))
+        for key in ('HEAVY_BUDGET_DIR','LEAN_SYSROOT','LAKE_OVERRIDE_LEAN','HEAVY_LOG'):
+            env.pop(key,None)
+        p=run(fresh_scope([ROOT/'scripts/heavy',lake,*arguments]),directory=work,label='nested-'+label,cwd=ROOT,env=env,timeout=30,grace=3)
+        assert p.returncode==0,(label,p.stdout,p.stderr,setup.read_text() if setup.exists() else None)
+    # The verb is found as Lake finds it, after any toolchain and options.
+    loader=importlib.machinery.SourceFileLoader('fren_build',str(ROOT/'scripts/fren-build'))
+    build=importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name,loader));loader.exec_module(build)
+    for command in (['lake','test'],['/usr/bin/lake','test','--','--job','ui'],['lake','-K','coverage=RUNTIME','test'],
+                    ['lake','+'+pin,'-R','--dir='+str(work),'test'],['lake','-K','env','test'],['lake','','-q','test']):
+        assert build.lake_test(command),command
+    for command in (['lake','build','test'],['lake','-K','test','env'],['lake','-Ktest','build'],['lake','-d','test'],
+                    ['lake','env','test'],['lake','--help','test'],['lake'],['lake','--version'],['echo','lake','test']):
+        assert not build.lake_test(command),command
+    print(f'nested test preparation passed: {work}')
+
+
 if __name__=='__main__':
-    part=sys.argv[1];assert part in ('producer','negative','lifecycle','direct','directRun',
+    part=sys.argv[1];assert part in ('producer','negative','foreign','nested','lifecycle','direct','directRun',
         'directTerminator0','directTerminator1','directOperands0','directOperands1')
     parent=Path(os.environ.get('HEAVY_MODULE_TEST_ROOT',HERE/'test-work'));parent.mkdir(parents=True,exist_ok=True)
     work=Path(tempfile.mkdtemp(prefix='module-'+part+'-',dir=parent))
     atexit.register(shutil.rmtree, work, ignore_errors=True)
-    if part=='direct':direct_controls(work)
+    if part=='nested':nested_controls(work)
+    elif part=='direct':direct_controls(work)
     elif part=='directRun':direct_run_controls(work)
     elif part.startswith('directTerminator'):direct_option_controls(work,int(part[-1]))
     elif part.startswith('directOperands'):direct_option_controls(work,int(part[-1]),operand=True)
